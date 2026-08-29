@@ -1,0 +1,58 @@
+name: Deploy Atokore Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'atokore-trial-v6/index.html'
+      - 'atokore-trial-v7/**'
+      - '.github/workflows/atokore-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build Atokore v7
+        run: |
+          mkdir -p _site/atokore
+          cp atokore-trial-v6/index.html _site/atokore/index.html
+          cp atokore-trial-v7/receipt.js _site/atokore/receipt.js
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('_site/atokore/index.html')
+          s=p.read_text()
+          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v7')
+          s=s.replace('試用版 v6','試用版 v7')
+          s=s.replace('デモ解析→在庫反映','写真をOCR解析→確認→在庫反映')
+          s=s.replace('</body>','<script src="./receipt.js?v=7"></script></body>')
+          p.write_text(s)
+          PY
+          cat > _site/index.html <<'EOF'
+          <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>あとこれ</title><script>location.replace('./atokore/')</script><a href="./atokore/">あとこれを開く</a>
+          EOF
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
