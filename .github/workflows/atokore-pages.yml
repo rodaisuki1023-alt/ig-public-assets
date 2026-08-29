@@ -52,7 +52,7 @@ jobs:
           s=s.replace('デモ解析→在庫反映','写真をOCR解析→確認→在庫反映')
           s=s.replace('<option>g</option><option>kg</option><option>ml</option><option>L</option>','')
           s=s.replace('商品に合わせて自動選択。肉・魚はg / kgへ変更できます。','商品に合わせて自動選択。迷わず数えられる単位だけに絞っています。')
-          s=re.sub(r"const unitOf=n=>[^;]+;", simple_unit, s, count=1)
+          s=re.sub(r"const unitOf=n=>[^;]+;", lambda m:simple_unit, s, count=1)
           s=s.replace('</body>','<script src="./receipt.js?v=12"></script><script src="./display.js?v=12"></script><script src="./bulk.js?v=12"></script><script src="./history.js?v=12"></script><script src="./ui.js?v=12"></script><script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12");</script></body>')
           p.write_text(s)
 
@@ -69,9 +69,9 @@ jobs:
           r=Path('_site/atokore/receipt.js')
           u=r.read_text()
           fixed="function fixedUnit(n){return /牛乳|低脂肪乳|豆乳|ミネラルウォーター|飲料水|ジュース|炭酸水|醤油|めんつゆ|白だし|料理酒|みりん|酢|洗剤|柔軟剤|ソープ|シャンプー/.test(n)?'本':/豚|鶏|牛肉|牛こま|牛薄切り|ひき肉|鮭|さば|ぶり|あじ|たら|肉|魚/.test(n)?'パック':/米$|お米|無洗米|小麦粉|片栗粉/.test(n)?'袋':/オムツ|パンツ|ゴミ袋|レジ袋|保存袋|防臭袋/.test(n)?'袋':/おしりふき|マスク|ナプキン|離乳食|ベビーフード/.test(n)?'パック':/ティッシュ/.test(n)?'箱':/卵/.test(n)?'個':'個'}\n"
-          u=re.sub(r"function fixedUnit\(n\)\{return .*?\}\n", fixed, u, count=1)
+          u=re.sub(r"function fixedUnit\(n\)\{return .*?\}\n", lambda m:fixed, u, count=1)
           q="function qUnit(n,r){const s=hw(r),base=fixedUnit(n),x=s.match(/(?:x|X)\\s*(\\d{1,3})\\b|\\b(\\d{1,3})\\s*点\\b/);if(x)return {qty:+(x[1]||x[2])||1,unit:base,count:true};if(/卵/.test(n)){const e=s.match(/(\\d{1,2})\\s*個(?:入)?/);if(e)return {qty:+e[1],unit:'個',count:true}}return {qty:1,unit:base,count:false}}\n"
-          u=re.sub(r"function qUnit\(n,r\)\{.*?\}\n", q, u, count=1)
+          u=re.sub(r"function qUnit\(n,r\)\{.*?\}\n", lambda m:q, u, count=1)
           u=u.replace("['個','本','袋','箱','パック','枚','g','kg','ml','L']","['個','本','袋','箱','パック','枚']")
           r.write_text(u)
 
