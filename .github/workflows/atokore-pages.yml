@@ -6,8 +6,8 @@ on:
     paths:
       - 'atokore-trial-v6/index.html'
       - 'atokore-trial-v7/**'
-      - 'atokore-trial-v8/**'
       - 'atokore-trial-v9/**'
+      - 'atokore-trial-v10/**'
       - '.github/workflows/atokore-pages.yml'
   workflow_dispatch:
 
@@ -29,21 +29,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build Atokore v9
+      - name: Build Atokore v10
         run: |
           mkdir -p _site/atokore
           cp atokore-trial-v6/index.html _site/atokore/index.html
           cp atokore-trial-v7/receipt.js _site/atokore/receipt.js
-          cp atokore-trial-v8/display.js _site/atokore/display.js
           cp atokore-trial-v9/bulk.js _site/atokore/bulk.js
+          cp atokore-trial-v10/display.js _site/atokore/display.js
+          cp atokore-trial-v10/history.js _site/atokore/history.js
           python3 - <<'PY'
           from pathlib import Path
           p=Path('_site/atokore/index.html')
           s=p.read_text()
-          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v9')
-          s=s.replace('試用版 v6','試用版 v9')
+          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v10')
+          s=s.replace('試用版 v6','試用版 v10')
           s=s.replace('デモ解析→在庫反映','写真をOCR解析→確認→在庫反映')
-          s=s.replace('</body>','<script src="./receipt.js?v=9"></script><script src="./display.js?v=9"></script><script src="./bulk.js?v=9"></script></body>')
+          s=s.replace('</body>','<script src="./receipt.js?v=10"></script><script src="./display.js?v=10"></script><script src="./bulk.js?v=10"></script><script src="./history.js?v=10"></script></body>')
           p.write_text(s)
           PY
           cat > _site/index.html <<'EOF'
