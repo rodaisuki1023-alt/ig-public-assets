@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build Atokore v12.1
+      - name: Build Atokore v12.2
         run: |
           mkdir -p _site/atokore
           cp atokore-trial-v6/index.html _site/atokore/index.html
@@ -49,13 +49,13 @@ jobs:
 
           p=Path('_site/atokore/index.html')
           s=p.read_text()
-          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v12.1')
-          s=s.replace('試用版 v6','試用版 v12.1')
+          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v12.2')
+          s=s.replace('試用版 v6','試用版 v12.2')
           s=s.replace('デモ解析→在庫反映','写真をOCR解析→確認→在庫反映')
           s=s.replace('<option>g</option><option>kg</option><option>ml</option><option>L</option>','')
           s=s.replace('商品に合わせて自動選択。肉・魚はg / kgへ変更できます。','商品に合わせて自動選択。迷わず数えられる単位だけに絞っています。')
           s=re.sub(r"const unitOf=n=>[^;]+;", lambda m:simple_unit, s, count=1)
-          s=s.replace('</body>','<script src="./receipt.js?v=121"></script><script src="./display.js?v=121"></script><script src="./bulk.js?v=121"></script><script src="./history.js?v=121"></script><script src="./ui.js?v=121"></script><script src="./actions.js?v=121"></script><script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.1");</script></body>')
+          s=s.replace('</body>','<script src="./receipt.js?v=122"></script><script src="./display.js?v=122"></script><script src="./bulk.js?v=122"></script><script src="./history.js?v=122"></script><script src="./ui.js?v=122"></script><script src="./actions.js?v=122"></script><script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.2");</script></body>')
           p.write_text(s)
 
           b=Path('_site/atokore/bulk.js')
@@ -79,7 +79,7 @@ jobs:
 
           h=Path('_site/atokore/history.js')
           v=h.read_text()
-          v=v.replace("const updates=[","const updates=[\n    {v:'v12.1',title:'在庫・買い物操作を見える化',detail:'在庫から買い物へ追加、個別削除、一括削除、購入済み反映を見つけやすい位置に整理。ホームのまとめて追加とカテゴリー導線も修正しました。'},\n    {v:'v12',title:'登録単位をシンプル化',detail:'g / kg / ml / Lを通常登録から外し、個・本・袋・箱・パック・枚に絞りました。'},",1)
+          v=v.replace("const updates=[","const updates=[\n    {v:'v12.2',title:'在庫の一括買い物移行を修正',detail:'選択した在庫を直接買い物リストへ反映し、重複商品は数量をまとめるよう修正しました。'},\n    {v:'v12.1',title:'在庫・買い物操作を見える化',detail:'在庫から買い物へ追加、個別削除、一括削除、購入済み反映を見つけやすい位置に整理。ホームのまとめて追加とカテゴリー導線も修正しました。'},\n    {v:'v12',title:'登録単位をシンプル化',detail:'g / kg / ml / Lを通常登録から外し、個・本・袋・箱・パック・枚に絞りました。'},",1)
           h.write_text(v)
           PY
           cat > _site/index.html <<'EOF'
