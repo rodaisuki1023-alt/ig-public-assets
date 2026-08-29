@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build and audit Atokore v12.4
+      - name: Build and audit Atokore v12.5
         run: |
           mkdir -p _site/atokore
           cp atokore-trial-v6/index.html _site/atokore/index.html
@@ -41,6 +41,7 @@ jobs:
           cp atokore-trial-v10/history.js _site/atokore/history.js
           cp atokore-trial-v11/ui.js _site/atokore/ui.js
           cp atokore-trial-v12/stability.js _site/atokore/stability.js
+          cp atokore-trial-v12/selectionfix.js _site/atokore/selectionfix.js
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -49,13 +50,13 @@ jobs:
 
           p=Path('_site/atokore/index.html')
           s=p.read_text()
-          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v12.4')
-          s=s.replace('試用版 v6','試用版 v12.4')
+          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v12.5')
+          s=s.replace('試用版 v6','試用版 v12.5')
           s=s.replace('デモ解析→在庫反映','写真をOCR解析→確認→在庫反映')
           s=s.replace('<option>g</option><option>kg</option><option>ml</option><option>L</option>','')
           s=s.replace('商品に合わせて自動選択。肉・魚はg / kgへ変更できます。','商品に合わせて自動選択。迷わず数えられる単位だけに絞っています。')
           s=re.sub(r"const unitOf=n=>[^;]+;", lambda m:simple_unit, s, count=1)
-          s=s.replace('</body>','<script src="./receipt.js?v=124"></script><script src="./display.js?v=124"></script><script src="./bulk.js?v=124"></script><script src="./history.js?v=124"></script><script src="./ui.js?v=124"></script><script src="./stability.js?v=124"></script><script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.4");</script></body>')
+          s=s.replace('</body>','<script src="./receipt.js?v=125"></script><script src="./display.js?v=125"></script><script src="./bulk.js?v=125"></script><script src="./history.js?v=125"></script><script src="./ui.js?v=125"></script><script src="./stability.js?v=125"></script><script src="./selectionfix.js?v=125"></script><script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.5");</script></body>')
           p.write_text(s)
 
           b=Path('_site/atokore/bulk.js')
@@ -82,17 +83,18 @@ jobs:
 
           h=Path('_site/atokore/history.js')
           v=h.read_text()
-          v=v.replace("const updates=[","const updates=[\n    {v:'v12.4',title:'操作系を総点検・安定化',detail:'在庫/買い物の選択・削除・一括削除・在庫→買い物・購入済み反映を1本の処理へ統合。買い物選択保持、カテゴリー復元、レシート店舗/日付編集も修正しました。'},\n    {v:'v12.3',title:'在庫→買い物の一括移行を再修正',detail:'画面でチェックされている在庫を直接読み取り、反映確認後に買い物画面へ移動する方式に変更しました。'},\n    {v:'v12.2',title:'在庫の一括買い物移行を修正',detail:'選択した在庫を直接買い物リストへ反映し、重複商品は数量をまとめるよう修正しました。'},\n    {v:'v12.1',title:'在庫・買い物操作を見える化',detail:'在庫から買い物へ追加、個別削除、一括削除、購入済み反映を見つけやすい位置に整理。ホームのまとめて追加とカテゴリー導線も修正しました。'},\n    {v:'v12',title:'登録単位をシンプル化',detail:'g / kg / ml / Lを通常登録から外し、個・本・袋・箱・パック・枚に絞りました。'},",1)
+          v=v.replace("const updates=[","const updates=[\n    {v:'v12.5',title:'在庫の複数選択→買い物をiPhone向けに再構築',detail:'ボタン押下時の実チェック状態を最優先し、反映後は他の画面更新処理に依存せず買い物画面へ直接反映するよう変更しました。'},\n    {v:'v12.4',title:'操作系を総点検・安定化',detail:'在庫/買い物の選択・削除・一括削除・在庫→買い物・購入済み反映を1本の処理へ統合。買い物選択保持、カテゴリー復元、レシート店舗/日付編集も修正しました。'},\n    {v:'v12.3',title:'在庫→買い物の一括移行を再修正',detail:'画面でチェックされている在庫を直接読み取り、反映確認後に買い物画面へ移動する方式に変更しました。'},\n    {v:'v12.2',title:'在庫の一括買い物移行を修正',detail:'選択した在庫を直接買い物リストへ反映し、重複商品は数量をまとめるよう修正しました。'},\n    {v:'v12.1',title:'在庫・買い物操作を見える化',detail:'在庫から買い物へ追加、個別削除、一括削除、購入済み反映を見つけやすい位置に整理。ホームのまとめて追加とカテゴリー導線も修正しました。'},\n    {v:'v12',title:'登録単位をシンプル化',detail:'g / kg / ml / Lを通常登録から外し、個・本・袋・箱・パック・枚に絞りました。'},",1)
           h.write_text(v)
 
-          # build-time audit: old competing scripts must not be loaded, receipt edit bug must be gone
           built=p.read_text()
           assert 'actions.js' not in built and 'bulkfix.js' not in built
-          assert 'stability.js?v=124' in built
+          assert 'stability.js?v=125' in built and 'selectionfix.js?v=125' in built
           receipt=r.read_text()
           assert 'onchange="R.store=this.value"' not in receipt
           assert 'onchange="R.date=this.value"' not in receipt
           assert 'receiptStoreV124' in receipt and 'receiptDateV124' in receipt
+          fix=Path('_site/atokore/selectionfix.js').read_text()
+          assert 'checkedIds()' in fix and "selectPage('buy')" in fix
           PY
 
           node --check _site/atokore/receipt.js
@@ -101,6 +103,7 @@ jobs:
           node --check _site/atokore/history.js
           node --check _site/atokore/ui.js
           node --check _site/atokore/stability.js
+          node --check _site/atokore/selectionfix.js
 
           node <<'NODE'
           global.window=global;
@@ -115,7 +118,7 @@ jobs:
           let result=C.purchase(stock,buy,[buy[0].id],()=> '食料品');buy=result.remaining;ok(result.count===1&&buy.length===0&&stock[0].qty===3,'purchase back to exact stock');
           result=C.purchase(stock,[{id:10,name:'卵',qty:2,unit:'個'}],[10],()=> '食料品');ok(result.count===1&&stock.some(x=>x.name==='卵'&&x.qty===2&&x.cat==='食料品'),'purchase creates categorized stock');
           stock=C.removeByIds(stock,[1]);ok(!stock.some(x=>x.id===1),'stock bulk delete');
-          console.log('ATOKORE_V124_CORE_TESTS_OK');
+          console.log('ATOKORE_V125_CORE_TESTS_OK');
           NODE
 
           cat > _site/index.html <<'EOF'
