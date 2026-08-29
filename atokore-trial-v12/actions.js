@@ -1,4 +1,4 @@
-/* あとこれ v12.1 - 在庫/買い物 操作導線の復元・見える化 */
+/* あとこれ v12.2 - 在庫/買い物 操作導線 + 一括移行修正 */
 (()=>{
   const css=`
   .manageCard{border:1px solid #cfd9e7!important;background:#f8fbff!important;border-radius:16px!important;padding:10px!important;box-shadow:0 2px 8px #22304708}
@@ -19,20 +19,57 @@
   function toast(msg){
     let t=document.getElementById('actionToastV12');
     if(!t){t=document.createElement('div');t.id='actionToastV12';t.className='actionToastV12';document.body.appendChild(t)}
-    t.textContent=msg;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('on'),1400);
+    t.textContent=msg;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('on'),1700);
   }
 
   function getItems(){try{return typeof items!=='undefined'&&Array.isArray(items)?items:[]}catch(e){return []}}
   function getBuys(){try{return typeof buys!=='undefined'&&Array.isArray(buys)?buys:[]}catch(e){return []}}
+  function getSelectedStockIds(){
+    try{return typeof stockSelected!=='undefined'&&stockSelected instanceof Set?[...stockSelected].map(Number).filter(Number.isFinite):[]}
+    catch(e){return []}
+  }
+  function addOneStockToBuy(x){
+    if(!x)return false;
+    const list=getBuys();
+    const id=Number(x.id);
+    let b=list.find(v=>Number(v.stockId)===id||(v.name===x.name&&v.unit===(x.unit||'個')));
+    if(b)b.qty=(Number(b.qty)||0)+1;
+    else buys.push({id:Date.now()+Math.floor(Math.random()*100000),name:x.name,qty:1,unit:x.unit||'個',stockId:x.id});
+    return true;
+  }
 
   window.addStockOneToBuyV12=id=>{
     try{
-      const x=getItems().find(v=>Number(v.id)===Number(id));if(!x)return;
-      let b=getBuys().find(v=>v.stockId===x.id||(v.name===x.name&&v.unit===x.unit));
-      if(b)b.qty=(Number(b.qty)||0)+1;
-      else buys.push({id:Date.now()+Number(id),name:x.name,qty:1,unit:x.unit||'個',stockId:x.id});
-      save();render();toast(`${x.name}を買い物へ追加`);
-    }catch(e){console.error(e)}
+      const x=getItems().find(v=>Number(v.id)===Number(id));if(!x){toast('商品が見つかりません');return}
+      if(!addOneStockToBuy(x)){toast('追加できませんでした');return}
+      save();
+      if(typeof renderBuy==='function')renderBuy();
+      if(typeof render==='function')render();
+      toast(`${x.name}を買い物へ追加`);
+    }catch(e){console.error(e);toast('追加に失敗しました')}
+  };
+
+  /* v12.2: 元の一括処理に依存せず、選択中の在庫を直接買い物リストへ反映 */
+  window.moveSelectedToBuy=()=>{
+    try{
+      const ids=getSelectedStockIds();
+      if(!ids.length){alert('買い物へ追加する商品を選んでください');return}
+      const idSet=new Set(ids.map(Number));
+      const selected=getItems().filter(x=>idSet.has(Number(x.id)));
+      if(!selected.length){alert('選択した商品を取得できませんでした。もう一度選択してください');return}
+      let added=0;
+      selected.forEach(x=>{if(addOneStockToBuy(x))added++});
+      if(!added){alert('買い物リストへ追加できませんでした');return}
+      save();
+      try{stockSelected.clear();stockSelectMode=false}catch(e){}
+      if(typeof render==='function')render();
+      if(typeof go==='function')go('buy');
+      if(typeof renderBuy==='function')renderBuy();
+      toast(`${added}件を買い物リストへ追加しました`);
+    }catch(e){
+      console.error('moveSelectedToBuy v12.2',e);
+      alert('買い物リストへの追加に失敗しました。もう一度お試しください');
+    }
   };
 
   function ensureStock(){
@@ -51,8 +88,9 @@
     if(bulk){
       bulk.classList.add('manageBulk');
       const all=bulk.querySelector('button[onclick*="selectAllVisible"]');if(all)all.textContent='☑ 表示中を全選択';
-      const move=document.getElementById('stockBulkMove');if(move)move.textContent=`🛒 選択した${typeof stockSelected!=='undefined'?stockSelected.size:0}件を買い物へ`;
-      const del=document.getElementById('stockBulkDelete');if(del)del.textContent=`🗑 選択した${typeof stockSelected!=='undefined'?stockSelected.size:0}件を削除`;
+      const count=typeof stockSelected!=='undefined'?stockSelected.size:0;
+      const move=document.getElementById('stockBulkMove');if(move){move.textContent=`🛒 選択した${count}件を買い物へ`;move.onclick=window.moveSelectedToBuy}
+      const del=document.getElementById('stockBulkDelete');if(del)del.textContent=`🗑 選択した${count}件を削除`;
       const clear=bulk.querySelector('button[onclick*="clearBulkSelection"]');if(clear)clear.textContent='選択解除';
     }
     const selecting=typeof stockSelectMode!=='undefined'&&stockSelectMode;
