@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build Atokore v12.3
+      - name: Build and audit Atokore v12.4
         run: |
           mkdir -p _site/atokore
           cp atokore-trial-v6/index.html _site/atokore/index.html
@@ -40,8 +40,7 @@ jobs:
           cp atokore-trial-v10/display.js _site/atokore/display.js
           cp atokore-trial-v10/history.js _site/atokore/history.js
           cp atokore-trial-v11/ui.js _site/atokore/ui.js
-          cp atokore-trial-v12/actions.js _site/atokore/actions.js
-          cp atokore-trial-v12/bulkfix.js _site/atokore/bulkfix.js
+          cp atokore-trial-v12/stability.js _site/atokore/stability.js
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -50,13 +49,13 @@ jobs:
 
           p=Path('_site/atokore/index.html')
           s=p.read_text()
-          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v12.3')
-          s=s.replace('試用版 v6','試用版 v12.3')
+          s=s.replace('あとこれ 試用版 v6','あとこれ 試用版 v12.4')
+          s=s.replace('試用版 v6','試用版 v12.4')
           s=s.replace('デモ解析→在庫反映','写真をOCR解析→確認→在庫反映')
           s=s.replace('<option>g</option><option>kg</option><option>ml</option><option>L</option>','')
           s=s.replace('商品に合わせて自動選択。肉・魚はg / kgへ変更できます。','商品に合わせて自動選択。迷わず数えられる単位だけに絞っています。')
           s=re.sub(r"const unitOf=n=>[^;]+;", lambda m:simple_unit, s, count=1)
-          s=s.replace('</body>','<script src="./receipt.js?v=123"></script><script src="./display.js?v=123"></script><script src="./bulk.js?v=123"></script><script src="./history.js?v=123"></script><script src="./ui.js?v=123"></script><script src="./actions.js?v=123"></script><script src="./bulkfix.js?v=123"></script><script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.3");</script></body>')
+          s=s.replace('</body>','<script src="./receipt.js?v=124"></script><script src="./display.js?v=124"></script><script src="./bulk.js?v=124"></script><script src="./history.js?v=124"></script><script src="./ui.js?v=124"></script><script src="./stability.js?v=124"></script><script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.4");</script></body>')
           p.write_text(s)
 
           b=Path('_site/atokore/bulk.js')
@@ -76,13 +75,49 @@ jobs:
           q="function qUnit(n,r){const s=hw(r),base=fixedUnit(n),x=s.match(/(?:x|X)\\s*(\\d{1,3})\\b|\\b(\\d{1,3})\\s*点\\b/);if(x)return {qty:+(x[1]||x[2])||1,unit:base,count:true};if(/卵/.test(n)){const e=s.match(/(\\d{1,2})\\s*個(?:入)?/);if(e)return {qty:+e[1],unit:'個',count:true}}return {qty:1,unit:base,count:false}}\n"
           u=re.sub(r"function qUnit\(n,r\)\{.*?\}\n", lambda m:q, u, count=1)
           u=u.replace("['個','本','袋','箱','パック','枚','g','kg','ml','L']","['個','本','袋','箱','パック','枚']")
+          u=u.replace('function review(){','window.receiptStoreV124=v=>{R.store=v};window.receiptDateV124=v=>{R.date=v};\nfunction review(){',1)
+          u=u.replace('onchange="R.store=this.value"','onchange="receiptStoreV124(this.value)"')
+          u=u.replace('onchange="R.date=this.value"','onchange="receiptDateV124(this.value)"')
           r.write_text(u)
 
           h=Path('_site/atokore/history.js')
           v=h.read_text()
-          v=v.replace("const updates=[","const updates=[\n    {v:'v12.3',title:'在庫→買い物の一括移行を再修正',detail:'画面でチェックされている在庫を直接読み取り、反映確認後に買い物画面へ移動する方式に変更しました。'},\n    {v:'v12.2',title:'在庫の一括買い物移行を修正',detail:'選択した在庫を直接買い物リストへ反映し、重複商品は数量をまとめるよう修正しました。'},\n    {v:'v12.1',title:'在庫・買い物操作を見える化',detail:'在庫から買い物へ追加、個別削除、一括削除、購入済み反映を見つけやすい位置に整理。ホームのまとめて追加とカテゴリー導線も修正しました。'},\n    {v:'v12',title:'登録単位をシンプル化',detail:'g / kg / ml / Lを通常登録から外し、個・本・袋・箱・パック・枚に絞りました。'},",1)
+          v=v.replace("const updates=[","const updates=[\n    {v:'v12.4',title:'操作系を総点検・安定化',detail:'在庫/買い物の選択・削除・一括削除・在庫→買い物・購入済み反映を1本の処理へ統合。買い物選択保持、カテゴリー復元、レシート店舗/日付編集も修正しました。'},\n    {v:'v12.3',title:'在庫→買い物の一括移行を再修正',detail:'画面でチェックされている在庫を直接読み取り、反映確認後に買い物画面へ移動する方式に変更しました。'},\n    {v:'v12.2',title:'在庫の一括買い物移行を修正',detail:'選択した在庫を直接買い物リストへ反映し、重複商品は数量をまとめるよう修正しました。'},\n    {v:'v12.1',title:'在庫・買い物操作を見える化',detail:'在庫から買い物へ追加、個別削除、一括削除、購入済み反映を見つけやすい位置に整理。ホームのまとめて追加とカテゴリー導線も修正しました。'},\n    {v:'v12',title:'登録単位をシンプル化',detail:'g / kg / ml / Lを通常登録から外し、個・本・袋・箱・パック・枚に絞りました。'},",1)
           h.write_text(v)
+
+          # build-time audit: old competing scripts must not be loaded, receipt edit bug must be gone
+          built=p.read_text()
+          assert 'actions.js' not in built and 'bulkfix.js' not in built
+          assert 'stability.js?v=124' in built
+          receipt=r.read_text()
+          assert 'onchange="R.store=this.value"' not in receipt
+          assert 'onchange="R.date=this.value"' not in receipt
+          assert 'receiptStoreV124' in receipt and 'receiptDateV124' in receipt
           PY
+
+          node --check _site/atokore/receipt.js
+          node --check _site/atokore/display.js
+          node --check _site/atokore/bulk.js
+          node --check _site/atokore/history.js
+          node --check _site/atokore/ui.js
+          node --check _site/atokore/stability.js
+
+          node <<'NODE'
+          global.window=global;
+          require('./_site/atokore/stability.js');
+          const C=global.__atokoreCoreV124;
+          const ok=(v,m)=>{if(!v)throw new Error(m)};
+          let stock=[{id:1,name:'牛乳',qty:1,unit:'本',cat:'食料品'},{id:2,name:'オムツ',qty:2,unit:'袋',cat:'ベビー'}], buy=[];
+          ok(C.addStockToBuy(buy,stock[0])&&buy.length===1&&buy[0].qty===1,'stock to buy add');
+          C.addStockToBuy(buy,stock[0]);ok(buy.length===1&&buy[0].qty===2,'stock to buy merge');
+          C.addStockToBuy(buy,stock[1]);ok(buy.length===2,'second stock to buy');
+          buy=C.removeByIds(buy,[buy[1].id]);ok(buy.length===1&&buy[0].name==='牛乳','buy bulk delete');
+          let result=C.purchase(stock,buy,[buy[0].id],()=> '食料品');buy=result.remaining;ok(result.count===1&&buy.length===0&&stock[0].qty===3,'purchase back to exact stock');
+          result=C.purchase(stock,[{id:10,name:'卵',qty:2,unit:'個'}],[10],()=> '食料品');ok(result.count===1&&stock.some(x=>x.name==='卵'&&x.qty===2&&x.cat==='食料品'),'purchase creates categorized stock');
+          stock=C.removeByIds(stock,[1]);ok(!stock.some(x=>x.id===1),'stock bulk delete');
+          console.log('ATOKORE_V124_CORE_TESTS_OK');
+          NODE
+
           cat > _site/index.html <<'EOF'
           <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>あとこれ</title><script>location.replace('./atokore/')</script><a href="./atokore/">あとこれを開く</a>
           EOF
