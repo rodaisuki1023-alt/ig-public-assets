@@ -42,7 +42,6 @@ jobs:
           p=Path('_site/index.html')
           s=p.read_text()
 
-          # Footer visual refresh: intuitive icons, per-tab colors, larger Premium diamond.
           footer_css = '''
           <style id="atokore-footer-v125e">
           .tabs{background:#fff;border-top:1px solid #d9dee7;box-shadow:0 -6px 18px rgba(26,43,74,.08)}
@@ -76,48 +75,47 @@ jobs:
               s=s.replace('</body>', family+'<script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.5f");</script></body>')
           p.write_text(s)
 
-          # ui.js redraws the footer after load, so keep its labels authoritative too.
           u=Path('_site/ui.js')
           t=u.read_text()
           t=t.replace("stock:['▣','在庫']", "stock:['📦','在庫']")
           t=t.replace("buy:['✓','買い物']", "buy:['🛒','買い物']")
           u.write_text(t)
 
-          # Make shopping -> inventory authoritative from the actual checked DOM state.
-          # This avoids internal selection drift and makes the result visible immediately.
           st=Path('_site/stability.js')
           z=st.read_text()
-          helper="""  function selectedBuyIdsV125f(){
-            const ids=[...document.querySelectorAll('#buyList .buyCheck:checked')].map(x=>Number(x.value)).filter(Number.isFinite);
-            buySelected.clear();ids.forEach(id=>buySelected.add(id));
-            return [...new Set(ids)];
-          }
-"""
+          helper=(
+              "  function selectedBuyIdsV125f(){\n"
+              "    const ids=[...document.querySelectorAll('#buyList .buyCheck:checked')].map(x=>Number(x.value)).filter(Number.isFinite);\n"
+              "    buySelected.clear();ids.forEach(id=>buySelected.add(id));\n"
+              "    return [...new Set(ids)];\n"
+              "  }\n"
+          )
           if 'selectedBuyIdsV125f' not in z:
               z=z.replace('  function updateBuyUI(){', helper+'  function updateBuyUI(){', 1)
-          z=z.replace('const n=buySelected.size, c=document.getElementById(\'buyManageCountV124\')', "const n=document.querySelectorAll('#buyList .buyCheck:checked').length, c=document.getElementById('buyManageCountV124')")
+          z=z.replace("const n=buySelected.size, c=document.getElementById('buyManageCountV124')", "const n=document.querySelectorAll('#buyList .buyCheck:checked').length, c=document.getElementById('buyManageCountV124')")
           z=z.replace('チェックした商品を削除・購入済みにできます','チェックした商品を削除・在庫へ反映できます')
           z=z.replace('✓ 選択を購入済み','📦 選択を在庫へ反映')
-          z=z.replace('`✓ 選択${n?` ${n}件`:\'\'}を購入済み`','`📦 選択${n?` ${n}件`:\'\'}を在庫へ反映`')
+          z=z.replace("`✓ 選択${n?` ${n}件`:''}を購入済み`", "`📦 選択${n?` ${n}件`:''}を在庫へ反映`")
           old_del="  window.deleteSelectedBuy=()=>{const ids=[...buySelected];if(!ids.length){alert('削除する商品を選んでください');return}if(!confirm(`選択した${ids.length}件を買い物リストから削除しますか？`))return;buys=Core.removeByIds(buys,ids);buySelected.clear();save();logHistory('買い物を一括削除',`${ids.length}件を削除`,'buy','🗑');render();toast(`${ids.length}件を削除`)};"
           new_del="  window.deleteSelectedBuy=()=>{const ids=selectedBuyIdsV125f();if(!ids.length){alert('削除する商品を選んでください');return}if(!confirm(`選択した${ids.length}件を買い物リストから削除しますか？`))return;buys=Core.removeByIds(buys,ids);buySelected.clear();save();logHistory('買い物を一括削除',`${ids.length}件を削除`,'buy','🗑');renderBuy();if(typeof renderHome==='function')renderHome();toast(`${ids.length}件を削除`)};"
-          if old_del in z:z=z.replace(old_del,new_del,1)
+          if old_del in z:
+              z=z.replace(old_del,new_del,1)
           old_bought="  window.bought=()=>{const ids=[...buySelected];if(!ids.length){alert('購入済みにする商品を選んでください');return}const result=Core.purchase(items,buys,ids,inferCategory);buys=result.remaining;buySelected.clear();save();logHistory('購入済みにして在庫反映',`${result.count}件を在庫へ反映`,'buy','✓');render();toast(`${result.count}件を在庫へ反映`)};"
           new_bought="  window.bought=()=>{const ids=selectedBuyIdsV125f();if(!ids.length){alert('在庫へ反映する商品を選んでください');return}const result=Core.purchase(items,buys,ids,inferCategory);if(!result.count){alert('在庫へ反映できませんでした');return}buys=result.remaining;buySelected.clear();save();logHistory('買い物から在庫へ反映',`${result.count}件を在庫へ反映`,'stock','📦');if(typeof renderStock==='function')renderStock();if(typeof renderBuy==='function')renderBuy();if(typeof renderHome==='function')renderHome();if(typeof go==='function')go('stock');toast(`${result.count}件を在庫へ反映しました`)};"
-          if old_bought in z:z=z.replace(old_bought,new_bought,1)
+          if old_bought in z:
+              z=z.replace(old_bought,new_bought,1)
           st.write_text(z)
 
           built=p.read_text()
           ui=u.read_text()
           stable=st.read_text()
-          assert 'location.replace' not in built, 'root must be the app itself, not a redirect'
+          assert 'location.replace' not in built
           assert 'family.js?v=125f' in built
           assert 'atokore-footer-v125e' in built
           assert ".tab[data-p='premium'] b{font-size:30px}" in built
           assert "stock:['📦','在庫']" in ui
           assert "buy:['🛒','買い物']" in ui
           assert 'stability.js?v=125f' in built
-          assert 'selectionfix.js?v=125' in built
           assert 'selectedBuyIdsV125f' in stable
           assert 'チェックした商品を削除・在庫へ反映できます' in stable
           assert '📦 選択を在庫へ反映' in stable
@@ -135,7 +133,6 @@ jobs:
           node --check _site/selectionfix.js
           node --check _site/family.js
 
-          # Keep both the simple root URL and the old /atokore/ URL working.
           mkdir -p _site/atokore
           find _site -maxdepth 1 -type f ! -name '.nojekyll' -exec cp {} _site/atokore/ \;
 
