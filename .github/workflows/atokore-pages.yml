@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -124,6 +124,20 @@ jobs:
           cat > _site/index.html <<'EOF'
           <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>あとこれ</title><script>location.replace('./atokore/')</script><a href="./atokore/">あとこれを開く</a>
           EOF
+
+      - name: Publish exact v12.5 CDN snapshot
+        run: |
+          rm -rf atokore-live-v125
+          mkdir -p atokore-live-v125
+          cp -R _site/atokore/. atokore-live-v125/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add atokore-live-v125
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish exact Atokore v12.5 CDN snapshot [skip ci]"
+            git push
+          fi
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
