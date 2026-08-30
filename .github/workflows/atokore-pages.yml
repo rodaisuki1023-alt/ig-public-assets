@@ -28,7 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build root GitHub Pages app
+      - name: Build Atokore v12.5e public app
         run: |
           rm -rf _site
           mkdir -p _site
@@ -38,16 +38,60 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+
           p=Path('_site/index.html')
           s=p.read_text()
-          family='<script src="./family.js?v=gh-root-1"></script>'
+
+          # Footer visual refresh: intuitive icons, per-tab colors, larger Premium diamond.
+          footer_css = '''
+          <style id="atokore-footer-v125e">
+          .tabs{background:#fff;border-top:1px solid #d9dee7;box-shadow:0 -6px 18px rgba(26,43,74,.08)}
+          .tab{position:relative;border-right:1px solid #eef2f7!important;min-height:58px;color:#7a8496}
+          .tab:last-child{border-right:0!important}
+          .tab b{display:flex;align-items:center;justify-content:center;height:24px;font-size:20px;line-height:1}
+          .tab[data-p='stock'] b{font-size:19px}
+          .tab[data-p='buy'] b{font-size:20px}
+          .tab[data-p='premium'] b{font-size:30px}
+          .tab.on{font-weight:900}
+          .tab[data-p='home'].on{background:#f3f5f8;color:#5f6b7d}
+          .tab[data-p='stock'].on{background:#eef5ff;color:#1f69c8}
+          .tab[data-p='add'].on{background:#edf4ff;color:#1367d1}
+          .tab[data-p='buy'].on{background:#fff4e9;color:#c36a09}
+          .tab[data-p='premium'].on{background:#f5efff;color:#7a4ed8}
+          .tab.on:before{content:'';position:absolute;left:18%;right:18%;top:0;height:3px;border-radius:0 0 6px 6px;background:currentColor;opacity:.7}
+          .tab[data-p='add'] b{width:30px;height:30px;margin:-4px auto 0;border-radius:50%;background:#1677ff;color:#fff;font-size:20px;box-shadow:0 4px 10px rgba(22,119,255,.24)}
+          .tab[data-p='add'].on b{background:#0d63d0}
+          </style>
+          '''
+          if 'atokore-footer-v125e' not in s:
+              s=s.replace('</head>', footer_css+'</head>')
+
+          s=s.replace('<b>▣</b>在庫','<b>📦</b>在庫')
+          s=s.replace('<b>✓</b>買い物','<b>🛒</b>買い物')
+          s=s.replace('試用版 v12.5','試用版 v12.5e')
+
+          family='<script src="./family.js?v=125e"></script>'
           if family not in s:
-              s=s.replace('</body>', family+'<script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.5 + 家族共有");</script></body>')
+              s=s.replace('</body>', family+'<script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.5e");</script></body>')
           p.write_text(s)
-          assert 'location.replace' not in s, 'root must be the app itself, not a redirect'
-          assert 'family.js?v=gh-root-1' in s
-          assert 'stability.js?v=125' in s
-          assert 'selectionfix.js?v=125' in s
+
+          # ui.js redraws the footer after load, so keep its labels authoritative too.
+          u=Path('_site/ui.js')
+          t=u.read_text()
+          t=t.replace("stock:['▣','在庫']", "stock:['📦','在庫']")
+          t=t.replace("buy:['✓','買い物']", "buy:['🛒','買い物']")
+          u.write_text(t)
+
+          built=p.read_text()
+          ui=u.read_text()
+          assert 'location.replace' not in built, 'root must be the app itself, not a redirect'
+          assert 'family.js?v=125e' in built
+          assert 'atokore-footer-v125e' in built
+          assert ".tab[data-p='premium'] b{font-size:30px}" in built
+          assert "stock:['📦','在庫']" in ui
+          assert "buy:['🛒','買い物']" in ui
+          assert 'stability.js?v=125' in built
+          assert 'selectionfix.js?v=125' in built
           PY
 
           node --check _site/receipt.js
@@ -59,6 +103,7 @@ jobs:
           node --check _site/selectionfix.js
           node --check _site/family.js
 
+          # Keep both the simple root URL and the old /atokore/ URL working.
           mkdir -p _site/atokore
           find _site -maxdepth 1 -type f ! -name '.nojekyll' -exec cp {} _site/atokore/ \;
 
