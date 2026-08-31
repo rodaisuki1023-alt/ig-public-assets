@@ -66,7 +66,7 @@ const document = {
   querySelectorAll(selector) {
     if (selector === '.page') return pages;
     if (selector === '.tab') return tabs;
-    if (selector.includes('input.stockPickV125g')) return stockBoxes;
+    if (selector.includes('input.stockPickV125h')) return stockBoxes;
     if (selector.includes('input.buyCheck')) return buyBoxes;
     return [];
   },
@@ -121,8 +121,9 @@ vm.createContext(context);
 const source = fs.readFileSync(path.join(__dirname, '..', 'atokore-live-v125', 'stability.js'), 'utf8');
 vm.runInContext(source, context, { filename: 'stability.js' });
 
-assert.equal(context.__atokoreActionOwner, 'stability-v125g');
-assert.equal(badge.textContent, '試用版 v12.5g');
+assert.equal(context.__atokoreActionOwner, 'stability-v125h');
+assert.equal(badge.textContent, '試用版 v12.5h');
+assert.match(elements.get('buyList').innerHTML, /buyOneToStockV125H\(101\)/, '買い物の各行に在庫ボタンがあること');
 
 context.registerItem();
 assert.ok(context.items.some(item => item.id === 9));
@@ -135,6 +136,12 @@ elements.get('buyName').value = '洗剤';
 context.addBuy();
 assert.ok(context.buys.some(item => item.name === '洗剤'));
 assert.equal(elements.get('buyName').value, '');
+
+const detergent = context.buys.find(item => item.name === '洗剤');
+context.buyOneToStockV125H(detergent.id);
+assert.ok(context.items.some(item => item.name === '洗剤'), '個別の在庫ボタンで在庫へ反映されること');
+assert.ok(!context.buys.some(item => item.id === detergent.id), '反映した商品は買い物リストから消えること');
+assert.ok(elements.get('pg-buy').classList.contains('on'), '個別反映後も買い物画面に留まること');
 
 context.stockSelectMode = true;
 stockBoxes = [

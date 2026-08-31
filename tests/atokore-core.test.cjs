@@ -4,7 +4,7 @@ const path = require('node:path');
 delete global.document;
 require(path.join(__dirname, '..', 'atokore-live-v125', 'stability.js'));
 
-const Core = global.__atokoreCoreV125G;
+const Core = global.__atokoreCoreV125H;
 assert.ok(Core, '統合操作コアが読み込めること');
 
 {
