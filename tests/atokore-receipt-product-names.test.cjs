@@ -43,8 +43,8 @@ context.window = context;
 
 vm.runInNewContext(source, context, { filename: 'receipt.js' });
 
-const parser = context.__atokoreReceiptV125J;
-assert.ok(parser, 'v12.5j receipt parser API should be exposed for verification');
+const parser = context.__atokoreReceiptV125K;
+assert.ok(parser, 'v12.5k receipt parser API should be exposed for verification');
 
 const receiptText = `
 イオン上尾店
@@ -80,6 +80,8 @@ assert.deepEqual(
 );
 assert.equal(parsed.store, '', 'store should not be inferred in product-name mode');
 assert.equal(parsed.date, '2026-08-31', 'purchase date should safely default to today');
+assert.equal(parsed.stoppedAtSubtotal, true, 'receipt parsing should stop at subtotal');
+assert.equal(parsed.subtotalLine, '小計 1,337');
 for (const item of parsed.items) {
   assert.equal(item.qty, 1, 'unambiguous item lines should start at one');
   assert.equal(item.price, 0, 'OCR numbers must not become price');
@@ -149,6 +151,7 @@ const supermarketReceipt = `
 `;
 const supermarket = parser.parseReceipt(supermarketReceipt);
 assert.equal(supermarket.items.length, 19, 'the 20 receipt rows should become 19 unique products');
+assert.equal(supermarket.stoppedAtSubtotal, true, 'supermarket receipt should stop at subtotal');
 assert.equal(supermarket.items.find((item) => item.name === '白菜').qty, 2);
 assert.equal(supermarket.items.find((item) => item.name === '新じゃがいも').qty, 2);
 assert.equal(supermarket.items.find((item) => item.name === 'ごぼう').qty, 2);
@@ -182,8 +185,38 @@ assert.equal(duplicate.items.length, 1, 'duplicate product lines should be colla
 assert.equal(duplicate.items[0].name, 'バナナ');
 assert.equal(duplicate.items[0].qty, 2, 'repeated receipt rows should become an explicit quantity');
 
+const postSubtotalNoise = parser.parseReceipt(`
+牛乳 218
+卵 258
+お買い上げ 小 計
+476
+サマーキャンペーン 500
+アンケート謝礼 100
+ポイント残高 2,000
+`);
+assert.deepEqual(
+  Array.from(postSubtotalNoise.items, (item) => item.name),
+  ['牛乳', '卵'],
+  'product-like text after subtotal must never become stock candidates'
+);
+assert.equal(postSubtotalNoise.stoppedAtSubtotal, true);
+assert.equal(postSubtotalNoise.subtotalLine, 'お買い上げ 小 計 476');
+assert.equal(postSubtotalNoise.rejected.length, 0, 'post-subtotal text should not be evaluated at all');
+
+for (const line of [
+  '小計 1,234',
+  '小 計 ¥1,234',
+  'お買上小計 ￥1,234',
+  'お買い上げ小計:1234',
+  '税込小計（8%） 1,234',
+  '課税対象小計 1,234',
+]) {
+  assert.equal(parser.isSubtotalBoundary(line), true, `subtotal variant should stop parsing: ${line}`);
+}
+assert.equal(parser.isSubtotalBoundary('小計算ドリル 398'), false, 'a product containing similar characters must not stop parsing');
+
 assert.doesNotMatch(source, /購入単価|レシート金額/);
-assert.match(source, /左側の税区分コード、価格、合計、読めない文字/);
+assert.match(source, /「小計」を見つけた時点で読み取りを終了/);
 assert.match(source, /要確認・未選択/);
 assert.match(source, /tessedit_pageseg_mode:'6'/);
 assert.match(source, /tsv:true/);
