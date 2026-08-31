@@ -26,7 +26,7 @@
  body.atk-density-ultra .homeStatusCard{padding:8px;border-radius:12px}.atk-density-ultra .homeStatusTitle{font-size:16px}.atk-density-ultra .homeMetrics{gap:3px;margin-top:5px}.atk-density-ultra .homeMetric{padding:4px 3px;border-radius:8px}.atk-density-ultra .homeMetric b{font-size:15px}.atk-density-ultra .homeBlock{padding:6px;margin-top:5px;border-radius:10px}.atk-density-ultra .homeBlockHead{margin-bottom:3px}.atk-density-ultra .homeQuickGrid,.atk-density-ultra .homeCats{gap:3px}.atk-density-ultra .homeQuick{padding:5px;border-radius:8px}.atk-density-ultra .homeCat{padding:4px 2px;border-radius:7px}.atk-density-ultra .tabs .tab{min-height:45px}
  `;
  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
- const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  function cv(cat){return CAT[cat]||CAT['家電・生活用品']}
  function vars(cat){const x=cv(cat);return `--c:${x.c};--bg:${x.bg};--bd:${x.bd}`}
  function days(exp){if(!exp)return 9999;const d=new Date(exp+'T00:00:00'),n=new Date();n.setHours(0,0,0,0);return Math.round((d-n)/86400000)}

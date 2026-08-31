@@ -6,6 +6,8 @@ on:
     paths:
       - 'atokore-live-v125/**'
       - 'atokore-trial-v12/family.js'
+      - 'tests/atokore-core.test.cjs'
+      - 'tests/atokore-actions.integration.test.cjs'
       - '.github/workflows/atokore-pages.yml'
   workflow_dispatch:
 
@@ -28,7 +30,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Atokore v12.5f public app
+      - name: Build and verify Atokore v12.5g
         run: |
           rm -rf _site
           mkdir -p _site
@@ -38,90 +40,30 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          p=Path('_site/index.html')
-          s=p.read_text()
+          root = Path('_site')
+          index = (root / 'index.html').read_text()
+          actions = (root / 'stability.js').read_text()
+          ui = (root / 'ui.js').read_text()
 
-          footer_css = '''
-          <style id="atokore-footer-v125e">
-          .tabs{background:#fff;border-top:1px solid #d9dee7;box-shadow:0 -6px 18px rgba(26,43,74,.08)}
-          .tab{position:relative;border-right:1px solid #eef2f7!important;min-height:58px;color:#7a8496}
-          .tab:last-child{border-right:0!important}
-          .tab b{display:flex;align-items:center;justify-content:center;height:24px;font-size:20px;line-height:1}
-          .tab[data-p='stock'] b{font-size:19px}
-          .tab[data-p='buy'] b{font-size:20px}
-          .tab[data-p='premium'] b{font-size:30px}
-          .tab.on{font-weight:900}
-          .tab[data-p='home'].on{background:#f3f5f8;color:#5f6b7d}
-          .tab[data-p='stock'].on{background:#eef5ff;color:#1f69c8}
-          .tab[data-p='add'].on{background:#edf4ff;color:#1367d1}
-          .tab[data-p='buy'].on{background:#fff4e9;color:#c36a09}
-          .tab[data-p='premium'].on{background:#f5efff;color:#7a4ed8}
-          .tab.on:before{content:'';position:absolute;left:18%;right:18%;top:0;height:3px;border-radius:0 0 6px 6px;background:currentColor;opacity:.7}
-          .tab[data-p='add'] b{width:30px;height:30px;margin:-4px auto 0;border-radius:50%;background:#1677ff;color:#fff;font-size:20px;box-shadow:0 4px 10px rgba(22,119,255,.24)}
-          .tab[data-p='add'].on b{background:#0d63d0}
-          </style>
-          '''
-          if 'atokore-footer-v125e' not in s:
-              s=s.replace('</head>', footer_css+'</head>')
+          assert '試用版 v12.5g' in index
+          assert 'final.css?v=125g' in index
+          assert index.count('stability.js?v=125g') == 1
+          assert 'selectionfix.js' not in index
+          assert 'family.js?v=125g' in index
+          assert 'location.replace' not in index
+          assert "window.__atokoreActionOwner=ACTION_OWNER" in actions
+          assert "const ACTION_OWNER='stability-v125g'" in actions
+          assert 'selectedBuyIdsV125f' not in actions
+          assert "'&quot;'" in ui
 
-          s=s.replace('<b>▣</b>在庫','<b>📦</b>在庫')
-          s=s.replace('<b>✓</b>買い物','<b>🛒</b>買い物')
-          s=s.replace('試用版 v12.5','試用版 v12.5f')
-          s=s.replace('stability.js?v=125','stability.js?v=125f')
-
-          family='<script src="./family.js?v=125f"></script>'
-          if family not in s:
-              s=s.replace('</body>', family+'<script>document.querySelector(".badge")&&(document.querySelector(".badge").textContent="試用版 v12.5f");</script></body>')
-          p.write_text(s)
-
-          u=Path('_site/ui.js')
-          t=u.read_text()
-          t=t.replace("stock:['▣','在庫']", "stock:['📦','在庫']")
-          t=t.replace("buy:['✓','買い物']", "buy:['🛒','買い物']")
-          u.write_text(t)
-
-          st=Path('_site/stability.js')
-          z=st.read_text()
-          helper=(
-              "  function selectedBuyIdsV125f(){\n"
-              "    const ids=[...document.querySelectorAll('#buyList .buyCheck:checked')].map(x=>Number(x.value)).filter(Number.isFinite);\n"
-              "    buySelected.clear();ids.forEach(id=>buySelected.add(id));\n"
-              "    return [...new Set(ids)];\n"
-              "  }\n"
-          )
-          if 'selectedBuyIdsV125f' not in z:
-              z=z.replace('  function updateBuyUI(){', helper+'  function updateBuyUI(){', 1)
-          z=z.replace("const n=buySelected.size, c=document.getElementById('buyManageCountV124')", "const n=document.querySelectorAll('#buyList .buyCheck:checked').length, c=document.getElementById('buyManageCountV124')")
-          z=z.replace('チェックした商品を削除・購入済みにできます','チェックした商品を削除・在庫へ反映できます')
-          z=z.replace('✓ 選択を購入済み','📦 選択を在庫へ反映')
-          z=z.replace("`✓ 選択${n?` ${n}件`:''}を購入済み`", "`📦 選択${n?` ${n}件`:''}を在庫へ反映`")
-          old_del="  window.deleteSelectedBuy=()=>{const ids=[...buySelected];if(!ids.length){alert('削除する商品を選んでください');return}if(!confirm(`選択した${ids.length}件を買い物リストから削除しますか？`))return;buys=Core.removeByIds(buys,ids);buySelected.clear();save();logHistory('買い物を一括削除',`${ids.length}件を削除`,'buy','🗑');render();toast(`${ids.length}件を削除`)};"
-          new_del="  window.deleteSelectedBuy=()=>{const ids=selectedBuyIdsV125f();if(!ids.length){alert('削除する商品を選んでください');return}if(!confirm(`選択した${ids.length}件を買い物リストから削除しますか？`))return;buys=Core.removeByIds(buys,ids);buySelected.clear();save();logHistory('買い物を一括削除',`${ids.length}件を削除`,'buy','🗑');renderBuy();if(typeof renderHome==='function')renderHome();toast(`${ids.length}件を削除`)};"
-          if old_del in z:
-              z=z.replace(old_del,new_del,1)
-          old_bought="  window.bought=()=>{const ids=[...buySelected];if(!ids.length){alert('購入済みにする商品を選んでください');return}const result=Core.purchase(items,buys,ids,inferCategory);buys=result.remaining;buySelected.clear();save();logHistory('購入済みにして在庫反映',`${result.count}件を在庫へ反映`,'buy','✓');render();toast(`${result.count}件を在庫へ反映`)};"
-          new_bought="  window.bought=()=>{const ids=selectedBuyIdsV125f();if(!ids.length){alert('在庫へ反映する商品を選んでください');return}const result=Core.purchase(items,buys,ids,inferCategory);if(!result.count){alert('在庫へ反映できませんでした');return}buys=result.remaining;buySelected.clear();save();logHistory('買い物から在庫へ反映',`${result.count}件を在庫へ反映`,'stock','📦');if(typeof renderStock==='function')renderStock();if(typeof renderBuy==='function')renderBuy();if(typeof renderHome==='function')renderHome();if(typeof go==='function')go('stock');toast(`${result.count}件を在庫へ反映しました`)};"
-          if old_bought in z:
-              z=z.replace(old_bought,new_bought,1)
-          st.write_text(z)
-
-          built=p.read_text()
-          ui=u.read_text()
-          stable=st.read_text()
-          assert 'location.replace' not in built
-          assert 'family.js?v=125f' in built
-          assert 'atokore-footer-v125e' in built
-          assert ".tab[data-p='premium'] b{font-size:30px}" in built
-          assert "stock:['📦','在庫']" in ui
-          assert "buy:['🛒','買い物']" in ui
-          assert 'stability.js?v=125f' in built
-          assert 'selectedBuyIdsV125f' in stable
-          assert 'チェックした商品を削除・在庫へ反映できます' in stable
-          assert '📦 選択を在庫へ反映' in stable
-          assert "alert('在庫へ反映する商品を選んでください')" in stable
-          assert "logHistory('買い物から在庫へ反映'" in stable
-          assert '購入済みにする商品を選んでください' not in stable
+          for src in re.findall(r'<script[^>]+src="([^"]+)"', index):
+              path = src.split('?', 1)[0].removeprefix('./')
+              assert (root / path).is_file(), f'missing script: {path}'
+          for href in re.findall(r'<link[^>]+href="([^"]+)"', index):
+              path = href.split('?', 1)[0].removeprefix('./')
+              assert (root / path).is_file(), f'missing stylesheet: {path}'
           PY
 
           node --check _site/receipt.js
@@ -130,8 +72,9 @@ jobs:
           node --check _site/history.js
           node --check _site/ui.js
           node --check _site/stability.js
-          node --check _site/selectionfix.js
           node --check _site/family.js
+          node tests/atokore-core.test.cjs
+          node tests/atokore-actions.integration.test.cjs
 
           mkdir -p _site/atokore
           find _site -maxdepth 1 -type f ! -name '.nojekyll' -exec cp {} _site/atokore/ \;

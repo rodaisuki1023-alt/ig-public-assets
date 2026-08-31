@@ -1,0 +1,51 @@
+.tabs{
+  background:#fff;
+  border-top:1px solid #d9dee7;
+  box-shadow:0 -6px 18px rgba(26,43,74,.08);
+}
+.tab{
+  position:relative;
+  min-height:58px;
+  color:#7a8496;
+  border-right:1px solid #eef2f7!important;
+}
+.tab:last-child{border-right:0!important}
+.tab b{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:24px;
+  font-size:20px;
+  line-height:1;
+}
+.tab[data-p='stock'] b{font-size:19px}
+.tab[data-p='buy'] b{font-size:20px}
+.tab[data-p='premium'] b{font-size:30px}
+.tab.on{font-weight:900}
+.tab[data-p='home'].on{background:#f3f5f8;color:#5f6b7d}
+.tab[data-p='stock'].on{background:#eef5ff;color:#1f69c8}
+.tab[data-p='add'].on{background:#edf4ff;color:#1367d1}
+.tab[data-p='buy'].on{background:#fff4e9;color:#c36a09}
+.tab[data-p='premium'].on{background:#f5efff;color:#7a4ed8}
+.tab.on::before{
+  content:'';
+  position:absolute;
+  top:0;
+  left:18%;
+  right:18%;
+  height:3px;
+  border-radius:0 0 6px 6px;
+  background:currentColor;
+  opacity:.7;
+}
+.tab[data-p='add'] b{
+  width:30px;
+  height:30px;
+  margin:-4px auto 0;
+  border-radius:50%;
+  background:#1677ff;
+  color:#fff;
+  font-size:20px;
+  box-shadow:0 4px 10px rgba(22,119,255,.24);
+}
+.tab[data-p='add'].on b{background:#0d63d0}

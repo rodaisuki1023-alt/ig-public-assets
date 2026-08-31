@@ -26,6 +26,7 @@
   const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
 
   const updates=[
+    {v:'v12.5g',title:'操作処理を最終統合',detail:'在庫・買い物の操作定義を1か所へ集約し、まとめて追加・在庫反映を含む成功通知を描画を止めない方式へ変更しました。'},
     {v:'v12.5',title:'在庫の複数選択→買い物をiPhone向けに再構築',detail:'ボタン押下時の実チェック状態を最優先し、反映後は他の画面更新処理に依存せず買い物画面へ直接反映するよう変更しました。'},
     {v:'v12.4',title:'操作系を総点検・安定化',detail:'在庫/買い物の選択・削除・一括削除・在庫→買い物・購入済み反映を1本の処理へ統合。買い物選択保持、カテゴリー復元、レシート店舗/日付編集も修正しました。'},
     {v:'v12.3',title:'在庫→買い物の一括移行を再修正',detail:'画面でチェックされている在庫を直接読み取り、反映確認後に買い物画面へ移動する方式に変更しました。'},
@@ -103,7 +104,7 @@
       ['saveRoutineName','いつものリスト名を変更','routine','↻'],['routineAddItem','いつものリストに追加','routine','↻'],
       ['routineAdjust','いつものリスト数量を変更','routine','↻'],['routineRemoveItem','いつものリストから削除','routine','↻'],
       ['deleteRoutine','いつものリストを削除','routine','🗑'],['addWholeRoutine','いつものリストを買い物へ反映','buy','🛒'],
-      ['addSelectedRoutine','いつものリストを買い物へ反映','buy','🛒'],['applyReceipt','レシートから在庫反映','receipt','🧾'],
+      ['addSelectedRoutine','いつものリストを買い物へ反映','buy','🛒'],['applyReceipt','レシートから在庫反映','receipt','🧾'],['receiptApplyV7','レシートから在庫反映','receipt','🧾'],
       ['applyParsedReceipt','レシートから在庫反映','receipt','🧾'],['applyParsedReceiptV7','レシートから在庫反映','receipt','🧾']
     ].forEach(x=>wrap(...x));
     wrap('commitBulkAddV9','まとめて在庫へ追加','stock','⚡');
@@ -122,7 +123,7 @@
     const premium=document.getElementById('pg-premium');
     if(premium&&!document.getElementById('historyCardV10')){const d=document.createElement('div');d.id='historyCardV10';d.className='row';d.setAttribute('role','button');d.tabIndex=0;d.innerHTML='<div class="grow"><div class="name">🕘 更新履歴</div><div class="meta">在庫・買い物の操作履歴 / アプリ更新内容</div></div>›';d.onclick=()=>window.openAtokoreHistory();premium.insertBefore(d,premium.firstChild?.nextSibling||premium.firstChild)}
   }
-  function renderHome(){const e=document.getElementById('historyHomeListV10');if(e)e.innerHTML=recentHtml(3)}
+  function renderHome(){const e=document.getElementById('historyHomeListV10');if(e)e.innerHTML=recentHtml(3);else if(document.getElementById('historyHomeV11')&&typeof window.renderHome==='function')window.renderHome()}
   function activityHtml(){
     const a=load();
     if(!a.length)return '<div class="empty">まだ操作履歴はありません。<br>v10以降の追加・数量変更・削除などを記録します。</div>';
