@@ -41,6 +41,7 @@
   style.id='atokore-actions-v125h';
   style.textContent=`
     .stableManage{border:1px solid #d7e0eb;background:#f8fbff;border-radius:15px;padding:9px;margin:7px 0 9px}.stableManageHead{display:flex;align-items:center;justify-content:space-between;gap:8px}.stableManageTitle{font-weight:950}.stableManageBtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}.stableManageBtns .btn{min-width:0;padding:8px 5px;font-size:11px}.stableDanger{background:#fff0f0!important;color:#b42318!important}.stableDone{background:#eaf7ef!important;color:#23724d!important}.stableBuyActions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:7px}.stableBuyStock{width:48px;flex:0 0 48px;padding:0 4px;background:#eaf7ef!important;color:#23724d!important;border:1px solid #c9ead7!important;font-size:11px;font-weight:950}.stableStockBuy{background:#edf6ff!important;color:#1268b3!important;border:1px solid #cde2f7!important}.stableCat{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;font-size:9px;font-weight:900;margin-top:3px}.stableStockRow{border-left:4px solid var(--cc)!important}.stableSelected{box-shadow:0 0 0 2px #1677ff22 inset;border-color:#1677ff!important}.stableCheck{width:22px;height:22px;flex:0 0 auto}.stableEmptyManage{display:none}.stableToast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:#172033;color:#fff;padding:9px 13px;border-radius:999px;font-size:12px;font-weight:850;z-index:100;opacity:0;transition:opacity .16s;white-space:nowrap;pointer-events:none}.stableToast.on{opacity:1}body.atk-density-ultra .stableManage{padding:5px;border-radius:9px;margin:4px 0}.atk-density-ultra .stableManageBtns{gap:3px;margin-top:4px}.atk-density-ultra .stableManageBtns .btn{padding:5px 3px;font-size:9px}.atk-density-ultra .stableBuyActions{margin-top:4px}`;
+  style.textContent+=`.stableManageBtns.hide{display:none!important}.stableManageBtns .btn:disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.2)}`;
   document.head.appendChild(style);
 
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -108,8 +109,8 @@
   function updateBuyUI(){
     const count=buySelected.size;
     const label=document.getElementById('buyManageCountV125h');if(label)label.textContent=`${count}件選択中`;
-    const del=document.getElementById('buyDeleteV125h');if(del)del.textContent=`🗑 選択${count?` ${count}件`:''}を削除`;
-    const done=document.getElementById('buyDoneV125h');if(done)done.textContent=`📦 選択${count?` ${count}件`:''}を在庫へ反映`;
+    const del=document.getElementById('buyDeleteV125h');if(del){del.textContent=`🗑 選択${count?` ${count}件`:''}を削除`;del.disabled=!count}
+    const done=document.getElementById('buyDoneV125h');if(done){done.textContent=`📦 選択${count?` ${count}件`:''}を在庫へ反映`;done.disabled=!count}
   }
 
   window.visibleStock=function(){

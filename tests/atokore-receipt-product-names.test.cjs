@@ -43,8 +43,8 @@ context.window = context;
 
 vm.runInNewContext(source, context, { filename: 'receipt.js' });
 
-const parser = context.__atokoreReceiptV125L;
-assert.ok(parser, 'v12.5l receipt parser API should be exposed for verification');
+const parser = context.__atokoreReceiptV125M;
+assert.ok(parser, 'v12.5m receipt parser API should be exposed for verification');
 
 const receiptText = `
 イオン上尾店
@@ -216,7 +216,7 @@ for (const line of [
 assert.equal(parser.isSubtotalBoundary('小計算ドリル 398'), false, 'a product containing similar characters must not stop parsing');
 
 assert.doesNotMatch(source, /購入単価|レシート金額/);
-assert.match(source, /「小計」を見つけた時点で読み取りを終了/);
+assert.match(source, /商品名と数量だけを読み取り、小計で終了します/);
 assert.match(source, /要確認・未選択/);
 assert.match(source, /receiptCompactTop/);
 assert.match(source, /receiptItemDetails/);

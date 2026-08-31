@@ -26,6 +26,7 @@
   const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
 
   const updates=[
+    {v:'v12.5m',title:'全画面の情報量と操作を整理',detail:'ホームは在庫があるカテゴリーだけ表示し、追加候補を6件に圧縮。未選択操作の無効化、Premium説明、家族共有・レシート・履歴画面も見やすく整理しました。'},
     {v:'v12.5l',title:'レシート確認をコンパクト化',detail:'通常は商品名と数量だけを確認し、単位・カテゴリー・OCR元行は詳細内へ収納。要確認商品だけ詳細を自動表示し、全選択・全解除も追加しました。'},
     {v:'v12.5k',title:'小計でレシート明細の読み取りを終了',detail:'小計・お買上小計などを検出した時点で解析を止め、支払い・ポイント・広告欄が商品候補に混ざる経路を防ぎました。'},
     {v:'v12.5j',title:'レシートOCRを行構造から再設計',detail:'税区分コード・価格・合計・読めない文字を除外し、確実な数量行と重複商品を数量へ反映。低信頼候補は未選択で確認できるようにしました。'},
@@ -135,7 +136,7 @@
     return a.map(h=>`<div class="historyItem"><div class="historyIcon">${esc(h.icon)}</div><div><div class="name">${esc(h.title)}</div><div class="historyDetail">${esc(h.detail)}</div></div><div class="historyTime">${fmt(h.ts)}</div></div>`).join('');
   }
   function updatesHtml(){return updates.map(u=>`<div class="historyItem"><div class="historyIcon">⬆</div><div><div class="name">${esc(u.title)}</div><div class="historyDetail">${esc(u.detail)}</div></div><div class="historyVersion">${u.v}</div></div>`).join('')}
-  function modalHtml(){return `<button class="close" onclick="closeM()">閉じる</button><h2>🕘 更新履歴</h2><div class="historyTabs"><button class="historyTab ${tab==='activity'?'on':''}" onclick="setAtokoreHistoryTab('activity')">操作履歴</button><button class="historyTab ${tab==='app'?'on':''}" onclick="setAtokoreHistoryTab('app')">アプリ更新</button></div><div id="historyModalBody">${tab==='activity'?activityHtml():updatesHtml()}</div>${tab==='activity'?'<button class="btn danger" style="width:100%;margin-top:12px" onclick="clearAtokoreHistory()">操作履歴を消去</button>':''}`}
+  function modalHtml(){return `<button class="close" onclick="closeM()">閉じる</button><h2>🕘 更新履歴</h2><div class="historyTabs"><button class="historyTab ${tab==='activity'?'on':''}" onclick="setAtokoreHistoryTab('activity')">操作履歴</button><button class="historyTab ${tab==='app'?'on':''}" onclick="setAtokoreHistoryTab('app')">アプリ更新</button></div><div id="historyModalBody">${tab==='activity'?activityHtml():updatesHtml()}</div>${tab==='activity'&&load().length?'<button class="btn danger" style="width:100%;margin-top:12px" onclick="clearAtokoreHistory()">操作履歴を消去</button>':''}`}
   window.openAtokoreHistory=()=>{ensureUI();openM(modalHtml())};
   window.setAtokoreHistoryTab=t=>{tab=t==='app'?'app':'activity';openM(modalHtml())};
   window.clearAtokoreHistory=()=>{if(!confirm('操作履歴をすべて消去しますか？'))return;store([]);renderHome();openM(modalHtml())};

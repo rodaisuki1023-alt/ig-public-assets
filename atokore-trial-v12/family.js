@@ -2,10 +2,11 @@
 (()=>{
   const KEY='atokoreFamilySafeV2', VER='atokoreFamilySafeVersionV2';
   const PREFIX='atokore-safe-';
-  let cfg=null, peer=null, leader=false, leaderConn=null, conns=new Map(), pollTimer=null, reconnectTimer=null;
+  let cfg=null, peer=null, leader=false, leaderConn=null, conns=new Map(), pollTimer=null, reconnectTimer=null, familyMode='create';
   let applying=false, lastHash='', version=0, peerLoading=false;
   const $=id=>document.getElementById(id);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const familyStyle=document.createElement('style');familyStyle.textContent='.familyModeTabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:12px 0}.familyModeTab{border:1px solid #dfe4ea;background:#fff;border-radius:11px;padding:10px 6px;font-weight:850;color:#475467}.familyModeTab.on{background:#eef6ff;border-color:#1677ff;color:#0b63ce}.familyModeHint{border-radius:11px;background:#f7f8fa;color:#667085;font-size:11px;line-height:1.5;padding:9px 10px;margin-bottom:10px}';document.head.appendChild(familyStyle);
   const load=(k,f=null)=>{try{let v=JSON.parse(localStorage.getItem(k)||'null');return v??f}catch(e){return f}};
   const saveJ=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
   const code=()=>{const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';return Array.from({length:8},()=>a[Math.floor(Math.random()*a.length)]).join('')};
@@ -88,21 +89,25 @@
     b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();openFamily()});top.appendChild(b);updateBtn();
   }
   function modal(html){if(typeof openM==='function')openM(html);else alert('家族共有画面を開けませんでした')}
-  function openFamily(){
+  function openFamily(mode=familyMode){
     cfg=load(KEY,null);version=Number(load(VER,0))||0;
     if(!cfg){
       const q=new URLSearchParams(location.search).get('family')||'';
-      modal(`<button class="close" onclick="closeM()">閉じる</button><h2>👥 家族共有</h2><p class="muted">在庫・買い物リスト・いつものリストを家族の端末と同期します。</p><div class="section">新しく家族を作る</div><div class="field"><div class="label">この端末の名前</div><input id="famSafeCreateName" placeholder="例：パパ"></div><button class="btn" style="width:100%" onclick="createFamilySafe()">家族コードを作る</button><div class="section">家族に参加</div><div class="field"><div class="label">家族コード</div><input id="famSafeJoinCode" maxlength="8" value="${esc(q)}" placeholder="8文字"></div><div class="field"><div class="label">この端末の名前</div><input id="famSafeJoinName" placeholder="例：ママ"></div><button class="btn ghost" style="width:100%" onclick="joinFamilySafe()">この家族に参加</button>`);
+      familyMode=q?'join':(mode==='join'?'join':'create');
+      const tabs=`<div class="familyModeTabs"><button class="familyModeTab ${familyMode==='create'?'on':''}" onclick="setFamilyModeSafe('create')">家族を作る</button><button class="familyModeTab ${familyMode==='join'?'on':''}" onclick="setFamilyModeSafe('join')">コードで参加</button></div>`;
+      const form=familyMode==='create'?`<div class="familyModeHint">最初の1台で家族コードを作り、あとから他の端末を招待します。</div><div class="field"><div class="label">この端末の名前</div><input id="famSafeCreateName" placeholder="例：自分のiPhone"></div><button class="btn" style="width:100%" onclick="createFamilySafe()">家族コードを作る</button>`:`<div class="familyModeHint">家族から届いた8文字のコードを入力すると、同じ在庫・買い物リストを使えます。</div><div class="field"><div class="label">家族コード</div><input id="famSafeJoinCode" maxlength="8" value="${esc(q)}" placeholder="8文字"></div><div class="field"><div class="label">この端末の名前</div><input id="famSafeJoinName" placeholder="例：自分のiPhone"></div><button class="btn" style="width:100%" onclick="joinFamilySafe()">この家族に参加</button>`;
+      modal(`<button class="close" onclick="closeM()">閉じる</button><h2>👥 家族共有</h2><p class="muted">在庫・買い物リスト・いつものリストを家族の端末と同期します。</p>${tabs}${form}`);
       return;
     }
     const on=onlineCount()>0;
-    modal(`<button class="close" onclick="closeM()">閉じる</button><h2>👥 家族共有</h2><div class="row"><div class="grow"><div class="name">${esc(cfg.deviceName)}</div><div class="meta">${on?`同期中 ${onlineCount()+1}台`:'接続待ち'}</div></div><span style="font-size:22px">${on?'🟢':'⚪️'}</span></div><div class="section">家族コード</div><div style="font-size:28px;font-weight:950;letter-spacing:.12em;text-align:center;padding:12px;border-radius:14px;background:#f2f6fb">${esc(cfg.familyCode)}</div><button class="btn" style="width:100%;margin-top:10px" onclick="shareFamilySafe()">奥さんに共有する</button><button class="btn ghost" style="width:100%;margin-top:8px" onclick="forceFamilySafeSync()">今すぐ同期</button><button class="btn danger" style="width:100%;margin-top:8px" onclick="leaveFamilySafe()">家族共有を解除</button><p class="muted" style="margin-top:10px">2台がオンラインになった時に自動同期します。普段の在庫・買い物操作には干渉しません。</p>`)
+    modal(`<button class="close" onclick="closeM()">閉じる</button><h2>👥 家族共有</h2><div class="row"><div class="grow"><div class="name">${esc(cfg.deviceName)}</div><div class="meta">${on?`同期中 ${onlineCount()+1}台`:'接続待ち'}</div></div><span style="font-size:22px">${on?'🟢':'⚪️'}</span></div><div class="section">家族コード</div><div style="font-size:28px;font-weight:950;letter-spacing:.12em;text-align:center;padding:12px;border-radius:14px;background:#f2f6fb">${esc(cfg.familyCode)}</div><button class="btn" style="width:100%;margin-top:10px" onclick="shareFamilySafe()">家族に共有する</button><button class="btn ghost" style="width:100%;margin-top:8px" onclick="forceFamilySafeSync()">今すぐ同期</button><button class="btn danger" style="width:100%;margin-top:8px" onclick="leaveFamilySafe()">家族共有を解除</button><p class="muted" style="margin-top:10px">2台がオンラインになった時に自動同期します。普段の在庫・買い物操作には干渉しません。</p>`)
   }
+  window.setFamilyModeSafe=mode=>{familyMode=mode==='join'?'join':'create';openFamily(familyMode)};
   window.createFamilySafe=()=>{const name=($('famSafeCreateName')?.value||'').trim()||'この端末';cfg={familyCode:code(),deviceId:device(),deviceName:name,created:true};version=Date.now();saveJ(KEY,cfg);saveJ(VER,version);lastHash=hash(state());loadPeer();openFamily()};
   window.joinFamilySafe=()=>{const c=norm($('famSafeJoinCode')?.value),name=($('famSafeJoinName')?.value||'').trim()||'この端末';if(c.length!==8){alert('8文字の家族コードを入力してください');return}cfg={familyCode:c,deviceId:device(),deviceName:name,created:false};version=0;saveJ(KEY,cfg);saveJ(VER,version);loadPeer();openFamily()};
   window.shareFamilySafe=async()=>{if(!cfg)return;const base=location.origin+location.pathname;const url=base+'?family='+encodeURIComponent(cfg.familyCode);const text=`あとこれの家族共有コード：${cfg.familyCode}\n${url}`;try{if(navigator.share)await navigator.share({title:'あとこれ 家族共有',text,url});else{await navigator.clipboard.writeText(text);alert('共有内容をコピーしました')}}catch(e){}};
   window.forceFamilySafeSync=()=>{if(!cfg)return;version=Date.now();saveJ(VER,version);const st=state();lastHash=hash(st);sendAll({type:'state',version,state:st,from:cfg.deviceId});alert('同期データを送信しました')};
   window.leaveFamilySafe=()=>{if(!confirm('家族共有を解除しますか？'))return;stopPeer();clearInterval(pollTimer);localStorage.removeItem(KEY);localStorage.removeItem(VER);cfg=null;version=0;updateBtn();closeM()};
-  function init(){ensureBtn();cfg=load(KEY,null);version=Number(load(VER,0))||0;if(cfg)loadPeer();const q=new URLSearchParams(location.search).get('family');if(q&&!cfg)setTimeout(openFamily,500)}
+  function init(){ensureBtn();cfg=load(KEY,null);version=Number(load(VER,0))||0;if(cfg)loadPeer();const q=new URLSearchParams(location.search).get('family');if(q&&!cfg){familyMode='join';setTimeout(()=>openFamily('join'),500)}}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,100));else setTimeout(init,100);
 })();

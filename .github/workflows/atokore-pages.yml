@@ -32,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build and verify Atokore v12.5l
+      - name: Build and verify Atokore v12.5m
         run: |
           rm -rf _site
           mkdir -p _site
@@ -49,23 +49,25 @@ jobs:
           actions = (root / 'stability.js').read_text()
           receipt = (root / 'receipt.js').read_text()
           ui = (root / 'ui.js').read_text()
+          history = (root / 'history.js').read_text()
+          family = (root / 'family.js').read_text()
 
-          assert '試用版 v12.5l' in index
-          assert 'final.css?v=125l' in index
-          assert index.count('stability.js?v=125l') == 1
+          assert '試用版 v12.5m' in index
+          assert 'final.css?v=125m' in index
+          assert index.count('stability.js?v=125m') == 1
           assert 'selectionfix.js' not in index
-          assert 'family.js?v=125l' in index
+          assert 'family.js?v=125m' in index
           assert 'location.replace' not in index
           assert "window.__atokoreActionOwner=ACTION_OWNER" in actions
           assert "const ACTION_OWNER='stability-v125h'" in actions
           assert 'buyOneToStockV125H' in actions
           assert 'id="receiptCamera"' in receipt
           assert 'id="receiptFile"' in receipt
-          assert 'window.__atokoreReceiptV125L' in receipt
+          assert 'window.__atokoreReceiptV125M' in receipt
           assert 'tessedit_pageseg_mode' in receipt
           assert 'tsv:true' in receipt
           assert '要確認・未選択' in receipt
-          assert '「小計」を見つけた時点で読み取りを終了' in receipt
+          assert '商品名と数量だけを読み取り、小計で終了します' in receipt
           assert 'stoppedAtSubtotal' in receipt
           assert 'receiptCompactTop' in receipt
           assert 'receiptItemDetails' in receipt
@@ -74,6 +76,13 @@ jobs:
           assert '購入単価' not in receipt
           assert 'レシート金額' not in receipt
           assert 'selectedBuyIdsV125f' not in actions
+          assert 'stableManageBtns.hide' in actions
+          assert 'del.disabled=!count' in actions
+          assert 'premiumIntroV125m' in ui
+          assert 'catalogLimit=6' in ui
+          assert "tab==='activity'&&load().length" in history
+          assert 'familyModeTabs' in family
+          assert '#receiptAnalyzeBtn:disabled' in receipt
           assert "'&quot;'" in ui
 
           for src in re.findall(r'<script[^>]+src="([^"]+)"', index):
