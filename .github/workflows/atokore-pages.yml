@@ -32,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build and verify Atokore v12.5k
+      - name: Build and verify Atokore v12.5l
         run: |
           rm -rf _site
           mkdir -p _site
@@ -50,23 +50,27 @@ jobs:
           receipt = (root / 'receipt.js').read_text()
           ui = (root / 'ui.js').read_text()
 
-          assert '試用版 v12.5k' in index
-          assert 'final.css?v=125k' in index
-          assert index.count('stability.js?v=125k') == 1
+          assert '試用版 v12.5l' in index
+          assert 'final.css?v=125l' in index
+          assert index.count('stability.js?v=125l') == 1
           assert 'selectionfix.js' not in index
-          assert 'family.js?v=125k' in index
+          assert 'family.js?v=125l' in index
           assert 'location.replace' not in index
           assert "window.__atokoreActionOwner=ACTION_OWNER" in actions
           assert "const ACTION_OWNER='stability-v125h'" in actions
           assert 'buyOneToStockV125H' in actions
           assert 'id="receiptCamera"' in receipt
           assert 'id="receiptFile"' in receipt
-          assert 'window.__atokoreReceiptV125K' in receipt
+          assert 'window.__atokoreReceiptV125L' in receipt
           assert 'tessedit_pageseg_mode' in receipt
           assert 'tsv:true' in receipt
           assert '要確認・未選択' in receipt
           assert '「小計」を見つけた時点で読み取りを終了' in receipt
           assert 'stoppedAtSubtotal' in receipt
+          assert 'receiptCompactTop' in receipt
+          assert 'receiptItemDetails' in receipt
+          assert 'receiptSelectAllV7' in receipt
+          assert '通常は商品名と数量だけ確認してください' in receipt
           assert '購入単価' not in receipt
           assert 'レシート金額' not in receipt
           assert 'selectedBuyIdsV125f' not in actions
