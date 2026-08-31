@@ -9,6 +9,7 @@ on:
       - 'tests/atokore-core.test.cjs'
       - 'tests/atokore-actions.integration.test.cjs'
       - 'tests/atokore-receipt-input.test.cjs'
+      - 'tests/atokore-receipt-product-names.test.cjs'
       - '.github/workflows/atokore-pages.yml'
   workflow_dispatch:
 
@@ -31,7 +32,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build and verify Atokore v12.5h
+      - name: Build and verify Atokore v12.5i
         run: |
           rm -rf _site
           mkdir -p _site
@@ -49,17 +50,21 @@ jobs:
           receipt = (root / 'receipt.js').read_text()
           ui = (root / 'ui.js').read_text()
 
-          assert '試用版 v12.5h' in index
-          assert 'final.css?v=125h' in index
-          assert index.count('stability.js?v=125h') == 1
+          assert '試用版 v12.5i' in index
+          assert 'final.css?v=125i' in index
+          assert index.count('stability.js?v=125i') == 1
           assert 'selectionfix.js' not in index
-          assert 'family.js?v=125h' in index
+          assert 'family.js?v=125i' in index
           assert 'location.replace' not in index
           assert "window.__atokoreActionOwner=ACTION_OWNER" in actions
           assert "const ACTION_OWNER='stability-v125h'" in actions
           assert 'buyOneToStockV125H' in actions
           assert 'id="receiptCamera"' in receipt
           assert 'id="receiptFile"' in receipt
+          assert 'window.__atokoreReceiptV125I' in receipt
+          assert '商品名だけをOCRで抽出します' in receipt
+          assert '購入単価' not in receipt
+          assert 'レシート金額' not in receipt
           assert 'selectedBuyIdsV125f' not in actions
           assert "'&quot;'" in ui
 
@@ -81,6 +86,7 @@ jobs:
           node tests/atokore-core.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
+          node tests/atokore-receipt-product-names.test.cjs
 
           mkdir -p _site/atokore
           find _site -maxdepth 1 -type f ! -name '.nojekyll' -exec cp {} _site/atokore/ \;
