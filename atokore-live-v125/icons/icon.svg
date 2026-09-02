@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">あとこれ</title>
+  <rect width="512" height="512" rx="112" fill="#1677ff"/>
+  <circle cx="390" cy="122" r="42" fill="#ffd166"/>
+  <path d="M116 181c0-22 18-40 40-40h200c22 0 40 18 40 40v38H116v-38Z" fill="#dceaff"/>
+  <path d="M96 219h320v146c0 26-21 47-47 47H143c-26 0-47-21-47-47V219Z" fill="#fff"/>
+  <path d="M166 279h116" fill="none" stroke="#1677ff" stroke-linecap="round" stroke-width="24"/>
+  <path d="m300 332 30 30 65-72" fill="none" stroke="#16a06a" stroke-linecap="round" stroke-linejoin="round" stroke-width="24"/>
+</svg>

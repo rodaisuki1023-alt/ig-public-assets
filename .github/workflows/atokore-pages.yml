@@ -10,6 +10,7 @@ on:
       - 'tests/atokore-actions.integration.test.cjs'
       - 'tests/atokore-receipt-input.test.cjs'
       - 'tests/atokore-receipt-product-names.test.cjs'
+      - 'tests/atokore-pwa.test.cjs'
       - '.github/workflows/atokore-pages.yml'
   workflow_dispatch:
 
@@ -32,7 +33,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build and verify Atokore v12.5m
+      - name: Build and verify Atokore v12.5m PWA
         run: |
           rm -rf _site
           mkdir -p _site
@@ -51,6 +52,8 @@ jobs:
           ui = (root / 'ui.js').read_text()
           history = (root / 'history.js').read_text()
           family = (root / 'family.js').read_text()
+          pwa = (root / 'pwa.js').read_text()
+          worker = (root / 'service-worker.js').read_text()
 
           assert '試用版 v12.5m' in index
           assert 'final.css?v=125m' in index
@@ -84,6 +87,19 @@ jobs:
           assert 'familyModeTabs' in family
           assert '#receiptAnalyzeBtn:disabled' in receipt
           assert "'&quot;'" in ui
+          assert 'rel="manifest" href="./manifest.webmanifest"' in index
+          assert 'rel="apple-touch-icon" href="./icons/icon-180.png"' in index
+          assert 'name="apple-mobile-web-app-capable" content="yes"' in index
+          assert 'pwa.js?v=pwa1' in index
+          assert "serviceWorker.register('./service-worker.js'" in pwa
+          assert "const CACHE_NAME = 'atokore-pwa-v1'" in worker
+
+          manifest = __import__('json').loads((root / 'manifest.webmanifest').read_text())
+          assert manifest['name'] == 'あとこれ｜家庭の在庫・買い物リスト'
+          assert manifest['display'] == 'standalone'
+          assert manifest['start_url'] == './?source=pwa'
+          for icon in ['icon-180.png', 'icon-192.png', 'icon-512.png']:
+              assert (root / 'icons' / icon).is_file(), f'missing PWA icon: {icon}'
 
           for src in re.findall(r'<script[^>]+src="([^"]+)"', index):
               path = src.split('?', 1)[0].removeprefix('./')
@@ -100,13 +116,17 @@ jobs:
           node --check _site/ui.js
           node --check _site/stability.js
           node --check _site/family.js
+          node --check _site/pwa.js
+          node --check _site/service-worker.js
           node tests/atokore-core.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
+          node tests/atokore-pwa.test.cjs
 
           mkdir -p _site/atokore
           find _site -maxdepth 1 -type f ! -name '.nojekyll' -exec cp {} _site/atokore/ \;
+          cp -R _site/icons _site/atokore/icons
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
