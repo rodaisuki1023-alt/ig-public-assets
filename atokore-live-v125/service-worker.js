@@ -10,6 +10,7 @@ const APP_SHELL = [
   './ui.js',
   './stability.js',
   './family.js',
+  './baby-visuals.js',
   './pwa.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
