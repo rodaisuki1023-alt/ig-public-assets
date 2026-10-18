@@ -4,7 +4,7 @@
 
 ## Stage 0 / 現状の正常化（優先・P0）
 - [ ] main更新確認。既存操作テスト：増減、買い物、OCR、端末再起動、PWA起動、iPhone Safari。
-- [ ] atokore-live-v125 内の欠損 `family.js` を適切に修正。Service Worker に存在しないURLをプリキャッシュさせない。
+- [ ] GitHub Pagesのビルドは `atokore-trial-v12/family.js` を `_site/family.js` にコピーすることを確認済み。GitHub Pagesと別のホスティング経路を比較し、family.jsとPWAのプリキャッシュ対象が各配布先で存在するか監査。必要な経路だけ修正する。
 - [ ] `atokoreTrialV4` のエクスポートと取り込み・復旧導線を作る。既存ユーザーの在庫を初期化しない。
 - [ ] 2端末同時更新、ネットワーク断、iOS PWA再起動の観測値を記録。
 - 完了条件：現行主要機能の回帰試験が通過。公開サイトのデプロイや実データ削除なし。
