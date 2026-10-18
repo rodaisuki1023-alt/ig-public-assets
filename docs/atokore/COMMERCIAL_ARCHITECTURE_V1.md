@@ -11,7 +11,7 @@
 ## 1. 既存コード監査（main: 20049405d3bc214bc7bb1dbd3280bef55bab16f5）
 - atokore-live-v125/index.html は items / buys / routines を localStorage.atokoreTrialV4 に保存。例の「オムツ」はブランド・種類・サイズを持たない。
 - receipt.js の入庫は商品名と単位を主に使って同一在庫を判定する。『パンパース M パンツ』と『グーン M パンツ』、同ブランドでも別サイズ等の誤統合を防ぐSKU基準が必要。
-- atokore-live-v125/index.html、service-worker.js が family.js を参照するが、同ディレクトリにファイルは存在しない。家族共有の配布前に起動経路を統一する。
+- atokore-live-v125/index.html、service-worker.js が family.js を参照するが、ソースディレクトリには存在しない。ただし `.github/workflows/atokore-pages.yml` が `atokore-trial-v12/family.js` を `_site/family.js` へコピーして配布する。GitHub Pagesの配布物では解消され得るため、ソース欠損だけを実機障害と断定せず、別デプロイ経路の差異を監査する。
 - v12 の家族共有実装は端末間P2P方式。常時同期・オフライン復旧・同時編集競合を商用版の仕様とみなさない。
 
 ## 2. 4つの分離境界（データ構造だけでなく運用でも分離）
