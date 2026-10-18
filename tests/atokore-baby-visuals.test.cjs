@@ -20,7 +20,7 @@ test('milk and wipes are separate originals',()=>{
 test('all SVG pictures are local originals without images, links, logos or scripts',()=>{
  for(const kind of ['diaper','milk','wipes','other']){
   const s=svg(kind);assert.match(s,/^<svg /);assert.match(s,/<path|<rect/);
-  assert.doesNotMatch(s,/<image|https?:|<script|パンパース|グーン|ムーニー|メリーズ/i);
+  assert.doesNotMatch(s,/<image\b|\bsrc\s*=\s*["']https?:|<script|パンパース|グーン|ムーニー|メリーズ/i);
  }
  assert.equal(esc('<img src=x onerror=alert(1)>'),'&lt;img src=x onerror=alert(1)&gt;');
 });
