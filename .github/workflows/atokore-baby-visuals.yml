@@ -1,0 +1,32 @@
+name: Atokore Baby Visuals Check
+
+on:
+  pull_request:
+    paths:
+      - 'atokore-live-v125/**'
+      - 'tests/atokore-baby-visuals.test.cjs'
+      - '.github/workflows/atokore-baby-visuals.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Lint and test original icons
+        run: |
+          node --check atokore-live-v125/baby-visuals.js
+          node --test tests/atokore-baby-visuals.test.cjs
+      - name: Existing behavior regressions
+        run: |
+          node tests/atokore-core.test.cjs
+          node tests/atokore-actions.integration.test.cjs
+          node tests/atokore-receipt-input.test.cjs
+          node tests/atokore-receipt-product-names.test.cjs
+          node tests/atokore-pwa.test.cjs
