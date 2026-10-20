@@ -27,7 +27,7 @@ test('original identifiable silhouettes for individual food and household produc
  assert.ok(art.keys.length>=30);
 });
 test('compact quick-add uses text only while the stock list shows distinct icons',()=>{
- const {dom,w,$}=browser();w.atkOpenAdd();
+ const {dom,w,$}=browser();w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');
  assert.equal($('qaTiles').querySelectorAll('.qa-icon').length,0);
  for(const name of ['玉ねぎ','にんじん','卵']){
   const button=$('qaTiles').querySelector('[data-qa-pick="'+name+'"]');
@@ -70,5 +70,5 @@ test('offline app includes the new glyph library before the UI and cache is bump
  assert.ok(html.indexOf('product-icons.js')<html.indexOf('quick-add.js'));
  assert.match(sw,/'\.\/product-icons.js'/);
  assert.match(sw,/'\.\/compact-add.css'/);
- assert.match(sw,/atokore-pwa-v16/);
+ assert.match(sw,/atokore-pwa-v17/);
 });
