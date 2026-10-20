@@ -71,6 +71,8 @@ function shape(k,color){
  }
 }
 function iconFor(name,cat='食料品'){
+ const individual=root.AtokoreIndividualIcons?.icon(name);
+ if(individual)return individual;
  const k=kindOf(name,cat),[bg,line]=COLOR[k];
  return '<span class="qa-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="42" height="42" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="14" fill="'+bg+'"/>'+shape(k,line)+'</svg></span>';
 }
@@ -141,7 +143,7 @@ function renderItems(){
   const cat=state.cat==='その他'?(Object.keys(C).find(c=>catalog(c).includes(n))||'日用品'):state.cat;
   const qty=selected.get(modelKey({cat,name:n,unit:defaultUnit(n,cat)}));
   return '<button type="button" class="qa-tile '+(qty?'picked':'')+'" data-qa-pick="'+safe(n)+'" data-qa-tilecat="'+safe(cat)+'" aria-label="'+safe(n)+'を追加">'+
-   iconFor(n,cat)+'<span class="qa-name">'+safe(n)+'</span><span class="qa-tile-add">'+(qty?qty:'＋')+'</span></button>';
+   '<span class="qa-name">'+safe(n)+'</span><span class="qa-tile-add">'+(qty?qty:'＋')+'</span></button>';
  }).join('') || '<div class="qa-no-results">該当する商品がありません。下の自由入力から追加できます。</div>';
  const more=$('qaMore');if(more){more.hidden=total<=visible.length;more.textContent='さらに表示（全'+total+'件）'}
 }
@@ -154,7 +156,7 @@ function renderRecent(){
   if(state.cat!=='その他'&&state.cat!==x.cat)continue;
   seen.add(modelKey(x));names.push(x);
  }
- container.innerHTML=names.length?'<div class="qa-subtitle">最近登録した商品</div><div class="qa-recent">'+names.map((x,i)=>'<button type="button" data-qa-recent="'+i+'">'+iconFor(x.name,x.cat)+'<span>'+safe(x.name)+'</span><b>＋</b></button>').join('')+'</div>':'';
+ container.innerHTML=names.length?'<div class="qa-subtitle">最近登録した商品</div><div class="qa-recent">'+names.map((x,i)=>'<button type="button" data-qa-recent="'+i+'"><span>'+safe(x.name)+'</span><b>＋</b></button>').join('')+'</div>':'';
  container.__qaItems=names;
 }
 function babyBrands(){
@@ -302,7 +304,7 @@ function decorateRows(query){
   const title=row.querySelector('.name'),badge=row.querySelector('.atk-row-brand');
   if(!title||!badge||badge.classList.contains('qa-picture-badge'))return;
   const kind=kindOf(title.title||title.textContent,'食料品');
-  if(kind==='other'||kind==='baby')return;
+  if(kind==='baby'||(kind==='other'&&!root.AtokoreIndividualIcons?.resolve(title.title||title.textContent)))return;
   if(badge.classList.contains('atk-row-generic')){
    badge.classList.add('qa-picture-badge');
    badge.innerHTML=iconFor(title.title||title.textContent,'食料品');
@@ -316,7 +318,7 @@ function decorateHome(){
   const card=node.closest('.atk-item-card');
   const name=card?.querySelector('.atk-item-copy strong')?.textContent||'';
   const kind=kindOf(name);
-  if(kind==='other')return;
+  if(kind==='other'&&!root.AtokoreIndividualIcons?.resolve(name))return;
   node.classList.add('qa-picture-badge');node.innerHTML=iconFor(name);
  });
 }
