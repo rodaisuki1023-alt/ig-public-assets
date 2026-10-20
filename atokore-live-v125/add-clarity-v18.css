@@ -1,0 +1,36 @@
+/* V18: make all floating actions context-aware and keep sheets unobstructed. */
+body.atk-v18 #bfAddFab[hidden],
+body.atk-v18:has(#modal.on) #bfAddFab,
+body.atk-v18:has(#pg-add.on) #bfAddFab{
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+body.atk-v18 #bfAddFab:not([hidden]){
+  z-index:30!important; /* The sheet has z-index 50 and always stays above actions. */
+  min-height:49px!important;
+  padding:0 16px!important;
+  font-size:13px!important;
+  right:max(14px,calc((100vw - 640px)/2 + 18px))!important;
+  bottom:calc(83px + env(safe-area-inset-bottom,0px))!important;
+}
+body.atk-v18 #pg-add .qa-baby-save-note{
+  font-size:11px;
+  line-height:1.55;
+  color:#8B746B;
+  text-align:center;
+  margin:-4px 1px 8px;
+}
+body.atk-v18 #pg-add .qa-baby-add{min-height:51px!important;line-height:1.4!important;font-size:14px!important}
+body.atk-v18 #pg-add .qa-tray{
+  position:sticky!important;
+  bottom:calc(75px + env(safe-area-inset-bottom,0px))!important;
+}
+body.atk-v18 #pg-add .bf-destination button.selected{
+  outline:1px solid #B97059;
+  outline-offset:-1px;
+}
+body.atk-v18 #modal.on{z-index:150!important}
+@media(max-width:365px){
+ body.atk-v18 #bfAddFab:not([hidden]){right:10px!important;font-size:12px!important;padding:0 13px!important}
+}

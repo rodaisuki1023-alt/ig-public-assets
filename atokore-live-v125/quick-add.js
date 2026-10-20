@@ -10,7 +10,7 @@ const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'
 const BABY={
  diaper:{brands:['パンパース','グーン','マミーポコ','ムーニー','メリーズ'],types:['パンツ','テープ'],sizes:['新生児','S','M','L','ビッグ','ビッグより大きい']},
  milk:{brands:['明治','和光堂','森永','ビーンスターク','アイクレオ'],types:['缶','キューブ','スティック','液体']},
- wipes:{brands:[],types:[]}
+ wipes:{brands:['ムーニー','グーン','パンパース','メリーズ','ピジョン','レック','アカチャンホンポ','西松屋'],types:['詰替','本体']}
 };
 const TOP={
  '食料品':['卵','牛乳','鶏むね肉','豚こま肉','玉ねぎ','にんじん','じゃがいも','トマト','キャベツ','ブロッコリー','バナナ','りんご','豆腐','納豆','食パン','米','鮭','ヨーグルト','冷凍うどん','麦茶','味噌','チーズ'],
@@ -71,6 +71,8 @@ function shape(k,color){
  }
 }
 function iconFor(name,cat='食料品'){
+ const individual=root.AtokoreIndividualIcons?.icon(name);
+ if(individual)return individual;
  const k=kindOf(name,cat),[bg,line]=COLOR[k];
  return '<span class="qa-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="42" height="42" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="14" fill="'+bg+'"/>'+shape(k,line)+'</svg></span>';
 }
@@ -106,7 +108,7 @@ function buildBatch(existing,selected,time=Date.now()){
  }
  return next;
 }
-const state={cat:'食料品',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',qty:1,committing:false};
+const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',qty:1,committing:false};
 function addLine(entry){
  const v=validateLine(entry),found=state.tray.find(x=>modelKey(x)===modelKey(v));
  if(found)found.qty=Math.min(999,found.qty+v.qty);
@@ -115,7 +117,7 @@ function addLine(entry){
 }
 function renderNav(){
  const el=$('qaTabs');if(!el)return;
- const tabs=[['食料品','食品'],['日用品','日用品'],['ベビー','ベビー'],['衛生・薬','衛生・薬'],['その他','その他']];
+ const tabs=[['ベビー','ベビー'],['食料品','食品'],['日用品','日用品'],['衛生・薬','衛生・薬'],['その他','その他']];
  el.innerHTML=tabs.map(([cat,label])=>'<button type="button" class="'+(state.cat===cat?'selected':'')+'" data-qa-cat="'+safe(cat)+'">'+label+'</button>').join('');
 }
 function groupOptions(){
@@ -141,7 +143,7 @@ function renderItems(){
   const cat=state.cat==='その他'?(Object.keys(C).find(c=>catalog(c).includes(n))||'日用品'):state.cat;
   const qty=selected.get(modelKey({cat,name:n,unit:defaultUnit(n,cat)}));
   return '<button type="button" class="qa-tile '+(qty?'picked':'')+'" data-qa-pick="'+safe(n)+'" data-qa-tilecat="'+safe(cat)+'" aria-label="'+safe(n)+'を追加">'+
-   iconFor(n,cat)+'<span class="qa-name">'+safe(n)+'</span><span class="qa-tile-add">'+(qty?qty:'＋')+'</span></button>';
+   '<span class="qa-name">'+safe(n)+'</span><span class="qa-tile-add">'+(qty?qty:'＋')+'</span></button>';
  }).join('') || '<div class="qa-no-results">該当する商品がありません。下の自由入力から追加できます。</div>';
  const more=$('qaMore');if(more){more.hidden=total<=visible.length;more.textContent='さらに表示（全'+total+'件）'}
 }
@@ -154,7 +156,7 @@ function renderRecent(){
   if(state.cat!=='その他'&&state.cat!==x.cat)continue;
   seen.add(modelKey(x));names.push(x);
  }
- container.innerHTML=names.length?'<div class="qa-subtitle">最近登録した商品</div><div class="qa-recent">'+names.map((x,i)=>'<button type="button" data-qa-recent="'+i+'">'+iconFor(x.name,x.cat)+'<span>'+safe(x.name)+'</span><b>＋</b></button>').join('')+'</div>':'';
+ container.innerHTML=names.length?'<div class="qa-subtitle">最近登録した商品</div><div class="qa-recent">'+names.map((x,i)=>'<button type="button" data-qa-recent="'+i+'"><span>'+safe(x.name)+'</span><b>＋</b></button>').join('')+'</div>':'';
  container.__qaItems=names;
 }
 function babyBrands(){
@@ -171,23 +173,40 @@ function chooseBabyField(type,val){
 function renderBaby(){
  const el=$('qaBaby');if(!el)return;
  const b=state.kind;
- el.innerHTML='<div class="qa-baby-kind">'+[['diaper','おむつ'],['milk','粉ミルク'],['wipes','おしりふき']].map(([k,n])=>'<button class="'+(b===k?'selected':'')+'" data-qa-baby="kind" data-value="'+k+'">'+n+'</button>').join('')+'</div>'+
- (b==='wipes'?'<div class="qa-baby-note">おしりふきは下の「追加予定へ」で登録できます。</div>':
-  '<div class="qa-subtitle">① ブランドを選ぶ</div><div class="qa-brand-chips">'+babyBrands().map((n,i)=>'<button class="'+(state.brand===n?'selected':'')+'" data-qa-baby="brand" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
-  '<div class="qa-subtitle">② 種類を選ぶ</div><div class="qa-option-chips">'+BABY[b].types.map(n=>'<button class="'+(state.type===n?'selected':'')+'" data-qa-baby="type" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
-  (b==='diaper'?'<div class="qa-subtitle">③ サイズを選ぶ</div><div class="qa-option-chips">'+BABY[b].sizes.map(n=>'<button class="'+(state.size===n?'selected':'')+'" data-qa-baby="size" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>':''))+
- '<details class="qa-baby-extra"><summary>シリーズを指定する（任意）</summary><input id="qaBabySeries" placeholder="例：さらさらケア" value="'+safe(state.series)+'" maxlength="45"></details>'+
- '<div class="qa-baby-bottom"><label>数量 <span>−／＋で調整</span></label><div class="qa-step"><button data-qa-step="-1" type="button" aria-label="減らす">−</button><b id="qaBabyQty">'+state.qty+'</b><button data-qa-step="1" type="button" aria-label="増やす">＋</button></div></div>'+
- '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ 追加予定に入れる</button>';
+ const suggestions={
+  'パンパース':['さらさらケア','肌へのいちばん','おやすみパンツ'],
+  'グーン':['ぐんぐん吸収','モレ0へ','ナイト'],
+  'マミーポコ':['マミーポコパンツ','夜用パンツ'],
+  'ムーニー':['ムーニーマン','低刺激であんしん','オヤスミマン'],
+  'メリーズ':['ずっと肌さら','ファーストプレミアム','ぐっすりパンツ'],
+  '明治':['ほほえみ','ステップ'],
+  '森永':['はぐくみ','E赤ちゃん','チルミル'],
+  '和光堂':['はいはい','ぐんぐん'],
+  'ビーンスターク':['すこやかM1','つよいこ'],
+  'アイクレオ':['バランスミルク','フォローアップミルク']
+ };
+ const icon=kind=>root.AtokoreBabyKit?.icon(kind)||'';
+ const sizes=b==='diaper'?'<div class="qa-subtitle">③ サイズ</div><div class="qa-option-chips">'+BABY[b].sizes.map(n=>'<button type="button" class="'+(state.size===n?'selected':'')+'" data-qa-baby="size" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>':'';
+ const lines=(suggestions[state.brand]||[]).map(n=>'<button type="button" class="'+(state.series===n?'selected':'')+'" data-qa-baby="series" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('');
+ el.innerHTML='<div class="qa-baby-intro"><span class="qa-baby-intro-icon">'+icon(b)+'</span><span><strong>'+({diaper:'おむつ',milk:'ミルク',wipes:'おしりふき'}[b])+'を追加</strong><small>メーカー・種類・サイズを選ぶだけ</small></span></div>'+
+ '<div class="qa-baby-kind">'+[['diaper','おむつ'],['milk','ミルク'],['wipes','おしりふき']].map(([k,n])=>'<button type="button" class="'+(b===k?'selected':'')+'" data-qa-baby="kind" data-value="'+k+'">'+icon(k)+'<span>'+n+'</span></button>').join('')+'</div>'+
+ '<div class="qa-subtitle">① ブランド</div><div class="qa-brand-chips">'+babyBrands().map(n=>'<button type="button" class="'+(state.brand===n?'selected':'')+'" data-qa-baby="brand" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
+ '<div class="qa-subtitle">② '+(b==='wipes'?'包装':'種類')+'</div><div class="qa-option-chips">'+BABY[b].types.map(n=>'<button type="button" class="'+(state.type===n?'selected':'')+'" data-qa-baby="type" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
+ sizes+
+ (lines?'<div class="qa-subtitle">商品シリーズ（任意）</div><div class="qa-option-chips qa-lines">'+lines+'</div>':'')+
+ '<details class="qa-baby-extra"><summary>シリーズを自分で入力する（任意）</summary><input id="qaBabySeries" maxlength="45" placeholder="例：さらさらケア" value="'+safe(state.series)+'"></details>'+
+ '<div class="qa-baby-bottom"><label>数量 <span>パック・缶などの個数</span></label><div class="qa-step"><button data-qa-step="-1" type="button" aria-label="減らす">−</button><b id="qaBabyQty">'+state.qty+'</b><button data-qa-step="1" type="button" aria-label="増やす">＋</button></div></div>'+
+ '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ ストックに追加</button>'+ 
+ '<p class="qa-baby-save-note">商品を選択後、下の「まとめて追加」で保存されます。</p>';
+ renderDestination();
 }
 function addBaby(){
- if(state.kind==='wipes')return addLine({cat:'ベビー',name:'おしりふき',qty:state.qty,unit:'パック'});
  if(!state.brand||!state.type||(state.kind==='diaper'&&!state.size)){
   notify('ブランド・種類・サイズ（おむつの場合）を選んでください');return;
  }
- const desc=[state.brand,state.series,state.kind==='diaper'?'おむつ':'粉ミルク',state.type,state.kind==='diaper'?state.size:''].filter(Boolean).join(' ');
- addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
- notify('追加予定に入れました');
+ const desc=[state.brand,state.series,state.kind==='diaper'?'おむつ':state.kind==='milk'?'粉ミルク':'おしりふき',state.type,state.kind==='diaper'?state.size:''].filter(Boolean).join(' ');
+ addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.kind==='wipes'?'パック':state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
+ notify('商品を選択しました。下のボタンでまとめて保存できます');
 }
 function renderTray(){
  const box=$('qaTray'),list=$('qaTrayList'),n=$('qaTotal'),button=$('qaCommit');
@@ -211,16 +230,24 @@ function commit(){
  state.committing=true;
  const before=stockItems(),tray=state.tray.map(x=>({...x}));
  try{
-  const next=buildBatch(before,tray);
-  // Prepare complete replacement before mutating the existing in-memory model.
-  const data=JSON.stringify({items:next,buys,routines});
-  root.localStorage.setItem('atokoreTrialV4',data);
-  items=next;
+  if(state.destination==='buy'){
+   const nextBuys=buys.map(x=>({...x}));
+   for(const x of tray){const found=nextBuys.find(y=>y.name===x.name&&y.unit===x.unit);
+    if(found)found.qty=Number(found.qty||0)+x.qty;
+    else nextBuys.push({id:Date.now()+nextBuys.length+1,name:x.name,qty:x.qty,unit:x.unit,cat:x.cat});
+   }
+   root.localStorage.setItem('atokoreTrialV4',JSON.stringify({items,buys:nextBuys,routines}));
+   buys=nextBuys;
+  }else{
+   const next=buildBatch(before,tray);
+   root.localStorage.setItem('atokoreTrialV4',JSON.stringify({items:next,buys,routines}));
+   items=next;
+  }
   state.tray=[];state.committing=false;
   renderTray();
   root.render?.();
-  root.go?.('stock');
-  notify(tray.length+'種類をまとめて登録しました');
+  root.go?.(state.destination==='buy'?'buy':'stock');
+  notify(tray.length+'種類を'+(state.destination==='buy'?'買い物リストに追加':'ストックに登録')+'しました');
  }catch(err){
   state.committing=false;renderTray();
   notify('保存できませんでした。内容を残しているので、もう一度お試しください。');
@@ -233,12 +260,10 @@ function openQuick(){
  p.classList.remove('atk-not-baby');
  state.view='quick';
  p.classList.remove('qa-details-mode');
- $('qaSwitchQuick')?.classList.add('selected');
- $('qaSwitchDetails')?.classList.remove('selected');
  try{root.go('add')}catch(e){}
  renderAll();
 }
-function renderAll(){renderNav();renderGroups();renderItems();renderRecent();renderBaby();renderTray();switchCatVisibility()}
+function renderAll(){renderNav();renderGroups();renderItems();renderRecent();renderBaby();renderTray();switchCatVisibility();renderDestination()}
 function switchCatVisibility(){
  const baby=state.cat==='ベビー';
  $('qaBaby')?.classList.toggle('qa-hidden',!baby);
@@ -249,7 +274,8 @@ function setup(){
  const p=$('pg-add');if(!p)return;
  doc.body.classList.add('atk-v14');
  const pane=doc.createElement('section');pane.id='qaPanel';pane.className='qa-panel';
- pane.innerHTML='<div class="qa-mode"><button id="qaSwitchQuick" class="selected" type="button" data-qa-view="quick">かんたん追加</button><button id="qaSwitchDetails" type="button" data-qa-view="details">詳細登録</button></div>'+
+ pane.innerHTML='<div class="qa-heading"><strong>商品を選んで、まとめて追加</strong><span>おむつ・ミルク・おしりふきをかんたん登録。食品・日用品も使えます</span></div>'+ 
+ '<div class="bf-destination" id="bfDestination"><button type="button" data-qa-dest="stock">ストックに追加</button><button type="button" data-qa-dest="buy">買い物リストに追加</button></div>'+ 
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
  '<div id="qaBaby" class="qa-baby"></div><div id="qaRecent"></div></div>';
@@ -264,12 +290,10 @@ function setup(){
  $('qaFree').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addFree()}});
  const originalOpen=root.atkOpenAdd;
  root.atkOpenAdd=function(){openQuick()};
- // Preserve the pre-existing detailed entry flow.
- root.atkOpenDetailed=function(){p.classList.add('qa-details-mode');state.view='details';$('qaSwitchDetails')?.classList.add('selected');$('qaSwitchQuick')?.classList.remove('selected');root.go('add')};
  doc.addEventListener('click',e=>{
-  const btn=e.target.closest?.('[data-qa-view],[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit]');
+  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit],[data-qa-dest]');
   if(!btn||!p.contains(btn))return;
-  if(btn.dataset.qaView){const v=btn.dataset.qaView;state.view=v;p.classList.toggle('qa-details-mode',v==='details');$('qaSwitchQuick').classList.toggle('selected',v==='quick');$('qaSwitchDetails').classList.toggle('selected',v==='details');return}
+  if(btn.dataset.qaDest){state.destination=btn.dataset.qaDest;renderDestination();return}
   if(btn.dataset.qaCat){state.cat=btn.dataset.qaCat;state.group='すべて';state.query='';state.showAll=false;$('qaSearch').value='';renderAll();return}
   if(btn.dataset.qaGroup){state.group=btn.dataset.qaGroup;state.showAll=false;renderGroups();renderItems();return}
   if(btn.hasAttribute('data-qa-pick')){const name=btn.dataset.qaPick,cat=btn.dataset.qaTilecat;addLine({name,cat,qty:1,unit:defaultUnit(name,cat)});return}
@@ -277,7 +301,7 @@ function setup(){
   if(btn.hasAttribute('data-qa-recent')){const item=$('qaRecent').__qaItems[Number(btn.dataset.qaRecent)];if(item)addLine({name:item.name,cat:item.cat,qty:1,unit:item.unit});return}
   if(btn.dataset.qaBaby){chooseBabyField(btn.dataset.qaBaby,btn.dataset.value);return}
   if(btn.hasAttribute('data-qa-step')){state.qty=Math.max(1,Math.min(99,state.qty+Number(btn.dataset.qaStep)));renderBaby();return}
-  if(btn.hasAttribute('data-qa-babyadd')){state.series=$('qaBabySeries')?.value.trim()||'';addBaby();return}
+  if(btn.hasAttribute('data-qa-babyadd')){state.series=$('qaBabySeries')?.value.trim()||state.series||'';addBaby();return}
   if(btn.hasAttribute('data-qa-free')){addFree();return}
   if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.min(999,v.qty+Number(btn.dataset.step));if(v.qty<=0)state.tray.splice(i,1);renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
@@ -302,7 +326,7 @@ function decorateRows(query){
   const title=row.querySelector('.name'),badge=row.querySelector('.atk-row-brand');
   if(!title||!badge||badge.classList.contains('qa-picture-badge'))return;
   const kind=kindOf(title.title||title.textContent,'食料品');
-  if(kind==='other'||kind==='baby')return;
+  if(kind==='baby'||(kind==='other'&&!root.AtokoreIndividualIcons?.resolve(title.title||title.textContent)))return;
   if(badge.classList.contains('atk-row-generic')){
    badge.classList.add('qa-picture-badge');
    badge.innerHTML=iconFor(title.title||title.textContent,'食料品');
@@ -316,11 +340,25 @@ function decorateHome(){
   const card=node.closest('.atk-item-card');
   const name=card?.querySelector('.atk-item-copy strong')?.textContent||'';
   const kind=kindOf(name);
-  if(kind==='other')return;
+  if(kind==='other'&&!root.AtokoreIndividualIcons?.resolve(name))return;
   node.classList.add('qa-picture-badge');node.innerHTML=iconFor(name);
  });
 }
-const api=Object.freeze({kindOf,iconFor,buildBatch,validateLine,modelKey});
+function renderDestination(){
+ const node=$('bfDestination');if(!node)return;
+ node.querySelectorAll('[data-qa-dest]').forEach(x=>x.classList.toggle('selected',x.dataset.qaDest===state.destination));
+ const button=$('qaCommit');if(button)button.textContent=state.destination==='buy'?'まとめて買い物リストに追加':'まとめてストックに追加';
+ const baby=$('qaBaby')?.querySelector('[data-qa-babyadd]');
+ if(baby)baby.textContent=state.destination==='buy'?'＋ 買い物リストに追加':'＋ ストックに追加';
+}
+function openWithEntries(entries,destination='stock'){
+ state.destination=destination==='buy'?'buy':'stock';
+ openQuick();
+ for(const x of entries||[])try{addLine(x)}catch(e){root.console?.warn?.('セットの項目はスキップされました',e)}
+ renderDestination();
+}
+function setCategory(cat){state.cat=cat;state.group='すべて';state.query='';state.showAll=false;if($('qaSearch'))$('qaSearch').value='';renderAll()}
+const api=Object.freeze({kindOf,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,setDestination(dest){state.destination=dest==='buy'?'buy':'stock';renderDestination()},getTray(){return state.tray.map(x=>({...x}))}});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreQuickAdd=api;
 if(doc&&typeof window!=='undefined')setup();
