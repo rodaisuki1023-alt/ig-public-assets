@@ -1,0 +1,33 @@
+name: Atokore Peach UI Checks
+
+on:
+  pull_request:
+    paths:
+      - 'atokore-live-v125/**'
+      - 'tests/atokore-peach-ui.test.cjs'
+      - '.github/workflows/atokore-peach-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse and verify theme
+        run: |
+          node --check atokore-live-v125/atokore-redesign.js
+          node --test tests/atokore-peach-ui.test.cjs
+      - name: Regression tests
+        run: |
+          node tests/atokore-core.test.cjs
+          node tests/atokore-actions.integration.test.cjs
+          node tests/atokore-receipt-input.test.cjs
+          node tests/atokore-receipt-product-names.test.cjs
+          node tests/atokore-pwa.test.cjs
+          node --test tests/atokore-baby-visuals.test.cjs
