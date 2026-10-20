@@ -90,3 +90,39 @@ test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  assert.match(sw,/atokore-pwa-v14/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
+
+
+test('show-more reveals additional food choices and selecting does not auto-save',()=>{
+ const {w,$,click,dom}=browser();
+ w.atkOpenAdd();
+ assert.equal($('qaTiles').children.length,24);
+ assert.equal($('qaMore').hidden,false);
+ click('[data-qa-more]');
+ assert.ok($('qaTiles').children.length>24,'show more should expand suggestions');
+ click('[data-qa-group="meat"]');
+ assert.ok($('qaTiles').textContent.includes('鶏むね肉'));
+ click('[data-qa-pick="鶏むね肉"]');
+ assert.equal($('qaTray').hidden,false);
+ const beforeSave=JSON.parse(w.localStorage.getItem('atokoreTrialV4')||'null');
+ assert.ok(!beforeSave||!beforeSave.items.some(x=>x.name==='鶏むね肉'),'tapping tiles must not persist until batch confirmation');
+ click('[data-qa-adjust="0"][data-step="1"]');
+ assert.match($('qaTotal').textContent,/合計2点/);
+ click('[data-qa-commit]');
+ assert.ok(JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.some(x=>x.name==='鶏むね肉'&&x.qty===2));
+ dom.window.close();
+});
+test('other-category custom entries remain categorized as other and details are available',()=>{
+ const {w,$,click,dom}=browser();
+ w.atkOpenAdd();click('[data-qa-cat="その他"]');
+ $('qaFree').value='自作の保存用品';
+ click('[data-qa-free]');
+ click('[data-qa-commit]');
+ const entry=JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.find(x=>x.name==='自作の保存用品');
+ assert.ok(entry);assert.equal(entry.cat,'その他');
+ w.atkOpenAdd();click('[data-qa-view="details"]');
+ const css=fs.readFileSync(path.join(root,'quick-add.css'),'utf8');
+ assert.match(css,/#pg-add\.qa-details-mode \.atk-original-name/);
+ assert.match(css,/#pg-add\.qa-has-tray/);
+ assert.equal($('pg-add').classList.contains('qa-details-mode'),true);
+ dom.window.close();
+});
