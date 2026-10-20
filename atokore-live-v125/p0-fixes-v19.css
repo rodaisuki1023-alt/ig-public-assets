@@ -13,6 +13,14 @@ body.atk-v19 #pg-add .qa-tray{
 }
 body.atk-v19 #pg-add .qa-tray-dest{margin:2px 0 6px;font-size:12px;font-weight:750;color:#7B4A3B}
 body.atk-v19 #pg-add .qa-tray #qaCommit{background:var(--atk-brand,#A85647)!important;color:#fff!important}
+/* Short screens (e.g. 320x568): a 40vh sticky tray plus the sticky header and tab bar covered the
+ * product choices above it, so keep the tray low and let its list scroll. */
+@media (max-height:700px){
+  body.atk-v19 #pg-add .qa-tray{max-height:30vh!important;padding:7px 9px 8px!important}
+  body.atk-v19 #pg-add .qa-tray #qaTrayList{max-height:10vh!important}
+  body.atk-v19 #pg-add .qa-tray-dest{margin:0 0 3px}
+  body.atk-v19 #pg-add .qa-tray-header{padding-bottom:3px!important}
+}
 
 /* 2) The add action moves from a floating button (which covered −/＋ and list buttons)
  *    into the centre of the tab bar: same single tap, never over content. */
