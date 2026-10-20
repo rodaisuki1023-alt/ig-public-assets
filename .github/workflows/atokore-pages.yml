@@ -132,6 +132,7 @@ jobs:
           node --check _site/baby-visuals.js
           node --check _site/atokore-redesign.js
           node --check _site/quick-add.js
+          npm install --no-save --ignore-scripts jsdom@26.1.0
           node --test tests/atokore-quick-add.test.cjs
           node --test tests/atokore-peach-ui.test.cjs
           node --test tests/atokore-baby-visuals.test.cjs
