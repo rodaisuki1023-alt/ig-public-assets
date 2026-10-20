@@ -21,7 +21,7 @@ test('single row navigation with a prominent separate stock add CTA',()=>{
  const add=w.document.querySelector('.tabs .tab[data-p="add"]');
  assert.equal(add.style.getPropertyValue('display'),'none');
  assert.equal(w.document.querySelectorAll('.tabs .tab:not([data-p="add"])').length,4);
- assert.equal($('bfAddFab').textContent,'＋ ストック追加');
+ assert.equal($('bfAddFab').textContent,'＋ 商品を追加');
  assert.equal($('pg-stock').querySelector('.atk-page-title button').textContent,'＋ ストック追加');
  const css=fs.readFileSync(path.join(base,'baby-focus-v17.css'),'utf8');
  assert.match(css,/grid-template-columns:repeat\(4,minmax\(0,1fr\)\)!important/);
@@ -106,10 +106,10 @@ test('buy page picker opens baby-first selection and shopping-only destination',
 test('offline shell has complete v17 scripts and separate palette',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=17'));
+ assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=18'));
  assert.ok(html.indexOf('baby-flow-v17.js')>html.indexOf('edit-after-add.js'));
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v17/);
+ assert.match(worker,/atokore-pwa-v18/);
 });
