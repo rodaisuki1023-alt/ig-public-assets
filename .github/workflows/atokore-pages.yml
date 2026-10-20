@@ -313,6 +313,42 @@ jobs:
           node --test _preview_baby_source/tests/atokore-edit-after-add.test.cjs
           node --test _preview_baby_source/tests/atokore-distinct-icons.test.cjs
 
+      - name: Checkout reviewed v19 P0 safety trial source
+        uses: actions/checkout@v4
+        with:
+          ref: 92fed225bb90b61aa71d6710d284b0248c936416
+          path: _preview_v19_source
+          persist-credentials: false
+
+      - name: Build v19 safety trial (separate storage, no family sync)
+        run: |
+          set -eu
+          PREVIEW=_site/preview-baby-v19
+          # The trial's own build script renames every storage key to atokorePreview*V19, stubs
+          # family sync and fails if a production key or a referenced file is missing.
+          python3 -I _preview_v19_source/scripts/atokore/build-preview.py \
+            _preview_v19_source/atokore-live-v125 "$PREVIEW" 19
+          python3 - <<'PY'
+          from pathlib import Path
+          base = Path('_site/preview-baby-v19')
+          html = (base / 'index.html').read_text()
+          worker = (base / 'service-worker.js').read_text()
+          bootstrap = (base / 'storage-bootstrap-v19.js').read_text()
+          assert 'ベビー特化 試用版 v19' in html
+          assert 'storage-bootstrap-v19.js' in html and 'data-safety-v19.js' in html and 'p0-fixes-v19.css' in html
+          assert 'atokorePreviewTrialV19' in bootstrap
+          assert 'atokorePreviewTrialV17' in bootstrap  # one-time copy of the v17 trial only
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v19'" in worker
+          assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
+          PY
+          for f in "$PREVIEW"/*.js; do node --check "$f"; done
+          node --test _preview_v19_source/tests/atokore-add-clarity-v18.test.cjs \
+            _preview_v19_source/tests/atokore-baby-focus-v17.test.cjs \
+            _preview_v19_source/tests/atokore-quick-add.test.cjs \
+            _preview_v19_source/tests/atokore-edit-after-add.test.cjs \
+            _preview_v19_source/tests/atokore-distinct-icons.test.cjs
+          # Real-browser checks (Chromium + WebKit) run on the source PR: atokore-v19-e2e.yml.
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
