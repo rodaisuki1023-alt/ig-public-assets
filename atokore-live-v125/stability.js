@@ -121,7 +121,7 @@
   window.renderStock=function(){
     cleanSelections();
     const cats=['すべて',...new Set(items.map(x=>x.cat||'その他'))],chips=document.getElementById('catChips');
-    if(chips)chips.innerHTML=cats.map(cat=>{const c=color(cat);return `<button class="chip ${cat===filter?'on':''}" style="${cat==='すべて'?'':`border-color:${c[2]};background:${cat===filter?c[0]:c[1]};color:${cat===filter?'#fff':c[0]}`}" onclick="setFilter('${esc(cat)}')">${esc(cat)}</button>`}).join('');
+    window.__atokoreStableCats=cats;if(chips)chips.innerHTML=cats.map(cat=>{const c=color(cat);return `<button class="chip ${cat===filter?'on':''}" style="${cat==='すべて'?'':`border-color:${c[2]};background:${cat===filter?c[0]:c[1]};color:${cat===filter?'#fff':c[0]}`}" data-filter-index="${cats.indexOf(cat)}" onclick="setFilter(window.__atokoreStableCats[this.dataset.filterIndex])">${esc(cat)}</button>`}).join('');
     const toggle=document.getElementById('stockSelectToggle');if(toggle)toggle.textContent=stockSelectMode?'選択を終了':'☑ 複数選択';
     const bulk=document.getElementById('stockBulkActions');if(bulk){bulk.classList.toggle('hide',!stockSelectMode);bulk.classList.add('stableManageBtns')}
     const list=document.getElementById('stockList'),visible=window.visibleStock();
