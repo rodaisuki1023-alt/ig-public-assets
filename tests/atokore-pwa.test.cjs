@@ -14,7 +14,7 @@ assert.equal(manifest.short_name, 'あとこれ');
 assert.equal(manifest.display, 'standalone');
 assert.equal(manifest.start_url, './?source=pwa');
 assert.equal(manifest.scope, './');
-assert.equal(manifest.theme_color, '#1677ff');
+assert.equal(manifest.theme_color, '#F2DDD6');
 assert.ok(manifest.icons.some(icon => icon.sizes === '192x192'));
 assert.ok(manifest.icons.some(icon => icon.sizes === '512x512' && icon.purpose.includes('maskable')));
 
