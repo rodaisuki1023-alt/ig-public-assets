@@ -316,7 +316,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: f36345ea89648799680f7ce09b4e28fd4734d526
+          ref: b0b8e47e2791e7f5d18477b06faab5c6361b7ffd
           path: _preview_v19_source
           persist-credentials: false
 
@@ -338,6 +338,7 @@ jobs:
           assert 'storage-bootstrap-v19.js' in html and 'data-safety-v19.js' in html and 'p0-fixes-v19.css' in html
           assert 'atokorePreviewTrialV19' in bootstrap
           assert 'atokorePreviewTrialV17' in bootstrap  # one-time copy of the v17 trial only
+          assert '__atokoreStorageLock' in bootstrap  # unreadable data that cannot be set aside locks saving
           assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v19'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
@@ -346,7 +347,8 @@ jobs:
             _preview_v19_source/tests/atokore-baby-focus-v17.test.cjs \
             _preview_v19_source/tests/atokore-quick-add.test.cjs \
             _preview_v19_source/tests/atokore-edit-after-add.test.cjs \
-            _preview_v19_source/tests/atokore-distinct-icons.test.cjs
+            _preview_v19_source/tests/atokore-distinct-icons.test.cjs \
+            _preview_v19_source/tests/atokore-storage-bootstrap-v19.test.cjs
           # Real-browser checks (Chromium + WebKit) run on the source PR: atokore-v19-e2e.yml.
 
       - name: Configure Pages
