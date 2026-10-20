@@ -194,6 +194,8 @@ function install(){
  root.atkShowDetail=showDetail;
  root.render?.();
 }
-root.AtokorePeachUI=Object.freeze({describe,esc,low});
+const api=Object.freeze({describe,esc,low});
+root.AtokorePeachUI=api;
+if(typeof module!=='undefined'&&module.exports)module.exports=api;
 if(typeof document!=='undefined'&&typeof window!=='undefined')install();
 })(typeof globalThis!=='undefined'?globalThis:this);
