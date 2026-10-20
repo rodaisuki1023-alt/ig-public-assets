@@ -235,8 +235,6 @@ function openQuick(){
  p.classList.remove('atk-not-baby');
  state.view='quick';
  p.classList.remove('qa-details-mode');
- $('qaSwitchQuick')?.classList.add('selected');
- $('qaSwitchDetails')?.classList.remove('selected');
  try{root.go('add')}catch(e){}
  renderAll();
 }
@@ -251,7 +249,7 @@ function setup(){
  const p=$('pg-add');if(!p)return;
  doc.body.classList.add('atk-v14');
  const pane=doc.createElement('section');pane.id='qaPanel';pane.className='qa-panel';
- pane.innerHTML='<div class="qa-mode"><button id="qaSwitchQuick" class="selected" type="button" data-qa-view="quick">かんたん追加</button><button id="qaSwitchDetails" type="button" data-qa-view="details">詳細登録</button></div>'+
+ pane.innerHTML='<div class="qa-heading"><strong>商品を選んで、まとめて追加</strong><span>期限・保管場所などは登録後に編集できます</span></div>'+
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
  '<div id="qaBaby" class="qa-baby"></div><div id="qaRecent"></div></div>';
@@ -266,12 +264,9 @@ function setup(){
  $('qaFree').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addFree()}});
  const originalOpen=root.atkOpenAdd;
  root.atkOpenAdd=function(){openQuick()};
- // Preserve the pre-existing detailed entry flow.
- root.atkOpenDetailed=function(){p.classList.add('qa-details-mode');state.view='details';$('qaSwitchDetails')?.classList.add('selected');$('qaSwitchQuick')?.classList.remove('selected');root.go('add')};
  doc.addEventListener('click',e=>{
-  const btn=e.target.closest?.('[data-qa-view],[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit]');
+  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit]');
   if(!btn||!p.contains(btn))return;
-  if(btn.dataset.qaView){const v=btn.dataset.qaView;state.view=v;p.classList.toggle('qa-details-mode',v==='details');$('qaSwitchQuick').classList.toggle('selected',v==='quick');$('qaSwitchDetails').classList.toggle('selected',v==='details');return}
   if(btn.dataset.qaCat){state.cat=btn.dataset.qaCat;state.group='すべて';state.query='';state.showAll=false;$('qaSearch').value='';renderAll();return}
   if(btn.dataset.qaGroup){state.group=btn.dataset.qaGroup;state.showAll=false;renderGroups();renderItems();return}
   if(btn.hasAttribute('data-qa-pick')){const name=btn.dataset.qaPick,cat=btn.dataset.qaTilecat;addLine({name,cat,qty:1,unit:defaultUnit(name,cat)});return}
