@@ -10,7 +10,7 @@ const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'
 const BABY={
  diaper:{brands:['パンパース','グーン','マミーポコ','ムーニー','メリーズ'],types:['パンツ','テープ'],sizes:['新生児','S','M','L','ビッグ','ビッグより大きい']},
  milk:{brands:['明治','和光堂','森永','ビーンスターク','アイクレオ'],types:['缶','キューブ','スティック','液体']},
- wipes:{brands:[],types:[]}
+ wipes:{brands:['ムーニー','グーン','パンパース','メリーズ','ピジョン','レック','アカチャンホンポ','西松屋'],types:['詰替','本体']}
 };
 const TOP={
  '食料品':['卵','牛乳','鶏むね肉','豚こま肉','玉ねぎ','にんじん','じゃがいも','トマト','キャベツ','ブロッコリー','バナナ','りんご','豆腐','納豆','食パン','米','鮭','ヨーグルト','冷凍うどん','麦茶','味噌','チーズ'],
@@ -108,7 +108,7 @@ function buildBatch(existing,selected,time=Date.now()){
  }
  return next;
 }
-const state={cat:'食料品',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',qty:1,committing:false};
+const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',qty:1,committing:false};
 function addLine(entry){
  const v=validateLine(entry),found=state.tray.find(x=>modelKey(x)===modelKey(v));
  if(found)found.qty=Math.min(999,found.qty+v.qty);
@@ -117,7 +117,7 @@ function addLine(entry){
 }
 function renderNav(){
  const el=$('qaTabs');if(!el)return;
- const tabs=[['食料品','食品'],['日用品','日用品'],['ベビー','ベビー'],['衛生・薬','衛生・薬'],['その他','その他']];
+ const tabs=[['ベビー','ベビー'],['食料品','食品'],['日用品','日用品'],['衛生・薬','衛生・薬'],['その他','その他']];
  el.innerHTML=tabs.map(([cat,label])=>'<button type="button" class="'+(state.cat===cat?'selected':'')+'" data-qa-cat="'+safe(cat)+'">'+label+'</button>').join('');
 }
 function groupOptions(){
@@ -183,12 +183,11 @@ function renderBaby(){
  '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ 追加予定に入れる</button>';
 }
 function addBaby(){
- if(state.kind==='wipes')return addLine({cat:'ベビー',name:'おしりふき',qty:state.qty,unit:'パック'});
  if(!state.brand||!state.type||(state.kind==='diaper'&&!state.size)){
   notify('ブランド・種類・サイズ（おむつの場合）を選んでください');return;
  }
- const desc=[state.brand,state.series,state.kind==='diaper'?'おむつ':'粉ミルク',state.type,state.kind==='diaper'?state.size:''].filter(Boolean).join(' ');
- addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
+ const desc=[state.brand,state.series,state.kind==='diaper'?'おむつ':state.kind==='milk'?'粉ミルク':'おしりふき',state.type,state.kind==='diaper'?state.size:''].filter(Boolean).join(' ');
+ addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.kind==='wipes'?'パック':state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
  notify('追加予定に入れました');
 }
 function renderTray(){
@@ -213,16 +212,24 @@ function commit(){
  state.committing=true;
  const before=stockItems(),tray=state.tray.map(x=>({...x}));
  try{
-  const next=buildBatch(before,tray);
-  // Prepare complete replacement before mutating the existing in-memory model.
-  const data=JSON.stringify({items:next,buys,routines});
-  root.localStorage.setItem('atokoreTrialV4',data);
-  items=next;
+  if(state.destination==='buy'){
+   const nextBuys=buys.map(x=>({...x}));
+   for(const x of tray){const found=nextBuys.find(y=>y.name===x.name&&y.unit===x.unit);
+    if(found)found.qty=Number(found.qty||0)+x.qty;
+    else nextBuys.push({id:Date.now()+nextBuys.length+1,name:x.name,qty:x.qty,unit:x.unit,cat:x.cat});
+   }
+   root.localStorage.setItem('atokoreTrialV4',JSON.stringify({items,buys:nextBuys,routines}));
+   buys=nextBuys;
+  }else{
+   const next=buildBatch(before,tray);
+   root.localStorage.setItem('atokoreTrialV4',JSON.stringify({items:next,buys,routines}));
+   items=next;
+  }
   state.tray=[];state.committing=false;
   renderTray();
   root.render?.();
-  root.go?.('stock');
-  notify(tray.length+'種類をまとめて登録しました');
+  root.go?.(state.destination==='buy'?'buy':'stock');
+  notify(tray.length+'種類を'+(state.destination==='buy'?'買い物リストに追加':'ストックに登録')+'しました');
  }catch(err){
   state.committing=false;renderTray();
   notify('保存できませんでした。内容を残しているので、もう一度お試しください。');
@@ -238,7 +245,7 @@ function openQuick(){
  try{root.go('add')}catch(e){}
  renderAll();
 }
-function renderAll(){renderNav();renderGroups();renderItems();renderRecent();renderBaby();renderTray();switchCatVisibility()}
+function renderAll(){renderNav();renderGroups();renderItems();renderRecent();renderBaby();renderTray();switchCatVisibility();renderDestination()}
 function switchCatVisibility(){
  const baby=state.cat==='ベビー';
  $('qaBaby')?.classList.toggle('qa-hidden',!baby);
@@ -249,7 +256,8 @@ function setup(){
  const p=$('pg-add');if(!p)return;
  doc.body.classList.add('atk-v14');
  const pane=doc.createElement('section');pane.id='qaPanel';pane.className='qa-panel';
- pane.innerHTML='<div class="qa-heading"><strong>商品を選んで、まとめて追加</strong><span>期限・保管場所などは登録後に編集できます</span></div>'+
+ pane.innerHTML='<div class="qa-heading"><strong>商品を選んで、まとめて追加</strong><span>おむつ・ミルク・おしりふきをかんたん登録。食品・日用品も使えます</span></div>'+ 
+ '<div class="bf-destination" id="bfDestination"><button type="button" data-qa-dest="stock">ストックに追加</button><button type="button" data-qa-dest="buy">買い物リストに追加</button></div>'+ 
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
  '<div id="qaBaby" class="qa-baby"></div><div id="qaRecent"></div></div>';
@@ -265,8 +273,9 @@ function setup(){
  const originalOpen=root.atkOpenAdd;
  root.atkOpenAdd=function(){openQuick()};
  doc.addEventListener('click',e=>{
-  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit]');
+  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit],[data-qa-dest]');
   if(!btn||!p.contains(btn))return;
+  if(btn.dataset.qaDest){state.destination=btn.dataset.qaDest;renderDestination();return}
   if(btn.dataset.qaCat){state.cat=btn.dataset.qaCat;state.group='すべて';state.query='';state.showAll=false;$('qaSearch').value='';renderAll();return}
   if(btn.dataset.qaGroup){state.group=btn.dataset.qaGroup;state.showAll=false;renderGroups();renderItems();return}
   if(btn.hasAttribute('data-qa-pick')){const name=btn.dataset.qaPick,cat=btn.dataset.qaTilecat;addLine({name,cat,qty:1,unit:defaultUnit(name,cat)});return}
@@ -317,7 +326,19 @@ function decorateHome(){
   node.classList.add('qa-picture-badge');node.innerHTML=iconFor(name);
  });
 }
-const api=Object.freeze({kindOf,iconFor,buildBatch,validateLine,modelKey});
+function renderDestination(){
+ const node=$('bfDestination');if(!node)return;
+ node.querySelectorAll('[data-qa-dest]').forEach(x=>x.classList.toggle('selected',x.dataset.qaDest===state.destination));
+ const button=$('qaCommit');if(button)button.textContent=state.destination==='buy'?'まとめて買い物リストに追加':'まとめてストックに追加';
+}
+function openWithEntries(entries,destination='stock'){
+ state.destination=destination==='buy'?'buy':'stock';
+ openQuick();
+ for(const x of entries||[])try{addLine(x)}catch(e){root.console?.warn?.('セットの項目はスキップされました',e)}
+ renderDestination();
+}
+function setCategory(cat){state.cat=cat;state.group='すべて';state.query='';state.showAll=false;if($('qaSearch'))$('qaSearch').value='';renderAll()}
+const api=Object.freeze({kindOf,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,setDestination(dest){state.destination=dest==='buy'?'buy':'stock';renderDestination()},getTray(){return state.tray.map(x=>({...x}))}});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreQuickAdd=api;
 if(doc&&typeof window!=='undefined')setup();
