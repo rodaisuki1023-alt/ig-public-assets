@@ -71,6 +71,8 @@ function shape(k,color){
  }
 }
 function iconFor(name,cat='食料品'){
+ const individual=root.AtokoreIndividualIcons?.icon(name);
+ if(individual)return individual;
  const k=kindOf(name,cat),[bg,line]=COLOR[k];
  return '<span class="qa-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="42" height="42" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="14" fill="'+bg+'"/>'+shape(k,line)+'</svg></span>';
 }
@@ -141,7 +143,7 @@ function renderItems(){
   const cat=state.cat==='その他'?(Object.keys(C).find(c=>catalog(c).includes(n))||'日用品'):state.cat;
   const qty=selected.get(modelKey({cat,name:n,unit:defaultUnit(n,cat)}));
   return '<button type="button" class="qa-tile '+(qty?'picked':'')+'" data-qa-pick="'+safe(n)+'" data-qa-tilecat="'+safe(cat)+'" aria-label="'+safe(n)+'を追加">'+
-   iconFor(n,cat)+'<span class="qa-name">'+safe(n)+'</span><span class="qa-tile-add">'+(qty?qty:'＋')+'</span></button>';
+   '<span class="qa-name">'+safe(n)+'</span><span class="qa-tile-add">'+(qty?qty:'＋')+'</span></button>';
  }).join('') || '<div class="qa-no-results">該当する商品がありません。下の自由入力から追加できます。</div>';
  const more=$('qaMore');if(more){more.hidden=total<=visible.length;more.textContent='さらに表示（全'+total+'件）'}
 }
@@ -154,7 +156,7 @@ function renderRecent(){
   if(state.cat!=='その他'&&state.cat!==x.cat)continue;
   seen.add(modelKey(x));names.push(x);
  }
- container.innerHTML=names.length?'<div class="qa-subtitle">最近登録した商品</div><div class="qa-recent">'+names.map((x,i)=>'<button type="button" data-qa-recent="'+i+'">'+iconFor(x.name,x.cat)+'<span>'+safe(x.name)+'</span><b>＋</b></button>').join('')+'</div>':'';
+ container.innerHTML=names.length?'<div class="qa-subtitle">最近登録した商品</div><div class="qa-recent">'+names.map((x,i)=>'<button type="button" data-qa-recent="'+i+'"><span>'+safe(x.name)+'</span><b>＋</b></button>').join('')+'</div>':'';
  container.__qaItems=names;
 }
 function babyBrands(){
@@ -233,8 +235,6 @@ function openQuick(){
  p.classList.remove('atk-not-baby');
  state.view='quick';
  p.classList.remove('qa-details-mode');
- $('qaSwitchQuick')?.classList.add('selected');
- $('qaSwitchDetails')?.classList.remove('selected');
  try{root.go('add')}catch(e){}
  renderAll();
 }
@@ -249,7 +249,7 @@ function setup(){
  const p=$('pg-add');if(!p)return;
  doc.body.classList.add('atk-v14');
  const pane=doc.createElement('section');pane.id='qaPanel';pane.className='qa-panel';
- pane.innerHTML='<div class="qa-mode"><button id="qaSwitchQuick" class="selected" type="button" data-qa-view="quick">かんたん追加</button><button id="qaSwitchDetails" type="button" data-qa-view="details">詳細登録</button></div>'+
+ pane.innerHTML='<div class="qa-heading"><strong>商品を選んで、まとめて追加</strong><span>期限・保管場所などは登録後に編集できます</span></div>'+
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
  '<div id="qaBaby" class="qa-baby"></div><div id="qaRecent"></div></div>';
@@ -264,12 +264,9 @@ function setup(){
  $('qaFree').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addFree()}});
  const originalOpen=root.atkOpenAdd;
  root.atkOpenAdd=function(){openQuick()};
- // Preserve the pre-existing detailed entry flow.
- root.atkOpenDetailed=function(){p.classList.add('qa-details-mode');state.view='details';$('qaSwitchDetails')?.classList.add('selected');$('qaSwitchQuick')?.classList.remove('selected');root.go('add')};
  doc.addEventListener('click',e=>{
-  const btn=e.target.closest?.('[data-qa-view],[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit]');
+  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit]');
   if(!btn||!p.contains(btn))return;
-  if(btn.dataset.qaView){const v=btn.dataset.qaView;state.view=v;p.classList.toggle('qa-details-mode',v==='details');$('qaSwitchQuick').classList.toggle('selected',v==='quick');$('qaSwitchDetails').classList.toggle('selected',v==='details');return}
   if(btn.dataset.qaCat){state.cat=btn.dataset.qaCat;state.group='すべて';state.query='';state.showAll=false;$('qaSearch').value='';renderAll();return}
   if(btn.dataset.qaGroup){state.group=btn.dataset.qaGroup;state.showAll=false;renderGroups();renderItems();return}
   if(btn.hasAttribute('data-qa-pick')){const name=btn.dataset.qaPick,cat=btn.dataset.qaTilecat;addLine({name,cat,qty:1,unit:defaultUnit(name,cat)});return}
@@ -302,7 +299,7 @@ function decorateRows(query){
   const title=row.querySelector('.name'),badge=row.querySelector('.atk-row-brand');
   if(!title||!badge||badge.classList.contains('qa-picture-badge'))return;
   const kind=kindOf(title.title||title.textContent,'食料品');
-  if(kind==='other'||kind==='baby')return;
+  if(kind==='baby'||(kind==='other'&&!root.AtokoreIndividualIcons?.resolve(title.title||title.textContent)))return;
   if(badge.classList.contains('atk-row-generic')){
    badge.classList.add('qa-picture-badge');
    badge.innerHTML=iconFor(title.title||title.textContent,'食料品');
@@ -316,7 +313,7 @@ function decorateHome(){
   const card=node.closest('.atk-item-card');
   const name=card?.querySelector('.atk-item-copy strong')?.textContent||'';
   const kind=kindOf(name);
-  if(kind==='other')return;
+  if(kind==='other'&&!root.AtokoreIndividualIcons?.resolve(name))return;
   node.classList.add('qa-picture-badge');node.innerHTML=iconFor(name);
  });
 }

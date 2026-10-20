@@ -5,6 +5,8 @@ on:
     paths:
       - 'atokore-live-v125/**'
       - 'tests/atokore-peach-ui.test.cjs'
+      - 'tests/atokore-distinct-icons.test.cjs'
+      - 'tests/atokore-edit-after-add.test.cjs'
       - '.github/workflows/atokore-peach-ui.yml'
   workflow_dispatch:
 
@@ -29,6 +31,10 @@ jobs:
           node --test tests/atokore-mobile-dom.test.cjs
           node --check atokore-live-v125/quick-add.js
           node --test tests/atokore-quick-add.test.cjs
+          node --check atokore-live-v125/product-icons.js
+          node --test tests/atokore-distinct-icons.test.cjs
+          node --check atokore-live-v125/edit-after-add.js
+          node --test tests/atokore-edit-after-add.test.cjs
       - name: Regression tests
         run: |
           node tests/atokore-core.test.cjs
