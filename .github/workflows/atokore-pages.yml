@@ -92,6 +92,10 @@ jobs:
           assert 'name="apple-mobile-web-app-capable" content="yes"' in index
           assert 'atokore-theme.css?v=13' in index
           assert 'atokore-redesign.js?v=13' in index
+          assert 'quick-add.css?v=14' in index
+          assert 'quick-add.js?v=14' in index
+          assert "'./quick-add.js'" in worker
+          assert "'./quick-add.css'" in worker
           assert "'./atokore-redesign.js'" in worker
           assert "'./atokore-theme.css'" in worker
           assert 'baby-visuals.js?v=bv1' in index
@@ -99,7 +103,7 @@ jobs:
           assert "'./baby-visuals.js'" in worker
           assert 'pwa.js?v=pwa1' in index
           assert "serviceWorker.register('./service-worker.js'" in pwa
-          assert "const CACHE_NAME = 'atokore-pwa-v13'" in worker
+          assert "const CACHE_NAME = 'atokore-pwa-v14'" in worker
 
           manifest = __import__('json').loads((root / 'manifest.webmanifest').read_text())
           assert manifest['name'] == 'あとこれ｜家庭の在庫・買い物リスト'
@@ -127,6 +131,9 @@ jobs:
           node --check _site/service-worker.js
           node --check _site/baby-visuals.js
           node --check _site/atokore-redesign.js
+          node --check _site/quick-add.js
+          npm install --no-save --ignore-scripts jsdom@26.1.0
+          node --test tests/atokore-quick-add.test.cjs
           node --test tests/atokore-peach-ui.test.cjs
           node --test tests/atokore-baby-visuals.test.cjs
           node tests/atokore-core.test.cjs
