@@ -16,11 +16,11 @@ const BRANDS=[
 function describe(item){
  const raw=String(item?.name||'').normalize('NFKC').trim();
  const brand=BRANDS.find(b=>b.re.test(raw))||null;
- const match=raw.match(/(?:^|[\s・／/()])(?:サイズ)?(ビッグより大きい|ビッグ|BIG|XXL|XL|新生児|[SML])(?=$|[\s・／/()0-9])/i)||raw.match(/オムツ([SML])$/i);
+ const match=raw.match(/(?:^|[\s・／\/()])(?:サイズ)?(ビッグより大きい|ビッグ|BIG|XXL|XL|新生児|[SML])(?=$|[\s・／\/()0-9])/i)||raw.match(/オムツ([SML])$/i);
  const size=match?(match[1]||'').toUpperCase().replace('BIG','ビッグ'):'';
  const type=/パンツ/.test(raw)?'パンツ':/テープ/.test(raw)?'テープ':/液体/.test(raw)?'液体':/キューブ/.test(raw)?'キューブ':/スティック/.test(raw)?'スティック':/缶/.test(raw)?'缶':'';
  let line=brand?raw.replace(brand.re,'').trim():raw;
- line=line.replace(/[0-9]{1,4}\s*(?:枚|g|mL|ml)(?=$|[\s・／/()])/gi,' ');
+ line=line.replace(/[0-9]{1,4}\s*(?:枚|g|mL|ml)(?=$|[\s・／\/()])/gi,' ');
  if(type)line=line.replace(type,' ');
  if(size)line=line.replace(size,' ');
  line=line.replace(/おむつ|オムツ|粉ミルク/g,' ').replace(/\s+/g,' ').trim();
