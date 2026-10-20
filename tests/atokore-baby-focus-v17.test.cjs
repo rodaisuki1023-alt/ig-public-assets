@@ -79,13 +79,14 @@ test('tap stored repeat set and go directly to stock-add tray, then optionally s
  $('qaCommit').click();
  let data=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(data.items.some(x=>x.name==='卵'));
+ const beforeBuyQty=data.items.find(x=>x.name==='卵').qty;
  w.go('buy');$('routineList').querySelector('[data-bf-routine-buy="901"]').click();
  assert.ok($('bfDestination').querySelector('[data-qa-dest="buy"]').classList.contains('selected'));
  assert.equal(w.AtokoreQuickAdd.getTray().length,2);
  $('qaCommit').click();
  data=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(data.buys.some(x=>x.name==='牛乳'));
- assert.equal(data.items.find(x=>x.name==='卵').qty,1);
+ assert.equal(data.items.find(x=>x.name==='卵').qty,beforeBuyQty,'shopping-list commit must not modify stock');
  dom.window.close();
 });
 test('buy page picker opens baby-first selection and shopping-only destination',()=>{
