@@ -90,6 +90,10 @@ jobs:
           assert 'rel="manifest" href="./manifest.webmanifest"' in index
           assert 'rel="apple-touch-icon" href="./icons/icon-180.png"' in index
           assert 'name="apple-mobile-web-app-capable" content="yes"' in index
+          assert 'atokore-theme.css?v=13' in index
+          assert 'atokore-redesign.js?v=13' in index
+          assert "'./atokore-redesign.js'" in worker
+          assert "'./atokore-theme.css'" in worker
           assert 'baby-visuals.js?v=bv1' in index
           assert (root / 'baby-visuals.js').is_file()
           assert "'./baby-visuals.js'" in worker
@@ -122,6 +126,8 @@ jobs:
           node --check _site/pwa.js
           node --check _site/service-worker.js
           node --check _site/baby-visuals.js
+          node --check _site/atokore-redesign.js
+          node --test tests/atokore-peach-ui.test.cjs
           node --test tests/atokore-baby-visuals.test.cjs
           node tests/atokore-core.test.cjs
           node tests/atokore-actions.integration.test.cjs
