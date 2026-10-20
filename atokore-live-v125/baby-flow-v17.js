@@ -87,6 +87,19 @@ function modifyBuy(){
  const note=list.previousElementSibling;
  if(note?.classList.contains('muted'))note.textContent='セットをタップすると商品が追加画面に読み込まれます。数量を確認して保存するだけ。';
 }
+function activePage(){
+ const page=doc?.querySelector('.page.on')?.id||'pg-home';
+ return page.replace(/^pg-/,'');
+}
+function syncFab(){
+ const fab=$('bfAddFab');if(!fab)return;
+ const modalOpen=!!$('modal')?.classList.contains('on');
+ const addPage=activePage()==='add';
+ const editor=!!$('atkEditForm');
+ const batch=!!$('qaTray')?.classList.contains('qa-tray-open')&&addPage;
+ fab.hidden=modalOpen||addPage||editor||batch;
+ fab.setAttribute('aria-hidden',fab.hidden?'true':'false');
+}
 function install(){
  if(!doc)return;
  doc.body.classList.add('atk-v17');
@@ -95,15 +108,21 @@ function install(){
  if(add){add.setAttribute('hidden','');add.style.setProperty('display','none','important');}
  if(!doc.getElementById('bfAddFab')){
   const fab=doc.createElement('button');
-  fab.type='button';fab.id='bfAddFab';fab.textContent='＋ ストック追加';
-  fab.setAttribute('aria-label','ストック追加');
-  fab.addEventListener('click',()=>root.atkOpenAdd?.());
+  fab.type='button';fab.id='bfAddFab';fab.textContent='＋ 商品を追加';
+  fab.setAttribute('aria-label','商品を追加：ストックまたは買い物リスト');
+  fab.addEventListener('click',()=>root.atkOpenAdd?.(activePage()==='buy'?'buy':'stock'));
   doc.body.appendChild(fab);
  }
  const header=$('pg-stock')?.querySelector('.atk-page-title button[data-atk-add]');
  if(header){header.textContent='＋ ストック追加';header.setAttribute('aria-label','ストック追加');}
  const oldOpen=root.atkOpenAdd;
- root.atkOpenAdd=function(){root.AtokoreQuickAdd?.setDestination('stock');oldOpen?.();root.AtokoreQuickAdd?.setCategory('ベビー')};
+ root.atkOpenAdd=function(destination){
+  const selected=destination==='buy'?'buy':'stock';
+  oldOpen?.();
+  root.AtokoreQuickAdd?.setCategory('ベビー');
+  root.AtokoreQuickAdd?.setDestination(selected);
+  syncFab();
+ };
  const oldRenderRoutines=root.renderRoutines;
  root.renderRoutines=function(...args){if(typeof oldRenderRoutines==='function')oldRenderRoutines.apply(this,args);showSets()};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
@@ -126,6 +145,22 @@ function install(){
    root.openRoutine?.(Number(r.dataset.bfRoutineEdit));
   }
  });
+ const previousGo=root.go;
+ if(typeof previousGo==='function')root.go=function(page,...args){
+  const result=previousGo.call(this,page,...args);syncFab();return result;
+ };
+ const previousOpen=root.openM,previousClose=root.closeM;
+ if(typeof previousOpen==='function')root.openM=function(...args){
+  const result=previousOpen.apply(this,args);syncFab();return result;
+ };
+ if(typeof previousClose==='function')root.closeM=function(...args){
+  const result=previousClose.apply(this,args);syncFab();return result;
+ };
+ if(typeof MutationObserver!=='undefined'){
+  const modal=$('modal');
+  if(modal)new MutationObserver(syncFab).observe(modal,{attributes:true,attributeFilter:['class','style','aria-hidden']});
+ }
+ syncFab();
  showSets();decorateBabyRows('#stockList [data-stock-id]');decorateBabyRows('#buyList [data-buy-id]');decorateHome();
 }
 const api=Object.freeze({catFor,prepared});
