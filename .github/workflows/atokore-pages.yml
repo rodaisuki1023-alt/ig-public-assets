@@ -99,7 +99,7 @@ jobs:
           assert "'./baby-visuals.js'" in worker
           assert 'pwa.js?v=pwa1' in index
           assert "serviceWorker.register('./service-worker.js'" in pwa
-          assert "const CACHE_NAME = 'atokore-pwa-v1'" in worker
+          assert "const CACHE_NAME = 'atokore-pwa-v13'" in worker
 
           manifest = __import__('json').loads((root / 'manifest.webmanifest').read_text())
           assert manifest['name'] == 'あとこれ｜家庭の在庫・買い物リスト'
