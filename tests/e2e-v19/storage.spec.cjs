@@ -63,6 +63,42 @@ test.describe('save failures never look like success', () => {
     expect((await stored(page)).items.find(x => x.id === 1).qty).toBe(2);
   });
 
+  test('unreadable data that cannot be set aside is never overwritten by any save path', async ({ page }) => {
+    // Only the backup write fails (e.g. storage nearly full); everything else works.
+    await page.addInitScript(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (String(key).includes('Unreadable')) throw new DOMException('quota', 'QuotaExceededError');
+        return original.call(this, key, value);
+      };
+    });
+    await open(page, { [KEY]: '{broken json', atokorePreviewTrialV17: JSON.stringify({ items: [{ id: 1, name: 'v17', qty: 1 }], buys: [], routines: [] }) });
+    await expect(page.locator('#atkSafetyBanner')).toContainText('保存を止めています');
+    expect(await raw(page)).toBe('{broken json');
+
+    await go(page, 'stock');
+    await page.locator('#stockList [data-stock-id] button.icon', { hasText: '＋' }).first().click();
+    expect(await raw(page)).toBe('{broken json');
+
+    await page.click('#bfNavAdd');
+    await chooseBaby(page, { kind: 'diaper', brand: 'メリーズ', type: 'テープ', size: 'S' });
+    await page.click('#qaCommit');
+    await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
+    expect(await raw(page)).toBe('{broken json');
+
+    const id = await page.evaluate(() => items[0].id);
+    await page.evaluate(id => window.atokoreEditStock(id), id);
+    await page.click('.atk-edit-save');
+    await expect(page.locator('#atkEditError')).toContainText('保存を止めています');
+    expect(await raw(page)).toBe('{broken json');
+
+    await page.evaluate(() => { window.closeM(); window.atkOpenBackup(); });
+    const [download] = await Promise.all([page.waitForEvent('download'), page.click('text=読み込めなかった元のデータをファイルに保存')]);
+    const file = test.info().outputPath('unreadable.txt');
+    await download.saveAs(file);
+    expect(fs.readFileSync(file, 'utf8')).toBe('{broken json');
+  });
+
   test('unreadable saved data is moved aside, never deleted', async ({ page }) => {
     await open(page, { [KEY]: '{broken json' });
     await expect(page.locator('#atkSafetyBanner')).toContainText('退避');

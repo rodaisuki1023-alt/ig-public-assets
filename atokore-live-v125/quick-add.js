@@ -263,6 +263,7 @@ function commit(){
  const before=stockItems(),tray=state.tray.map(x=>({...x}));
  let merged=0;
  try{
+  root.AtokoreDataSafety?.assertWritable?.();
   if(state.destination==='buy'){
    const nextBuys=buys.map(x=>({...x}));
    for(const x of tray){const found=nextBuys.find(y=>y.name===x.name&&y.unit===x.unit);

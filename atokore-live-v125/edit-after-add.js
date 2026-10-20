@@ -64,6 +64,7 @@ function edit(id){
   event.preventDefault();
   const curr=read(id),error=$('atkEditError');
   try{
+   root.AtokoreDataSafety?.assertWritable?.();
    const values=Object.fromEntries(new FormData(form).entries());
    const next=validate(values,curr);
    // Optimistic in-memory updates are avoided: write to localStorage before UI mutation.

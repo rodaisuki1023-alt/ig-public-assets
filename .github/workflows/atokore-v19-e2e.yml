@@ -38,7 +38,8 @@ jobs:
           node tests/atokore-pwa.test.cjs
           node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \
             tests/atokore-mobile-dom.test.cjs tests/atokore-distinct-icons.test.cjs tests/atokore-edit-after-add.test.cjs \
-            tests/atokore-baby-focus-v17.test.cjs tests/atokore-add-clarity-v18.test.cjs
+            tests/atokore-baby-focus-v17.test.cjs tests/atokore-add-clarity-v18.test.cjs \
+            tests/atokore-storage-bootstrap-v19.test.cjs
       - name: Real-browser tests (Chromium + WebKit)
         env:
           E2E_SCREEN_DIR: ${{ runner.temp }}/screens

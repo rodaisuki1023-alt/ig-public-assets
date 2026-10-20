@@ -38,9 +38,16 @@ function banner(message,kind){
  clearTimeout(banner.timer);banner.timer=setTimeout(()=>node.classList.remove('on'),kind==='info'?4500:8000);
 }
 
+// Set by storage-bootstrap-v19.js when the saved data could neither be read nor set aside:
+// writing now would overwrite the only copy, so every save path refuses until reload.
+const LOCK_MESSAGE='以前の保存データを読み込めず、退避もできなかったため、元のデータを守るために保存を止めています。端末の空き容量を増やしてから再読み込みしてください。マイページ「データのバックアップ」から元のデータをファイルに保存できます。';
+const locked=()=>!!root.__atokoreStorageLock;
+function assertWritable(){if(locked())throw Error(LOCK_MESSAGE)}
+
 function save(){
  const store=storage();
  try{
+  assertWritable();
   if(!store)throw Error('storage unavailable');
   store.setItem(KEY,JSON.stringify(current()));
   return true;
@@ -48,7 +55,7 @@ function save(){
   root.__atokoreSaveFailures=(root.__atokoreSaveFailures||0)+1;
   const stored=storedState();
   if(stored)assign(stored);
-  banner('保存できませんでした。変更は取り消し、保存済みの内容に戻しました。端末の空き容量やプライベートブラウズ設定を確認してください。','error');
+  banner(locked()?LOCK_MESSAGE:'保存できませんでした。変更は取り消し、保存済みの内容に戻しました。端末の空き容量やプライベートブラウズ設定を確認してください。','error');
   setTimeout(()=>{try{root.render?.()}catch(_){}} ,0);
   try{root.console?.error?.('あとこれ: 保存に失敗しました',e)}catch(_){}
   return false;
@@ -79,15 +86,20 @@ function exportBackup(){
  try{history=JSON.parse(store?.getItem(HISTORY)||'[]')}catch(e){}
  const body=JSON.stringify({app:'atokore',format:1,exportedAt:new Date().toISOString(),data:current(),history},null,1);
  const stamp=new Date().toISOString().slice(0,10).replace(/-/g,'');
- const url=URL.createObjectURL(new Blob([body],{type:'application/json'}));
- const a=doc.createElement('a');a.href=url;a.download='atokore-backup-'+stamp+'.json';
+ download(body,'atokore-backup-'+stamp+'.json','application/json');
+ banner('バックアップファイルを作成しました。「ファイル」アプリなど安全な場所に保存してください。','info');
+}
+
+function download(body,name,type){
+ const url=URL.createObjectURL(new Blob([body],{type}));
+ const a=doc.createElement('a');a.href=url;a.download=name;
  doc.body.appendChild(a);a.click();a.remove();
  setTimeout(()=>URL.revokeObjectURL(url),4000);
- banner('バックアップファイルを作成しました。「ファイル」アプリなど安全な場所に保存してください。','info');
 }
 
 function applyRestore(parsed){
  const store=storage();
+ if(locked()){banner(LOCK_MESSAGE,'error');return false}
  if(!store){banner('この端末では保存領域を使えないため復元できません。','error');return false}
  const previous=JSON.stringify(current());
  try{store.setItem(BEFORE_RESTORE,JSON.stringify({at:Date.now(),data:JSON.parse(previous)}))}
@@ -146,6 +158,16 @@ function openBackup(){
   el('p',{class:'atk-backup-note',text:'在庫・買い物リスト・いつものセットは、この端末のブラウザ内だけに保存されています。機種変更やデータ消去に備えて、ときどきファイルに保存してください。'}),
   el('p',{class:'atk-backup-count',text:'現在：在庫'+counts.items.length+'件・買い物'+counts.buys.length+'件・セット'+counts.routines.length+'件'}),
   exportBtn,pick,file,status];
+ if(locked()){
+  // The unreadable original is still in place: let the user take it out as a file.
+  const raw=el('button',{type:'button',class:'atk-backup-secondary',text:'読み込めなかった元のデータをファイルに保存'});
+  raw.addEventListener('click',()=>{
+   let text=null;try{text=storage()?.getItem(KEY)??null}catch(e){}
+   if(text===null){status.textContent='この端末では元のデータを読み出せませんでした';return}
+   download(text,'atokore-unreadable-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'.txt','text/plain');
+  });
+  children.splice(3,0,el('p',{class:'atk-backup-status',text:LOCK_MESSAGE}),raw);
+ }
  let hasUndo=false;try{hasUndo=!!storage()?.getItem(BEFORE_RESTORE)}catch(e){}
  if(hasUndo){const undo=el('button',{type:'button',class:'atk-backup-undo',text:'復元する前の状態に戻す'});undo.addEventListener('click',undoRestore);children.push(undo)}
  sheet.replaceChildren(...children);
@@ -168,10 +190,12 @@ function bootNotices(){
   if(n.type==='unreadable')banner('以前の保存データを読み込めなかったため、削除せずに別の場所へ退避しました。','error');
   if(n.type==='migrated')banner('前の試用版のデータ（在庫'+n.items+'件）をコピーしました。前の試用版のデータはそのまま残っています。','info');
   if(n.type==='migration-failed')banner('前の試用版のデータをコピーできませんでした。前の試用版のデータは変更していません。','error');
+  if(n.type==='migration-skipped')banner('前の試用版のデータを読み込めなかったため、コピーしていません。前の試用版のデータは変更していません。','error');
+  if(n.type==='locked')banner(LOCK_MESSAGE,'error');
  }
 }
 
-const api=Object.freeze({parseBackup,valid,save});
+const api=Object.freeze({parseBackup,valid,save,assertWritable});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreDataSafety=api;
 root.atkOpenBackup=openBackup;
