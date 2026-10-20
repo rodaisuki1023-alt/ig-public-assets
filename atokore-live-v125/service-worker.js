@@ -41,6 +41,9 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // A separate review build lives beneath this path. Never cache its navigation
+  // as the main app index, and let its own scoped service worker handle assets.
+  if (url.pathname.includes('/preview-compact-v15/')) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
