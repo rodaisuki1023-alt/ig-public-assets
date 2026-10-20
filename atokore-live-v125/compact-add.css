@@ -1,0 +1,99 @@
+/* Compact list density and distinct product icons for Atokore v14.
+   Quick selection is text-first; recognisable glyphs are reserved for stocked items. */
+body.atk-v14 #pg-add.qa-quick-mode .qa-tiles{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-tile{
+  display:flex;
+  flex-direction:row;
+  justify-content:space-between;
+  align-items:center;
+  gap:6px;
+  min-height:53px;
+  padding:10px 10px 10px 13px;
+  border-radius:13px;
+  box-shadow:none;
+  text-align:left;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-name{
+  font-size:14px;
+  line-height:1.4;
+  font-weight:750;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  text-overflow:clip;
+  text-align:left;
+  flex:1;
+  display:block;
+  min-width:0;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-tile-add{
+  position:static;
+  flex:0 0 24px;
+  width:24px;
+  height:24px;
+  line-height:24px;
+  text-align:center;
+  border-radius:8px;
+  background:#F7E7DF;
+  color:#995640;
+  font-size:17px;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-tile.picked{
+  background:#FFF4EE;
+  border-color:#A85647;
+  box-shadow:0 0 0 1px #A8564766;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-tile.picked .qa-tile-add{
+  color:#fff;
+  background:#97513E;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-category-tabs button,
+body.atk-v14 #pg-add.qa-quick-mode .qa-mode button,
+body.atk-v14 #pg-add.qa-quick-mode .qa-brand-chips button,
+body.atk-v14 #pg-add.qa-quick-mode .qa-option-chips button,
+body.atk-v14 #pg-add.qa-quick-mode .qa-recent button,
+body.atk-v14 #pg-add.qa-quick-mode .qa-free button{
+  min-height:44px;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-recent button{
+  min-width:112px;
+  padding:9px 12px;
+  border-radius:12px;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-recent button span:first-child{
+  display:block;
+  flex:1;
+  font-size:12px;
+  line-height:1.4;
+  white-space:normal;
+  max-width:180px;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-recent button b{
+  font-size:16px;
+  color:#995640;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-tray-item .qa-step button,
+body.atk-v14 #pg-add.qa-quick-mode .qa-remove{
+  min-width:36px;
+  min-height:36px;
+}
+body.atk-v14 #pg-add.qa-quick-mode .qa-tile:focus-visible,
+body.atk-v14 #pg-add.qa-quick-mode .qa-recent button:focus-visible{
+  outline:3px solid #A85647;
+  outline-offset:2px;
+}
+body.atk-v14 .qa-picture-badge .qa-item-icon{
+  width:48px;
+  height:48px;
+}
+body.atk-v14 .qa-picture-badge .qa-item-icon svg{
+  width:46px;
+  height:46px;
+}
+@media(max-width:350px){
+  body.atk-v14 #pg-add.qa-quick-mode .qa-tile{padding:8px 7px 8px 10px;min-height:53px}
+  body.atk-v14 #pg-add.qa-quick-mode .qa-name{font-size:13px}
+}

@@ -9,7 +9,7 @@ function browser(){
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const dom=new JSDOM(html,{url:'https://example.invalid/atokore/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','quick-add.js']){
+ for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','quick-add.js']){
   w.eval(fs.readFileSync(path.join(root,file),'utf8'));
  }
  const $=id=>w.document.getElementById(id);
@@ -34,8 +34,8 @@ test('batch combines matching generic stock but not mismatched variants, never m
 });
 test('select and batch register groceries using real PWA storage and inventory rendering',()=>{
  const {w,$,click,dom}=browser();
- assert.ok($('qaPanel'));assert.equal($('qaSwitchQuick').classList.contains('selected'),true);
- w.atkOpenAdd();click('[data-qa-pick="卵"]');click('[data-qa-pick="牛乳"]');click('[data-qa-pick="玉ねぎ"]');
+ assert.ok($('qaPanel'));assert.equal($('qaSwitchDetails'),null,'advanced entry should not be shown');
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-pick="牛乳"]');click('[data-qa-pick="玉ねぎ"]');
  assert.match($('qaTotal').textContent,/3種類/);
  click('[data-qa-pick="卵"]');
  assert.match($('qaTotal').textContent,/4点/);
@@ -46,7 +46,7 @@ test('select and batch register groceries using real PWA storage and inventory r
  assert.ok(data.items.find(x=>x.name==='玉ねぎ'));
  assert.equal($('qaTray').hidden,true);
  assert.match($('stockList').innerHTML,/qa-picture-badge/);
- w.atkOpenAdd();click('[data-qa-pick="卵"]');click('[data-qa-commit]');
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-commit]');
  const newer=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  const eggs=newer.items.filter(x=>x.name==='卵');
  assert.equal(eggs.length,2,'an existing expiring egg lot must remain separate');
@@ -73,28 +73,24 @@ test('baby products can be added to the tray by brand/type/size without overwrit
  assert.match($('stockList').textContent,/MamyPoko/);
  dom.window.close();
 });
-test('full detailed registration remains accessible',()=>{
- const {w,$,click,dom}=browser();
- w.atkOpenAdd();click('[data-qa-view="details"]');
- assert.equal($('pg-add').classList.contains('qa-details-mode'),true);
- assert.equal(typeof w.atkSubmitItem,'function');
- click('[data-qa-view="quick"]');
- assert.equal($('pg-add').classList.contains('qa-details-mode'),false);
- dom.window.close();
+test('advanced registration is replaced by later stock editing',()=>{
+ const {w,$,dom}=browser();w.atkOpenAdd();
+ assert.equal($('qaSwitchDetails'),null);assert.ok($('qaPanel').textContent.includes('かんたん登録'));
+ assert.equal($('pg-add').classList.contains('qa-details-mode'),false);dom.window.close();
 });
 test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
- assert.match(html,/quick-add\.js\?v=14/);assert.match(html,/quick-add\.css\?v=14/);
+ assert.match(html,/quick-add\.js\?v=17/);assert.match(html,/quick-add\.css\?v=14/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v14/);
+ assert.match(sw,/atokore-pwa-v17/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 
 
 test('show-more reveals additional food choices and selecting does not auto-save',()=>{
  const {w,$,click,dom}=browser();
- w.atkOpenAdd();
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');
  assert.equal($('qaTiles').children.length,24);
  assert.equal($('qaMore').hidden,false);
  click('[data-qa-more]');
@@ -119,10 +115,8 @@ test('other-category custom entries remain categorized as other and details are 
  click('[data-qa-commit]');
  const entry=JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.find(x=>x.name==='自作の保存用品');
  assert.ok(entry);assert.equal(entry.cat,'その他');
- w.atkOpenAdd();click('[data-qa-view="details"]');
+ w.atkOpenAdd();assert.equal($('qaSwitchDetails'),null);
  const css=fs.readFileSync(path.join(root,'quick-add.css'),'utf8');
- assert.match(css,/#pg-add\.qa-details-mode \.atk-original-name/);
  assert.match(css,/#pg-add\.qa-has-tray/);
- assert.equal($('pg-add').classList.contains('qa-details-mode'),true);
  dom.window.close();
 });

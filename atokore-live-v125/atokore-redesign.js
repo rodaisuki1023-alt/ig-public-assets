@@ -76,7 +76,7 @@ function decorateShopping(){
 function initHome(){const pg=$('pg-home');if(pg)pg.innerHTML=homeHTML()}
 function initStock(){
  const pg=$('pg-stock'),search=$('stockSearch');if(!pg||!search)return;
- const h=document.createElement('div');h.className='atk-page-title';h.innerHTML='<h2>ストック</h2><button type="button" data-atk-add aria-label="商品を追加">＋</button>';pg.prepend(h);
+ const h=document.createElement('div');h.className='atk-page-title';h.innerHTML='<h2>ストック</h2><button type="button" data-atk-add aria-label="ストックを追加">＋ ストック追加</button>';pg.prepend(h);
  search.placeholder='ブランド名・商品名で検索';
  const hint=document.createElement('div');hint.className='atk-stock-hint';hint.textContent='商品をタップして詳細を確認。－／＋で在庫を増減できます。';
  $('catChips')?.insertAdjacentElement('afterend',hint);
@@ -161,6 +161,7 @@ function showDetail(id){
  const inner='<button class="close" onclick="closeM()">閉じる</button><div class="atk-detail-head">'+brandHtml(d.brand)+'<h2>'+esc(d.line)+'</h2><p>'+esc([d.type,d.size].filter(Boolean).join('・')||x.name)+'</p></div>'+
  '<div class="atk-detail-qty"><b>現在の在庫</b><span>'+esc(x.qty)+' '+esc(x.unit||'個')+'</span></div>'+
  '<div class="atk-detail-actions"><button onclick="adj('+safeId+',-1);atkShowDetail('+safeId+')">－ 減らす</button><button onclick="adj('+safeId+',1);atkShowDetail('+safeId+')">＋ 増やす</button></div>'+
+ '<button type="button" class="atk-edit-open" onclick="atokoreEditStock('+safeId+')">✎ 商品情報を編集する</button>'+
  '<button class="btn atk-detail-cart" onclick="addStockOneToBuyV125H('+safeId+');closeM()">買い物リストへ追加</button>'+
  '<button class="atk-detail-delete" onclick="closeM();delItem('+safeId+')">この商品を削除</button>';
  root.openM?.(inner);
