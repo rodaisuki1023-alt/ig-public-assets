@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atokore-pwa-v16';
+const CACHE_NAME = 'atokore-pwa-v17';
 const APP_SHELL = [
   './',
   './index.html',
@@ -17,6 +17,9 @@ const APP_SHELL = [
   './compact-add.css',
   './edit-after-add.css',
   './edit-after-add.js',
+  './baby-kit-v17.js',
+  './baby-flow-v17.js',
+  './baby-focus-v17.css',
   './product-icons.js',
   './quick-add.js',
   './pwa.js',
