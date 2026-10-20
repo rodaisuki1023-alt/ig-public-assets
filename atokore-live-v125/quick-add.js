@@ -196,7 +196,9 @@ function renderBaby(){
  (lines?'<div class="qa-subtitle">商品シリーズ（任意）</div><div class="qa-option-chips qa-lines">'+lines+'</div>':'')+
  '<details class="qa-baby-extra"><summary>シリーズを自分で入力する（任意）</summary><input id="qaBabySeries" maxlength="45" placeholder="例：さらさらケア" value="'+safe(state.series)+'"></details>'+
  '<div class="qa-baby-bottom"><label>数量 <span>パック・缶などの個数</span></label><div class="qa-step"><button data-qa-step="-1" type="button" aria-label="減らす">−</button><b id="qaBabyQty">'+state.qty+'</b><button data-qa-step="1" type="button" aria-label="増やす">＋</button></div></div>'+
- '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ 追加予定に入れる</button>';
+ '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ ストックに追加</button>'+ 
+ '<p class="qa-baby-save-note">商品を選択後、下の「まとめて追加」で保存されます。</p>';
+ renderDestination();
 }
 function addBaby(){
  if(!state.brand||!state.type||(state.kind==='diaper'&&!state.size)){
@@ -204,7 +206,7 @@ function addBaby(){
  }
  const desc=[state.brand,state.series,state.kind==='diaper'?'おむつ':state.kind==='milk'?'粉ミルク':'おしりふき',state.type,state.kind==='diaper'?state.size:''].filter(Boolean).join(' ');
  addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.kind==='wipes'?'パック':state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
- notify('追加予定に入れました');
+ notify('商品を選択しました。下のボタンでまとめて保存できます');
 }
 function renderTray(){
  const box=$('qaTray'),list=$('qaTrayList'),n=$('qaTotal'),button=$('qaCommit');
@@ -346,6 +348,8 @@ function renderDestination(){
  const node=$('bfDestination');if(!node)return;
  node.querySelectorAll('[data-qa-dest]').forEach(x=>x.classList.toggle('selected',x.dataset.qaDest===state.destination));
  const button=$('qaCommit');if(button)button.textContent=state.destination==='buy'?'まとめて買い物リストに追加':'まとめてストックに追加';
+ const baby=$('qaBaby')?.querySelector('[data-qa-babyadd]');
+ if(baby)baby.textContent=state.destination==='buy'?'＋ 買い物リストに追加':'＋ ストックに追加';
 }
 function openWithEntries(entries,destination='stock'){
  state.destination=destination==='buy'?'buy':'stock';
