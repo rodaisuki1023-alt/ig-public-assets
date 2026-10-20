@@ -18,7 +18,7 @@ test('show a prominently labeled stock add action and no detailed entry mode',()
  const {dom,w,$}=browser();
  assert.equal($('qaSwitchDetails'),null);
  w.atkOpenAdd();
- assert.ok($('qaPanel').textContent.includes('登録後に編集'));
+ assert.ok($('qaPanel').textContent.includes('かんたん登録'));
  const nav=w.document.querySelector('.tabs .tab[data-p="add"]');
  assert.match(nav.textContent,/ストック追加/);
  assert.notEqual(nav.style.display,'none');
