@@ -60,8 +60,10 @@
     return '食料品';
   }
 
-  function saveState(){try{save()}catch(e){console.error('あとこれ: 保存に失敗しました',e)}}
+  let lastSaveOk=true;
+  function saveState(){try{lastSaveOk=save()!==false}catch(e){lastSaveOk=false;console.error('あとこれ: 保存に失敗しました',e)}return lastSaveOk}
   function logHistory(title,detail,type='other',icon='✎'){
+    if(!lastSaveOk)return;
     try{const key='atokoreHistoryV1',history=JSON.parse(localStorage.getItem(key)||'[]');history.unshift({id:Core.uniqueId(),ts:Date.now(),title,detail,type,icon});localStorage.setItem(key,JSON.stringify(history.slice(0,200)))}catch(e){}
   }
   function toast(message){
@@ -89,7 +91,7 @@
     try{if(typeof window.renderRoutines==='function')window.renderRoutines()}catch(e){console.error('あとこれ: いつものリスト表示',e)}
     try{if(typeof window.renderHome==='function')window.renderHome()}catch(e){console.error('あとこれ: ホーム表示',e)}
   }
-  function finish({page,message}={}){renderAllViews();if(page)showPage(page);if(message)toast(message)}
+  function finish({page,message}={}){renderAllViews();if(page)showPage(page);if(message&&lastSaveOk)toast(message);lastSaveOk=true}
 
   function syncStockSelectionFromDom(){
     const boxes=[...document.querySelectorAll('#stockList input.stockPickV125h[type="checkbox"]')];
@@ -121,7 +123,7 @@
   window.renderStock=function(){
     cleanSelections();
     const cats=['すべて',...new Set(items.map(x=>x.cat||'その他'))],chips=document.getElementById('catChips');
-    if(chips)chips.innerHTML=cats.map(cat=>{const c=color(cat);return `<button class="chip ${cat===filter?'on':''}" style="${cat==='すべて'?'':`border-color:${c[2]};background:${cat===filter?c[0]:c[1]};color:${cat===filter?'#fff':c[0]}`}" onclick="setFilter('${esc(cat)}')">${esc(cat)}</button>`}).join('');
+    window.__atokoreStableCats=cats;if(chips)chips.innerHTML=cats.map(cat=>{const c=color(cat);return `<button class="chip ${cat===filter?'on':''}" style="${cat==='すべて'?'':`border-color:${c[2]};background:${cat===filter?c[0]:c[1]};color:${cat===filter?'#fff':c[0]}`}" data-filter-index="${cats.indexOf(cat)}" onclick="setFilter(window.__atokoreStableCats[this.dataset.filterIndex])">${esc(cat)}</button>`}).join('');
     const toggle=document.getElementById('stockSelectToggle');if(toggle)toggle.textContent=stockSelectMode?'選択を終了':'☑ 複数選択';
     const bulk=document.getElementById('stockBulkActions');if(bulk){bulk.classList.toggle('hide',!stockSelectMode);bulk.classList.add('stableManageBtns')}
     const list=document.getElementById('stockList'),visible=window.visibleStock();
@@ -242,10 +244,11 @@
     const original=window[name];
     if(typeof original!=='function'||original.__atokoreV125HAdapted)return;
     const adapted=function(...args){
-      const before=stateSignature(),notices=[],nativeAlert=window.alert;
+      const before=stateSignature(),failuresBefore=window.__atokoreSaveFailures||0,notices=[],nativeAlert=window.alert;
       let result;
       window.alert=message=>notices.push(String(message));
       try{result=original.apply(this,args)}finally{window.alert=nativeAlert}
+      if((window.__atokoreSaveFailures||0)>failuresBefore){renderAllViews();return result}
       const changed=stateSignature()!==before;
       if(changed){
         renderAllViews();

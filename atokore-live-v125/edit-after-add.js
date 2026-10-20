@@ -75,7 +75,11 @@ function edit(id){
    root.render?.();
    root.closeM?.();
    root.notifyAtokoreV125H?.('商品情報を変更しました');
-  }catch(e){if(error){error.textContent=e?.message||'保存に失敗しました';error.hidden=false}}
+  }catch(e){
+   // Storage failures (quota, private mode) leave the saved record untouched; never show a raw DOMException.
+   const storageFailure=typeof DOMException!=='undefined'&&e instanceof DOMException;
+   if(error){error.textContent=storageFailure?'保存できませんでした。端末の空き容量を確認してください（変更前の内容は残っています）':(e?.message||'保存に失敗しました');error.hidden=false}
+  }
  });
 }
 function install(){
