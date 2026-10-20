@@ -2,7 +2,7 @@
 (function(root){
 'use strict';
 const $=id=>typeof document==='undefined'?null:document.getElementById(id);
-const esc=text=>String(text??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;':'&quot;',"'":'&#39;'}[c]));
+const esc=text=>String(text??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const CATEGORIES=['食料品','日用品','衛生・薬','ベビー','子ども','衣類','家電・生活用品','防災','その他'];
 const UNITS=['個','本','袋','箱','パック','枚','缶','セット','g','kg','mL','L'];
 const PLACES=['','冷蔵庫','冷凍庫','パントリー','洗面所','トイレ','収納','防災収納','その他'];
@@ -74,7 +74,7 @@ function edit(id){
    if(typeof root.save==='function')root.save();
    root.render?.();
    root.closeM?.();
-   root.notifyAtokoreUiV125H?.('商品情報を変更しました');
+   root.notifyAtokoreV125H?.('商品情報を変更しました');
   }catch(e){if(error){error.textContent=e?.message||'保存に失敗しました';error.hidden=false}}
  });
 }
