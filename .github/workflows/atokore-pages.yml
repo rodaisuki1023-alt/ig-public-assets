@@ -33,6 +33,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Pin the reviewed draft to one SHA, so routine app deployments cannot
+      # silently change the preview content.
+      - name: Checkout reviewed compact UI draft
+        uses: actions/checkout@v4
+        with:
+          ref: 9a6287f014203a1199303c03b4661f14c2897847
+          path: _preview_source
+          persist-credentials: false
+
       - name: Build and verify Atokore v12.5m PWA
         run: |
           rm -rf _site
@@ -145,6 +154,48 @@ jobs:
           mkdir -p _site/atokore
           find _site -maxdepth 1 -type f ! -name '.nojekyll' -exec cp {} _site/atokore/ \;
           cp -R _site/icons _site/atokore/icons
+
+      - name: Build safely isolated mobile trial
+        run: |
+          set -eu
+          PREVIEW=_site/preview-compact-v15
+          mkdir -p "$PREVIEW"
+          cp -R _preview_source/atokore-live-v125/. "$PREVIEW/"
+          # Family peer sync is purposely disabled in this review copy.
+          # Do not allow review interactions to modify real family stock.
+          printf '/* Preview only: family sync is intentionally disabled. */\n' > "$PREVIEW/family.js"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path('_site/preview-compact-v15')
+          for path in [root / 'index.html', *root.glob('*.js')]:
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('atokoreTrialV4', 'atokorePreviewTrialV15')
+              text = text.replace('atokoreHistoryV1', 'atokorePreviewHistoryV15')
+              path.write_text(text, encoding='utf-8')
+          index = (root / 'index.html').read_text()
+          worker = (root / 'service-worker.js').read_text()
+          assert 'quick-add.js?v=15' in index
+          assert 'product-icons.js?v=15' in index
+          assert 'compact-add.css?v=15' in index
+          assert 'atokorePreviewTrialV15' in index
+          assert 'atokoreTrialV4' not in ''.join(p.read_text() for p in root.glob('*.js'))
+          assert 'atokore-pwa-v15' in worker
+          assert "Preview only: family sync" in (root / 'family.js').read_text()
+          for path_str in re.findall(r'<script[^>]+src="([^"]+)"', index):
+              path = path_str.split('?',1)[0].removeprefix('./')
+              assert (root / path).is_file(), f'missing preview script: {path}'
+          for path_str in re.findall(r'<link[^>]+href="([^"]+)"', index):
+              path = path_str.split('?',1)[0].removeprefix('./')
+              assert (root / path).is_file(), f'missing preview asset: {path}'
+          PY
+
+          node --check "$PREVIEW/quick-add.js"
+          node --check "$PREVIEW/product-icons.js"
+          node --check "$PREVIEW/atokore-redesign.js"
+          node --test _preview_source/tests/atokore-distinct-icons.test.cjs
+          node --test _preview_source/tests/atokore-quick-add.test.cjs
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
