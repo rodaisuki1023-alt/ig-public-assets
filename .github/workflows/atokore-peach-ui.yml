@@ -8,6 +8,7 @@ on:
       - 'tests/atokore-distinct-icons.test.cjs'
       - 'tests/atokore-edit-after-add.test.cjs'
       - 'tests/atokore-baby-focus-v17.test.cjs'
+      - 'tests/atokore-add-clarity-v18.test.cjs'
       - '.github/workflows/atokore-peach-ui.yml'
   workflow_dispatch:
 
@@ -39,6 +40,7 @@ jobs:
           node --check atokore-live-v125/baby-kit-v17.js
           node --check atokore-live-v125/baby-flow-v17.js
           node --test tests/atokore-baby-focus-v17.test.cjs
+          node --test tests/atokore-add-clarity-v18.test.cjs
       - name: Regression tests
         run: |
           node tests/atokore-core.test.cjs
