@@ -84,3 +84,15 @@ body.atk-v14 .qa-picture-badge svg{width:46px;height:46px;display:block}
 body.atk-v14 #pg-home .qa-picture-badge .qa-icon{width:36px;height:36px}
 body.atk-v14 #pg-home .qa-picture-badge svg{width:36px;height:36px}
 @media(max-width:365px){body.atk-v14 #pg-add.qa-quick-mode .qa-tiles{gap:6px}body.atk-v14 #pg-add.qa-quick-mode .qa-tile{padding:9px 4px;min-height:94px}body.atk-v14 #pg-add.qa-quick-mode .qa-tray-item{gap:3px}body.atk-v14 #pg-add.qa-quick-mode .qa-tray-thumb{display:none}body.atk-v14 #pg-add.qa-quick-mode .qa-tray{width:calc(100% - 8px)}}
+
+/* Detailed registration fallback: retain the v13 assisted fields when expressly selected. */
+body.atk-v14 #pg-add.qa-details-mode .atk-original-name,
+body.atk-v14 #pg-add.qa-details-mode .catalogHead,
+body.atk-v14 #pg-add.qa-details-mode .atk-catalog,
+body.atk-v14 #pg-add.qa-details-mode #catalogMore{display:block!important}
+body.atk-v14 #pg-add.qa-details-mode:not(.atk-not-baby) .atk-guided-panel{display:flex!important}
+body.atk-v14 #pg-add.qa-details-mode.atk-not-baby .atk-guided-panel{display:none!important}
+body.atk-v14 #pg-add.qa-has-tray:not(.qa-details-mode) #qaPanel{padding-bottom:43vh}
+body.atk-v14 #pg-add .qa-mode button:focus-visible,
+body.atk-v14 #pg-add .qa-tile:focus-visible,
+body.atk-v14 #pg-add .qa-tray button:focus-visible{outline:3px solid #A85647;outline-offset:2px}
