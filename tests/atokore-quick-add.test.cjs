@@ -48,9 +48,10 @@ test('select and batch register groceries using real PWA storage and inventory r
  assert.match($('stockList').innerHTML,/qa-picture-badge/);
  w.atkOpenAdd();click('[data-qa-pick="卵"]');click('[data-qa-commit]');
  const newer=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
- console.log('DEBUG_EGG_RECORDS',JSON.stringify(newer.items.filter(x=>x.name==='卵')));
- assert.equal(newer.items.filter(x=>x.name==='卵').length,1);
- assert.equal(newer.items.find(x=>x.name==='卵').qty,3);
+ const eggs=newer.items.filter(x=>x.name==='卵');
+ assert.equal(eggs.length,2,'an existing expiring egg lot must remain separate');
+ assert.ok(eggs.some(x=>x.exp&&x.qty===6),'existing dated stock must not be modified');
+ assert.ok(eggs.some(x=>!x.exp&&x.qty===3),'repeated undated quick additions should combine');
  assert.ok(newer.buys&&Array.isArray(newer.buys));
  dom.window.close();
 });
