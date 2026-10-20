@@ -11,6 +11,7 @@ on:
       - 'tests/atokore-receipt-input.test.cjs'
       - 'tests/atokore-receipt-product-names.test.cjs'
       - 'tests/atokore-pwa.test.cjs'
+      - 'tests/atokore-xss.test.cjs'
       - '.github/workflows/atokore-pages.yml'
   workflow_dispatch:
 
@@ -112,7 +113,9 @@ jobs:
           assert "'./baby-visuals.js'" in worker
           assert 'pwa.js?v=pwa1' in index
           assert "serviceWorker.register('./service-worker.js'" in pwa
-          assert "const CACHE_NAME = 'atokore-pwa-v14'" in worker
+          assert "const CACHE_VERSION = 'atokore-pwa-v15'" in worker
+          assert 'function ownsPath(' in worker
+          assert 'function safeId(' in index
 
           manifest = __import__('json').loads((root / 'manifest.webmanifest').read_text())
           assert manifest['name'] == 'あとこれ｜家庭の在庫・買い物リスト'
@@ -150,6 +153,7 @@ jobs:
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
           node tests/atokore-pwa.test.cjs
+          node --test tests/atokore-xss.test.cjs
 
           mkdir -p _site/atokore
           find _site -maxdepth 1 -type f ! -name '.nojekyll' -exec cp {} _site/atokore/ \;
