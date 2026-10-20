@@ -173,13 +173,29 @@ function chooseBabyField(type,val){
 function renderBaby(){
  const el=$('qaBaby');if(!el)return;
  const b=state.kind;
- el.innerHTML='<div class="qa-baby-kind">'+[['diaper','おむつ'],['milk','粉ミルク'],['wipes','おしりふき']].map(([k,n])=>'<button class="'+(b===k?'selected':'')+'" data-qa-baby="kind" data-value="'+k+'">'+n+'</button>').join('')+'</div>'+
- (b==='wipes'?'<div class="qa-baby-note">おしりふきは下の「追加予定へ」で登録できます。</div>':
-  '<div class="qa-subtitle">① ブランドを選ぶ</div><div class="qa-brand-chips">'+babyBrands().map((n,i)=>'<button class="'+(state.brand===n?'selected':'')+'" data-qa-baby="brand" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
-  '<div class="qa-subtitle">② 種類を選ぶ</div><div class="qa-option-chips">'+BABY[b].types.map(n=>'<button class="'+(state.type===n?'selected':'')+'" data-qa-baby="type" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
-  (b==='diaper'?'<div class="qa-subtitle">③ サイズを選ぶ</div><div class="qa-option-chips">'+BABY[b].sizes.map(n=>'<button class="'+(state.size===n?'selected':'')+'" data-qa-baby="size" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>':''))+
- '<details class="qa-baby-extra"><summary>シリーズを指定する（任意）</summary><input id="qaBabySeries" placeholder="例：さらさらケア" value="'+safe(state.series)+'" maxlength="45"></details>'+
- '<div class="qa-baby-bottom"><label>数量 <span>−／＋で調整</span></label><div class="qa-step"><button data-qa-step="-1" type="button" aria-label="減らす">−</button><b id="qaBabyQty">'+state.qty+'</b><button data-qa-step="1" type="button" aria-label="増やす">＋</button></div></div>'+
+ const suggestions={
+  'パンパース':['さらさらケア','肌へのいちばん','おやすみパンツ'],
+  'グーン':['ぐんぐん吸収','モレ0へ','ナイト'],
+  'マミーポコ':['マミーポコパンツ','夜用パンツ'],
+  'ムーニー':['ムーニーマン','低刺激であんしん','オヤスミマン'],
+  'メリーズ':['ずっと肌さら','ファーストプレミアム','ぐっすりパンツ'],
+  '明治':['ほほえみ','ステップ'],
+  '森永':['はぐくみ','E赤ちゃん','チルミル'],
+  '和光堂':['はいはい','ぐんぐん'],
+  'ビーンスターク':['すこやかM1','つよいこ'],
+  'アイクレオ':['バランスミルク','フォローアップミルク']
+ };
+ const icon=kind=>root.AtokoreBabyKit?.icon(kind)||'';
+ const sizes=b==='diaper'?'<div class="qa-subtitle">③ サイズ</div><div class="qa-option-chips">'+BABY[b].sizes.map(n=>'<button type="button" class="'+(state.size===n?'selected':'')+'" data-qa-baby="size" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>':'';
+ const lines=(suggestions[state.brand]||[]).map(n=>'<button type="button" class="'+(state.series===n?'selected':'')+'" data-qa-baby="series" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('');
+ el.innerHTML='<div class="qa-baby-intro"><span class="qa-baby-intro-icon">'+icon(b)+'</span><span><strong>'+({diaper:'おむつ',milk:'ミルク',wipes:'おしりふき'}[b])+'を追加</strong><small>メーカー・種類・サイズを選ぶだけ</small></span></div>'+
+ '<div class="qa-baby-kind">'+[['diaper','おむつ'],['milk','ミルク'],['wipes','おしりふき']].map(([k,n])=>'<button type="button" class="'+(b===k?'selected':'')+'" data-qa-baby="kind" data-value="'+k+'">'+icon(k)+'<span>'+n+'</span></button>').join('')+'</div>'+
+ '<div class="qa-subtitle">① ブランド</div><div class="qa-brand-chips">'+babyBrands().map(n=>'<button type="button" class="'+(state.brand===n?'selected':'')+'" data-qa-baby="brand" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
+ '<div class="qa-subtitle">② '+(b==='wipes'?'包装':'種類')+'</div><div class="qa-option-chips">'+BABY[b].types.map(n=>'<button type="button" class="'+(state.type===n?'selected':'')+'" data-qa-baby="type" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
+ sizes+
+ (lines?'<div class="qa-subtitle">商品シリーズ（任意）</div><div class="qa-option-chips qa-lines">'+lines+'</div>':'')+
+ '<details class="qa-baby-extra"><summary>シリーズを自分で入力する（任意）</summary><input id="qaBabySeries" maxlength="45" placeholder="例：さらさらケア" value="'+safe(state.series)+'"></details>'+
+ '<div class="qa-baby-bottom"><label>数量 <span>パック・缶などの個数</span></label><div class="qa-step"><button data-qa-step="-1" type="button" aria-label="減らす">−</button><b id="qaBabyQty">'+state.qty+'</b><button data-qa-step="1" type="button" aria-label="増やす">＋</button></div></div>'+
  '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ 追加予定に入れる</button>';
 }
 function addBaby(){
@@ -283,7 +299,7 @@ function setup(){
   if(btn.hasAttribute('data-qa-recent')){const item=$('qaRecent').__qaItems[Number(btn.dataset.qaRecent)];if(item)addLine({name:item.name,cat:item.cat,qty:1,unit:item.unit});return}
   if(btn.dataset.qaBaby){chooseBabyField(btn.dataset.qaBaby,btn.dataset.value);return}
   if(btn.hasAttribute('data-qa-step')){state.qty=Math.max(1,Math.min(99,state.qty+Number(btn.dataset.qaStep)));renderBaby();return}
-  if(btn.hasAttribute('data-qa-babyadd')){state.series=$('qaBabySeries')?.value.trim()||'';addBaby();return}
+  if(btn.hasAttribute('data-qa-babyadd')){state.series=$('qaBabySeries')?.value.trim()||state.series||'';addBaby();return}
   if(btn.hasAttribute('data-qa-free')){addFree();return}
   if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.min(999,v.qty+Number(btn.dataset.step));if(v.qty<=0)state.tray.splice(i,1);renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
