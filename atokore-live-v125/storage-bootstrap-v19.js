@@ -12,10 +12,23 @@ const SOURCES=[['atokorePreviewTrialV17','atokorePreviewHistoryV17'],['atokorePr
 function valid(state){return !!state&&typeof state==='object'&&Array.isArray(state.items)&&Array.isArray(state.buys)&&Array.isArray(state.routines)}
 function parse(raw){try{return JSON.parse(raw)}catch(e){return undefined}}
 
+// An earlier launch may already have set this exact value aside (e.g. when removing the original
+// failed); reuse that copy instead of writing another one into a nearly full storage every launch.
+function existingAside(store,raw){
+ try{
+  if(typeof store.key!=='function')return null;
+  for(let i=0;i<store.length;i++){const k=store.key(i);if(k&&k.indexOf(KEY+'Unreadable')===0&&store.getItem(k)===raw)return k}
+ }catch(e){}
+ return null;
+}
+
 function setAside(store,raw,notes){
- const aside=KEY+'Unreadable'+Date.now();
- try{store.setItem(aside,raw);if(store.getItem(aside)!==raw)throw Error('backup mismatch')}
- catch(e){try{store.removeItem(aside)}catch(_){}notes.push({type:'locked',reason:'unreadable-backup-failed'});return false}
+ let aside=existingAside(store,raw);
+ if(!aside){
+  aside=KEY+'Unreadable'+Date.now();
+  try{store.setItem(aside,raw);if(store.getItem(aside)!==raw)throw Error('backup mismatch')}
+  catch(e){try{store.removeItem(aside)}catch(_){}notes.push({type:'locked',reason:'unreadable-backup-failed'});return false}
+ }
  try{store.removeItem(KEY);if(store.getItem(KEY)!==null)throw Error('still present')}
  catch(e){notes.push({type:'locked',reason:'unreadable-not-removed',key:aside});return false}
  notes.push({type:'unreadable',key:aside});

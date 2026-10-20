@@ -25,6 +25,8 @@ function store(initial, { failGet = () => false, failSet = () => false, failRemo
     getItem(k) { if (failGet(k)) throw new Error('SecurityError'); return map.has(k) ? map.get(k) : null; },
     setItem(k, v) { if (failSet(k, v)) { const e = new Error('quota'); e.name = 'QuotaExceededError'; throw e; } map.set(k, String(v)); },
     removeItem(k) { if (failRemove(k)) throw new Error('remove failed'); map.delete(k); },
+    get length() { return map.size; },
+    key(i) { return [...map.keys()][i] ?? null; },
     snapshot() { return Object.fromEntries(map); },
   };
 }
@@ -45,6 +47,18 @@ test('if the unreadable data cannot be removed after backing it up, nothing is c
   const aside = [...s.map.keys()].find(k => k.startsWith(KEY + 'Unreadable'));
   assert.equal(aside && s.map.get(aside), '{broken', 'the backup copy exists');
   assert.ok(notes.some(n => n.type === 'locked'), JSON.stringify(notes));
+});
+
+test('repeated launches with the same unreadable data keep a single backup copy', () => {
+  const s = store({ [KEY]: '{broken', [V17]: state(2) }, { failRemove: k => k === KEY });
+  const realNow = Date.now;
+  try {
+    // Each launch happens at a different time, so backup key names would differ.
+    for (let i = 0; i < 3; i++) { Date.now = () => realNow() + i * 60000; run(s); }
+  } finally { Date.now = realNow; }
+  const copies = [...s.map.keys()].filter(k => k.startsWith(KEY + 'Unreadable'));
+  assert.equal(copies.length, 1, copies.join(','));
+  assert.equal(s.map.get(KEY), '{broken');
 });
 
 test('a failed read of the saved data writes nothing and locks saving', () => {
