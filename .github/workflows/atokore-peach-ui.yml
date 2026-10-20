@@ -27,6 +27,8 @@ jobs:
         run: |
           npm install --no-save --ignore-scripts jsdom@26.1.0
           node --test tests/atokore-mobile-dom.test.cjs
+          node --check atokore-live-v125/quick-add.js
+          node --test tests/atokore-quick-add.test.cjs
       - name: Regression tests
         run: |
           node tests/atokore-core.test.cjs
