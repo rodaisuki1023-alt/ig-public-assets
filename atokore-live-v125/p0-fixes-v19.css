@@ -41,6 +41,9 @@ body.atk-v19 #bfAddFab{display:none!important}
 /* 3) Add page heading: title and explanation were rendered on one run-on line. */
 body.atk-v19 #pg-add .qa-heading{display:flex;flex-direction:column;gap:5px}
 
+/* 3b) Edit sheet: the flex form sat beside the floated 「閉じる」 button and shrank to ~75% width. */
+body .atk-edit-form{clear:both;padding-top:4px}
+
 /* 4) Save / restore notices */
 #atkSafetyBanner{
   position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top,0px));z-index:200;
