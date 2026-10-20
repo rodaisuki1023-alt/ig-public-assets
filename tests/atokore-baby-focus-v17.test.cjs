@@ -16,24 +16,25 @@ function choose($,kind,brand,type,size){
  tap('kind',kind);tap('brand',brand);tap('type',type);if(size)tap('size',size);
  $('qaBaby').querySelector('[data-qa-babyadd]').click();
 }
-test('single row navigation with a prominent separate stock add CTA',()=>{
+test('single row navigation with the add action in the centre of the tab bar',()=>{
  const {dom,w,$}=browser();
  const add=w.document.querySelector('.tabs .tab[data-p="add"]');
- assert.equal(add.style.getPropertyValue('display'),'none');
- assert.equal(w.document.querySelectorAll('.tabs .tab:not([data-p="add"])').length,4);
- assert.equal($('bfAddFab').textContent,'＋ 商品を追加');
+ assert.equal(add.style.getPropertyValue('display'),'','v19 shows the add tab instead of a floating button');
+ assert.equal(add.id,'bfNavAdd');
+ assert.equal(w.document.querySelectorAll('.tabs .tab').length,5);
+ assert.match(add.textContent,/追加/);
  assert.equal($('pg-stock').querySelector('.atk-page-title button').textContent,'＋ ストック追加');
- const css=fs.readFileSync(path.join(base,'baby-focus-v17.css'),'utf8');
- assert.match(css,/grid-template-columns:repeat\(4,minmax\(0,1fr\)\)!important/);
- assert.match(css,/\.tabs \.tab\[data-p="add"\]\{display:none!important/);
- $('bfAddFab').click();
+ const css=fs.readFileSync(path.join(base,'p0-fixes-v19.css'),'utf8');
+ assert.match(css,/grid-template-columns:repeat\(5,minmax\(0,1fr\)\)!important/);
+ assert.match(css,/\.tabs \.tab\[data-p="add"\]\{\s*display:flex!important/);
+ $('bfNavAdd').click();
  assert.ok($('pg-add').classList.contains('on'));
  assert.ok($('qaBaby').textContent.includes('おしりふき'));
  assert.ok($('bfDestination').querySelector('[data-qa-dest="stock"]').classList.contains('selected'));
  dom.window.close();
 });
 test('wipes are distinct by brand and pack mode; no guesswork about manufacturer',()=>{
- const {dom,w,$}=browser();$('bfAddFab').click();
+ const {dom,w,$}=browser();$('bfNavAdd').click();
  choose($,'wipes','ムーニー','詰替');
  choose($,'wipes','ピジョン','本体');
  const tray=w.AtokoreQuickAdd.getTray();
@@ -49,7 +50,7 @@ test('wipes are distinct by brand and pack mode; no guesswork about manufacturer
  dom.window.close();
 });
 test('diaper and formula render individual original baby icons, full brand names',()=>{
- const {dom,w,$}=browser();$('bfAddFab').click();
+ const {dom,w,$}=browser();$('bfNavAdd').click();
  choose($,'diaper','マミーポコ','パンツ','L');
  choose($,'milk','明治','キューブ');
  $('qaCommit').click();
@@ -111,5 +112,5 @@ test('offline shell has complete v17 scripts and separate palette',()=>{
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v18/);
+ assert.match(worker,/atokore-pwa-v19/);
 });
