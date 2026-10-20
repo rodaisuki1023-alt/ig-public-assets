@@ -27,6 +27,8 @@ const APP_SHELL = [
   './baby-focus-v17.css',
   './add-clarity-v18.css',
   './p0-fixes-v19.css',
+  './routine-catalog-v20.css',
+  './routine-catalog-v20.js',
   './storage-bootstrap-v19.js',
   './data-safety-v19.js',
   './product-icons.js',
