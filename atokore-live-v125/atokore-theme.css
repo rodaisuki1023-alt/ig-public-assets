@@ -93,3 +93,5 @@ body.atk-v13 #pg-add>.field,body.atk-v13 #pg-add>details{background:#FFFEFC;bord
 .atk-detail-cart{display:block;width:100%;background:#C5745C!important;color:#fff!important;border-radius:14px!important;min-height:50px}
 .atk-detail-delete{display:block;width:100%;background:none;border:0;padding:16px;color:#a54e42;font-size:12px;margin-top:8px}
 @media(max-width:380px){.atk-brand,.atk-row-brand{font-size:10px}.atk-row-brand{flex-basis:67px;width:67px}.atk-item-id{flex-basis:75px;max-width:75px}.atk-metric span{font-size:10px}.atk-action{font-size:10px}.atk-family-art{flex-basis:80px;width:80px}body.atk-v13 .stableStockRow .qty .icon{height:28px;min-width:27px;width:27px}}
+
+body.atk-v13 #familyShareSafeBtn{right:112px!important;top:16px!important;min-width:38px!important;height:38px!important;border-color:#ead6cb!important;background:#ffffffcf!important;box-shadow:none!important}
