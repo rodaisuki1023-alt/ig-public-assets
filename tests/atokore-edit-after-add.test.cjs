@@ -28,7 +28,7 @@ test('show a prominently labeled stock add action and no detailed entry mode',()
 });
 test('tap egg stock and save its expiration, location and memo without touching other stock',()=>{
  const {dom,w,$}=browser();
- w.atkOpenAdd();$('qaTiles').querySelector('[data-qa-pick="卵"]').click();$('qaCommit').click();
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');$('qaTiles').querySelector('[data-qa-pick="卵"]').click();$('qaCommit').click();
  const existing=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  const stock=existing.items.find(x=>x.name==='卵'&&!x.exp);
  assert.ok(stock,'quick-add stock exists');
@@ -58,7 +58,7 @@ test('tap egg stock and save its expiration, location and memo without touching 
 });
 test('invalid edits remain open and do not alter stored inventory',()=>{
  const {dom,w,$}=browser();
- w.atkOpenAdd();$('qaTiles').querySelector('[data-qa-pick="卵"]').click();$('qaCommit').click();
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');$('qaTiles').querySelector('[data-qa-pick="卵"]').click();$('qaCommit').click();
  const before=w.localStorage.getItem('atokoreTrialV4');
  const stock=JSON.parse(before).items.find(x=>x.name==='卵'&&!x.exp);
  w.atokoreEditStock(stock.id);
@@ -104,5 +104,5 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.match(html,/edit-after-add\.js\?v=16/);
  assert.match(html,/edit-after-add\.css\?v=16/);
  assert.match(worker,/'\.\/edit-after-add.js'/);
- assert.match(worker,/atokore-pwa-v16/);
+ assert.match(worker,/atokore-pwa-v17/);
 });
