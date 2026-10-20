@@ -9,13 +9,14 @@ const { JSDOM } = require('jsdom');
 
 const familySource = fs.readFileSync(path.resolve(__dirname, '../atokore-trial-v12/family.js'), 'utf8');
 
-function boot({ cfg, version = 0, local, confirmAnswer = true } = {}) {
+function boot({ cfg, version = 0, local, confirmAnswer = true, stored = {} } = {}) {
   const dom = new JSDOM('<!doctype html><div class="top"></div><div id="modal"><div id="sheet"></div></div>', { url: 'https://example.invalid/ig-public-assets/', runScripts: 'dangerously' });
   const w = dom.window;
   w.confirmAnswer = confirmAnswer; w.asked = []; w.alerts = []; w.sent = []; w.notices = [];
   w.confirm = m => { w.asked.push(m); return w.confirmAnswer; };
   w.alert = m => w.alerts.push(m);
   if (cfg) { w.localStorage.setItem('atokoreFamilySafeV2', JSON.stringify(cfg)); w.localStorage.setItem('atokoreFamilySafeVersionV2', String(version)); }
+  for (const [k, v] of Object.entries(stored)) w.localStorage.setItem(k, v);
   w.eval(`
     // var, not let: separate eval() calls do not share let bindings (separate <script> tags do).
     var items=${JSON.stringify(local?.items || [])},buys=${JSON.stringify(local?.buys || [])},routines=${JSON.stringify(local?.routines || [])};
@@ -88,6 +89,31 @@ test('if the local copy cannot be written, the family update is held and nothing
   assert.deepEqual(localItems(w), ['卵:6']);
   assert.deepEqual(backups(w)[0].data.items.map(x => x.name + ':' + x.qty), ['おむつ:9', 'ミルク:1']);
 }));
+
+test('a held family update stays held after a reload, so this device never pushes over newer data', async () => {
+  let flag = null;
+  await run({ ...member, local: two }, async w => {
+    const restore = failWrites(w, k => k === 'atokoreFamilyBackupV1');
+    leaderWithMember(w).h.data(incoming(200, []));
+    restore();
+    flag = w.localStorage.getItem('atokoreFamilyBlockedV1');
+    assert.equal(flag, '1', 'held state is remembered');
+  });
+  // Reload: same stored data, version and flag; storage still short, the user edits before any family update.
+  await run({ ...member, local: two, stored: { atokoreFamilyBlockedV1: flag } }, async w => {
+    const conn = leaderWithMember(w);
+    const before = stateMsgs(w).length;
+    w.eval('items[0].qty=7;save()');
+    await tick(1600);
+    assert.equal(stateMsgs(w).length, before, 'held device does not broadcast after reload');
+    w.document.querySelector('.top button').click();
+    assert.match(w.document.getElementById('sheet').textContent, /保留/, 'the family screen explains the hold');
+    // Storage works again: the family update is applied (copy kept first) and the hold is cleared.
+    conn.h.data(incoming(300, [{ id: 3, name: '卵', qty: 6 }]));
+    assert.deepEqual(localItems(w), ['卵:6']);
+    assert.equal(w.localStorage.getItem('atokoreFamilyBlockedV1'), null);
+  });
+});
 
 test('if family data cannot be saved here, the old data stays in memory and in storage', () => run({ ...member, local: two }, async w => {
   const conn = leaderWithMember(w);

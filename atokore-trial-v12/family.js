@@ -3,8 +3,9 @@
   const KEY='atokoreFamilySafeV2', VER='atokoreFamilySafeVersionV2';
   // Local copies taken before family data replaces this device's data (newest first, max 5).
   const BACKUP='atokoreFamilyBackupV1', BACKUP_MAX=5;
-  // This device's own stock record (written by save()) and the "sync paused after a restore" flag.
-  const DATA_KEY='atokoreTrialV4', PAUSED='atokoreFamilyPausedV1';
+  // This device's own stock record (written by save()), the "sync paused after a restore" flag and
+  // the "family update held" flag (kept across reloads so a reload never lets this device push over newer data).
+  const DATA_KEY='atokoreTrialV4', PAUSED='atokoreFamilyPausedV1', BLOCKED='atokoreFamilyBlockedV1';
   const PREFIX='atokore-safe-';
   let cfg=null, peer=null, leader=false, leaderConn=null, conns=new Map(), pollTimer=null, reconnectTimer=null, familyMode='create';
   let applying=false, lastHash='', version=0, peerLoading=false;
@@ -58,11 +59,11 @@
     const needCopy=changedItems+changedOther>0||(version===0&&!isEmpty(local)&&hash(local)!==hash(st));
     if(needCopy&&!backupLocal(version===0?'join':'family-update')){
       if(!blocked)notice('この端末のデータを退避できない（空き容量不足など）ため、家族からの更新を保留しました。この端末の変更も家族には送りません。');
-      blocked=true;updateBtn();return false;
+      setBlocked(true);return false;
     }
     applying=true;
     const ok=persist(st);
-    if(ok){version=Number(v)||Date.now();saveJ(VER,version);blocked=false}
+    if(ok){version=Number(v)||Date.now();saveJ(VER,version);setBlocked(false)}
     try{if(typeof render==='function')render()}catch(e){console.error('family render',e)}
     lastHash=hash(state());
     applying=false; updateBtn();
@@ -161,7 +162,9 @@
     if(blocked)return '<div class="familyModeHint" style="margin-top:10px">この端末のデータを退避できないため、家族からの更新を保留しています。空き容量を増やしてから再読み込みしてください。</div>';
     return '';
   }
-  function setPaused(on){paused=on;try{if(on)localStorage.setItem(PAUSED,'1');else localStorage.removeItem(PAUSED)}catch(e){}updateBtn()}
+  function flag(k,on){try{if(on)localStorage.setItem(k,'1');else localStorage.removeItem(k)}catch(e){}}
+  function setPaused(on){paused=on;flag(PAUSED,on);updateBtn()}
+  function setBlocked(on){blocked=on;flag(BLOCKED,on);updateBtn()}
   window.restoreFamilyBackupSafe=()=>{
     const latest=(load(BACKUP,[])||[])[0];if(!latest||!latest.data)return;
     if(!confirm(`この端末のデータを、${new Date(latest.at).toLocaleString('ja-JP')}に保存した内容（在庫${latest.data.items.length}件）に戻します。\n家族の端末には送りません（この端末の同期は一時停止します）。戻しますか？`))return;
@@ -188,8 +191,8 @@
   window.createFamilySafe=()=>{const name=($('famSafeCreateName')?.value||'').trim()||'この端末';cfg={familyCode:code(),deviceId:device(),deviceName:name,created:true};version=Date.now();saveJ(KEY,cfg);saveJ(VER,version);lastHash=hash(state());loadPeer();openFamily()};
   window.joinFamilySafe=()=>{const c=norm($('famSafeJoinCode')?.value),name=($('famSafeJoinName')?.value||'').trim()||'この端末';if(c.length!==8){alert('8文字の家族コードを入力してください');return}const local=state();if(!isEmpty(local)){if(!confirm(`参加すると、この端末の在庫${local.items.length}件・買い物${local.buys.length}件は家族のデータに置き換わります。\n置き換え前の内容はこの端末に保存され、家族共有画面から戻せます。\n参加しますか？`))return;if(!backupLocal('join')){alert('この端末のデータを退避できない（空き容量不足など）ため、参加を中止しました。何も変更していません。');return}}cfg={familyCode:c,deviceId:device(),deviceName:name,created:false};version=0;saveJ(KEY,cfg);saveJ(VER,version);loadPeer();openFamily()};
   window.shareFamilySafe=async()=>{if(!cfg)return;const base=location.origin+location.pathname;const url=base+'?family='+encodeURIComponent(cfg.familyCode);const text=`あとこれの家族共有コード：${cfg.familyCode}\n${url}`;try{if(navigator.share)await navigator.share({title:'あとこれ 家族共有',text,url});else{await navigator.clipboard.writeText(text);alert('共有内容をコピーしました')}}catch(e){}};
-  window.forceFamilySafeSync=()=>{if(!cfg)return;if(!confirm('家族の全員の端末の在庫・買い物リストを、この端末の内容で上書きします。\nほかの端末で最近行った変更は失われる場合があります。続けますか？'))return;setPaused(false);blocked=false;version=Date.now();saveJ(VER,version);const st=state();lastHash=hash(st);sendAll({type:'state',version,state:st,from:cfg.deviceId});alert('この端末の内容を家族の端末に送信しました')};
-  window.leaveFamilySafe=()=>{if(!confirm('家族共有を解除しますか？'))return;stopPeer();clearInterval(pollTimer);localStorage.removeItem(KEY);localStorage.removeItem(VER);setPaused(false);blocked=false;cfg=null;version=0;updateBtn();closeM()};
-  function init(){ensureBtn();cfg=load(KEY,null);version=Number(load(VER,0))||0;paused=!!load(PAUSED,false);if(cfg)loadPeer();const q=new URLSearchParams(location.search).get('family');if(q&&!cfg){familyMode='join';setTimeout(()=>openFamily('join'),500)}}
+  window.forceFamilySafeSync=()=>{if(!cfg)return;if(!confirm('家族の全員の端末の在庫・買い物リストを、この端末の内容で上書きします。\nほかの端末で最近行った変更は失われる場合があります。続けますか？'))return;setPaused(false);setBlocked(false);version=Date.now();saveJ(VER,version);const st=state();lastHash=hash(st);sendAll({type:'state',version,state:st,from:cfg.deviceId});alert('この端末の内容を家族の端末に送信しました')};
+  window.leaveFamilySafe=()=>{if(!confirm('家族共有を解除しますか？'))return;stopPeer();clearInterval(pollTimer);localStorage.removeItem(KEY);localStorage.removeItem(VER);setPaused(false);setBlocked(false);cfg=null;version=0;updateBtn();closeM()};
+  function init(){ensureBtn();cfg=load(KEY,null);version=Number(load(VER,0))||0;paused=!!load(PAUSED,false);blocked=!!load(BLOCKED,false);if(cfg)loadPeer();const q=new URLSearchParams(location.search).get('family');if(q&&!cfg){familyMode='join';setTimeout(()=>openFamily('join'),500)}}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,100));else setTimeout(init,100);
 })();
