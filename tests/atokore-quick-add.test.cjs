@@ -48,6 +48,7 @@ test('select and batch register groceries using real PWA storage and inventory r
  assert.match($('stockList').innerHTML,/qa-picture-badge/);
  w.atkOpenAdd();click('[data-qa-pick="卵"]');click('[data-qa-commit]');
  const newer=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
+ console.log('DEBUG_EGG_RECORDS',JSON.stringify(newer.items.filter(x=>x.name==='卵')));
  assert.equal(newer.items.filter(x=>x.name==='卵').length,1);
  assert.equal(newer.items.find(x=>x.name==='卵').qty,3);
  assert.ok(newer.buys&&Array.isArray(newer.buys));
