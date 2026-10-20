@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atokore-pwa-v1';
+const CACHE_NAME = 'atokore-pwa-v13';
 const APP_SHELL = [
   './',
   './index.html',
