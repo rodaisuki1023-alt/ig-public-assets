@@ -103,7 +103,8 @@ test('show-more reveals additional food choices and selecting does not auto-save
  assert.ok($('qaTiles').textContent.includes('鶏むね肉'));
  click('[data-qa-pick="鶏むね肉"]');
  assert.equal($('qaTray').hidden,false);
- assert.ok(!JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.some(x=>x.name==='鶏むね肉'));
+ const beforeSave=JSON.parse(w.localStorage.getItem('atokoreTrialV4')||'null');
+ assert.ok(!beforeSave||!beforeSave.items.some(x=>x.name==='鶏むね肉'),'tapping tiles must not persist until batch confirmation');
  click('[data-qa-adjust="0"][data-step="1"]');
  assert.match($('qaTotal').textContent,/合計2点/);
  click('[data-qa-commit]');
