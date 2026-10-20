@@ -197,6 +197,52 @@ jobs:
           node --test _preview_source/tests/atokore-distinct-icons.test.cjs
           node --test _preview_source/tests/atokore-quick-add.test.cjs
 
+      - name: Checkout reviewed edit-after-add version
+        uses: actions/checkout@v4
+        with:
+          ref: 5e5a125b91311abee5293618304346d345b4d64d
+          path: _preview_simple_source
+          persist-credentials: false
+
+      - name: Build isolated simpler registration trial
+        run: |
+          set -eu
+          PREVIEW=_site/preview-simple-v16
+          mkdir -p "$PREVIEW"
+          cp -R _preview_simple_source/atokore-live-v125/. "$PREVIEW/"
+          # Trial mode must never modify the production family inventory.
+          printf '/* v16 preview only: family sync is intentionally disabled. */\n' > "$PREVIEW/family.js"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          base=Path('_site/preview-simple-v16')
+          for path in [base/'index.html',*base.glob('*.js')]:
+              t=path.read_text(encoding='utf-8')
+              t=t.replace('atokoreTrialV4','atokorePreviewTrialV16')
+              t=t.replace('atokoreHistoryV1','atokorePreviewHistoryV16')
+              if path.name=='index.html':
+                  t=t.replace('試用版 v12.5m','新しい試用版 v16')
+              path.write_text(t,encoding='utf-8')
+          index=(base/'index.html').read_text()
+          worker=(base/'service-worker.js').read_text()
+          assert 'edit-after-add.js?v=16' in index
+          assert 'edit-after-add.css?v=16' in index
+          assert 'quick-add.js?v=16' in index
+          assert 'product-icons.js?v=15' in index
+          assert 'atokorePreviewTrialV16' in index
+          assert 'atokoreTrialV4' not in ''.join(p.read_text() for p in base.glob('*.js'))
+          assert "family sync is intentionally disabled" in (base/'family.js').read_text()
+          assert "atokore-pwa-v16" in worker
+          for ref in re.findall(r'<script[^>]+src="([^"]+)"',index)+re.findall(r'<link[^>]+href="([^"]+)"',index):
+              name=ref.split('?',1)[0].removeprefix('./')
+              assert (base/name).is_file(),f'missing preview asset: {name}'
+          PY
+          node --check "$PREVIEW/edit-after-add.js"
+          node --check "$PREVIEW/quick-add.js"
+          node --test _preview_simple_source/tests/atokore-edit-after-add.test.cjs
+          node --test _preview_simple_source/tests/atokore-distinct-icons.test.cjs
+          node --test _preview_simple_source/tests/atokore-quick-add.test.cjs
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
