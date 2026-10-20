@@ -269,6 +269,22 @@ jobs:
               content=content.replace('atokoreHistoryV1','atokorePreviewHistoryV17')
               if path.name=='index.html':
                   content=content.replace('試用版 v12.5m','ベビー特化 試用版 v17')
+                  # Only the first launch may copy an older trial's data. Keep
+                  # the old trial and all production inventory completely unchanged.
+                  bootstrap = (
+                      '<script>(function(){try{'
+                      'if(!localStorage.getItem("atokorePreviewTrialV17")){'
+                      'var old=localStorage.getItem("atokorePreviewTrialV16");'
+                      'if(old){var data=JSON.parse(old);'
+                      'if(data&&Array.isArray(data.items)&&Array.isArray(data.buys)&&Array.isArray(data.routines))'
+                      'localStorage.setItem("atokorePreviewTrialV17",old);}}'
+                      'if(!localStorage.getItem("atokorePreviewHistoryV17")){'
+                      'var history=localStorage.getItem("atokorePreviewHistoryV16");'
+                      'if(history)localStorage.setItem("atokorePreviewHistoryV17",history);}'
+                      '}catch(e){}})();</script>'
+                  )
+                  assert '</head>' in content
+                  content=content.replace('</head>',bootstrap+'</head>',1)
               path.write_text(content,encoding='utf-8')
 
           html=(base/'index.html').read_text()
@@ -278,6 +294,7 @@ jobs:
           assert 'baby-focus-v17.css?v=17' in html
           assert 'quick-add.js?v=17' in html
           assert 'atokorePreviewTrialV17' in html
+          assert 'atokorePreviewTrialV16' in html  # one-time copy of existing trial only
           assert 'atokoreTrialV4' not in ''.join(p.read_text() for p in base.glob('*.js'))
           assert 'family sync is intentionally disabled' in (base/'family.js').read_text()
           assert "atokore-pwa-v17" in worker
