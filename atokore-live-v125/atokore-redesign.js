@@ -21,10 +21,12 @@ function describe(item){
  const type=/パンツ/.test(raw)?'パンツ':/テープ/.test(raw)?'テープ':/液体/.test(raw)?'液体':/キューブ/.test(raw)?'キューブ':/スティック/.test(raw)?'スティック':/缶/.test(raw)?'缶':'';
  let line=brand?raw.replace(brand.re,'').trim():raw;
  line=line.replace(/[0-9]{1,4}\s*(?:枚|g|mL|ml)(?=$|[\s・／\/()])/gi,' ');
- if(type)line=line.replace(type,' ');
+ line=line.replace(/液体ミルク|粉ミルク/g,' ');
+  if(type)line=line.replace(type,' ');
  if(size)line=line.replace(size,' ');
  line=line.replace(/おむつ|オムツ|粉ミルク/g,' ').replace(/\s+/g,' ').trim();
- if(!line)line=brand?'いつもの商品':raw;
+ // Without a series, name the product kind (おむつ・粉ミルク …) instead of the vague 「いつもの商品」.
+  if(!line)line=brand?(/おしりふき/.test(raw)?'おしりふき':/液体ミルク|液体/.test(raw)?'液体ミルク':/ミルク/.test(raw)?'粉ミルク':/おむつ|オムツ|パンツ|テープ/.test(raw)?'おむつ':raw):raw;
  return {raw,brand,line,type,size,cat:item?.cat||''};
 }
 function stock(){try{return Array.isArray(items)?items:[]}catch(e){return []}}
@@ -131,7 +133,7 @@ function initAdd(){
   if(!b||(kind==='diaper'&&!size)){name.value='';return}
   const unit=kind==='milk'?(type==='液体'?'mL':type==='缶'?'g':'個'):'枚';
   const n=Number($('atkPackCount').value)||0;
-  name.value=[b.jp,line,kind==='diaper'?'おむつ':kind==='milk'?'粉ミルク':'おしりふき',type,kind==='diaper'?size:'',n>0?n+unit:''].filter(Boolean).join(' ');
+  name.value=[b.jp,line,kind==='diaper'?'おむつ':kind==='milk'?(type==='液体'?'液体ミルク':'粉ミルク'):'おしりふき',type,kind==='diaper'?size:'',n>0?n+unit:''].filter(Boolean).join(' ');
   $('addUnit').value=kind==='diaper'?'袋':kind==='milk'?'個':'パック';
  }
  $('atkKind').addEventListener('change',changeKind);

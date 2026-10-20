@@ -97,7 +97,7 @@ function wizard(){
     box.querySelector('#bvNotice').textContent='メーカー・内容量と、おむつの場合はサイズを入力してください。';return;
   }
   const unit=kind.value==='milk'?(type.value==='液体'?'mL':type.value==='缶'?'g':'個'):'枚';
-  const title=[brand,series,kind.value==='diaper'?'おむつ':kind.value==='milk'?'粉ミルク':'おしりふき',type.value,kind.value==='diaper'?sz:'',qty+unit].filter(Boolean).join(' ');
+  const title=[brand,series,kind.value==='diaper'?'おむつ':kind.value==='milk'?(type.value==='液体'?'液体ミルク':'粉ミルク'):'おしりふき',type.value,kind.value==='diaper'?sz:'',qty+unit].filter(Boolean).join(' ');
   name.value=title;
   window.onNameInput?.();
   const stockUnit=document.getElementById('addUnit');

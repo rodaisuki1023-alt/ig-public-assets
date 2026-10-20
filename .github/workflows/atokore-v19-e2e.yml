@@ -1,0 +1,53 @@
+name: Atokore v19 Trial Checks
+
+on:
+  push:
+    branches: ['claude/atokore-v19-p0-source']
+  pull_request:
+    paths:
+      - 'atokore-live-v125/**'
+      - 'scripts/atokore/**'
+      - 'tests/**'
+      - '.github/workflows/atokore-v19-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test tools
+        run: |
+          npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1
+          npx playwright install --with-deps chromium webkit
+      - name: Syntax and unit regressions
+        run: |
+          for f in atokore-live-v125/*.js; do node --check "$f"; done
+          python3 -I scripts/atokore/build-preview.py atokore-live-v125 "$RUNNER_TEMP/v19-build" 19
+          node tests/atokore-core.test.cjs
+          node tests/atokore-actions.integration.test.cjs
+          node tests/atokore-receipt-input.test.cjs
+          node tests/atokore-receipt-product-names.test.cjs
+          node tests/atokore-pwa.test.cjs
+          node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \
+            tests/atokore-mobile-dom.test.cjs tests/atokore-distinct-icons.test.cjs tests/atokore-edit-after-add.test.cjs \
+            tests/atokore-baby-focus-v17.test.cjs tests/atokore-add-clarity-v18.test.cjs \
+            tests/atokore-storage-bootstrap-v19.test.cjs
+      - name: Real-browser tests (Chromium + WebKit)
+        env:
+          E2E_SCREEN_DIR: ${{ runner.temp }}/screens
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atokore-v19-screens
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: ignore

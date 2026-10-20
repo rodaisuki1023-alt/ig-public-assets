@@ -28,7 +28,8 @@ function fromRoutine(id,dest){
  const r=prepared(id);if(!r)return;
  if(!r.entries.length){root.alert?.('このセットには商品がまだありません');return}
  root.closeM?.();
- root.AtokoreQuickAdd?.openWithEntries(r.entries,dest);
+ // Pass the set id so tapping the same set again does not add its quantities twice.
+ root.AtokoreQuickAdd?.openWithEntries(r.entries,dest,{setId:String(id)});
  if(r.entries.some(x=>x.cat==='ベビー'))root.AtokoreQuickAdd?.setCategory('ベビー');
  else root.AtokoreQuickAdd?.setCategory('食料品');
 }
@@ -92,26 +93,23 @@ function activePage(){
  return page.replace(/^pg-/,'');
 }
 function syncFab(){
- const fab=$('bfAddFab');if(!fab)return;
- const modalOpen=!!$('modal')?.classList.contains('on');
+ // v19: the add action lives in the tab bar, so it never covers list controls.
+ const tab=$('bfNavAdd');if(!tab)return;
  const addPage=activePage()==='add';
- const editor=!!$('atkEditForm');
- const batch=!!$('qaTray')?.classList.contains('qa-tray-open')&&addPage;
- fab.hidden=modalOpen||addPage||editor||batch;
- fab.setAttribute('aria-hidden',fab.hidden?'true':'false');
+ tab.classList.toggle('on',addPage);
+ if(addPage)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
 }
 function install(){
  if(!doc)return;
- doc.body.classList.add('atk-v17','atk-v18');
+ doc.body.classList.add('atk-v17','atk-v18','atk-v19');
  const nav=doc.querySelector('.tabs');
  const add=nav?.querySelector('[data-p="add"]');
- if(add){add.setAttribute('hidden','');add.style.setProperty('display','none','important');}
- if(!doc.getElementById('bfAddFab')){
-  const fab=doc.createElement('button');
-  fab.type='button';fab.id='bfAddFab';fab.textContent='＋ 商品を追加';
-  fab.setAttribute('aria-label','商品を追加：ストックまたは買い物リスト');
-  fab.addEventListener('click',()=>root.atkOpenAdd?.(activePage()==='buy'?'buy':'stock'));
-  doc.body.appendChild(fab);
+ if(add&&!add.id){
+  add.removeAttribute('hidden');add.style.removeProperty('display');add.removeAttribute('onclick');
+  add.id='bfNavAdd';add.innerHTML='<b aria-hidden="true">＋</b>追加';
+  add.setAttribute('aria-label','商品を追加（ストックまたは買い物リスト）');
+  // Opened from the shopping list it adds to the list; anywhere else it adds to stock.
+  add.addEventListener('click',()=>{if(activePage()!=='add')root.atkOpenAdd?.(activePage()==='buy'?'buy':'stock')});
  }
  const header=$('pg-stock')?.querySelector('.atk-page-title button[data-atk-add]');
  if(header){header.textContent='＋ ストック追加';header.setAttribute('aria-label','ストック追加');}

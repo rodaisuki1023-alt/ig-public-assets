@@ -123,7 +123,7 @@
       items.push({id:now+i,name,cat:d.cat||inferCat(name),qty,unit:d.unit||inferUnit(name),expType,exp,purchase:'',price:0,store:'',place:'その他',memo:'',usage:1});
       added++;
     });
-    save();render();closeM();go('stock');
+    if(save()===false)return;render();closeM();go('stock');
     alert(`${added+merged}件を在庫へ反映しました${merged?`（${merged}件は既存在庫に合算）`:''}`);
   };
 
