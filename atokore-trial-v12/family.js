@@ -1,6 +1,8 @@
 /* Atokore family-safe: non-invasive lazy P2P sync */
 (()=>{
   const KEY='atokoreFamilySafeV2', VER='atokoreFamilySafeVersionV2';
+  // Local copies taken before family data replaces this device's data (newest first, max 5).
+  const BACKUP='atokoreFamilyBackupV1', BACKUP_MAX=5;
   const PREFIX='atokore-safe-';
   let cfg=null, peer=null, leader=false, leaderConn=null, conns=new Map(), pollTimer=null, reconnectTimer=null, familyMode='create';
   let applying=false, lastHash='', version=0, peerLoading=false;
@@ -16,11 +18,27 @@
     try{return {items:JSON.parse(JSON.stringify(items||[])),buys:JSON.parse(JSON.stringify(buys||[])),routines:JSON.parse(JSON.stringify(routines||[]))}}catch(e){return {items:[],buys:[],routines:[]}}
   }
   function hash(st){try{return JSON.stringify(st)}catch(e){return ''}}
+  const isEmpty=st=>!st.items.length&&!st.buys.length&&!st.routines.length;
+  function backupLocal(reason){
+    const st=state();if(isEmpty(st))return false;
+    const list=(load(BACKUP,[])||[]).filter(x=>x&&x.data);
+    if(list[0]&&hash(list[0].data)===hash(st))return true;
+    list.unshift({at:Date.now(),reason,data:st});
+    // Drop the oldest copies first if storage is short; never block the sync on this.
+    for(let n=Math.min(list.length,BACKUP_MAX);n>0;n--){try{localStorage.setItem(BACKUP,JSON.stringify(list.slice(0,n)));return true}catch(e){}}
+    return false;
+  }
+  function notice(message){if(typeof window.notifyAtokoreV125H==='function')window.notifyAtokoreV125H(message)}
   function apply(st,v){
     if(!st||!Array.isArray(st.items)||!Array.isArray(st.buys)||!Array.isArray(st.routines))return;
+    const local=state(),incomingIds=new Set(st.items.map(x=>String(x&&x.id)));
+    const replaced=local.items.filter(x=>!incomingIds.has(String(x.id))).length;
+    // Keep a copy whenever family data would remove items from this device, or on the first sync after joining.
+    if(replaced||(version===0&&!isEmpty(local)))backupLocal(version===0?'join':'family-update');
     applying=true;
     try{items=JSON.parse(JSON.stringify(st.items));buys=JSON.parse(JSON.stringify(st.buys));routines=JSON.parse(JSON.stringify(st.routines));version=Number(v)||Date.now();saveJ(VER,version);if(typeof save==='function')save();if(typeof render==='function')render();lastHash=hash(state())}catch(e){console.error('family apply',e)}
     applying=false; updateBtn();
+    if(replaced)notice(`家族の端末の内容で更新しました（この端末の在庫${replaced}件が置き換わりました。家族共有画面から元に戻せます）`);
   }
   function send(c,m){try{if(c&&c.open)c.send(m)}catch(e){}}
   function sendAll(m,except){if(leader)conns.forEach((c,id)=>{if(id!==except)send(c,m)});else send(leaderConn,m)}
@@ -100,13 +118,27 @@
       return;
     }
     const on=onlineCount()>0;
-    modal(`<button class="close" onclick="closeM()">閉じる</button><h2>👥 家族共有</h2><div class="row"><div class="grow"><div class="name">${esc(cfg.deviceName)}</div><div class="meta">${on?`同期中 ${onlineCount()+1}台`:'接続待ち'}</div></div><span style="font-size:22px">${on?'🟢':'⚪️'}</span></div><div class="section">家族コード</div><div style="font-size:28px;font-weight:950;letter-spacing:.12em;text-align:center;padding:12px;border-radius:14px;background:#f2f6fb">${esc(cfg.familyCode)}</div><button class="btn" style="width:100%;margin-top:10px" onclick="shareFamilySafe()">家族に共有する</button><button class="btn ghost" style="width:100%;margin-top:8px" onclick="forceFamilySafeSync()">今すぐ同期</button><button class="btn danger" style="width:100%;margin-top:8px" onclick="leaveFamilySafe()">家族共有を解除</button><p class="muted" style="margin-top:10px">2台がオンラインになった時に自動同期します。普段の在庫・買い物操作には干渉しません。</p>`)
+    modal(`<button class="close" onclick="closeM()">閉じる</button><h2>👥 家族共有</h2><div class="row"><div class="grow"><div class="name">${esc(cfg.deviceName)}</div><div class="meta">${on?`同期中 ${onlineCount()+1}台`:'接続待ち'}</div></div><span style="font-size:22px">${on?'🟢':'⚪️'}</span></div><div class="section">家族コード</div><div style="font-size:28px;font-weight:950;letter-spacing:.12em;text-align:center;padding:12px;border-radius:14px;background:#f2f6fb">${esc(cfg.familyCode)}</div><button class="btn" style="width:100%;margin-top:10px" onclick="shareFamilySafe()">家族に共有する</button>${backupButton()}<button class="btn ghost" style="width:100%;margin-top:8px" onclick="forceFamilySafeSync()">この端末の内容で全員を上書き</button><button class="btn danger" style="width:100%;margin-top:8px" onclick="leaveFamilySafe()">家族共有を解除</button><p class="muted" style="margin-top:10px">2台がオンラインになった時に自動同期します。普段の在庫・買い物操作には干渉しません。</p>`)
   }
+  function backupButton(){
+    const latest=(load(BACKUP,[])||[])[0];if(!latest||!latest.data)return '';
+    const when=new Date(latest.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    return `<button class="btn ghost" style="width:100%;margin-top:8px" onclick="restoreFamilyBackupSafe()">置き換え前のデータに戻す（${esc(when)}・在庫${esc(latest.data.items.length)}件）</button>`;
+  }
+  window.restoreFamilyBackupSafe=()=>{
+    const latest=(load(BACKUP,[])||[])[0];if(!latest||!latest.data)return;
+    if(!confirm(`この端末のデータを、${new Date(latest.at).toLocaleString('ja-JP')}に保存した内容（在庫${latest.data.items.length}件）に戻します。\n家族共有中は、この内容が家族の端末にも送られます。戻しますか？`))return;
+    backupLocal('before-restore');
+    items=JSON.parse(JSON.stringify(latest.data.items));buys=JSON.parse(JSON.stringify(latest.data.buys));routines=JSON.parse(JSON.stringify(latest.data.routines));
+    if(typeof save==='function'&&save()===false)return;
+    if(typeof render==='function')render();
+    closeM();notice('置き換え前のデータに戻しました');
+  };
   window.setFamilyModeSafe=mode=>{familyMode=mode==='join'?'join':'create';openFamily(familyMode)};
   window.createFamilySafe=()=>{const name=($('famSafeCreateName')?.value||'').trim()||'この端末';cfg={familyCode:code(),deviceId:device(),deviceName:name,created:true};version=Date.now();saveJ(KEY,cfg);saveJ(VER,version);lastHash=hash(state());loadPeer();openFamily()};
-  window.joinFamilySafe=()=>{const c=norm($('famSafeJoinCode')?.value),name=($('famSafeJoinName')?.value||'').trim()||'この端末';if(c.length!==8){alert('8文字の家族コードを入力してください');return}cfg={familyCode:c,deviceId:device(),deviceName:name,created:false};version=0;saveJ(KEY,cfg);saveJ(VER,version);loadPeer();openFamily()};
+  window.joinFamilySafe=()=>{const c=norm($('famSafeJoinCode')?.value),name=($('famSafeJoinName')?.value||'').trim()||'この端末';if(c.length!==8){alert('8文字の家族コードを入力してください');return}const local=state();if(!isEmpty(local)){if(!confirm(`参加すると、この端末の在庫${local.items.length}件・買い物${local.buys.length}件は家族のデータに置き換わります。\n置き換え前の内容はこの端末に保存され、家族共有画面から戻せます。\n参加しますか？`))return;backupLocal('join')}cfg={familyCode:c,deviceId:device(),deviceName:name,created:false};version=0;saveJ(KEY,cfg);saveJ(VER,version);loadPeer();openFamily()};
   window.shareFamilySafe=async()=>{if(!cfg)return;const base=location.origin+location.pathname;const url=base+'?family='+encodeURIComponent(cfg.familyCode);const text=`あとこれの家族共有コード：${cfg.familyCode}\n${url}`;try{if(navigator.share)await navigator.share({title:'あとこれ 家族共有',text,url});else{await navigator.clipboard.writeText(text);alert('共有内容をコピーしました')}}catch(e){}};
-  window.forceFamilySafeSync=()=>{if(!cfg)return;version=Date.now();saveJ(VER,version);const st=state();lastHash=hash(st);sendAll({type:'state',version,state:st,from:cfg.deviceId});alert('同期データを送信しました')};
+  window.forceFamilySafeSync=()=>{if(!cfg)return;if(!confirm('家族の全員の端末の在庫・買い物リストを、この端末の内容で上書きします。\nほかの端末で最近行った変更は失われる場合があります。続けますか？'))return;version=Date.now();saveJ(VER,version);const st=state();lastHash=hash(st);sendAll({type:'state',version,state:st,from:cfg.deviceId});alert('この端末の内容を家族の端末に送信しました')};
   window.leaveFamilySafe=()=>{if(!confirm('家族共有を解除しますか？'))return;stopPeer();clearInterval(pollTimer);localStorage.removeItem(KEY);localStorage.removeItem(VER);cfg=null;version=0;updateBtn();closeM()};
   function init(){ensureBtn();cfg=load(KEY,null);version=Number(load(VER,0))||0;if(cfg)loadPeer();const q=new URLSearchParams(location.search).get('family');if(q&&!cfg){familyMode='join';setTimeout(()=>openFamily('join'),500)}}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,100));else setTimeout(init,100);
