@@ -102,7 +102,7 @@ function syncFab(){
 }
 function install(){
  if(!doc)return;
- doc.body.classList.add('atk-v17');
+ doc.body.classList.add('atk-v17','atk-v18');
  const nav=doc.querySelector('.tabs');
  const add=nav?.querySelector('[data-p="add"]');
  if(add){add.setAttribute('hidden','');add.style.setProperty('display','none','important');}
