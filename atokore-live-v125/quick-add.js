@@ -198,6 +198,7 @@ function renderTray(){
  list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item"><span class="qa-tray-thumb">'+iconFor(v.name,v.cat)+'</span><span class="qa-tray-name">'+safe(v.name)+'<small>'+safe(v.cat)+'</small></span><div class="qa-step"><button data-qa-adjust="'+i+'" data-step="-1" aria-label="減らす">−</button><b>'+v.qty+'</b><button data-qa-adjust="'+i+'" data-step="1" aria-label="増やす">＋</button></div><button class="qa-remove" data-qa-remove="'+i+'" aria-label="削除">×</button></div>').join('');
  button.disabled=!count||state.committing;
  box.classList.toggle('qa-tray-open',count>0);
+ $('pg-add')?.classList.toggle('qa-has-tray',count>0);
 }
 function notify(msg){
  let x=$('qaNotice');
@@ -250,7 +251,7 @@ function setup(){
  const pane=doc.createElement('section');pane.id='qaPanel';pane.className='qa-panel';
  pane.innerHTML='<div class="qa-mode"><button id="qaSwitchQuick" class="selected" type="button" data-qa-view="quick">かんたん追加</button><button id="qaSwitchDetails" type="button" data-qa-view="details">詳細登録</button></div>'+
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
- '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
+ '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
  '<div id="qaBaby" class="qa-baby"></div><div id="qaRecent"></div></div>';
  const heading=p.querySelector('.atk-page-title');
  if(heading)heading.insertAdjacentElement('afterend',pane);else p.prepend(pane);
@@ -285,7 +286,7 @@ function setup(){
  });
  function addFree(){
   const raw=$('qaFree').value.trim();if(!raw){notify('商品名を入力してください');return}
-  const cat=state.cat==='その他'?'日用品':state.cat;
+  const cat=state.cat;
   addLine({name:raw,cat,qty:1,unit:defaultUnit(raw,cat)});$('qaFree').value='';
  }
  const oldGo=root.go;
