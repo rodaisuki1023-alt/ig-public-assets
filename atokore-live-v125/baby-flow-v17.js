@@ -58,7 +58,7 @@ function decorateBabyRows(selector){
   if(badge&&!badge.classList.contains('bf-baby-product')){
    const brand=kit.brand(raw);
    badge.classList.add('bf-baby-product');
-   badge.innerHTML=kit.icon(kind,42)+'<span class="bf-baby-brand">'+esc(brand||kind==='diaper'?'おむつ':kind==='milk'?'ミルク':'おしりふき')+'</span>';
+   badge.innerHTML=kit.icon(kind,42)+'<span class="bf-baby-brand">'+esc(brand||(kind==='diaper'?'おむつ':kind==='milk'?'ミルク':'おしりふき'))+'</span>';
   }
  });
 }
