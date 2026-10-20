@@ -35,7 +35,7 @@ test('batch combines matching generic stock but not mismatched variants, never m
 test('select and batch register groceries using real PWA storage and inventory rendering',()=>{
  const {w,$,click,dom}=browser();
  assert.ok($('qaPanel'));assert.equal($('qaSwitchDetails'),null,'advanced entry should not be shown');
- w.atkOpenAdd();click('[data-qa-pick="卵"]');click('[data-qa-pick="牛乳"]');click('[data-qa-pick="玉ねぎ"]');
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-pick="牛乳"]');click('[data-qa-pick="玉ねぎ"]');
  assert.match($('qaTotal').textContent,/3種類/);
  click('[data-qa-pick="卵"]');
  assert.match($('qaTotal').textContent,/4点/);
@@ -46,7 +46,7 @@ test('select and batch register groceries using real PWA storage and inventory r
  assert.ok(data.items.find(x=>x.name==='玉ねぎ'));
  assert.equal($('qaTray').hidden,true);
  assert.match($('stockList').innerHTML,/qa-picture-badge/);
- w.atkOpenAdd();click('[data-qa-pick="卵"]');click('[data-qa-commit]');
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-commit]');
  const newer=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  const eggs=newer.items.filter(x=>x.name==='卵');
  assert.equal(eggs.length,2,'an existing expiring egg lot must remain separate');
@@ -75,22 +75,22 @@ test('baby products can be added to the tray by brand/type/size without overwrit
 });
 test('advanced registration is replaced by later stock editing',()=>{
  const {w,$,dom}=browser();w.atkOpenAdd();
- assert.equal($('qaSwitchDetails'),null);assert.ok($('qaPanel').textContent.includes('登録後に編集'));
+ assert.equal($('qaSwitchDetails'),null);assert.ok($('qaPanel').textContent.includes('かんたん登録'));
  assert.equal($('pg-add').classList.contains('qa-details-mode'),false);dom.window.close();
 });
 test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
- assert.match(html,/quick-add\.js\?v=16/);assert.match(html,/quick-add\.css\?v=14/);
+ assert.match(html,/quick-add\.js\?v=17/);assert.match(html,/quick-add\.css\?v=14/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v16/);
+ assert.match(sw,/atokore-pwa-v17/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 
 
 test('show-more reveals additional food choices and selecting does not auto-save',()=>{
  const {w,$,click,dom}=browser();
- w.atkOpenAdd();
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');
  assert.equal($('qaTiles').children.length,24);
  assert.equal($('qaMore').hidden,false);
  click('[data-qa-more]');
