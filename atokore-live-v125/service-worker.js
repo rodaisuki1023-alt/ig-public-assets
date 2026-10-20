@@ -11,6 +11,8 @@ const APP_SHELL = [
   './stability.js',
   './family.js',
   './baby-visuals.js',
+  './atokore-theme.css',
+  './atokore-redesign.js',
   './pwa.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
