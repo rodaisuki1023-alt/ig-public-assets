@@ -103,8 +103,8 @@ body.atk-v17 #stockList .bf-stock-card>.atk-row-brand{
  padding:38px 2px 4px!important;margin:0;border-radius:10px;box-sizing:border-box;
 }
 body.atk-v17 #stockList .bf-stock-card .bf-baby-brand{color:inherit;font-size:10px;line-height:1.25}
-body.atk-v17 #stockList .bf-stock-card .bf-baby-art{width:44px;height:44px}
-body.atk-v17 #stockList .bf-stock-card>.atk-row-brand svg{width:44px;height:44px}
+body.atk-v17 #stockList .bf-stock-card .bf-baby-art{width:100%;height:96px}
+body.atk-v17 #stockList .bf-stock-card>.atk-row-brand svg{width:100%;height:96px}
 body.atk-v17 #stockList .bf-stock-card>.grow{order:2;flex:1 1 auto;min-width:0;width:100%}
 body.atk-v17 #stockList .bf-stock-card .name{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
 body.atk-v17 #stockList .bf-stock-card .meta{font-size:10px;line-height:1.4;overflow-wrap:anywhere;margin-top:3px}
