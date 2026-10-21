@@ -141,7 +141,7 @@ function decorateStockCards(){
   const spacer=row.firstElementChild;
   if(spacer?.style.width==='4px')spacer.classList.add('bf-stock-spacer');
   let count=row.querySelector('.bf-stock-count');
-  if(!count){count=doc.createElement('span');count.className='bf-stock-count';count.setAttribute('aria-hidden','true');row.append(count)}
+  if(!count){count=doc.createElement('span');count.className='bf-stock-count';row.append(count)}
   count.textContent=Number(item.qty)>0?'残り '+item.qty+(item.unit||'個'):'在庫なし';
   count.classList.toggle('bf-stock-low',Number(item.qty)<=1);
   const controls=row.querySelectorAll('.qty button');
