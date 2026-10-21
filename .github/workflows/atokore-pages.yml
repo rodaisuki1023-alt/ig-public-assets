@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: c42a712259d5efb1f6f8d055656dc5e9eeb5f785
+          ref: 4c6ea4249ddaee7b7cb82d9b159d017249af4e92
           path: _preview_v19_source
           persist-credentials: false
 
