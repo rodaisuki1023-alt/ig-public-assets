@@ -36,6 +36,10 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await editor(page);await savePhoto(page);
    await expect(row(page).locator('.atk-user-photo')).toBeVisible();
    const bounds=await row(page).locator('.atk-user-photo').boundingBox();expect(bounds.width).toBeGreaterThanOrEqual(70);expect(bounds.height).toBe(96);
+   const overlay=await row(page).evaluate(c=>{
+    const photo=c.querySelector('.atk-user-photo').getBoundingClientRect();
+    return [...c.querySelectorAll('.qty button')].every(b=>{const r=b.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.top<photo.bottom&&r.bottom>photo.top});
+   });expect(overlay).toBe(true);
    await expect(page.locator('#stockList [data-stock-id="4"] .atk-user-photo')).toHaveCount(0);
    expect(await stored(page)).toEqual(initial);
    const records=await imageFacts(page);expect(records).toHaveLength(1);expect(records[0]).toMatchObject({type:'image/jpeg',metadata:false});expect(records[0].size).toBeLessThanOrEqual(81920);
@@ -43,7 +47,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    expect((await page.locator('#pg-home [data-atk-open="2"] .atk-user-photo').boundingBox()).width).toBe(48);
    await page.reload();await go(page,'stock');
    const img=row(page).locator('.atk-user-photo');await expect(img).toBeVisible();await expect.poll(()=>img.evaluate(i=>i.naturalWidth)).toBe(256);
-   await row(page).locator('.name').scrollIntoViewIfNeeded();await shot(page,info,`${width}-v31-product-photo`);
+   await row(page).locator('.name').scrollIntoViewIfNeeded();await shot(page,info,`${width}-v32-product-photo`);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(0);
    await row(page).locator('.qty button').last().click();expect((await stored(page)).items.find(x=>x.id===2).qty).toBe(3);
    await expect(page.locator('#modal')).not.toHaveClass(/on/);await expect(row(page).locator('.atk-user-photo')).toBeVisible();
