@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 82ebb8a5aeff039610a1a1b8a537b49ae404dafe
+          ref: 4a692f733a02bbf78c10221a0f5d112c0c2b650b
           path: _preview_v19_source
           persist-credentials: false
 
@@ -353,11 +353,11 @@ jobs:
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
           assert 'baby-flow-v17.js?v=29' in html
           assert 'baby-kit-v17.js?v=28' in html
-          assert 'baby-focus-v17.css?v=29' in html
+          assert 'baby-focus-v17.css?v=31' in html
           assert 'decorateStockCards' in (base / 'baby-flow-v17.js').read_text()
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
-          assert 'product-photos-v30.js?v=30' in html and 'product-photos-v30.css?v=30' in html
+          assert 'product-photos-v30.js?v=30' in html and 'product-photos-v30.css?v=31' in html
           assert 'atokore-redesign.js?v=30' in html and 'edit-after-add.js?v=30' in html
           photos = (base / 'product-photos-v30.js').read_text()
           assert 'atokorePreviewProductPhotosV19' in photos and 'indexedDB.open' in photos
@@ -376,7 +376,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v30'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v31'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
