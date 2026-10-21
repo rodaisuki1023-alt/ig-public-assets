@@ -33,6 +33,7 @@ jobs:
           python3 -I scripts/atokore/build-preview.py atokore-live-v125 "$RUNNER_TEMP/v19-build" 19
           node tests/atokore-core.test.cjs
           node --test tests/atokore-product-identity.test.cjs
+          node --test tests/atokore-product-photos-v30.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs

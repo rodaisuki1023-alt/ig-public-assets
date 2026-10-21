@@ -160,7 +160,7 @@ function showDetail(id){
  const x=stock().find(v=>Number(v.id)===Number(id));if(!x)return;
  const d=describe(x),safeId=Number(x.id);
  if(!Number.isSafeInteger(safeId))return;
- const inner='<button class="close" onclick="closeM()">閉じる</button><div class="atk-detail-head">'+brandHtml(d.brand)+'<h2>'+esc(d.line)+'</h2><p>'+esc([d.type,d.size].filter(Boolean).join('・')||x.name)+'</p></div>'+
+ const inner='<button class="close" onclick="closeM()">閉じる</button><div class="atk-detail-head" data-atk-detail-id="'+safeId+'">'+brandHtml(d.brand)+'<h2>'+esc(d.line)+'</h2><p>'+esc([d.type,d.size].filter(Boolean).join('・')||x.name)+'</p></div>'+
  '<div class="atk-detail-qty"><b>現在の在庫</b><span>'+esc(x.qty)+' '+esc(x.unit||'個')+'</span></div>'+
  '<div class="atk-detail-actions"><button onclick="adj('+safeId+',-1);atkShowDetail('+safeId+')">－ 減らす</button><button onclick="adj('+safeId+',1);atkShowDetail('+safeId+')">＋ 増やす</button></div>'+
  '<button type="button" class="atk-edit-open" onclick="atokoreEditStock('+safeId+')">✎ 商品情報を編集する</button>'+
