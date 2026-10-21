@@ -97,6 +97,8 @@ function shape(k,color){
  }
 }
 function iconFor(name,cat='食料品'){
+ const babyKind=root.AtokoreBabyKit?.kind(name,cat);
+ if(babyKind)return root.AtokoreBabyKit.icon(babyKind,42);
  const individual=root.AtokoreIndividualIcons?.icon(name);
  if(individual)return individual;
  const k=kindOf(name,cat),[bg,line]=COLOR[k];

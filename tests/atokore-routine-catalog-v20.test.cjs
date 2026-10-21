@@ -26,7 +26,7 @@ function stockRow($,name){
 }
 test('one tap from repeat-list editor navigates directly to real stock list',()=>{
  const {dom,w,$}=browser();create(w,$);
- assert.equal($('atkRoutineCatalogOpen').textContent,'＋ ストックから商品を追加');
+ assert.equal($('atkRoutineCatalogOpen').textContent,'商品を選ぶ');
  $('atkRoutineCatalogOpen').click();
  assert.equal(w.AtokoreRoutineCatalog.isActive(),true);
  assert.equal($('pg-stock').classList.contains('on'),true);
@@ -125,9 +125,9 @@ test('leaving the picker restores normal stock controls',()=>{
 });
 test('script and stylesheet cache versions updated',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8'),sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.match(html,/routine-catalog-v20\.js\?v=22/);
- assert.match(html,/routine-catalog-v20\.css\?v=21/);
- assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v23'/);
+ assert.match(html,/routine-catalog-v20\.js\?v=24/);
+ assert.match(html,/routine-catalog-v20\.css\?v=24/);
+ assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v25'/);
  const css=fs.readFileSync(path.join(base,'routine-catalog-v20.css'),'utf8');
  assert.match(css,/atk-routine-stock-mode/);
 });
