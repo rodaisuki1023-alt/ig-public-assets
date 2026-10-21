@@ -34,7 +34,8 @@
 - ローカルChromium：既存41件＋追加8件合格。320/375/390/430pxでボタン横並び・クリック妨害なし・画像読込・手入力維持、確認取消・保存失敗・再試行・連打・再読込後の保持を確認。
 - 新しい2画像のオフライン表示を追加検証し合格。
 - 320pxと390pxの実ブラウザ画像で配置を目視確認。短い画面では商品欄を内部スクロールし、下部2ボタンは表示を維持する。
-- Chromium/WebKit CIと公開後照合の結果は確認後に追記する。
+- 最終ソースのChromium/WebKit CI：96件合格、2件はWebKitでのSW検査対象外。同検査はChromiumで合格。<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39533766398>
+- 配信PR：<https://github.com/rodaisuki1023-alt/ig-public-assets/pull/29>。公開後のファイル照合結果を追記する。
 
 ## 未確認事項と次の作業
 
