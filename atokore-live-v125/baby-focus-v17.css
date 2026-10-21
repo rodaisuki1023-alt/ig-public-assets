@@ -48,6 +48,25 @@ body.atk-v17 .bf-stock-subfilters button{
 body.atk-v17 .bf-stock-many-filters button{flex:0 0 auto;white-space:nowrap}
 body.atk-v17 .bf-stock-subfilters button[aria-pressed="true"]{background:#EED8CC;border-color:#BE8B76;color:#6B4334}
 body.atk-v17 .bf-stock-subfilters button:focus-visible{outline:3px solid #A45D49;outline-offset:2px}
+body.atk-v17 .qa-food-makers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:8px 0 12px}
+body.atk-v17 .qa-food-makers button,body.atk-v17 .qa-food-products button{min-width:0;min-height:48px;border:1px solid #E5D5CB;border-radius:13px;background:#FFFEFC;color:#665247;padding:10px;font:inherit;font-size:13px;font-weight:800;overflow-wrap:anywhere}
+body.atk-v17 #qaBabyFood button[aria-pressed="true"]{border-color:#B97059;background:#F6DED1;color:#79472F}
+body.atk-v17 .qa-food-series,body.atk-v17 .qa-food-search,body.atk-v17 .qa-food-custom label{display:block;min-width:0;font-size:12px;font-weight:800;margin:10px 0}
+body.atk-v17 #qaBabyFood input,body.atk-v17 #qaBabyFood select{display:block;width:100%;min-width:0;max-width:100%;min-height:44px;margin-top:5px;border:1px solid #E5D5CB;border-radius:11px;padding:10px;background:#fff;color:#50433B;font-size:16px;box-sizing:border-box}
+body.atk-v17 .qa-food-months{display:flex;gap:6px;overflow-x:auto;max-width:100%;padding:4px 1px 7px}
+body.atk-v17 .qa-food-months button{flex:0 0 auto;min-height:44px;border:1px solid #E5D5CB;border-radius:11px;background:#FFF8F1;color:#775746;padding:8px 10px;font-size:12px;white-space:nowrap}
+body.atk-v17 .qa-food-products{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+body.atk-v17 .qa-food-products button{text-align:left;font-size:12px}
+body.atk-v17 .qa-food-products small{display:block;margin-top:6px;font-size:11px;line-height:1.5;font-weight:500;color:#75665C}
+body.atk-v17 .qa-food-result,body.atk-v17 .qa-food-selected{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+body.atk-v17 .qa-food-note,body.atk-v17 .qa-food-ended{font-size:11px;line-height:1.6;color:#827064}
+body.atk-v17 .qa-food-legacy summary{font-size:12px;color:#827064;min-height:36px;padding:8px 0}
+body.atk-v17 #bfStockFoodMore{margin:0 0 12px;font-size:12px;color:#775746}
+body.atk-v17 #bfStockFoodMore summary{min-height:36px;padding:8px 0}
+body.atk-v17 .bf-food-refiners{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+body.atk-v17 .bf-food-refiners label{min-width:0}
+body.atk-v17 .bf-food-refiners select{display:block;width:100%;max-width:100%;min-width:0;min-height:44px;font-size:16px;border:1px solid #E5D5CB;border-radius:10px;background:#fff;color:#665247;padding:6px}
+body.atk-v17 #pg-home .bf-food-icon svg{width:48px;height:48px}
 body.atk-v17 #pg-add .qa-tray{bottom:calc(80px + env(safe-area-inset-bottom,0px))!important}
 body.atk-v17 .bf-destination{
  display:grid;grid-template-columns:1fr 1fr;gap:6px;
