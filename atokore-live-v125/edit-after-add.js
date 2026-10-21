@@ -71,6 +71,7 @@ function edit(id){
    const records=items.map(x=>Number(x.id)===n?next:x);
    localStorage.setItem('atokoreTrialV4',JSON.stringify({items:records,buys,routines}));
    items=records;
+   document.dispatchEvent(new CustomEvent('atokore-stock-edited',{detail:{before:curr,after:next}}));
    // Notify any existing local-first family/sync adapters, then redraw.
    if(typeof root.save==='function')root.save();
    root.render?.();

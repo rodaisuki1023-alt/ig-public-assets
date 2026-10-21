@@ -1,0 +1,17 @@
+body.atk-v17 .atk-has-photo{display:inline-flex!important;flex-direction:column!important;align-items:center;justify-content:center;gap:3px;white-space:normal}
+body.atk-v17 .atk-user-photo{display:block;width:32px;height:32px;object-fit:contain;border-radius:5px;flex:none}
+body.atk-v17 #stockList .atk-user-photo{width:44px;height:44px}
+body.atk-v17 .atk-photo-brand{font-size:10px;line-height:1.25;text-align:center;overflow-wrap:anywhere}
+body.atk-v17 .atk-detail-photo{display:block;width:96px;height:96px;object-fit:contain;border-radius:12px;margin:0 0 10px}
+body.atk-v17 .atk-photo-open{display:block;min-height:44px;padding:8px 14px;margin:8px 0;border:1px solid #B97059;border-radius:12px;color:#94513E;background:#FFF9F5;font-size:14px;font-weight:700}
+body.atk-v17 .atk-photo-editor{display:flex;flex-direction:column;gap:12px;padding:10px 0 20px;min-width:0}
+body.atk-v17 .atk-photo-editor h2,body.atk-v17 .atk-photo-editor p{margin:0;overflow-wrap:anywhere}
+body.atk-v17 .atk-photo-editor>.close{align-self:flex-end;position:static}
+body.atk-v17 .atk-photo-preview{align-self:center;max-width:100%;width:180px;height:180px;object-fit:contain;border:1px solid #E7D7CE;border-radius:16px;background:#fff}
+body.atk-v17 .atk-photo-editor button:not(.close){min-height:46px;width:100%;padding:12px 8px;border-radius:12px;font-size:15px;font-weight:750}
+body.atk-v17 .atk-photo-pick,body.atk-v17 .atk-photo-reset{border:1px solid #B97059;background:#FFF9F5;color:#94513E}
+body.atk-v17 .atk-photo-save{border:0;background:#B97059;color:white}
+body.atk-v17 .atk-photo-editor button:disabled{opacity:.5}
+body.atk-v17 .atk-photo-status{font-size:13px;line-height:1.5;color:#845143;min-height:20px}
+body.atk-v17 .atk-photo-note{font-size:11px;line-height:1.6;color:#78695F}
+body.atk-v17 .atk-photo-editor [hidden]{display:none!important}

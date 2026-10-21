@@ -101,8 +101,8 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.throws(()=>editor.validate({name:'卵',qty:1,cat:'食料品',unit:'個',expType:'賞味期限'},sample),/期限日/);
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.match(html,/edit-after-add\.js\?v=16/);
+ assert.match(html,/edit-after-add\.js\?v=30/);
  assert.match(html,/edit-after-add\.css\?v=16/);
  assert.match(worker,/'\.\/edit-after-add.js'/);
- assert.match(worker,/atokore-pwa-v29/);
+ assert.match(worker,/atokore-pwa-v30/);
 });

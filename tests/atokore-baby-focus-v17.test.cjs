@@ -114,7 +114,7 @@ test('offline shell has complete v17 scripts and separate palette',()=>{
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v29/);
+ assert.match(worker,/atokore-pwa-v30/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{
