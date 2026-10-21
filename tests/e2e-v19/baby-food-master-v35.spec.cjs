@@ -1,5 +1,5 @@
 const {test,expect}=require('@playwright/test');
-const {open,go,stored,baseState,KEY,shot}=require('./helpers.cjs');
+const {open,go,stored,baseState,KEY,shot,commitBatch}=require('./helpers.cjs');
 const catalog=require('../../atokore-live-v125/baby-food-catalog-v35.js');
 const category=(page,name)=>page.locator('#catChips').getByRole('button',{name,exact:true}).click();
 const ids=page=>page.locator('#stockList [data-stock-id]').evaluateAll(es=>es.map(e=>Number(e.dataset.stockId)));
@@ -32,7 +32,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await page.click('[data-qa-food-maker="pigeon"]');await page.selectOption('#qaFoodSeriesSelect','カップシリーズ');
    await page.click('[data-qa-food-month="5"]');await expect(page.locator('[data-qa-food-product="pigeon-2856"]')).toHaveCount(0);
    await page.click('[data-qa-food-product="pigeon-2813"]');await page.click('[data-qa-food-step="-1"]');await page.click('[data-qa-food-add]');
-   expect(await stored(page)).toEqual(initial);await page.click('#qaCommit');
+   expect(await stored(page)).toEqual(initial);await commitBatch(page);
    const after=await stored(page);expect(after.items.filter(x=>x.id<=6)).toEqual(initial.items);
    const a=after.items.filter(x=>x.name===catalog.fullName(catalog.get('wakodo-63018533')));
    const b=after.items.filter(x=>x.name===catalog.fullName(catalog.get('pigeon-2813')));

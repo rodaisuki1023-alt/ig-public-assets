@@ -87,7 +87,7 @@ test('wipes select only a brand and preserve distinct products without package c
  assert.equal(tray.length,2);
  assert.ok(tray.some(x=>x.name==='ムーニー おしりふき'));
  assert.ok(tray.some(x=>x.name==='Rico おしりふき'));
- $('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();
  const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items;
  assert.ok(saved.some(x=>x.name.includes('ムーニー おしりふき')));
  assert.ok(saved.some(x=>x.name.includes('Rico おしりふき')));
@@ -99,7 +99,7 @@ test('diaper and formula render individual original baby icons, full brand names
  const {dom,w,$}=browser();$('bfNavAdd').click();
  choose($,'diaper','マミーポコ','パンツ','L');
  choose($,'milk','明治','キューブ');
- $('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();
  const list=$('stockList').innerHTML;
  assert.match(list,/マミーポコ/);
  assert.match(list,/明治/);
@@ -132,7 +132,7 @@ test('routine card opens details, then confirmed stock button applies inventory,
  w.go('buy');$('routineList').querySelector('[data-bf-routine-buy="901"]').click();
  assert.ok($('bfDestination').querySelector('[data-qa-dest="buy"]').classList.contains('selected'));
  assert.equal(w.AtokoreQuickAdd.getTray().length,2);
- $('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();
  data=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(data.buys.some(x=>x.name==='牛乳'));
  assert.equal(data.items.find(x=>x.name==='卵').qty,beforeBuyQty,'shopping-list commit must not modify stock');
@@ -146,7 +146,7 @@ test('buy page picker opens baby-first selection and shopping-only destination',
  assert.equal($('pg-add').classList.contains('on'),true);
  assert.ok($('bfDestination').querySelector('[data-qa-dest="buy"]').classList.contains('selected'));
  choose($,'diaper','パンパース','パンツ','M');
- $('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();
  const data=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(data.buys.some(x=>x.name.includes('パンパース')));
  assert.ok(!data.items.some(x=>x.name.includes('パンパース')));
@@ -155,12 +155,12 @@ test('buy page picker opens baby-first selection and shopping-only destination',
 test('offline shell has complete v17 scripts and separate palette',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=35'));
+ assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=36'));
  assert.ok(html.indexOf('baby-flow-v17.js')>html.indexOf('edit-after-add.js'));
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v35/);
+ assert.match(worker,/atokore-pwa-v36/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{

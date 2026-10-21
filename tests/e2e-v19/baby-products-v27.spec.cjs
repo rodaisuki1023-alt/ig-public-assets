@@ -1,5 +1,5 @@
 const {test,expect}=require('@playwright/test');
-const {open,go,stored,baseState,KEY,shot}=require('./helpers.cjs');
+const {open,go,stored,baseState,KEY,shot,commitBatch}=require('./helpers.cjs');
 const pick=(p,f,v)=>p.click(`[data-qa-baby="${f}"][data-value="${v}"]`);
 for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
  test.describe(`v27 baby products ${width}px`,()=>{
@@ -29,7 +29,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await page.click('[data-qa-babyadd]');
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
    await shot(page,info,`${width}-v27-custom-wipes`);
-   await page.click('#qaCommit');const saved=await stored(page);
+   await commitBatch(page);const saved=await stored(page);
    expect(saved.items).toHaveLength(initial.items.length+8);
    expect(saved.items.find(x=>x.name==='変更ブランド おむつ 夜用パンツ スーパービッグ')).toMatchObject({qty:2,unit:'袋'});
    expect(saved.items.filter(x=>/明治 (ほほえみ|ステップ) 粉ミルク 缶/.test(x.name))).toHaveLength(2);
@@ -53,7 +53,7 @@ test('all five follow-up products save as separate shopping entries and unsuppor
   }
   await pick(page,'type','缶');await page.click('[data-qa-babyadd]');
  }
- await page.click('#qaCommit');const saved=await stored(page);
+ await commitBatch(page);const saved=await stored(page);
  expect(saved.items).toEqual(initial.items);expect(saved.routines).toEqual(initial.routines);
  expect(saved.buys).toHaveLength(initial.buys.length+5);
  expect(new Set(saved.buys.map(x=>x.name)).size).toBe(saved.buys.length);

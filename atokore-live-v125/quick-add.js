@@ -1,5 +1,5 @@
 /* あとこれ / Quick Add v14
- * Search + one-tap presets + batch tray. Uses the original local-first atokoreTrialV4 data model.
+ * Search + one-tap presets + pending list with a review screen before saving. Uses the original local-first atokoreTrialV4 data model.
  * No third-party images, payments, affiliate APIs, or network requests.
  */
 (function(root) {
@@ -191,7 +191,7 @@ function buildBatch(existing,selected,time=Date.now()){
  }
  return next;
 }
-const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,loadedSet:null,loadedSnapshot:'',routineTarget:null};
+const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,reviewing:false,pickScroll:0,loadedSet:null,loadedSnapshot:'',routineTarget:null};
 const food={maker:'',series:'',month:'',query:'',limit:24,selected:'',qty:1,customBrand:'',customSeries:'',customName:'',customAge:'',customAmount:'',customFormat:''};
 function syncFoodInputs(){for(const field of ['Brand','Series','Name','Age','Amount','Format']){const input=$('qaFood'+field);if(input)food['custom'+field]=input.value}}
 function foodInput(field,label,limit=45){return '<label>'+safe(label)+'<input id="qaFood'+field+'" maxlength="'+limit+'" value="'+safe(food['custom'+field])+'" autocomplete="off"></label>'}
@@ -228,18 +228,19 @@ function addFood(){
    if(!p||p.maker!==maker?.name)throw Error('商品を選んでください');
    entry=root.AtokoreBabyFood.line(p.id,food.qty);
   }
-  addLine(entry);notify('追加予定に入れました（まだ保存されていません）。下の「'+commitLabel()+'」で保存します');
+  addLine(entry);notify(PENDING_NOTICE);
  }catch(e){notify(e.message||'内容を確認してください')}
 }
 const destLabel=d=>state.routineTarget?'いつものリスト':d==='buy'?'買い物リスト':'ストック';
 const commitLabel=()=>state.routineTarget?'選んだ商品をいつものリストに追加':'まとめて'+destLabel(state.destination)+'に追加';
+const PENDING_NOTICE='追加予定に入れました（まだ保存されていません）。下の「追加した商品を確認する」から保存できます';
 const traySnapshot=()=>JSON.stringify(state.tray.map(x=>[modelKey(x),x.qty]));
 // Changing where the pending items go is allowed, but always said out loud.
 function changeDestination(dest){
  if(state.routineTarget)return;
  const next=dest==='buy'?'buy':'stock';
- if(next!==state.destination&&state.tray.length)notify('追加予定の'+state.tray.length+'種類は「'+destLabel(next)+'」に保存されます');
- state.destination=next;renderDestination();
+ if(next!==state.destination&&state.tray.length)notify('追加予定の'+state.tray.length+'商品は「'+destLabel(next)+'」に保存されます');
+ state.destination=next;renderDestination();renderTray();
 }
 function addLine(entry){
  const v=validateLine(entry),found=state.tray.find(x=>modelKey(x)===modelKey(v));
@@ -354,20 +355,59 @@ function addBaby(){
  const desc=[brand,series,babyProductLabel(),type,state.kind==='diaper'?chosen('size'):''].filter(Boolean).join(' ');
  try{
   addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.kind==='wipes'?'パック':state.type===OTHER?(state.customUnit.trim()||'個'):state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
-  notify('追加予定に入れました（まだ保存されていません）。下の「'+commitLabel()+'」で保存します');
+  notify(PENDING_NOTICE);
  }catch(e){notify('商品名は120文字以内で入力してください')}
 }
+// Pending lines are counted as products and as a total quantity, never mixed up.
+function pendingSummary(lines=state.tray){return lines.length+'商品（数量の合計'+lines.reduce((sum,x)=>sum+x.qty,0)+'点）'}
+// What the final button will do to each line, using the same matching rules as commit().
+function stockMatch(v){return stockItems().find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'))}
+function buyMatch(v){let list=[];try{list=Array.isArray(buys)?buys:[]}catch(e){}return list.find(y=>y.name===v.name&&y.unit===v.unit)}
+function lineEffect(v){
+ if(state.routineTarget)return 'いつものリストに追加（在庫数は変わりません）';
+ if(state.destination==='buy'){const found=buyMatch(v);return found?'買い物リストに登録済み：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit:'買い物リストに新しく追加'}
+ const found=stockMatch(v);return found?'登録済みの在庫に合算：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit:'新しい商品として登録';
+}
+function lineDetails(v){
+ const parts=[];
+ if(root.AtokoreBabyFood&&(v.cat==='離乳食'||isBabyFood(v.name))){const d=root.AtokoreBabyFood.describe(v);parts.push(d.maker||'',d.age||'',d.amount||'',d.format||'')}
+ else{const brand=root.AtokoreBabyKit?.brand?.(v.name);if(brand)parts.push(brand)}
+ parts.push(v.cat,v.unit+'で数えます');
+ return parts.filter(Boolean).join('／');
+}
 function renderTray(){
- const box=$('qaTray'),list=$('qaTrayList'),n=$('qaTotal'),button=$('qaCommit');
+ const box=$('qaTray'),list=$('qaTrayList'),n=$('qaTotal'),button=$('qaCommit'),bar=$('qaBar');
  if(!box||!list)return;
  const lines=state.tray,count=lines.length;
- box.hidden=!count;
- n.textContent=count+'種類・合計'+lines.reduce((sum,x)=>sum+x.qty,0)+'点（未保存）';
- const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination)+'　まだ保存されていません';
- list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item"><span class="qa-tray-thumb">'+iconFor(v.name,v.cat)+'</span><span class="qa-tray-name">'+safe(v.name)+'<small>'+safe(v.cat)+'</small></span><div class="qa-step"><button data-qa-adjust="'+i+'" data-step="-1" aria-label="減らす">−</button><b>'+v.qty+'</b><button data-qa-adjust="'+i+'" data-step="1" aria-label="増やす">＋</button></div><button class="qa-remove" data-qa-remove="'+i+'" aria-label="削除">×</button></div>').join('');
+ if(!count&&state.reviewing)setReviewing(false);
+ // While choosing products only a compact bar is shown; the list and the final button live in the review screen.
+ if(bar){bar.hidden=!count||state.reviewing;const label=$('qaBarCount');if(label)label.textContent='追加予定 '+lines.length+'商品・合計'+lines.reduce((sum,x)=>sum+x.qty,0)+'点'}
+ box.hidden=!count||!state.reviewing;
+ n.textContent=pendingSummary(lines);
+ const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
+ list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><span class="qa-tray-thumb">'+iconFor(v.name,v.cat)+'</span><div class="qa-review-copy"><strong class="qa-review-name">'+safe(v.name)+'</strong><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=999?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
  button.disabled=!count||state.committing;
- box.classList.toggle('qa-tray-open',count>0);
- $('pg-add')?.classList.toggle('qa-has-tray',count>0);
+ $('pg-add')?.classList.toggle('qa-has-pending',count>0);
+}
+function setReviewing(on){
+ const page=$('pg-add');
+ if(on&&!state.reviewing)state.pickScroll=root.scrollY||0;
+ state.reviewing=!!on;
+ page?.classList.toggle('qa-reviewing',state.reviewing);
+}
+// Opening, closing and leaving the review never changes saved data; only the final button does.
+function openReview(){
+ if(!state.tray.length)return;
+ setReviewing(true);renderTray();renderDestination();
+ $('qaNotice')?.classList.remove('on');
+ try{root.scrollTo?.(0,0)}catch(e){}
+ $('qaReviewTitle')?.focus?.({preventScroll:true});
+}
+function closeReview(){
+ if(!state.reviewing)return;
+ const top=state.pickScroll;
+ setReviewing(false);renderTray();
+ try{root.scrollTo?.(0,top)}catch(e){}
 }
 function notify(msg){
  let x=$('qaNotice');
@@ -375,52 +415,79 @@ function notify(msg){
  x.textContent=msg;x.classList.add('on');clearTimeout(notify.timer);
  notify.timer=setTimeout(()=>x.classList.remove('on'),2200);
 }
-function commit(){
- if(state.committing||!state.tray.length)return;
- state.committing=true;
- const before=stockItems(),tray=state.tray.map(x=>({...x}));
- if(state.routineTarget&&!root.confirm?.('次の商品をいつものリストに追加しますか？\n\n'+tray.map(x=>x.name+' × '+x.qty+x.unit).join('\n')+'\n\nストック数・買い物リストは変わりません。')){
-  state.committing=false;renderTray();return;
+// Writes the pending lines. Throws (and changes nothing) unless the new state is confirmed stored.
+function persist(tray){
+ root.AtokoreDataSafety?.assertWritable?.();
+ if(state.routineTarget){
+  if(state.routineTarget.onCommit(tray)!==true)throw Error('いつものリストを保存できませんでした');
+  return {merged:0,ids:[]};
  }
- let merged=0;
- try{
-  root.AtokoreDataSafety?.assertWritable?.();
-  if(state.routineTarget){
-   const target=state.routineTarget;
-   if(target.onCommit(tray)!==true)throw Error('いつものリストを保存できませんでした');
-   state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';
-   state.routineTarget=null;
-   renderTray();renderDestination();
-   try{root.renderRoutines?.()}catch(e){root.console?.warn?.(e)}
-   try{root.go?.('buy');root.openRoutine?.(target.id,true)}catch(e){root.console?.warn?.(e)}
-   notify(tray.length+'種類を「いつものリスト」に保存しました。在庫数は変更していません');
-   return;
+ const key='atokoreTrialV4',store=root.localStorage;
+ if(state.destination==='buy'){
+  const nextBuys=buys.map(x=>({...x})),ids=new Set(nextBuys.map(x=>Number(x.id)));let merged=0,sequence=Date.now();
+  for(const x of tray){const found=nextBuys.find(y=>y.name===x.name&&y.unit===x.unit);
+   if(found){found.qty=Number(found.qty||0)+x.qty;merged++}
+   else{while(ids.has(sequence))sequence++;ids.add(sequence);nextBuys.push({id:sequence++,name:x.name,qty:x.qty,unit:x.unit,cat:x.cat})}
   }
-  if(state.destination==='buy'){
-   const nextBuys=buys.map(x=>({...x}));
-   for(const x of tray){const found=nextBuys.find(y=>y.name===x.name&&y.unit===x.unit);
-    if(found){found.qty=Number(found.qty||0)+x.qty;merged++}
-    else nextBuys.push({id:Date.now()+nextBuys.length+1,name:x.name,qty:x.qty,unit:x.unit,cat:x.cat});
-   }
-   root.localStorage.setItem('atokoreTrialV4',JSON.stringify({items,buys:nextBuys,routines}));
-   buys=nextBuys;
-  }else{
-   const next=buildBatch(before,tray);
-   merged=tray.length-(next.length-before.length);
-   root.localStorage.setItem('atokoreTrialV4',JSON.stringify({items:next,buys,routines}));
-   items=next;
-  }
-  state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';
-  renderTray();
-  root.render?.();
-  root.go?.(state.destination==='buy'?'buy':'stock');
-  if(state.destination!=='buy'&&tray.some(x=>x.cat==='離乳食'))root.setFilter?.(tray.every(x=>x.cat==='離乳食')?'離乳食':'すべて');
-  notify(tray.length+'種類を'+destLabel(state.destination)+'に保存しました'+(merged?'（うち'+merged+'種類は登録済みの商品に数量を合算）':''));
- }catch(err){
+  const raw=JSON.stringify({items,buys:nextBuys,routines});
+  store.setItem(key,raw);if(store.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
+  buys=nextBuys;
+  return {merged,ids:[]};
+ }
+ const before=stockItems(),next=buildBatch(before,tray);
+ const raw=JSON.stringify({items:next,buys,routines});
+ store.setItem(key,raw);if(store.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
+ items=next;
+ // Ids of every record this batch created or added to, so the stock list can show them.
+ const ids=tray.map(v=>next.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'))?.id).filter(id=>id!=null);
+ return {merged:tray.length-(next.length-before.length),ids};
+}
+// The list opens right under the finger after a save; a fast second tap on the final button must not
+// land on whatever appears there (a card's −/＋, a filter, a header button). Only taps near the spot
+// of the saving tap, within a double-tap interval, are absorbed; anything else works normally.
+function absorbStrayTaps(origin,ms=400){
+ if(!doc||!origin||!origin.detail)return;
+ const x=origin.clientX,y=origin.clientY,landed=doc.querySelector('.page.on')?.id;
+ const stop=e=>{
+  if(doc.querySelector('.page.on')?.id!==landed){doc.removeEventListener('click',stop,true);return}
+  if(Math.hypot(e.clientX-x,e.clientY-y)<=48){e.preventDefault();e.stopImmediatePropagation()}
+ };
+ doc.addEventListener('click',stop,true);setTimeout(()=>doc.removeEventListener('click',stop,true),ms);
+}
+function commit(origin){
+ // Only the button on the review screen saves; the list must have been shown to the user first.
+ if(state.committing||!state.tray.length||!state.reviewing)return false;
+ state.committing=true;renderTray();
+ const tray=state.tray.map(x=>({...x})),target=state.routineTarget,dest=state.destination;
+ let result;
+ try{result=persist(tray)}
+ catch(err){
+  // Nothing was stored: keep the pending lines and the review screen so the user can retry.
   state.committing=false;renderTray();
-  notify('保存できませんでした。内容を残しているので、もう一度お試しください。');
+  notify('保存できませんでした。追加予定はそのまま残っています。内容を確認して、もう一度お試しください。');
   root.console?.error?.('あとこれ一括登録に失敗',err);
+  return false;
  }
+ // Saved. From here on a drawing problem must never be reported as a failed save (that would invite a second add).
+ state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';
+ if(target)state.routineTarget=null;
+ let displayFailed=false;
+ const step=fn=>{try{fn()}catch(e){displayFailed=true;root.console?.error?.('あとこれ: 保存後の表示更新に失敗',e)}};
+ step(()=>{setReviewing(false);renderTray();renderItems();renderDestination()});
+ let message;
+ if(target){
+  step(()=>root.renderRoutines?.());
+  step(()=>{root.go?.('buy');root.openRoutine?.(target.id,true)});
+  message=tray.length+'商品を「いつものリスト」に保存しました。在庫数は変更していません';
+ }else{
+  step(()=>root.render?.());
+  step(()=>root.go?.(dest==='buy'?'buy':'stock'));
+  if(dest!=='buy')step(()=>root.AtokoreBabyFlow?.revealStock?.(result.ids));
+  message=pendingSummary(tray)+'を'+destLabel(dest)+'に保存しました'+(result.merged?'（うち'+result.merged+'商品は登録済みの商品に数量を合算）':'');
+ }
+ step(()=>absorbStrayTaps(origin));
+ notify(message+(displayFailed?'。画面の更新に失敗しました。再読み込みすると表示されます（もう一度追加する必要はありません）':''));
+ return true;
 }
 function openQuick(){
  if(!doc)return;
@@ -448,12 +515,18 @@ function setup(){
  '<div class="bf-destination" id="bfDestination"><button type="button" data-qa-dest="stock">ストックに追加</button><button type="button" data-qa-dest="buy">買い物リストに追加</button></div>'+ 
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
- '<div id="qaBaby" class="qa-baby"></div><div id="qaBabyFood" class="qa-babyfood"></div><div id="qaRecent"></div></div>';
+ '<div id="qaBaby" class="qa-baby"></div><div id="qaBabyFood" class="qa-babyfood"></div><div id="qaRecent"></div></div>'+
+ '<button type="button" id="qaBar" class="qa-bar" data-qa-review hidden><span class="qa-bar-open">追加した商品を確認する</span><span class="qa-bar-count" id="qaBarCount"></span></button>';
  const heading=p.querySelector('.atk-page-title');
  if(heading)heading.insertAdjacentElement('afterend',pane);else p.prepend(pane);
  p.classList.add('qa-quick-mode');
- const tray=doc.createElement('section');tray.id='qaTray';tray.className='qa-tray';tray.hidden=true;
- tray.innerHTML='<div class="qa-tray-header"><b id="qaTotal">0件</b><button data-qa-clear type="button">全部取り消す</button></div><p id="qaTrayDest" class="qa-tray-dest"></p><div id="qaTrayList"></div><button id="qaCommit" type="button" data-qa-commit>まとめて登録する</button>';
+ // Review screen: replaces the product picker (which stays in the DOM, so search and choices are kept).
+ const tray=doc.createElement('section');tray.id='qaTray';tray.className='qa-review';tray.hidden=true;tray.setAttribute('aria-labelledby','qaReviewTitle');
+ tray.innerHTML='<button type="button" class="qa-review-back" data-qa-review-back>← 商品選びに戻る</button><h2 id="qaReviewTitle" tabindex="-1">追加する商品の確認</h2><p id="qaTotal" class="qa-review-total"></p>'+
+  '<div class="qa-review-dest"><p id="qaTrayDest" class="qa-tray-dest"></p><div class="qa-review-dest-switch" role="group" aria-label="保存先"><button type="button" data-qa-dest="stock">ストック</button><button type="button" data-qa-dest="buy">買い物リスト</button></div></div>'+
+  '<div id="qaTrayList" class="qa-review-list"></div>'+
+  '<p class="qa-review-note" id="qaReviewNote">下のボタンを押すまで保存されません。</p><button id="qaCommit" type="button" data-qa-commit>まとめて登録する</button>'+
+  '<button type="button" class="qa-review-clear" data-qa-clear>追加予定を全部取り消す</button>';
  p.appendChild(tray);
  renderAll();
  $('qaBaby').addEventListener('input',syncBabyInputs);
@@ -474,9 +547,11 @@ function setup(){
  const originalOpen=root.atkOpenAdd;
  root.atkOpenAdd=function(){openQuick()};
  doc.addEventListener('click',e=>{
-  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit],[data-qa-dest],[data-qa-routine-back]');
+  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit],[data-qa-dest],[data-qa-routine-back],[data-qa-review],[data-qa-review-back]');
   if(!btn||!p.contains(btn))return;
   if(btn.hasAttribute('data-qa-routine-back')){cancelRoutinePicker(true);return}
+  if(btn.hasAttribute('data-qa-review')){openReview();return}
+  if(btn.hasAttribute('data-qa-review-back')){closeReview();return}
   if(btn.dataset.qaDest){changeDestination(btn.dataset.qaDest);return}
   if(btn.dataset.qaCat){state.cat=btn.dataset.qaCat;state.group='すべて';state.query='';state.showAll=false;$('qaSearch').value='';renderAll();return}
   if(btn.dataset.qaGroup){state.group=btn.dataset.qaGroup;state.showAll=false;renderGroups();renderItems();return}
@@ -487,10 +562,10 @@ function setup(){
   if(btn.hasAttribute('data-qa-step')){syncBabyInputs();state.qty=Math.max(1,Math.min(99,state.qty+Number(btn.dataset.qaStep)));renderBaby();return}
   if(btn.hasAttribute('data-qa-babyadd')){addBaby();return}
   if(btn.hasAttribute('data-qa-free')){addFree();return}
-  if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.min(999,v.qty+Number(btn.dataset.step));if(v.qty<=0)state.tray.splice(i,1);renderTray();renderItems()}return}
+  if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(1,Math.min(999,v.qty+Number(btn.dataset.step)));renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
-  if(btn.hasAttribute('data-qa-clear')){if(root.confirm?.('追加予定をすべて取り消しますか？')){state.tray=[];renderTray();renderItems()}return}
-  if(btn.hasAttribute('data-qa-commit')){commit()}
+  if(btn.hasAttribute('data-qa-clear')){if(root.confirm?.('追加予定をすべて取り消しますか？（保存済みの在庫は変わりません）')){state.tray=[];renderTray();renderItems()}return}
+  if(btn.hasAttribute('data-qa-commit')){commit(e)}
  });
  function addFree(){
   const raw=$('qaFree').value.trim();if(!raw){notify('商品名を入力してください');return}
@@ -498,7 +573,7 @@ function setup(){
   addLine({name:raw,cat,qty:1,unit:defaultUnit(raw,cat)});$('qaFree').value='';
  }
  const oldGo=root.go;
- if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false))return false;const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
+ if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
  if(typeof oldStock==='function')root.renderStock=function(...a){const v=oldStock.apply(this,a);decorateRows('#stockList [data-stock-id]');return v};
  if(typeof oldBuy==='function')root.renderBuy=function(...a){const v=oldBuy.apply(this,a);decorateRows('#buyList [data-buy-id]');return v};
@@ -535,27 +610,29 @@ function renderDestination(){
  if(heading)heading.hidden=!routine;
  node.hidden=routine;
  $('pg-add')?.classList.toggle('qa-routine-picking',routine);
- node.querySelectorAll('[data-qa-dest]').forEach(x=>x.classList.toggle('selected',x.dataset.qaDest===state.destination));
+ doc.querySelectorAll('#pg-add [data-qa-dest]').forEach(x=>{const on=x.dataset.qaDest===state.destination;x.classList.toggle('selected',on);x.setAttribute('aria-pressed',String(on))});
+ const switcher=doc.querySelector('#qaTray .qa-review-dest-switch');if(switcher)switcher.hidden=routine;
  const button=$('qaCommit');if(button)button.textContent=commitLabel();
  const baby=$('qaBaby')?.querySelector('[data-qa-babyadd]');
  if(baby)baby.textContent='＋ 追加予定に入れる';
  const note=$('qaBabySaveNote');
- if(note)note.textContent='まだ保存されません。最後に下の「'+commitLabel()+'」を押すと保存されます。';
- const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination)+'　まだ保存されていません';
+ if(note)note.textContent='まだ保存されません。「追加した商品を確認する」で内容を確かめ、最後に「'+commitLabel()+'」を押すと保存されます。';
+ const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
+ const review=$('qaReviewNote');if(review)review.textContent='「'+commitLabel()+'」を押すまで保存されません。'+(routine?'ストック数・買い物リストは変わりません。':'');
 }
 function cancelRoutinePicker(returnToList=false){
  if(!state.routineTarget)return true;
  if(state.tray.length&&!root.confirm?.('まだ保存していない商品があります。選択を破棄して戻りますか？'))return false;
  const target=state.routineTarget;
  state.routineTarget=null;state.tray=[];state.loadedSet=null;state.loadedSnapshot='';
- renderTray();renderDestination();
+ setReviewing(false);renderTray();renderDestination();
  if(returnToList){root.go?.('buy');root.openRoutine?.(target.id,true)}
  return true;
 }
 function openRoutinePicker(id,onCommit){
  if(!Number.isSafeInteger(Number(id))||typeof onCommit!=='function')return false;
  if(state.tray.length&&!root.confirm?.('追加予定の商品があります。破棄して「いつものリスト」の商品を選びますか？'))return false;
- state.tray=[];state.loadedSet=null;state.loadedSnapshot='';
+ state.tray=[];state.loadedSet=null;state.loadedSnapshot='';setReviewing(false);
  state.routineTarget={id:Number(id),onCommit};
  state.destination='stock';
  openQuick();setCategory('ベビー');renderDestination();
@@ -567,7 +644,7 @@ function openWithEntries(entries,destination='stock',options={}){
  if(!list.length){changeDestination(destination);openQuick();return}
  // The same set, untouched since it was loaded: never add its quantities a second time.
  if(setId!==null&&state.loadedSet===setId&&state.loadedSnapshot===traySnapshot()){
-  changeDestination(destination);openQuick();
+  changeDestination(destination);openQuick();openReview();
   notify('このセットは読み込み済みです。数量を確認して「'+commitLabel()+'」を押してください');
   return;
  }
@@ -582,11 +659,11 @@ function openWithEntries(entries,destination='stock',options={}){
  }
  state.tray=next;state.loadedSet=setId;state.loadedSnapshot=traySnapshot();
  state.destination=destination==='buy'?'buy':'stock';
- openQuick();renderTray();renderItems();renderDestination();
+ openQuick();openReview();renderItems();
  if(skipped)notify(skipped+'件は内容を確認できなかったため読み込みませんでした');
 }
 function setCategory(cat){state.cat=cat;state.group='すべて';state.query='';state.showAll=false;if($('qaSearch'))$('qaSearch').value='';renderAll()}
-const api=Object.freeze({kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
+const api=Object.freeze({openReview,closeReview,isReviewing(){return state.reviewing},kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreQuickAdd=api;
 if(doc&&typeof window!=='undefined')setup();

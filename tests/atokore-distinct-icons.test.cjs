@@ -33,8 +33,8 @@ test('compact quick-add uses text only while the stock list shows distinct icons
   const button=$('qaTiles').querySelector('[data-qa-pick="'+name+'"]');
   assert.ok(button);button.click();
  }
- assert.match($('qaTotal').textContent,/3種類/);
- $('qaCommit').click();
+ assert.match($('qaTotal').textContent,/3商品/);
+ $('qaBar').click();$('qaCommit').click();
  const html=$('stockList').innerHTML;
  for(const key of ['onion','carrot','egg'])assert.ok(html.includes('data-product-icon="'+key+'"'));
  const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
@@ -48,7 +48,7 @@ test('baby brand badge is maintained and not replaced with grocery icon',()=>{
   const btn=$('qaBaby').querySelector('[data-qa-baby="'+field+'"][data-value="'+value+'"]');
   assert.ok(btn);btn.click();
  }
- $('qaBaby').querySelector('[data-qa-babyadd]').click();$('qaCommit').click();
+ $('qaBaby').querySelector('[data-qa-babyadd]').click();$('qaBar').click();$('qaCommit').click();
  assert.match($('stockList').textContent,/MamyPoko/);
  assert.equal(art.resolve('マミーポコ おむつ パンツ M'),null);
  dom.window.close();
@@ -70,5 +70,5 @@ test('offline app includes the new glyph library before the UI and cache is bump
  assert.ok(html.indexOf('product-icons.js')<html.indexOf('quick-add.js'));
  assert.match(sw,/'\.\/product-icons.js'/);
  assert.match(sw,/'\.\/compact-add.css'/);
- assert.match(sw,/atokore-pwa-v35/);
+ assert.match(sw,/atokore-pwa-v36/);
 });

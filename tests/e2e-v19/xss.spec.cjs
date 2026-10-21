@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, KEY, HISTORY } = require('./helpers.cjs');
+const { open, go, KEY, HISTORY, commitBatch } = require('./helpers.cjs');
 
 // Every payload increments window.__xss if it ever executes.
 const hit = 'window.__xss=(window.__xss||0)+1';
@@ -60,7 +60,7 @@ test('typed input with markup is stored as text and shown as text', async ({ pag
   await page.click('[data-qa-cat="食料品"]');
   await page.fill('#qaFree', P.img + 'テスト');
   await page.click('[data-qa-free]');
-  await page.click('#qaCommit');
+  await commitBatch(page);
   await go(page, 'stock');
   await page.evaluate(() => { window.showPremium('predict'); });
   await page.waitForTimeout(150);

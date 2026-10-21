@@ -35,6 +35,7 @@ jobs:
           node --test tests/atokore-product-identity.test.cjs
           node --test tests/atokore-product-photos-v30.test.cjs
           node --test tests/atokore-baby-food-v35.test.cjs
+          node --test tests/atokore-batch-review-v36.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs

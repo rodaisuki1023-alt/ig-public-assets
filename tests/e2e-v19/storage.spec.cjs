@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, chooseBaby, baseState, KEY, HISTORY, shot } = require('./helpers.cjs');
+const { open, go, stored, chooseBaby, baseState, KEY, HISTORY, shot, commitBatch } = require('./helpers.cjs');
 
 // Make every write of the trial's main record fail, as a full or locked storage would.
 const breakStorage = page => page.evaluate(k => {
@@ -36,7 +36,7 @@ test.describe('save failures never look like success', () => {
     // quick add commit keeps the tray and does not touch storage
     await page.click('#bfNavAdd');
     await chooseBaby(page, { kind: 'diaper', brand: 'メリーズ', type: 'テープ', size: 'S' });
-    await page.click('#qaCommit');
+    await commitBatch(page);
     await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
     expect(await page.evaluate(() => AtokoreQuickAdd.getTray().length)).toBe(1);
 
@@ -82,7 +82,7 @@ test.describe('save failures never look like success', () => {
 
     await page.click('#bfNavAdd');
     await chooseBaby(page, { kind: 'diaper', brand: 'メリーズ', type: 'テープ', size: 'S' });
-    await page.click('#qaCommit');
+    await commitBatch(page);
     await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
     expect(await raw(page)).toBe('{broken json');
 
