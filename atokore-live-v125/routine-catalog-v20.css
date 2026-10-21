@@ -86,8 +86,8 @@ body.atk-v19 .atk-routine-footer{flex:none;border-top:1px solid #F0E6DF;backgrou
 body.atk-v19 .atk-routine-footer p{margin:0 0 10px;font-size:11px;line-height:1.5;color:#806D61}
 body.atk-v19 .atk-routine-destinations{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
 body.atk-v19 .atk-routine-destinations button{min-width:0;min-height:52px;font-size:13px;padding:10px 5px;border:0;color:#fff}
-body.atk-v19 .atk-routine-stock-commit{background:#B97159}
-body.atk-v19 .atk-routine-buy-commit{background:#6E8D70}
+body.atk-v19 .atk-routine-stock-commit{background:#A45D49}
+body.atk-v19 .atk-routine-buy-commit{background:#547358}
 body.atk-v19 .atk-routine-scroll #routineItems .row{
  display:grid;grid-template-columns:48px minmax(0,1fr) auto;column-gap:8px;row-gap:2px;
  background:#FFFEFC;border:1px solid #EFE4DC;border-radius:15px;padding:10px 8px;margin:9px 0;
