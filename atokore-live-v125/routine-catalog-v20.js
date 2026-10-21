@@ -1,4 +1,4 @@
-/* v24: edit list contents separately from the two confirmed destination actions.
+/* v26: select unregistered products through the add catalog, then save only the list.
  * Stock selection saves ONLY the routine entry, never changes inventory.
  */
 (function(root){
@@ -128,6 +128,15 @@ function start(id){
  root.closeM?.();root.go?.('stock');refresh();
  return true;
 }
+function startCatalog(id){
+ id=toId(id);if(!id||!routine(id))return false;
+ const current=routine(id),name=$('routineNameEdit');
+ if(name&&name.value.trim()!==current.name&&
+    !root.confirm?.('リスト名はまだ保存されていません。このまま商品を選びますか？'))return false;
+ if(!root.AtokoreQuickAdd?.openRoutinePicker?.(id,lines=>saveSelected(id,lines)))return false;
+ pickerId=null;refresh();root.closeM?.();
+ return true;
+}
 function decorateRoutineModal(id){
  const sheet=$('sheet'),r=routine(toId(id)),inline=sheet?.querySelector('.routineInline');
  if(!r||!inline||$('atkRoutineCatalogOpen'))return;
@@ -138,8 +147,8 @@ function decorateRoutineModal(id){
  const wrapper=doc.createElement('div');wrapper.className='atk-routine-catalog-entry';
  const button=doc.createElement('button');button.type='button';button.id='atkRoutineCatalogOpen';
  button.className='atk-routine-catalog-button';button.textContent='商品を選ぶ';
- button.title='ストックの商品を選び、いつものリストに追加';
- button.addEventListener('click',()=>start(r.id));
+ button.title='商品追加画面で選び、いつものリストに追加';
+ button.addEventListener('click',()=>startCatalog(r.id));
  wrapper.append(button);
  const manual=doc.createElement('details');manual.className='atk-routine-manual';
  const summary=doc.createElement('summary');summary.textContent='商品名を手入力する';manual.append(summary);

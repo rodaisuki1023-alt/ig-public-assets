@@ -69,15 +69,15 @@ test('a new release is shown on the next load, and the app still opens offline',
     await expect(page.locator('#bfNavAdd')).toBeVisible();
     const art = await page.evaluate(async () => {
       const results = [];
-      for (const kind of ['diaper', 'wipes']) {
-        const url = './icons/baby/' + kind + '-bear-v24.webp';
+      for (const name of ['diaper-bear-v24', 'wipes-bear-v24', 'milk-bear-v26']) {
+        const url = './icons/baby/' + name + '.webp';
         const response = await fetch(url);
         const image = new Image(); image.src = url; await image.decode();
         results.push(response.ok && image.naturalWidth > 0);
       }
       return results;
     });
-    expect(art, 'both new bear illustrations remain available offline').toEqual([true, true]);
+    expect(art, 'all three bear illustrations remain available offline').toEqual([true, true, true]);
   } finally {
     await context.setOffline(false);
     fs.writeFileSync(file, original);

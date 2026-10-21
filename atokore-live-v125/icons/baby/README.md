@@ -14,3 +14,9 @@ Common prompt: Create ONE reusable transparent-background baby-product illustrat
 Diaper description: the white and pale mint baby diaper in the first product row, with the small warm beige teddy-bear face centered on the front. Front view, gently curved white waistband with thin mint lines and soft mint tabs, tiny beige bear motif. Preserve its appealing understated design.
 
 Wipes description: the pale baby-blue packet of baby wipes in the second product row, with a white rounded rectangular dispensing lid carrying a small warm beige teddy-bear face. Front view with gently rounded edges and a little blue folding on both sides. Preserve its appealing understated design.
+
+## Milk can (v26)
+
+- `milk-bear-v26.webp`: 256px transparent WebP, generated 2026-10-21 with OpenAI ImageGen using the diaper and wipes as style references.
+- Prompt: one closed ivory formula tin, pale lavender lid and bottom band, centered beige smiling teddy bear face, gentle watercolor texture, transparent background, no text or brand.
+- Original retained in the generated image output. This asset contains no manufacturer branding.
