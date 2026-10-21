@@ -26,7 +26,14 @@ mainではPages workflowの固定ソースSHAと検証条件、およびこの�
 - リスト閲覧だけでは在庫を増やさないこと、ストックと買い物への明示操作、連打の重複防止、食品・手入力、バックアップ、XSS、保存失敗時の既存機能も回帰確認。
 - 3種類のくまアイコンがオフラインでも読み込めることをChromiumで確認。
 - 320pxカタログと390px保存後リストの画像を目視確認。横はみ出しなし、下部2ボタンの横並びを維持。
-- GitHub ActionsのChromium/WebKit検証ステップ成功。<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39537551833>
+- GitHub ActionsのChromium/WebKit：98件合格、WebKitのSW検査2件は対象外（Chromiumで合格）。<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39537551833>
+
+## 公開結果
+
+- 配信PR：<https://github.com/rodaisuki1023-alt/ig-public-assets/pull/32>（マージ済み）。配信コミット `58e03b4a450ae24fc846cadf79a71bc85c809440`。
+- GitHub Pages成功：<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39537898664>。
+- 公開後、試用版コード30ファイル＋画像3点の33/33が検証済みビルドと一致。通常版16/16ファイルは変更前と同一。
+- 公開ブラウザでbaby-kit/quick-add/routine-catalogのv26適用と、3種類のくま画像の256px読込を確認。利用者の保存データに追加・削除・初期化は行っていない。
 
 ## 未確認事項・次の作業
 
