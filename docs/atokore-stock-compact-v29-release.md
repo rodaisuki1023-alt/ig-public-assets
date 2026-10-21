@@ -19,7 +19,12 @@ Chromium / WebKit、320 / 375 / 390 / 430pxのテストとスクリーンショ�
 CI: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39560498762
 3列・カード高240px以下、左右上の44px操作範囲、数量増減、詳細、編集、再読込、複数選択を確認。
 初回は−操作による既存の消費回数更新をテスト期待値に含めていなかったため失敗し、テストを修正して再実行成功。
-公開後は配信ファイル一致と通常版不変を確認する。
+公開PR #38: https://github.com/rodaisuki1023-alt/ig-public-assets/pull/38
+Pages配信成功: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39561269429
+配信コミット: `b111a01ec586dd2f03f367bc4454dcabf24f66ea`
+公開後のSHA-256比較は、通常版16/16ファイルが変更前と同一、試用版33/33ファイルが確認済みビルドと同一。
+公開画面でも3列、baby-flow v29、左右上の44×44pxボタン、残り数量を読み取り確認済み。
+公開確認では実際の在庫を変更していない。
 
 実機iPhoneの操作感とSafariツールバー開閉時の見え方は未確認。
 次は実機で3列の読みやすさと＋／−の押しやすさを確認する。
