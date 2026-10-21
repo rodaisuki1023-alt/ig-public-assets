@@ -20,6 +20,8 @@ PRODUCTION_KEYS = {
     'atokorePwaInstallDismissedAt': 'atokorePreviewPwaInstallDismissedAtV{v}',
     'atokoreFamilySafeV2': 'atokorePreviewFamilySafeV{v}',
     'atokoreFamilySafeVersionV2': 'atokorePreviewFamilySafeVersionV{v}',
+    'atokoreHouseholdSyncV1': 'atokorePreviewHouseholdSyncV{v}',
+    'atokoreHouseholdSessionV1': 'atokorePreviewHouseholdSessionV{v}',
 }
 
 

@@ -6,6 +6,8 @@ const { defineConfig, devices } = require('@playwright/test');
 
 const port = Number(process.env.E2E_PORT || 4719);
 process.env.E2E_PORT = String(port);
+const hhPort = Number(process.env.E2E_HH_PORT || 4720);
+process.env.E2E_HH_PORT = String(hhPort);
 process.env.E2E_SITE_ROOT = process.env.E2E_SITE_ROOT || path.join(os.tmpdir(), 'atokore-e2e-site');
 const chromiumLaunch = process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {};
 const iphone = { isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: 'ja-JP' };
@@ -22,11 +24,18 @@ module.exports = defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'], ...iphone, viewport: { width: 390, height: 844 }, launchOptions: chromiumLaunch } },
     ...(process.env.E2E_SKIP_WEBKIT ? [] : [{ name: 'webkit', use: { ...devices['iPhone 13'], locale: 'ja-JP' } }]),
   ],
-  webServer: {
+  webServer: [{
     command: `node ${JSON.stringify(path.join(__dirname, 'server.cjs'))}`,
     url: `http://127.0.0.1:${port}/ig-public-assets/preview-baby-v19/`,
     reuseExistingServer: false,
     timeout: 60000,
     env: { E2E_SITE_ROOT: process.env.E2E_SITE_ROOT, E2E_PORT: String(port) },
-  },
+  }, {
+    // Household sharing tests: Supabase Auth/RPC stand-in running the real migration SQL in PGlite.
+    command: `node ${JSON.stringify(path.join(__dirname, '../household/emulator.cjs'))}`,
+    url: `http://127.0.0.1:${hhPort}/__test/health`,
+    reuseExistingServer: false,
+    timeout: 60000,
+    env: { E2E_HH_PORT: String(hhPort) },
+  }],
 });
