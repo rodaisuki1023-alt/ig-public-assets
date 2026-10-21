@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 53842fecc033c2dd780b0d7d470781b6eaa0889e
+          ref: 7056057b2e9a863fc05b7e7e98c144fdd097a4a5
           path: _preview_v19_source
           persist-credentials: false
 
@@ -349,8 +349,9 @@ jobs:
           assert '商品を選ぶ' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atkRoutineBuyCommit' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
-          assert 'baby-flow-v17.js?v=24' in html
+          assert 'baby-flow-v17.js?v=25' in html
           assert 'baby-kit-v17.js?v=24' in html
+          assert 'baby-focus-v17.css?v=25' in html
           assert 'quick-add.js?v=24' in html
           for kind in ['diaper', 'wipes']:
               image = f'icons/baby/{kind}-bear-v24.webp'
@@ -360,7 +361,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v24'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v25'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
