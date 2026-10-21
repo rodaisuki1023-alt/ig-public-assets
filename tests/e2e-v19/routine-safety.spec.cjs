@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, baseState, KEY, HISTORY, shot } = require('./helpers.cjs');
+const { open, go, stored, baseState, chooseBaby, KEY, HISTORY, shot } = require('./helpers.cjs');
 const raw = page => page.evaluate(k => localStorage.getItem(k), KEY);
 const memory = page => page.evaluate(() => JSON.parse(JSON.stringify({ items, buys, routines })));
 
@@ -73,40 +73,55 @@ for (const [width, height] of [[320, 568], [375, 667], [390, 844], [430, 932]]) 
       expect(await stored(page)).toEqual(saved);
     });
 
-    test('stock-to-routine selection cancels safely, survives save failure and never changes inventory', async ({ page }, info) => {
+    test('add-catalog selection confirms new milk and food, survives failure and leaves stock unchanged', async ({ page }, info) => {
       const initial = baseState({ routines: [{ id: 901, name: 'いつものやつ', items: [] }] });
       await open(page, { [KEY]: initial });
       await go(page, 'buy');
       await page.click('[data-bf-routine="901"]');
       await page.click('#atkRoutineCatalogOpen');
-      await expect(page.locator('#atkRoutineStockPicker')).toBeVisible();
+      await expect(page.locator('#pg-add')).toHaveClass(/on/);
+      await expect(page.locator('#qaRoutinePicker')).toBeVisible();
+      await expect(page.locator('#modal')).not.toHaveClass(/on/);
+      await chooseBaby(page, { kind: 'milk', brand: '明治', type: '缶', series: 'ほほえみ' });
+      const milkIcon = page.locator('#qaBaby img[src$="milk-bear-v26.webp"]').first();
+      await expect(milkIcon).toBeVisible();
+      await expect.poll(() => milkIcon.evaluate(i => i.naturalWidth)).toBe(256);
+      await page.click('[data-qa-cat="食料品"]');
+      await page.click('[data-qa-pick="バナナ"]');
+      await expect(page.locator('#qaTrayDest')).toContainText('いつものリスト');
+      expect(await stored(page)).toEqual(initial);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await shot(page, info, `${width}-routine-catalog`);
       page.removeAllListeners('dialog');
       let approve = false;
-      let confirmations = 0;
+      const confirmations = [];
       page.on('dialog', async dialog => {
-        confirmations++;
+        confirmations.push(dialog.message());
         approve ? await dialog.accept() : await dialog.dismiss();
       });
-      const product = page.locator('#stockList [data-stock-id="2"] .name');
-      await product.click();
+      await page.click('#qaCommit');
       expect(await stored(page)).toEqual(initial);
       expect(await memory(page)).toEqual(initial);
+      expect(confirmations[0]).toContain('明治 ほほえみ');
+      expect(confirmations[0]).toContain('バナナ × 1');
+      await expect(page.locator('#qaTrayList .qa-tray-item')).toHaveCount(2);
       approve = true;
       await failWrites(page);
-      await product.click();
+      await page.click('#qaCommit');
       expect(await stored(page)).toEqual(initial);
-      await expect(page.locator('#atkRoutineStockNotice')).toContainText('保存できませんでした');
-      await expect(page.locator('#atkRoutineStockPicker')).toBeVisible();
+      expect(await memory(page)).toEqual(initial);
+      await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
+      await expect(page.locator('#qaTrayList .qa-tray-item')).toHaveCount(2);
       await page.evaluate(() => window.__restoreRoutineStorage());
-      await product.click();
-      await product.click();
+      await page.click('#qaCommit');
       const saved = await stored(page);
       expect(saved.items).toEqual(initial.items);
       expect(saved.buys).toEqual(initial.buys);
-      expect(saved.routines[0].items).toHaveLength(1);
-      expect(saved.routines[0].items[0]).toMatchObject({ name: initial.items[1].name, qty: 1, unit: '袋' });
-      expect(confirmations).toBe(3);
-      await page.click('#atkRoutineStockDone');
+      expect(saved.routines[0].items).toHaveLength(2);
+      expect(saved.routines[0].items[0]).toMatchObject({ name: '明治 ほほえみ 粉ミルク 缶', qty: 1, unit: '缶' });
+      expect(saved.routines[0].items[1].name).toBe('バナナ');
+      expect(confirmations).toHaveLength(3);
+      await expect(page.locator('#pg-buy')).toHaveClass(/on/);
       await expect(page.locator('#modal')).toHaveClass(/on/);
       await shot(page, info, `${width}-routine-picker`);
       await page.reload();
@@ -139,4 +154,20 @@ test('shopping a diaper M then editing stock to L keeps both sizes separate afte
   expect(saved.routines).toEqual(initial.routines);
   await page.reload();
   expect(await stored(page)).toEqual(saved);
+});
+
+test('leaving a routine catalog can cancel or discard, then normal add saves only stock', async ({page}) => {
+ const initial=baseState();await open(page,{[KEY]:initial});await go(page,'buy');
+ await page.click('[data-bf-routine="901"]');await page.click('#atkRoutineCatalogOpen');
+ await page.click('[data-qa-cat="食料品"]');await page.click('[data-qa-pick="バナナ"]');
+ page.removeAllListeners('dialog');let approve=false;
+ page.on('dialog',async d=>approve?d.accept():d.dismiss());
+ await go(page,'home');await expect(page.locator('#pg-add')).toHaveClass(/on/);
+ expect(await stored(page)).toEqual(initial);
+ approve=true;await go(page,'home');await expect(page.locator('#pg-home')).toHaveClass(/on/);
+ await page.click('#bfNavAdd');await expect(page.locator('#qaRoutinePicker')).toBeHidden();
+ await page.click('[data-qa-cat="食料品"]');await page.click('[data-qa-pick="バナナ"]');
+ await page.click('#qaCommit');const saved=await stored(page);
+ expect(saved.routines).toEqual(initial.routines);expect(saved.buys).toEqual(initial.buys);
+ expect(saved.items).toHaveLength(initial.items.length+1);
 });

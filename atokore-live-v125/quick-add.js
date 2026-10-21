@@ -264,6 +264,9 @@ function commit(){
  if(state.committing||!state.tray.length)return;
  state.committing=true;
  const before=stockItems(),tray=state.tray.map(x=>({...x}));
+ if(state.routineTarget&&!root.confirm?.('次の商品をいつものリストに追加しますか？\n\n'+tray.map(x=>x.name+' × '+x.qty+x.unit).join('\n')+'\n\nストック数・買い物リストは変わりません。')){
+  state.committing=false;renderTray();return;
+ }
  let merged=0;
  try{
   root.AtokoreDataSafety?.assertWritable?.();
@@ -274,7 +277,7 @@ function commit(){
    state.routineTarget=null;
    renderTray();renderDestination();
    try{root.renderRoutines?.()}catch(e){root.console?.warn?.(e)}
-   try{root.openRoutine?.(target.id,true)}catch(e){root.console?.warn?.(e)}
+   try{root.go?.('buy');root.openRoutine?.(target.id,true)}catch(e){root.console?.warn?.(e)}
    notify(tray.length+'種類を「いつものリスト」に保存しました。在庫数は変更していません');
    return;
   }
@@ -365,7 +368,7 @@ function setup(){
   addLine({name:raw,cat,qty:1,unit:defaultUnit(raw,cat)});$('qaFree').value='';
  }
  const oldGo=root.go;
- if(typeof oldGo==='function')root.go=function(page,...rest){const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
+ if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false))return false;const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
  if(typeof oldStock==='function')root.renderStock=function(...a){const v=oldStock.apply(this,a);decorateRows('#stockList [data-stock-id]');return v};
  if(typeof oldBuy==='function')root.renderBuy=function(...a){const v=oldBuy.apply(this,a);decorateRows('#buyList [data-buy-id]');return v};

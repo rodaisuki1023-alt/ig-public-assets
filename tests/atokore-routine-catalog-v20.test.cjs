@@ -24,10 +24,72 @@ function stockRow($,name){
  assert.ok(row,'stock row exists: '+name);
  return row;
 }
-test('one tap from repeat-list editor navigates directly to real stock list',()=>{
- const {dom,w,$}=browser();create(w,$);
- assert.equal($('atkRoutineCatalogOpen').textContent,'商品を選ぶ');
+function pickBanana(w,$){
+ w.AtokoreQuickAdd.setCategory('食料品');
+ w.document.querySelector('[data-qa-pick="バナナ"]').click();
+}
+test('main product button opens add catalog and confirms an unregistered product for the routine only',()=>{
+ const {dom,w,$}=browser(),id=create(w,$),before=stored(w);
  $('atkRoutineCatalogOpen').click();
+ assert.equal($('pg-add').classList.contains('on'),true);
+ assert.equal($('modal').classList.contains('on'),false);
+ assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),true);
+ assert.equal($('bfDestination').hidden,true);
+ pickBanana(w,$);
+ let prompts=0;
+ w.confirm=message=>{prompts++;assert.match(message,/バナナ × 1/);return false};
+ const raw=w.localStorage.getItem('atokoreTrialV4');
+ $('qaCommit').click();
+ assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw);
+ assert.equal(w.AtokoreQuickAdd.getTray().length,1);
+ w.confirm=()=>true;
+ $('qaCommit').click();$('qaCommit').click();
+ const after=stored(w);
+ assert.deepEqual(after.items,before.items);assert.deepEqual(after.buys,before.buys);
+ assert.equal(after.routines.find(x=>x.id===id).items.length,1);
+ assert.match(after.routines.find(x=>x.id===id).items[0].name,/バナナ/);
+ assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),false);
+ assert.equal($('pg-buy').classList.contains('on'),true);
+ assert.equal($('modal').classList.contains('on'),true);
+ assert.equal(prompts,1);
+ dom.window.close();
+});
+test('catalog save failure retains selection and memory for a safe retry',()=>{
+ const {dom,w,$}=browser(),id=create(w,$),before=stored(w);
+ $('atkRoutineCatalogOpen').click();pickBanana(w,$);
+ const original=w.Storage.prototype.setItem;
+ w.Storage.prototype.setItem=function(){throw Error('quota')};
+ try{
+  $('qaCommit').click();
+  assert.deepEqual(stored(w),before);
+  assert.deepEqual(JSON.parse(w.eval('JSON.stringify({items,buys,routines})')),before);
+  assert.equal(w.AtokoreQuickAdd.getTray().length,1);
+  assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),true);
+ }finally{w.Storage.prototype.setItem=original}
+ $('qaCommit').click();
+ assert.equal(stored(w).routines.find(x=>x.id===id).items.length,1);
+ dom.window.close();
+});
+test('leaving catalog asks to discard selection and cannot hijack later stock additions',()=>{
+ const {dom,w,$}=browser();create(w,$);const before=stored(w);
+ $('atkRoutineCatalogOpen').click();pickBanana(w,$);
+ w.confirm=()=>false;w.go('home');
+ assert.equal($('pg-add').classList.contains('on'),true);
+ assert.equal(w.AtokoreQuickAdd.getTray().length,1);
+ w.confirm=()=>true;w.go('home');
+ assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),false);
+ assert.equal(w.AtokoreQuickAdd.getTray().length,0);
+ assert.deepEqual(stored(w),before);
+ w.atkOpenAdd();pickBanana(w,$);$('qaCommit').click();
+ const after=stored(w);
+ assert.deepEqual(after.routines,before.routines);
+ assert.equal(after.items.length,before.items.length+1);
+ dom.window.close();
+});
+test('compatibility stock picker still selects only saved list contents',()=>{
+ const {dom,w,$}=browser(),id=create(w,$);
+ assert.equal($('atkRoutineCatalogOpen').textContent,'商品を選ぶ');
+ w.AtokoreRoutineCatalog.start(id);
  assert.equal(w.AtokoreRoutineCatalog.isActive(),true);
  assert.equal($('pg-stock').classList.contains('on'),true);
  assert.equal($('pg-add').classList.contains('on'),false);
@@ -40,7 +102,7 @@ test('one tap from repeat-list editor navigates directly to real stock list',()=
 });
 test('stock milk and diaper taps persist two repeat items without changing inventory or shopping',()=>{
  const {dom,w,$}=browser(),id=create(w,$),before=stored(w);
- $('atkRoutineCatalogOpen').click();
+ w.AtokoreRoutineCatalog.start(id);
  stockRow($,'牛乳').click();
  let after=stored(w);
  assert.deepEqual(after.items,before.items);
@@ -63,7 +125,7 @@ test('stock milk and diaper taps persist two repeat items without changing inven
 });
 test('cancel the stock-item confirmation to prevent accidental additions to the repeat list',()=>{
  const {dom,w,$}=browser(),id=create(w,$);
- $('atkRoutineCatalogOpen').click();
+ w.AtokoreRoutineCatalog.start(id);
  const before=w.localStorage.getItem('atokoreTrialV4');
  let prompts=0;
  w.confirm=msg=>{prompts++;assert.match(msg,/追加してもいいですか/);assert.match(msg,/ストック数は変わりません/);return false};
@@ -78,7 +140,7 @@ test('cancel the stock-item confirmation to prevent accidental additions to the 
 });
 test('repeat tap does not increase item quantity',()=>{
  const {dom,w,$}=browser(),id=create(w,$);
- $('atkRoutineCatalogOpen').click();
+ w.AtokoreRoutineCatalog.start(id);
  const row=stockRow($,'牛乳');row.click();
  const snapshot=w.localStorage.getItem('atokoreTrialV4');
  row.click();
@@ -88,9 +150,9 @@ test('repeat tap does not increase item quantity',()=>{
  dom.window.close();
 });
 test('stock quantity buttons cannot change inventory in select mode',()=>{
- const {dom,w,$}=browser();create(w,$);
+ const {dom,w,$}=browser(),id=create(w,$);
  const before=stored(w);
- $('atkRoutineCatalogOpen').click();
+ w.AtokoreRoutineCatalog.start(id);
  const row=stockRow($,'牛乳'),button=row.querySelector('button');
  assert.ok(button,'stock row adjustment control exists');
  button.click();
@@ -99,8 +161,8 @@ test('stock quantity buttons cannot change inventory in select mode',()=>{
  dom.window.close();
 });
 test('storage failure keeps picker active and allows retry',()=>{
- const {dom,w,$}=browser();create(w,$);
- $('atkRoutineCatalogOpen').click();
+ const {dom,w,$}=browser(),id=create(w,$);
+ w.AtokoreRoutineCatalog.start(id);
  const before=w.localStorage.getItem('atokoreTrialV4'),original=w.Storage.prototype.setItem;
  w.Storage.prototype.setItem=function(){throw new Error('QuotaExceeded')};
  try{
@@ -114,8 +176,8 @@ test('storage failure keeps picker active and allows retry',()=>{
  dom.window.close();
 });
 test('leaving the picker restores normal stock controls',()=>{
- const {dom,w,$}=browser();create(w,$);
- $('atkRoutineCatalogOpen').click();w.go('home');
+ const {dom,w,$}=browser(),id=create(w,$);
+ w.AtokoreRoutineCatalog.start(id);w.go('home');
  assert.equal(w.AtokoreRoutineCatalog.isActive(),false);
  w.go('stock');
  assert.equal($('atkRoutineStockPicker').hidden,true);
@@ -125,9 +187,9 @@ test('leaving the picker restores normal stock controls',()=>{
 });
 test('script and stylesheet cache versions updated',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8'),sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.match(html,/routine-catalog-v20\.js\?v=24/);
+ assert.match(html,/routine-catalog-v20\.js\?v=26/);
  assert.match(html,/routine-catalog-v20\.css\?v=24/);
- assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v25'/);
+ assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v26'/);
  const css=fs.readFileSync(path.join(base,'routine-catalog-v20.css'),'utf8');
  assert.match(css,/atk-routine-stock-mode/);
 });
