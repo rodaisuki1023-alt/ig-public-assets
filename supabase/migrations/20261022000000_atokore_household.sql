@@ -264,10 +264,16 @@ language sql immutable set search_path = '' as $$
   select encode(sha256(convert_to(upper(regexp_replace(coalesce(p, ''), '[^A-Za-z0-9]', '', 'g')), 'UTF8')), 'hex')
 $$;
 
+-- Seats a household may use. The plan-aware version is in the entitlements migration.
+create or replace function atokore_private.seat_limit(p_hh uuid) returns int
+language sql stable set search_path = '' as $$
+  select h.seat_limit from atokore_private.households h where h.id = p_hh
+$$;
+
 create or replace function atokore_private.household_json(p_hh uuid, p_user uuid) returns jsonb
 language sql stable set search_path = '' as $$
   select jsonb_build_object(
-    'household', jsonb_build_object('id', h.id, 'name', h.name, 'plan', h.plan, 'plan_expires_at', h.plan_expires_at, 'seat_limit', h.seat_limit),
+    'household', jsonb_build_object('id', h.id, 'name', h.name, 'plan', h.plan, 'plan_expires_at', h.plan_expires_at, 'seat_limit', atokore_private.seat_limit(h.id)),
     'me', (select jsonb_build_object('role', m.role, 'display_name', m.display_name) from atokore_private.members m
            where m.household_id = h.id and m.user_id = p_user and m.left_at is null),
     'members', (select coalesce(jsonb_agg(jsonb_build_object('user_id', m.user_id, 'display_name', m.display_name, 'role', m.role,
@@ -306,7 +312,7 @@ begin
   if v_hh is null then raise exception 'not_member' using errcode = '42501'; end if;
   perform 1 from atokore_private.households where id = v_hh for update;
   select count(*) into v_active from atokore_private.members where household_id = v_hh and left_at is null;
-  select seat_limit into v_limit from atokore_private.households where id = v_hh;
+  v_limit := atokore_private.seat_limit(v_hh);
   if v_active >= v_limit then raise exception 'seat_limit' using errcode = '23514'; end if;
   -- One open invite per household at a time: a new one replaces the previous.
   update atokore_private.invites set revoked_at = now() where household_id = v_hh and used_at is null and revoked_at is null;
@@ -342,7 +348,7 @@ begin
   perform 1 from atokore_private.households where id = v_inv.household_id and archived_at is null for update;
   if not found then return jsonb_build_object('error', 'invalid_code'); end if;
   select count(*) into v_active from atokore_private.members where household_id = v_inv.household_id and left_at is null;
-  select seat_limit into v_limit from atokore_private.households where id = v_inv.household_id;
+  v_limit := atokore_private.seat_limit(v_inv.household_id);
   if v_active >= v_limit then return jsonb_build_object('error', 'seat_limit'); end if;
   update atokore_private.invites set used_by = v_user, used_at = now() where code_hash = v_inv.code_hash;
   insert into atokore_private.members (household_id, user_id, role, display_name)
