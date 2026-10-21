@@ -31,10 +31,10 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
      controlsFit:cards.every(c=>{
       const [minus,plus]=[...c.querySelectorAll('.qty button')].map(b=>b.getBoundingClientRect());
       const p=c.getBoundingClientRect(),art=c.querySelector('.atk-row-brand img,.atk-row-brand svg').getBoundingClientRect();
-      return [minus,plus].every(r=>r.width>=44&&r.height>=44&&r.left>=p.left&&r.right<=p.right&&r.top-p.top<2&&r.bottom<=art.top+1)
+      return [minus,plus].every(r=>r.width>=44&&r.height>=44&&r.left>=p.left&&r.right<=p.right&&r.top-p.top<2&&r.top<art.bottom&&r.bottom>art.top)
        &&minus.right<=plus.left&&minus.left-p.left<2&&p.right-plus.right<2;
      }),
-     compact:cards.every(c=>c.getBoundingClientRect().height<=280),
+     compact:cards.every(c=>c.getBoundingClientRect().height<=246),
      largeArt:cards.every(c=>{const image=c.querySelector('.atk-row-brand img,.atk-row-brand svg'),r=image.getBoundingClientRect();return r.width>=70&&r.height>=96}),
      countBelowImage:cards.every(c=>c.querySelector('.bf-stock-count').getBoundingClientRect().top>=c.querySelector('.atk-row-brand').getBoundingClientRect().bottom)};
    });
@@ -43,7 +43,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    for(const c of home)expect(facts.colors.find(x=>x.id===c.id).bg).toBe(c.bg);
    expect(new Set(facts.colors.slice(0,9).map(x=>x.bg)).size).toBe(9);
    for(const id of [101,103,107])await expect.poll(()=>row(page,id).locator('img').evaluate(i=>i.naturalWidth)).toBe(256);
-   await row(page,101).scrollIntoViewIfNeeded();await shot(page,info,`${width}-v31-stock-cards`);
+   await row(page,101).scrollIntoViewIfNeeded();await shot(page,info,`${width}-v32-stock-cards`);
    await row(page,101).locator('.name').click();await expect(page.locator('#modal')).toHaveClass(/on/);
    expect(await stored(page)).toEqual(initial);await page.click('#sheet .close');
    await row(page,101).locator('.qty button').last().click();

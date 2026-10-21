@@ -100,7 +100,8 @@ body.atk-v17 #stockList .bf-stock-card{
 body.atk-v17 #stockList .bf-stock-spacer{display:none}
 body.atk-v17 #stockList .bf-stock-card>.atk-row-brand{
  flex:0 0 auto!important;width:auto!important;min-width:0!important;min-height:104px!important;
- padding:38px 2px 4px!important;margin:0;border-radius:10px;box-sizing:border-box;
+ /* v32: corner controls overlay the art; no separate control row. */
+ padding:4px 2px!important;margin:0;border-radius:10px;box-sizing:border-box;
 }
 body.atk-v17 #stockList .bf-stock-card .bf-baby-brand{color:inherit;font-size:10px;line-height:1.25}
 body.atk-v17 #stockList .bf-stock-card>.atk-row-brand .bf-baby-icon,
