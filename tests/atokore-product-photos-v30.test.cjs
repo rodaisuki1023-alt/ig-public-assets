@@ -1,6 +1,8 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const path=require('node:path');
+const dir=path.resolve(__dirname,'../atokore-live-v125');
 const api=require('../atokore-live-v125/product-photos-v30.js');
 test('photo identity separates variants, units and records while ignoring quantity',()=>{
  const item={id:1,name:'パンパース パンツ M',unit:'袋',qty:2};
@@ -17,9 +19,9 @@ test('only recognized raster signatures and bounded JPEG output are accepted',()
  assert.equal(api.validBlob(new Blob(['123'],{type:'image/jpeg'})),true);
 });
 test('photo resources are included offline and existing inventory storage remains separate',()=>{
- const html=fs.readFileSync('atokore-live-v125/index.html','utf8'),sw=fs.readFileSync('atokore-live-v125/service-worker.js','utf8');
+ const html=fs.readFileSync(path.join(dir,'index.html'),'utf8'),sw=fs.readFileSync(path.join(dir,'service-worker.js'),'utf8');
  for(const name of ['product-photos-v30.js','product-photos-v30.css']){assert.ok(html.includes(name));assert.ok(sw.includes("'./"+name+"'"))}
- const js=fs.readFileSync('atokore-live-v125/product-photos-v30.js','utf8');
+ const js=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
  assert.ok(js.includes('atokorePreviewProductPhotosV19'));
  assert.doesNotMatch(js,/localStorage\.setItem|fetch\(|XMLHttpRequest|readAsDataURL/);
 });

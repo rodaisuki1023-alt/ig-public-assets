@@ -1,5 +1,5 @@
 /* Private product photos. No uploads, URLs from users, or inventory writes.
- * Compressed raster blobs live in a trial-only IndexedDB, outside stock localStorage.
+ * Compressed raster bytes live in a trial-only IndexedDB, outside stock localStorage.
  */
 (function(root){
 'use strict';
@@ -8,6 +8,11 @@ const doc=typeof document==='undefined'?null:document;
 const storageError=()=>Error('写真を保存できませんでした。空き容量やブラウザの設定を確認してください。変更前の写真と在庫は残っています。');
 function key(item){return JSON.stringify([String(item.id),String(item.name||''),String(item.unit||'個')])}
 function validBlob(blob){return !!blob&&blob.type==='image/jpeg'&&blob.size>0&&blob.size<=MAX_OUTPUT}
+function recordBlob(record){
+ const bytes=record?.bytes;
+ if(!(bytes instanceof Uint8Array)||!bytes.length||bytes.length>MAX_OUTPUT||fileKind(bytes.slice(0,32))!=='jpeg')return null;
+ return new root.Blob([bytes],{type:'image/jpeg'});
+}
 function fileKind(bytes){
  if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255)return 'jpeg';
  if([137,80,78,71,13,10,26,10].every((n,i)=>bytes[i]===n))return 'png';
@@ -52,7 +57,7 @@ async function load(k){
  if(cache.has(k))return cache.get(k);
  if(pending.has(k))return pending.get(k);
  const task=transaction('readonly',(store,done)=>{const req=store.get(k);req.onsuccess=()=>done(req.result)})
-  .then(record=>cache.has(k)?cache.get(k):cacheBlob(k,record?.blob)).finally(()=>pending.delete(k));
+  .then(record=>cache.has(k)?cache.get(k):cacheBlob(k,recordBlob(record))).finally(()=>pending.delete(k));
  pending.set(k,task);return task;
 }
 async function compress(file){
@@ -153,7 +158,9 @@ function openEditor(id){
   try{
    root.AtokoreDataSafety?.assertWritable?.();
    const current=readItem(id);if(!current||key(current)!==session.key)throw Error('商品情報が変わりました。閉じてから選び直してください。');
-   await transaction('readwrite',store=>remove?store.delete(session.key):store.put({blob:session.blob},session.key));
+   // Typed bytes avoid Blob cloning differences in WebKit's IndexedDB implementations.
+   const bytes=remove?null:new Uint8Array(await session.blob.arrayBuffer());
+   await transaction('readwrite',store=>remove?store.delete(session.key):store.put({bytes},session.key));
    cacheBlob(session.key,remove?null:session.blob);
    dispose();root.renderHome?.();root.renderStock?.();root.atkShowDetail?.(id);
   }catch(error){message(error.message);busy(false)}

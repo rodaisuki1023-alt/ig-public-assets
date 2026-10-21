@@ -18,9 +18,9 @@ const imageFacts=page=>page.evaluate(async dbName=>{
  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open(dbName,1);r.onsuccess=()=>resolve(r.result);r.onerror=reject});
  const records=await new Promise((resolve,reject)=>{const r=db.transaction('photos').objectStore('photos').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=reject});db.close();
  return Promise.all(records.map(async r=>{
-  const bytes=await r.blob.arrayBuffer();
+  const bytes=r.bytes;
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');
-  return {type:r.blob.type,size:r.blob.size,hash,metadata:new TextDecoder().decode(bytes).includes('GPS_TEST_PRIVATE_METADATA')};
+  return {type:'image/jpeg',size:bytes.byteLength,hash,metadata:new TextDecoder().decode(bytes).includes('GPS_TEST_PRIVATE_METADATA')};
  }));
 },DB);
 for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
@@ -77,7 +77,7 @@ test('renaming keeps the photo, replacing an ID with a different product cannot 
  await page.reload();await go(page,'stock');await expect(row(page).locator('.atk-user-photo')).toHaveCount(0);
 });
 test('unavailable photo storage does not affect stock; normal app never enables photo UI',async({page})=>{
- await page.addInitScript(()=>{indexedDB.open=()=>{throw new DOMException('denied','SecurityError')}});
+ await page.addInitScript(()=>{Object.defineProperty(IDBFactory.prototype,'open',{configurable:true,value(){throw new DOMException('denied','SecurityError')}})});
  const initial=baseState();await open(page,{[KEY]:initial});await go(page,'stock');await editor(page);await choose(page);await page.click('.atk-photo-save');
  await expect(page.locator('.atk-photo-status')).toContainText('保存領域を開けません');expect(await stored(page)).toEqual(initial);
  await page.goto('/ig-public-assets/');await go(page,'stock');await page.locator('#stockList [data-stock-id="2"] .name').click();
