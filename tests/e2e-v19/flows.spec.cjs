@@ -57,16 +57,21 @@ test.describe('いつものセット', () => {
     await page.click('[data-bf-routine-buy="901"]');
     expect(await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => [x.name, x.qty]))).toEqual(first);
     await expect(page.locator('#qaNotice')).toContainText('読み込み済み');
-    // the stock variant of the same set only switches the destination
+    // One tap on the stock action writes immediately, then opens stock.
     await go(page, 'buy');
+    const beforeStock = await stored(page);
     await page.click('[data-bf-routine="901"]');
-    expect(await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => [x.name, x.qty]))).toEqual(first);
-    await expect(page.locator('#qaCommit')).toHaveText('まとめてストックに追加');
+    await expect(page.locator('#pg-stock')).toHaveClass(/on/);
+    await expect(page.locator('#pg-add')).not.toHaveClass(/on/);
+    const afterStock = await stored(page);
+    expect(afterStock.items.find(x => x.id === 2).qty).toBe(beforeStock.items.find(x => x.id === 2).qty + 2);
+    expect(afterStock.buys).toEqual(beforeStock.buys);
+    expect(afterStock.routines).toEqual(beforeStock.routines);
     expect(page.__dialogs).toEqual([]);
-    await shot(page, testInfo, 'set-loaded');
+    await shot(page, testInfo, 'set-one-tap-stock');
   });
 
-  test('loading a set over edited items asks first; cancel keeps them', async ({ page }) => {
+  test('loading a shopping set over edited items asks first; cancel keeps them', async ({ page }) => {
     await open(page);
     await page.evaluate(() => { routines.push({ id: 5, name: 'セットA', items: [{ id: 1, name: '牛乳', qty: 2, unit: '本' }] }); save(); render(); });
     page.removeAllListeners('dialog');
@@ -76,11 +81,11 @@ test.describe('いつものセット', () => {
     await page.click('#bfNavAdd');
     await chooseBaby(page, { kind: 'diaper', brand: 'グーン', type: 'パンツ', size: 'L' });
     await go(page, 'buy');
-    await page.click('[data-bf-routine="5"]');
+    await page.click('[data-bf-routine-buy="5"]');
     expect(asked).toHaveLength(1);
     expect(await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => x.name))).toEqual(['グーン おむつ パンツ L']);
     await go(page, 'buy');
-    await page.click('[data-bf-routine="5"]');
+    await page.click('[data-bf-routine-buy="5"]');
     expect(await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => [x.name, x.qty]))).toEqual([['牛乳', 2]]);
   });
 

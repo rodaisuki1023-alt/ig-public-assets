@@ -1,0 +1,29 @@
+/* v20: consistent peach CTA inside the "いつものリスト" sheet. */
+body.atk-v19 .atk-routine-catalog-entry{
+  display:flex;flex-direction:column;gap:6px;margin:12px 0 17px;
+}
+body.atk-v19 .atk-routine-catalog-button{
+  display:flex;align-items:center;justify-content:center;min-height:52px;width:100%;
+  border:1.5px solid #BE7862;border-radius:13px;
+  background:#FFF3ED;color:#934936;font:inherit;font-size:14px;font-weight:850;
+  padding:10px 15px;cursor:pointer;
+}
+body.atk-v19 .atk-routine-catalog-entry p{
+  font-size:12px;line-height:1.6;color:#78655B;margin:0 3px;
+}
+body.atk-v19 #qaRoutinePicker{
+  padding:14px 15px;margin:0 0 14px;background:#FFF7F2;
+  border:1px solid #E6C6B9;border-radius:16px;
+}
+body.atk-v19 #qaRoutinePicker[hidden],
+body.atk-v19 #pg-add.qa-routine-picking #bfDestination{display:none!important}
+body.atk-v19 #qaRoutinePicker button{
+  display:block;min-height:44px;padding:9px 8px;margin:0 0 8px;
+  font-size:13px;font-weight:750;border:0;background:transparent;color:#9A5643;text-align:left;
+}
+body.atk-v19 #qaRoutinePicker strong{display:block;color:#513A33;font-size:17px;line-height:1.5}
+body.atk-v19 #qaRoutinePicker p{font-size:12px;line-height:1.65;color:#75635A;margin:6px 0 0}
+body.atk-v19 #pg-add.qa-routine-picking .qa-heading{display:none}
+body.atk-v19 #pg-add.qa-routine-picking .qa-tray{
+  bottom:calc(76px + env(safe-area-inset-bottom,0px))!important;
+}

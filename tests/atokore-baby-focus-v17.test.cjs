@@ -66,20 +66,17 @@ test('diaper and formula render individual original baby icons, full brand names
  assert.ok(!b.icon('diaper').includes('http://example'));
  dom.window.close();
 });
-test('tap stored repeat set and go directly to stock-add tray, then optionally shop',()=>{
+test('one tap adds repeat set directly to inventory and opens stock, while shopping keeps the separate picker',()=>{
  const {dom,w,$}=browser();
  w.eval("routines.push({id:901,name:'毎週の買い物',items:[{id:1,name:'卵',qty:1,unit:'パック'},{id:2,name:'牛乳',qty:2,unit:'本'}]});renderRoutines();");
  const card=$('routineList').querySelector('[data-bf-routine="901"]');
  assert.ok(card);card.click();
- assert.ok($('pg-add').classList.contains('on'));
- assert.equal(w.AtokoreQuickAdd.getTray().length,2);
- assert.match($('qaTotal').textContent,/2種類/);
- const savedPrior=w.localStorage.getItem('atokoreTrialV4');
- // Changes are only staged until user confirms.
- assert.equal(w.localStorage.getItem('atokoreTrialV4'),savedPrior);
- $('qaCommit').click();
+ assert.ok($('pg-stock').classList.contains('on'));
+ assert.equal($('pg-add').classList.contains('on'),false,'do not open extra selection screen');
+ assert.equal(w.AtokoreQuickAdd.getTray().length,0,'direct stock add must not stage items');
  let data=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(data.items.some(x=>x.name==='卵'));
+ assert.ok(data.items.some(x=>x.name==='牛乳'));
  const beforeBuyQty=data.items.find(x=>x.name==='卵').qty;
  w.go('buy');$('routineList').querySelector('[data-bf-routine-buy="901"]').click();
  assert.ok($('bfDestination').querySelector('[data-qa-dest="buy"]').classList.contains('selected'));

@@ -24,6 +24,37 @@ function prepared(id){
  }));
  return {routine,entries};
 }
+let lastDirectStock={id:null,at:0};
+function directRoutineToStock(id){
+ const idText=String(id);
+ // Suppress an accidental second tap while the list is being redrawn.
+ if(lastDirectStock.id===idText&&Date.now()-lastDirectStock.at<1300)return false;
+ const r=prepared(id);
+ if(!r){root.alert?.('いつものリストが見つかりません');return false}
+ if(!r.entries.length){root.alert?.('リストに商品がありません。編集から商品を追加してください');return false}
+ try{
+  root.AtokoreDataSafety?.assertWritable?.();
+  const oldItems=records(),total=oldItems.length;
+  const next=root.AtokoreQuickAdd?.buildBatch?.(oldItems,r.entries,Date.now());
+  if(!Array.isArray(next))throw Error('商品の在庫反映に失敗しました');
+  const store=root.localStorage,key='atokoreTrialV4';
+  const serialized=JSON.stringify({items:next,buys,routines});
+  store.setItem(key,serialized);
+  if(store.getItem(key)!==serialized)throw Error('保存結果を確認できませんでした');
+  items=next;
+  lastDirectStock={id:idText,at:Date.now()};
+  root.closeM?.();
+  root.go?.('stock');
+  const merged=r.entries.length-(next.length-total);
+  const message=r.entries.length+'種類をストックに追加しました'+(merged>0?'（既存の在庫にも反映）':'');
+  if(typeof root.notifyAtokoreV125H==='function')root.notifyAtokoreV125H(message);
+  return true;
+ }catch(err){
+  root.console?.error?.('いつものリストからストックへの反映失敗',err);
+  root.alert?.('ストックを保存できませんでした。内容は変更していません。');
+  return false;
+ }
+}
 function fromRoutine(id,dest){
  const r=prepared(id);if(!r)return;
  if(!r.entries.length){root.alert?.('このセットには商品がまだありません');return}
@@ -44,7 +75,7 @@ function showSets(){
   const count=Array.isArray(x.items)?x.items.length:0,first=(x.items||[]).slice(0,3).map(i=>i.name).join('、');
   return '<article class="bf-routine">'+
    '<button type="button" class="bf-routine-main" data-bf-routine="'+esc(x.id)+'"><span class="bf-routine-icon">♡</span><span class="bf-routine-copy"><strong>'+esc(x.name)+'</strong><small>'+count+'商品'+(first?' ・ '+esc(first):'')+'</small></span><span class="bf-arrow">›</span></button>'+
-   '<div class="bf-routine-actions"><button type="button" data-bf-routine="'+esc(x.id)+'">＋ ストック追加に反映</button>'+
+   '<div class="bf-routine-actions"><button type="button" data-bf-routine="'+esc(x.id)+'">＋ ストックに追加</button>'+ 
    '<button type="button" data-bf-routine-buy="'+esc(x.id)+'">買い物へ追加</button>'+
    '<button type="button" data-bf-routine-edit="'+esc(x.id)+'" aria-label="'+esc(x.name)+'を編集">編集</button></div></article>'
  }).join('');
@@ -86,7 +117,7 @@ function modifyBuy(){
   page.querySelector('.row')?.insertAdjacentElement('afterend',actions);
  }
  const note=list.previousElementSibling;
- if(note?.classList.contains('muted'))note.textContent='セットをタップすると商品が追加画面に読み込まれます。数量を確認して保存するだけ。';
+ if(note?.classList.contains('muted'))note.textContent='「ストックに追加」を押すと、そのまま在庫に反映してストック一覧を開きます。';
 }
 function activePage(){
  const page=doc?.querySelector('.page.on')?.id||'pg-home';
@@ -136,7 +167,7 @@ function install(){
    root.AtokoreQuickAdd?.openWithEntries([],'buy');
    root.AtokoreQuickAdd?.setCategory('ベビー');
   }else if(r.hasAttribute('data-bf-routine')){
-   fromRoutine(r.dataset.bfRoutine,'stock');
+   directRoutineToStock(r.dataset.bfRoutine);
   }else if(r.hasAttribute('data-bf-routine-buy')){
    fromRoutine(r.dataset.bfRoutineBuy,'buy');
   }else if(r.hasAttribute('data-bf-routine-edit')){
@@ -161,7 +192,7 @@ function install(){
  syncFab();
  showSets();decorateBabyRows('#stockList [data-stock-id]');decorateBabyRows('#buyList [data-buy-id]');decorateHome();
 }
-const api=Object.freeze({catFor,prepared});
+const api=Object.freeze({catFor,prepared,directRoutineToStock});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreBabyFlow=api;
 if(doc&&typeof window!=='undefined')install();

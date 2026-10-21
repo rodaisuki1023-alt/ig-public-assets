@@ -1,5 +1,6 @@
 // Several apps share this origin (the production app at the site root and sandboxed trials in
 // sub-directories). This worker therefore only touches its own directory and its own caches.
+// Refreshed worker for the direct one-tap repeat-list stock-add release.
 const CACHE_VERSION = 'atokore-pwa-v19';
 const SCOPE_PATH = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CACHE_PREFIX = 'atokore-shell:' + SCOPE_PATH + ':';
@@ -27,6 +28,8 @@ const APP_SHELL = [
   './baby-focus-v17.css',
   './add-clarity-v18.css',
   './p0-fixes-v19.css',
+  './routine-catalog-v20.css',
+  './routine-catalog-v20.js',
   './storage-bootstrap-v19.js',
   './data-safety-v19.js',
   './product-icons.js',
