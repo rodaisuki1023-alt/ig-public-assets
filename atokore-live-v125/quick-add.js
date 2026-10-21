@@ -191,7 +191,7 @@ function buildBatch(existing,selected,time=Date.now()){
  }
  return next;
 }
-const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,reviewing:false,pickScroll:0,loadedSet:null,loadedSnapshot:'',routineTarget:null};
+const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,reviewing:false,pickScroll:0,afterSave:null,loadedSet:null,loadedSnapshot:'',routineTarget:null};
 const food={maker:'',series:'',month:'',query:'',limit:24,selected:'',qty:1,customBrand:'',customSeries:'',customName:'',customAge:'',customAmount:'',customFormat:''};
 function syncFoodInputs(){for(const field of ['Brand','Series','Name','Age','Amount','Format']){const input=$('qaFood'+field);if(input)food['custom'+field]=input.value}}
 function foodInput(field,label,limit=45){return '<label>'+safe(label)+'<input id="qaFood'+field+'" maxlength="'+limit+'" value="'+safe(food['custom'+field])+'" autocomplete="off"></label>'}
@@ -438,9 +438,9 @@ function persist(tray){
  const raw=JSON.stringify({items:next,buys,routines});
  store.setItem(key,raw);if(store.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
  items=next;
- // Ids of every record this batch created or added to, so the stock list can show them.
- const ids=tray.map(v=>next.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'))?.id).filter(id=>id!=null);
- return {merged:tray.length-(next.length-before.length),ids};
+ // Ids of every record this batch created or added to (one per line), so the list can show them.
+ const byLine=tray.map(v=>next.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'))?.id??null);
+ return {merged:tray.length-(next.length-before.length),ids:byLine.filter(id=>id!=null),byLine};
 }
 // The list opens right under the finger after a save; a fast second tap on the final button must not
 // land on whatever appears there (a card's −/＋, a filter, a header button). Only taps near the spot
@@ -469,7 +469,8 @@ function commit(origin){
   return false;
  }
  // Saved. From here on a drawing problem must never be reported as a failed save (that would invite a second add).
- state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';
+ const afterSave=state.afterSave;
+ state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;
  if(target)state.routineTarget=null;
  let displayFailed=false;
  const step=fn=>{try{fn()}catch(e){displayFailed=true;root.console?.error?.('あとこれ: 保存後の表示更新に失敗',e)}};
@@ -486,6 +487,9 @@ function commit(origin){
   message=pendingSummary(tray)+'を'+destLabel(dest)+'に保存しました'+(result.merged?'（うち'+result.merged+'商品は登録済みの商品に数量を合算）':'');
  }
  step(()=>absorbStrayTaps(origin));
+ // The caller that handed these lines over (e.g. the receipt screen) may record follow-ups; the
+ // stock itself is already saved, so a failure here is reported but never undoes the save.
+ if(typeof afterSave==='function')step(()=>afterSave({lines:tray,byLine:result.byLine||[],destination:dest}));
  notify(message+(displayFailed?'。画面の更新に失敗しました。再読み込みすると表示されます（もう一度追加する必要はありません）':''));
  return true;
 }
@@ -564,7 +568,7 @@ function setup(){
   if(btn.hasAttribute('data-qa-free')){addFree();return}
   if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(1,Math.min(999,v.qty+Number(btn.dataset.step)));renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
-  if(btn.hasAttribute('data-qa-clear')){if(root.confirm?.('追加予定をすべて取り消しますか？（保存済みの在庫は変わりません）')){state.tray=[];renderTray();renderItems()}return}
+  if(btn.hasAttribute('data-qa-clear')){if(root.confirm?.('追加予定をすべて取り消しますか？（保存済みの在庫は変わりません）')){state.tray=[];state.afterSave=null;renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-commit')){commit(e)}
  });
  function addFree(){
@@ -624,7 +628,7 @@ function cancelRoutinePicker(returnToList=false){
  if(!state.routineTarget)return true;
  if(state.tray.length&&!root.confirm?.('まだ保存していない商品があります。選択を破棄して戻りますか？'))return false;
  const target=state.routineTarget;
- state.routineTarget=null;state.tray=[];state.loadedSet=null;state.loadedSnapshot='';
+ state.routineTarget=null;state.tray=[];state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;
  setReviewing(false);renderTray();renderDestination();
  if(returnToList){root.go?.('buy');root.openRoutine?.(target.id,true)}
  return true;
@@ -632,7 +636,7 @@ function cancelRoutinePicker(returnToList=false){
 function openRoutinePicker(id,onCommit){
  if(!Number.isSafeInteger(Number(id))||typeof onCommit!=='function')return false;
  if(state.tray.length&&!root.confirm?.('追加予定の商品があります。破棄して「いつものリスト」の商品を選びますか？'))return false;
- state.tray=[];state.loadedSet=null;state.loadedSnapshot='';setReviewing(false);
+ state.tray=[];state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;setReviewing(false);
  state.routineTarget={id:Number(id),onCommit};
  state.destination='stock';
  openQuick();setCategory('ベビー');renderDestination();
@@ -658,6 +662,7 @@ function openWithEntries(entries,destination='stock',options={}){
   if(found)found.qty=Math.min(999,found.qty+v.qty);else next.push(v);
  }
  state.tray=next;state.loadedSet=setId;state.loadedSnapshot=traySnapshot();
+ state.afterSave=typeof options?.onSaved==='function'?options.onSaved:null;
  state.destination=destination==='buy'?'buy':'stock';
  openQuick();openReview();renderItems();
  if(skipped)notify(skipped+'件は内容を確認できなかったため読み込みませんでした');

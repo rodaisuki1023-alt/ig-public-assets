@@ -41,6 +41,7 @@ jobs:
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
+          node --test tests/atokore-receipt-match-v38.test.cjs
           node tests/atokore-pwa.test.cjs
           node --test tests/atokore-routine-catalog-v20.test.cjs
           node --test tests/atokore-routine-stock-one-tap.test.cjs
