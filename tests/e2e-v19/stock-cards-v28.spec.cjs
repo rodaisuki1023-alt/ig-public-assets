@@ -46,12 +46,14 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await row(page,101).locator('.name').click();await expect(page.locator('#modal')).toHaveClass(/on/);
    expect(await stored(page)).toEqual(initial);await page.click('#sheet .close');
    await row(page,101).locator('.qty button').last().click();
-   const adjusted=await stored(page);expect(adjusted.items.find(x=>x.id===101).qty).toBe(3);
+   let adjusted=await stored(page);expect(adjusted.items.find(x=>x.id===101).qty).toBe(3);
    await expect(page.locator('#modal')).not.toHaveClass(/on/);
    await row(page,101).locator('.qty button').first().click();
    expect((await stored(page)).items.find(x=>x.id===101).qty).toBe(2);
    await expect(page.locator('#modal')).not.toHaveClass(/on/);
    await row(page,101).locator('.qty button').last().click();
+   adjusted=await stored(page);
+   expect(adjusted.items.find(x=>x.id===101)).toMatchObject({qty:3,usage:2});
    expect(adjusted.items.filter(x=>x.id!==101)).toEqual(initial.items.filter(x=>x.id!==101));
    expect(adjusted.buys).toEqual(initial.buys);expect(adjusted.routines).toEqual(initial.routines);
    await row(page,101).focus();await row(page,101).press('Enter');
