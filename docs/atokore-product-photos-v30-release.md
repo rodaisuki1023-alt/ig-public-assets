@@ -20,6 +20,12 @@ HEICはブラウザで読める場合のみ。実機iPhoneの写真選択・HEIC
 Chromium / WebKitの320・375・390・430pxで、画像保存・中止・再読込・失敗時保護・アイコン復帰・商品分離を確認済み。
 ブラウザ138件合格、WebKit未対応のSW2件はスキップ（Chromiumでは確認済み）。
 CI: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39574095863
+公開PR #40: https://github.com/rodaisuki1023-alt/ig-public-assets/pull/40
+Pages配信成功: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39574966387
+配信コミット: `d53e1f40c77f1ed6caad59c5e60eef01c4184f6d`
+公開後のSHA-256比較: 通常版16/16ファイル不変、試用版35/35ファイルが検証済みビルドと一致。
+公開ブラウザでも商品詳細→写真を設定→撮影・写真を選ぶ／保存前は無効の保存ボタン／注意書きを確認。
+公開確認では在庫や写真を変更していない。
 権利確認の詳細はソースPRのdocs/atokore-product-photos-v30.md。
 自分で撮影／使用許可のある写真を私的な在庫識別に使う範囲で実装。一般公開や無断転載の許諾を保証しない。
 日本弁理士会関西会の説明では、商標権侵害は業としての使用が対象であり、家庭内使用は対象外。
