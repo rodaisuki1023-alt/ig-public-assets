@@ -133,7 +133,8 @@ function decorateHome(){
   const brand=row.querySelector('.atk-brand,.atk-brand-generic');
   if(!brand||brand.classList.contains('bf-home-product'))return;
   const title=row.querySelector('.atk-item-copy strong')?.textContent||'';
-  const raw=title+' '+brand.textContent;
+  const item=records().find(x=>String(x.id)===String(row.dataset.atkOpen));
+  const raw=item?.name||(title+' '+brand.textContent);
   const type=kit.kind(raw);if(!type)return;
   brand.classList.add('bf-home-product');
   brand.insertAdjacentHTML('afterbegin',kit.icon(type,32));

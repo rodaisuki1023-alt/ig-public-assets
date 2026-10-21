@@ -86,7 +86,7 @@ body.atk-v17 #stockList .bf-baby-product,body.atk-v17 #buyList .bf-baby-product{
 }
 body.atk-v17 .bf-baby-brand{display:block;font-size:10px;font-weight:850;
  text-align:center;line-height:1.15;color:#685046;word-break:keep-all;overflow-wrap:anywhere}
-body.atk-v17 .bf-home-product{display:inline-flex;align-items:center;gap:3px;padding:2px 7px 2px 2px}
+body.atk-v17 .bf-home-product{display:inline-flex;flex-direction:column;align-items:center;gap:0;padding:3px 6px}
 body.atk-v17 .bf-home-product .bf-baby-icon svg{width:31px;height:31px}
 body.atk-v17 .bf-shopping-start{
  padding:13px;background:#FFF9F5;border:1px solid #E8D7CB;

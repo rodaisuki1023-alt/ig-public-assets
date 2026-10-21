@@ -12,6 +12,7 @@ for (const [width, height] of [[320, 568], [375, 667], [390, 844], [430, 932]]) 
     test('bear icons load, destination buttons are side by side and manual food entry still works', async ({ page }, info) => {
       const initial = fixture();
       await open(page, { [KEY]: initial });
+      await expect(page.locator('#atkRecent [data-atk-open="2"] img[src$="diaper-bear-v24.webp"]')).toBeVisible();
       await go(page, 'buy');
       await page.click('[data-bf-routine="901"]');
       await expect(page.locator('#routineAddName')).not.toBeVisible();
