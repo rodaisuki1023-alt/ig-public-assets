@@ -32,3 +32,10 @@
 ## 残る確認
 
 iPhone実機でのスクロール・押しやすさは未確認。次は実機でカードを開き、＋／−の押しやすさと商品名・サイズの読みやすさを確認する。家族共有の実機2台確認は別作業。
+
+## 公開結果
+
+- 配信PR：<https://github.com/rodaisuki1023-alt/ig-public-assets/pull/36>（マージ済み）。配信コミット `836d13d40664935b6b751fc16d9341a658b8e468`。
+- GitHub Pages成功：<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39558524952>。
+- 公開後照合：試用版33/33が検証済みビルドと一致。通常版16/16は公開前と同一。
+- 公開ブラウザでストックの2列グリッド、baby-kit／baby-flowのv28、256pxのくま画像の読込を確認。利用者の商品の追加・数量変更・初期化は行っていない。
