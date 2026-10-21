@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 7056057b2e9a863fc05b7e7e98c144fdd097a4a5
+          ref: 279141d594747ca747f90609e74ea93872fcd12b
           path: _preview_v19_source
           persist-credentials: false
 
@@ -343,25 +343,27 @@ jobs:
           assert 'atokorePreviewTrialV19' in bootstrap
           assert 'atokorePreviewTrialV17' in bootstrap  # one-time copy of the v17 trial only
           assert '__atokoreStorageLock' in bootstrap  # unreadable data that cannot be set aside locks saving
-          assert 'routine-catalog-v20.js?v=24' in html
+          assert 'routine-catalog-v20.js?v=26' in html
           assert 'routine-catalog-v20.css?v=24' in html
           assert 'routine-catalog-v20.js' in worker
           assert '商品を選ぶ' in (base / 'routine-catalog-v20.js').read_text()
+          assert 'openRoutinePicker' in (base / 'routine-catalog-v20.js').read_text()
+          assert '次の商品をいつものリストに追加しますか？' in (base / 'quick-add.js').read_text()
           assert 'atkRoutineBuyCommit' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
           assert 'baby-flow-v17.js?v=25' in html
-          assert 'baby-kit-v17.js?v=24' in html
+          assert 'baby-kit-v17.js?v=26' in html
           assert 'baby-focus-v17.css?v=25' in html
-          assert 'quick-add.js?v=24' in html
-          for kind in ['diaper', 'wipes']:
-              image = f'icons/baby/{kind}-bear-v24.webp'
+          assert 'quick-add.js?v=26' in html
+          for name in ['diaper-bear-v24', 'wipes-bear-v24', 'milk-bear-v26']:
+              image = f'icons/baby/{name}.webp'
               assert (base / image).is_file() and image in worker
           assert 'stability.js?v=23' in html
           assert 'sameProduct(x,bought)' in (base / 'stability.js').read_text()
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v25'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v26'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
