@@ -11,19 +11,60 @@ body.atk-v19 .atk-routine-catalog-button{
 body.atk-v19 .atk-routine-catalog-entry p{
   font-size:12px;line-height:1.6;color:#78655B;margin:0 3px;
 }
-body.atk-v19 #qaRoutinePicker{
-  padding:14px 15px;margin:0 0 14px;background:#FFF7F2;
-  border:1px solid #E6C6B9;border-radius:16px;
+
+/* v21: on-stock one-tap selection, with no stock quantity adjustments. */
+body.atk-v19 #atkRoutineStockPicker[hidden],
+body.atk-v19 #atkRoutineStockNotice:empty{display:none!important}
+body.atk-v19 .atk-routine-stock-picker{
+ display:flex;flex-direction:column;gap:9px;
+ background:#FFF4EE;border:1px solid #E6C5B5;border-radius:16px;
+ padding:14px;margin:10px 0 14px;
 }
-body.atk-v19 #qaRoutinePicker[hidden],
-body.atk-v19 #pg-add.qa-routine-picking #bfDestination{display:none!important}
-body.atk-v19 #qaRoutinePicker button{
-  display:block;min-height:44px;padding:9px 8px;margin:0 0 8px;
-  font-size:13px;font-weight:750;border:0;background:transparent;color:#9A5643;text-align:left;
+body.atk-v19 .atk-routine-stock-picker strong{font-size:15px;color:#5C3C32;line-height:1.5}
+body.atk-v19 .atk-routine-stock-picker p{color:#745E53;font-size:12px;line-height:1.6;margin:0}
+body.atk-v19 #atkRoutineStockDone{
+ width:100%;min-height:48px;padding:9px 13px;background:#B97159;color:#fff;
+ border:0;border-radius:13px;font-size:14px;font-weight:850;
 }
-body.atk-v19 #qaRoutinePicker strong{display:block;color:#513A33;font-size:17px;line-height:1.5}
-body.atk-v19 #qaRoutinePicker p{font-size:12px;line-height:1.65;color:#75635A;margin:6px 0 0}
-body.atk-v19 #pg-add.qa-routine-picking .qa-heading{display:none}
-body.atk-v19 #pg-add.qa-routine-picking .qa-tray{
-  bottom:calc(76px + env(safe-area-inset-bottom,0px))!important;
+body.atk-v19 #atkRoutineStockNotice{
+ color:#58775F;background:#F3F9F3;border:1px solid #CBDFCF;border-radius:12px;
+ font-size:13px;line-height:1.5;padding:10px 12px;margin:6px 0 12px;
+}
+body.atk-v19 #atkRoutineStockNotice.atk-routine-error{
+ background:#FFF1ED;color:#973F37;border-color:#E8B8AA;
+}
+body.atk-v19.atk-routine-stock-mode #pg-stock .atk-page-title button[data-atk-add],
+body.atk-v19.atk-routine-stock-mode #pg-stock #stockSelectToggle,
+body.atk-v19.atk-routine-stock-mode #pg-stock #stockBulkActions{
+ display:none!important;
+}
+body.atk-v19.atk-routine-stock-mode #stockList [data-stock-id]{
+ display:flex!important;align-items:center!important;
+ cursor:pointer;min-height:70px;
+ border:1px solid #E9D9CF;border-radius:13px;
+ background:#FFFEFC;outline-offset:3px;
+}
+body.atk-v19.atk-routine-stock-mode #stockList [data-stock-id]:focus-visible{
+ outline:3px solid #AE6E59!important;
+}
+body.atk-v19.atk-routine-stock-mode #stockList [data-stock-id] .qty,
+body.atk-v19.atk-routine-stock-mode #stockList [data-stock-id] button,
+body.atk-v19.atk-routine-stock-mode #stockList [data-stock-id] input{
+ display:none!important;
+}
+body.atk-v19.atk-routine-stock-mode #stockList [data-stock-id].atk-routine-stock-added{
+ border-color:#91B09C;background:#F4FBF5;
+}
+body.atk-v19 .atk-routine-stock-mark{
+ display:none;flex:0 0 auto;border-radius:999px;
+ padding:8px 10px;background:#FFF3EB;color:#9C523E;
+ font-size:11px;font-weight:850;white-space:nowrap;line-height:1.3;
+}
+body.atk-v19.atk-routine-stock-mode .atk-routine-stock-mark{display:inline-flex!important}
+body.atk-v19.atk-routine-stock-mode .atk-routine-stock-added .atk-routine-stock-mark{
+ background:#E2F0E5;color:#457154;
+}
+@media(max-width:350px){
+ body.atk-v19 .atk-routine-stock-mark{font-size:10px;padding:7px 8px}
+ body.atk-v19 .atk-routine-stock-picker{padding:11px}
 }
