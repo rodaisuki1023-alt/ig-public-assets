@@ -66,11 +66,16 @@ test('diaper and formula render individual original baby icons, full brand names
  assert.ok(!b.icon('diaper').includes('http://example'));
  dom.window.close();
 });
-test('one tap adds repeat set directly to inventory and opens stock, while shopping keeps the separate picker',()=>{
+test('routine card opens details, then confirmed stock button applies inventory, shopping stays separate',()=>{
  const {dom,w,$}=browser();
  w.eval("routines.push({id:901,name:'毎週の買い物',items:[{id:1,name:'卵',qty:1,unit:'パック'},{id:2,name:'牛乳',qty:2,unit:'本'}]});renderRoutines();");
  const card=$('routineList').querySelector('[data-bf-routine="901"]');
- assert.ok(card);card.click();
+ assert.ok(card);const previous=w.document.querySelector('#stockList').textContent;
+ card.click();
+ assert.equal($('modal').classList.contains('on'),true,'card is read-only');
+ assert.equal(w.document.querySelector('#stockList').textContent,previous);
+ assert.ok($('atkRoutineStockCommit'));
+ $('atkRoutineStockCommit').click();
  assert.ok($('pg-stock').classList.contains('on'));
  assert.equal($('pg-add').classList.contains('on'),false,'do not open extra selection screen');
  assert.equal(w.AtokoreQuickAdd.getTray().length,0,'direct stock add must not stage items');
