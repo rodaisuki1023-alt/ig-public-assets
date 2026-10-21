@@ -86,7 +86,7 @@ function refresh(){
  const p=$('pg-stock');if(!p)return;
  doc.body.classList.toggle('atk-routine-stock-mode',pickerId!==null);
  const el=panel();el.hidden=pickerId===null;
- if(pickerId===null){const label=$('atkRoutineStockNotice');if(label)label.remove();return}
+ if(pickerId===null){const label=$('atkRoutineStockNotice');if(label)label.remove();const hint=p.querySelector('.atk-stock-hint');if(hint)hint.textContent='商品をタップして詳細を確認。－／＋で在庫を増減できます。';return}
  const r=routine(pickerId);
  if(!r){finish();return}
  $('atkRoutineStockHeading').textContent='「'+r.name+'」に追加する商品を選ぶ';
