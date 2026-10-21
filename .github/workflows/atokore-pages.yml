@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: a0a8814fc768387070cdd7d0faee53353e644fbe
+          ref: c42a712259d5efb1f6f8d055656dc5e9eeb5f785
           path: _preview_v19_source
           persist-credentials: false
 
@@ -346,6 +346,8 @@ jobs:
           assert 'routine-catalog-v20.js?v=20' in html
           assert 'routine-catalog-v20.css?v=20' in html
           assert 'routine-catalog-v20.js' in worker
+          assert 'baby-flow-v17.js?v=21' in html
+          assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v19'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
@@ -356,7 +358,8 @@ jobs:
             _preview_v19_source/tests/atokore-edit-after-add.test.cjs \
             _preview_v19_source/tests/atokore-distinct-icons.test.cjs \
             _preview_v19_source/tests/atokore-storage-bootstrap-v19.test.cjs \
-            _preview_v19_source/tests/atokore-routine-catalog-v20.test.cjs
+            _preview_v19_source/tests/atokore-routine-catalog-v20.test.cjs \
+            _preview_v19_source/tests/atokore-routine-stock-one-tap.test.cjs
           # Real-browser checks (Chromium + WebKit) run on the source PR: atokore-v19-e2e.yml.
 
       - name: Configure Pages
