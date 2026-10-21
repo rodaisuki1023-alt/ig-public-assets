@@ -17,9 +17,9 @@ const products=[
 const initialState=()=>baseState({items:products.map(([name,unit,qty],i)=>({id:101+i,name,unit,qty,cat:i===10?'食料品':'ベビー',place:'収納',expType:'期限なし',exp:'',usage:1}))});
 const row=(page,id)=>page.locator(`#stockList [data-stock-id="${id}"]`);
 for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
- test.describe(`v28 stock cards ${width}px`,()=>{
+ test.describe(`v29 stock cards ${width}px`,()=>{
   test.use({viewport:{width,height}});
-  test('manufacturer colors match home, two columns fit, details and stock controls remain separate',async({page},info)=>{
+  test('manufacturer colors match home, compact three columns fit, corner controls remain separate',async({page},info)=>{
    const initial=initialState();await open(page,{[KEY]:initial});
    const home=await page.locator('#pg-home [data-atk-open]').evaluateAll(els=>els.map(el=>({id:el.dataset.atkOpen,bg:getComputedStyle(el.querySelector('.atk-brand')).backgroundColor})));
    await go(page,'stock');expect(await stored(page)).toEqual(initial);
@@ -28,19 +28,32 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
     return {grid:getComputedStyle(el).display,columns:getComputedStyle(el).gridTemplateColumns.split(' ').length,
      overflow:document.documentElement.scrollWidth-innerWidth,
      colors:cards.map(c=>({id:c.dataset.stockId,bg:getComputedStyle(c.querySelector('.atk-row-brand')).backgroundColor})),
-     controlsFit:cards.every(c=>[...c.querySelectorAll('.qty button')].every(b=>{
-      const r=b.getBoundingClientRect(),p=c.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=p.left&&r.right<=p.right;
-     }))};
+     controlsFit:cards.every(c=>{
+      const [minus,plus]=[...c.querySelectorAll('.qty button')].map(b=>b.getBoundingClientRect());
+      const p=c.getBoundingClientRect(),art=c.querySelector('.atk-row-brand img,.atk-row-brand svg').getBoundingClientRect();
+      return [minus,plus].every(r=>r.width>=44&&r.height>=44&&r.left>=p.left&&r.right<=p.right&&r.top-p.top<2&&r.bottom<=art.top+1)
+       &&minus.right<=plus.left&&minus.left-p.left<2&&p.right-plus.right<2;
+     }),
+     compact:cards.every(c=>c.getBoundingClientRect().height<=240),
+     countBelowImage:cards.every(c=>c.querySelector('.bf-stock-count').getBoundingClientRect().top>=c.querySelector('.atk-row-brand').getBoundingClientRect().bottom)};
    });
-   expect(facts.grid).toBe('grid');expect(facts.columns).toBe(2);expect(facts.overflow).toBeLessThanOrEqual(0);expect(facts.controlsFit).toBe(true);
+   expect(facts.grid).toBe('grid');expect(facts.columns).toBe(3);expect(facts.overflow).toBeLessThanOrEqual(0);expect(facts.controlsFit).toBe(true);
+   expect(facts.compact).toBe(true);expect(facts.countBelowImage).toBe(true);
    for(const c of home)expect(facts.colors.find(x=>x.id===c.id).bg).toBe(c.bg);
    expect(new Set(facts.colors.slice(0,9).map(x=>x.bg)).size).toBe(9);
    for(const id of [101,103,107])await expect.poll(()=>row(page,id).locator('img').evaluate(i=>i.naturalWidth)).toBe(256);
-   await row(page,101).scrollIntoViewIfNeeded();await shot(page,info,`${width}-v28-stock-cards`);
+   await row(page,101).scrollIntoViewIfNeeded();await shot(page,info,`${width}-v29-stock-cards`);
    await row(page,101).locator('.name').click();await expect(page.locator('#modal')).toHaveClass(/on/);
    expect(await stored(page)).toEqual(initial);await page.click('#sheet .close');
    await row(page,101).locator('.qty button').last().click();
-   const adjusted=await stored(page);expect(adjusted.items.find(x=>x.id===101).qty).toBe(3);
+   let adjusted=await stored(page);expect(adjusted.items.find(x=>x.id===101).qty).toBe(3);
+   await expect(page.locator('#modal')).not.toHaveClass(/on/);
+   await row(page,101).locator('.qty button').first().click();
+   expect((await stored(page)).items.find(x=>x.id===101).qty).toBe(2);
+   await expect(page.locator('#modal')).not.toHaveClass(/on/);
+   await row(page,101).locator('.qty button').last().click();
+   adjusted=await stored(page);
+   expect(adjusted.items.find(x=>x.id===101)).toMatchObject({qty:3,usage:2});
    expect(adjusted.items.filter(x=>x.id!==101)).toEqual(initial.items.filter(x=>x.id!==101));
    expect(adjusted.buys).toEqual(initial.buys);expect(adjusted.routines).toEqual(initial.routines);
    await row(page,101).focus();await row(page,101).press('Enter');

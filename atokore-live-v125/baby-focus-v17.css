@@ -90,34 +90,40 @@ body.atk-v17 .bf-baby-brand{display:block;font-size:10px;font-weight:850;
  text-align:center;line-height:1.15;color:#685046;word-break:keep-all;overflow-wrap:anywhere}
 body.atk-v17 .bf-home-product{display:inline-flex;flex-direction:column;align-items:center;gap:0;padding:3px 6px}
 body.atk-v17 .bf-home-product .bf-baby-icon svg{width:31px;height:31px}
-/* v28: stock cards inspired by the supplied product grid, with explicit stock controls. */
-body.atk-v17 #stockList.bf-stock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:stretch}
+/* v29: compact three-column cards; corner controls retain 44px touch targets. */
+body.atk-v17 #stockList.bf-stock-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:stretch}
 body.atk-v17 #stockList.bf-stock-grid>.empty{grid-column:1/-1}
 body.atk-v17 #stockList .bf-stock-card{
  position:relative;display:flex!important;flex-direction:column;align-items:stretch;
- min-width:0;margin:0;padding:9px!important;gap:8px;border-radius:18px!important;
+ min-width:0;margin:0;padding:6px!important;gap:4px;border-radius:14px!important;
 }
 body.atk-v17 #stockList .bf-stock-spacer{display:none}
 body.atk-v17 #stockList .bf-stock-card>.atk-row-brand{
- flex:0 0 auto!important;width:auto!important;min-width:0!important;min-height:116px!important;
- padding:26px 5px 8px!important;margin:0;border-radius:13px;box-sizing:border-box;
+ flex:0 0 auto!important;width:auto!important;min-width:0!important;min-height:104px!important;
+ padding:38px 2px 4px!important;margin:0;border-radius:10px;box-sizing:border-box;
 }
-body.atk-v17 #stockList .bf-stock-card .bf-baby-brand{color:inherit;font-size:11px;line-height:1.25}
-body.atk-v17 #stockList .bf-stock-card .bf-baby-art{width:64px;height:64px}
-body.atk-v17 #stockList .bf-stock-card>.atk-row-brand svg{width:64px;height:64px}
-body.atk-v17 #stockList .bf-stock-card>.grow{flex:1 1 auto;min-width:0;width:100%}
-body.atk-v17 #stockList .bf-stock-card .name{font-size:13px;line-height:1.45;overflow-wrap:anywhere}
-body.atk-v17 #stockList .bf-stock-card .meta{font-size:11px;line-height:1.45;overflow-wrap:anywhere}
-body.atk-v17 #stockList .bf-stock-card>.qty{width:100%;justify-content:space-between;gap:3px}
-body.atk-v17 #stockList .bf-stock-card>.qty>.icon{flex:0 0 44px;min-width:44px;width:44px;height:44px;min-height:44px;border-radius:14px}
-body.atk-v17 #stockList .bf-stock-card>.qty>b{min-width:0;white-space:normal;overflow-wrap:anywhere;font-size:12px;text-align:center}
+body.atk-v17 #stockList .bf-stock-card .bf-baby-brand{color:inherit;font-size:10px;line-height:1.25}
+body.atk-v17 #stockList .bf-stock-card .bf-baby-art{width:44px;height:44px}
+body.atk-v17 #stockList .bf-stock-card>.atk-row-brand svg{width:44px;height:44px}
+body.atk-v17 #stockList .bf-stock-card>.grow{order:2;flex:1 1 auto;min-width:0;width:100%}
+body.atk-v17 #stockList .bf-stock-card .name{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+body.atk-v17 #stockList .bf-stock-card .meta{font-size:10px;line-height:1.4;overflow-wrap:anywhere;margin-top:3px}
+body.atk-v17 #stockList .bf-stock-card .name,body.atk-v17 #stockList .bf-stock-card .meta{
+ display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+}
+body.atk-v17 #stockList .bf-stock-card>.qty{display:contents}
+body.atk-v17 #stockList .bf-stock-card>.qty>.icon{
+ position:absolute;top:0;left:0;z-index:1;padding:0;min-width:44px;width:44px;height:44px;min-height:44px;
+ border:0;border-radius:14px;background:radial-gradient(circle,#FFFDFC 15px,transparent 16px);font-size:23px;
+}
+body.atk-v17 #stockList .bf-stock-card>.qty>.icon:last-child{left:auto;right:0}
+body.atk-v17 #stockList .bf-stock-card>.qty>b{display:none}
 body.atk-v17 #stockList .bf-stock-count{
- position:absolute;top:16px;right:15px;max-width:calc(100% - 40px);padding:4px 7px;border-radius:999px;
- background:#FFFDFC;color:#635149;font-size:10px;font-weight:800;line-height:1.3;overflow-wrap:anywhere;pointer-events:none;
+ order:1;align-self:center;max-width:100%;box-sizing:border-box;padding:3px 5px;border-radius:999px;
+ background:#FFFDFC;color:#635149;font-size:11px;font-weight:800;line-height:1.3;overflow-wrap:anywhere;pointer-events:none;
 }
 body.atk-v17 #stockList .bf-stock-count.bf-stock-low{background:#FDE7D8;color:#8E432C}
 body.atk-v17 #stockList .bf-stock-card>.stableCheck{position:absolute;top:14px;left:14px;width:26px;height:26px;z-index:1;margin:0}
-body.atk-v17 #stockList .bf-stock-select>.bf-stock-count{max-width:calc(100% - 70px)}
 body.atk-v17 #stockList .bf-stock-card:focus-visible{outline:3px solid #A45D49;outline-offset:2px}
 body.atk-v17 .bf-shopping-start{
  padding:13px;background:#FFF9F5;border:1px solid #E8D7CB;
