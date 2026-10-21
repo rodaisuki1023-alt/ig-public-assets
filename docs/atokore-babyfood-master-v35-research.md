@@ -27,15 +27,15 @@
 | キユーピー | レンジでチンするハッピーレシピ(レトルトパウチ) | 14 | 9, 12 |
 | キユーピー | おやつ | 2 | 7, 9 |
 | キユーピー | ベビーデザート | 6 | 9, 12 |
-| キユーピー | やさいとなかよし(ごはん・麺用ソース) | 7 | 12 |
+| キユーピー | やさいとなかよし(ごはん・麺用ソース) | 4 | 12 |
 | キユーピー | やさいとなかよし(スプレッド) | 2 | 12 |
 
-現行公式掲載の候補は和光堂153・ピジョン42・森永乳業8の計203商品。キユーピー72商品は生産終了品として別枠にし、通常候補には出さない。各商品の原典URL・確認日・状態は `atokore-live-v125/baby-food-catalog-v35.js` に収録した。
+現行公式掲載の候補は和光堂153・ピジョン42・森永乳業8の計203商品。キユーピー69商品は生産終了品として別枠にし、通常候補には出さない。各商品の原典URL・確認日・状態は `atokore-live-v125/baby-food-catalog-v35.js` に収録した。
 
 ## 原典と判断
 
 - [和光堂 ベビーフード](https://www.wakodo.co.jp/product/babyfood/babyfood/)、[はじめての離乳食](https://www.wakodo.co.jp/product/babyfood/babyfood/hajimeteno/)、[手作り応援](https://www.wakodo.co.jp/product/babyfood/babyfood/tedukuri/)、[栄養マルシェ](https://www.wakodo.co.jp/product/babyfood/babyfood/marche/)、[グーグーキッチン](https://www.wakodo.co.jp/product/babyfood/babyfood/googoo/)、[お米を味わう離乳食](https://www.wakodo.co.jp/product/babyfood/babyfood/okomeajiwau/)。お米を味わう離乳食は6か月頃・60g×2個。月齢を一律5か月にしない。
-- [ピジョン ベビーフード一覧](https://products.pigeon.co.jp/category/index-31.html)から各個別ページを照合。カップシリーズは商品ごとに5か月・7か月が分かれる。[蒸し鶏と緑黄色野菜](https://products.pigeon.co.jp/item/index-2856.html)は7か月。[やわらかパックごはん7か月](https://products.pigeon.co.jp/item/index-2120.html)は480g（80g×2パック×3個）。18か月の幼児食1件は今回の対象外。
+- [ピジョン ベビーフード一覧](https://products.pigeon.co.jp/category/index-31.html)から各個別ページを照合。カップシリーズは商品ごとに5か月・7か月が分かれる。[蒸し鶏と緑黄色野菜](https://products.pigeon.co.jp/item/index-2856.html)は7か月。[やわらかパックごはん7か月](https://products.pigeon.co.jp/item/index-2120.html)は480g（80g×2パック×3個）。18か月の幼児食1件は今回の対象外。キユーピーの1歳半向けソース3件も対象外にし、表記の「半」を12か月と誤認しないテストを追加した。
 - [森永乳業 2026年新商品発表](https://www.morinagamilk.co.jp/release/newsentry-4669.html)および個別商品ページ。はじめてのベビーフード6商品・オーガニック2商品、表示5か月頃から・70g。2026年発売のリゾット・オートミール3商品を含む。
 - [キユーピー 生産・販売終了の公式発表](https://www.kewpie.com/newsrelease/2025/3738/)と[育児食一覧](https://www.kewpie.co.jp/babyfood/)。2026年8月末に生産終了。手元のストック登録に必要なため削除せず、「生産終了品を登録する」を開いた場合だけ候補を表示する。
 - ビーンスターク「素材満菜」は現行公式商品一覧に見当たらず、旧配布ページだけでは現行品と判断できない。自動候補に追加せず、既存登録を維持し「その他・手作り」の手入力で対応する。生産終了の具体的年月は断定しない。
@@ -56,4 +56,4 @@
 
 通常版へソースPRをマージしない。公開PRはPagesのv19参照SHAと検証記録のみ変更する。v19ビルド・Node回帰・Chromium/WebKit 320/375/390/430pxの実ブラウザを検証し、通常版の公開ファイルハッシュを前後比較する。家族共有PR #17はDraftのまま維持する。
 
-実際のiPhone、カメラ、個別の店頭パッケージ全275件の目視照合は未実施。新商品・終売・パッケージ変更は今後の更新時に公式情報で再確認する。アレルゲン・栄養成分・摂取可否の判定は実装せず、利用者には手元の表示確認を案内する。
+実際のiPhone、カメラ、個別の店頭パッケージ全272件の目視照合は未実施。新商品・終売・パッケージ変更は今後の更新時に公式情報で再確認する。アレルゲン・栄養成分・摂取可否の判定は実装せず、利用者には手元の表示確認を案内する。

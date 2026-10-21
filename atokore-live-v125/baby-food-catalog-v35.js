@@ -281,9 +281,6 @@ const products=Object.freeze([
 {"id":"kewpie-4901577091483","maker":"キユーピー","series":"やさいとなかよし(ごはん・麺用ソース)","name":"やさいとなかよし 牛五目ごはんの素","age":"12ヵ月頃から","month":12,"amount":"60g","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577091483","status":"production-ended"},
 {"id":"kewpie-4901577091490","maker":"キユーピー","series":"やさいとなかよし(ごはん・麺用ソース)","name":"やさいとなかよし おやこどん風の素","age":"12ヵ月頃から","month":12,"amount":"60g","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577091490","status":"production-ended"},
 {"id":"kewpie-4901577091506","maker":"キユーピー","series":"やさいとなかよし(ごはん・麺用ソース)","name":"やさいとなかよし 鮭チャーハン風の素","age":"12ヵ月頃から","month":12,"amount":"60g","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577091506","status":"production-ended"},
-{"id":"kewpie-4901577091513","maker":"キユーピー","series":"やさいとなかよし(ごはん・麺用ソース)","name":"やさいとなかよし 和風あんかけ(まぐろ入り)","age":"1歳半頃から","month":12,"amount":"80g","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577091513","status":"production-ended"},
-{"id":"kewpie-4901577091520","maker":"キユーピー","series":"やさいとなかよし(ごはん・麺用ソース)","name":"やさいとなかよし 彩り五目","age":"1歳半頃から","month":12,"amount":"80g","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577091520","status":"production-ended"},
-{"id":"kewpie-4901577091537","maker":"キユーピー","series":"やさいとなかよし(ごはん・麺用ソース)","name":"やさいとなかよし ミートソース(フォン・ド・ヴォー入り)","age":"1歳半頃から","month":12,"amount":"80g","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577091537","status":"production-ended"},
 {"id":"kewpie-4901577088995","maker":"キユーピー","series":"やさいとなかよし(スプレッド)","name":"やさいとなかよし 野菜&果物スプレッド にんじんとりんご","age":"12ヵ月頃から","month":12,"amount":"36g (12g×3袋)","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577088995","status":"production-ended"},
 {"id":"kewpie-4901577089015","maker":"キユーピー","series":"やさいとなかよし(スプレッド)","name":"やさいとなかよし 野菜&果物スプレッド トマトとりんご","age":"12ヵ月頃から","month":12,"amount":"36g (12g×3袋)","format":"パウチ","source":"https://www.kewpie.co.jp/babyfood/products/detail.php?code=4901577089015","status":"production-ended"}
 ].map(Object.freeze));
@@ -298,7 +295,7 @@ function makerOf(name){
 }
 function monthOf(name){
  const n=norm(name),y=n.match(/(\d+)\s*[歳才]/),m=n.match(/(\d+)(?:[、~〜-]\d+)?\s*[かカヶヵケ]月/);
- return y?Number(y[1])*12+(m?Number(m[1]):0):m?Number(m[1]):null;
+ return y?Number(y[1])*12+(m?Number(m[1]):new RegExp(y[0]+'\\s*半').test(n)?6:0):m?Number(m[1]):null;
 }
 function describe(item){
  const p=byName.get(norm(item?.name));if(p)return {...p,makerKey:makerOf(p.maker)};

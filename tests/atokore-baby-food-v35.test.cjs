@@ -12,18 +12,18 @@ function browser(){
  return {dom,w,$,click};
 }
 test('audited catalog has complete sourced facts, unique variants, default excludes production-ended records',()=>{
- assert.equal(catalog.reviewedAt,'2026-10-21');assert.equal(catalog.products.length,275);assert.equal(catalog.find().length,203);
- assert.equal(catalog.find({maker:'kewpie'}).length,0);assert.equal(catalog.find({maker:'kewpie',ended:true}).length,72);
- assert.equal(new Set(catalog.products.map(p=>p.id)).size,275);assert.equal(new Set(catalog.products.map(catalog.fullName)).size,275);
+ assert.equal(catalog.reviewedAt,'2026-10-21');assert.equal(catalog.products.length,272);assert.equal(catalog.find().length,203);
+ assert.equal(catalog.find({maker:'kewpie'}).length,0);assert.equal(catalog.find({maker:'kewpie',ended:true}).length,69);
+ assert.equal(new Set(catalog.products.map(p=>p.id)).size,272);assert.equal(new Set(catalog.products.map(catalog.fullName)).size,272);
  for(const p of catalog.products){assert.ok(p.age&&p.amount&&p.format&&p.series);assert.ok(p.month>=5&&p.month<=16);assert.ok(catalog.fullName(p).length<=120);assert.match(p.source,/^https:\/\/(www\.(wakodo|kewpie|morinagamilk)\.co\.jp|products\.pigeon\.co\.jp)\//);assert.ok(Object.isFrozen(p))}
  const source=fs.readFileSync(path.join(base,'baby-food-catalog-v35.js'),'utf8');assert.doesNotMatch(source,/localStorage|indexedDB|fetch\(/);
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');assert.match(worker,/\.\/baby-food-catalog-v35.js/);
 });
 test('individual ages and package amounts are preserved; range and year labels parse without raising minimum age',()=>{
- assert.equal(catalog.get('pigeon-2813').month,5);assert.equal(catalog.get('pigeon-2856').month,7);
+ assert.equal(catalog.get('kewpie-4901577091513'),undefined);assert.equal(catalog.get('pigeon-2745'),undefined);assert.equal(catalog.get('pigeon-2813').month,5);assert.equal(catalog.get('pigeon-2856').month,7);
  assert.match(catalog.get('pigeon-2120').amount,/480g/);assert.match(catalog.get('pigeon-2120').amount,/80g×2パック×3個/);
  const rice=catalog.find({maker:'wakodo'}).filter(p=>p.series==='お米を味わう離乳食');assert.equal(rice.length,3);assert.ok(rice.every(p=>p.month===6));
- for(const [s,m] of [['5、6ヵ月頃から',5],['7、8ヵ月頃から',7],['9～11か月頃から',9],['1歳4か月頃から',16],['12か月頃',12]])assert.equal(catalog.monthOf(s),m,s);
+ for(const [s,m] of [['5、6ヵ月頃から',5],['7、8ヵ月頃から',7],['9～11か月頃から',9],['1歳4か月頃から',16],['1歳半頃から',18],['1才6ヵ月頃',18],['12か月頃',12]])assert.equal(catalog.monthOf(s),m,s);
  assert.equal(catalog.monthOf('野菜ペースト 80g'),null);assert.equal(catalog.isRecord({cat:'日用品',name:'離乳食用スプーン'}),false);
  assert.equal(catalog.makerOf('WAKODO 離乳食'), 'wakodo');assert.equal(catalog.makerOf('キューピー 離乳食'),'kewpie');
 });
