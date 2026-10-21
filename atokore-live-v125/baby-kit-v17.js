@@ -7,9 +7,10 @@ const motifs={
  wipes:{label:'おしりふき',bg:'#DBEEE8',ink:'#5E9B88',shape:'<rect x="6" y="22" width="36" height="18" rx="6" fill="#FFFEFD" stroke="#5E9B88" stroke-width="2"/><path d="M16 22Q13 11 24 9Q34 12 31 22" fill="#FFFEFD" stroke="#5E9B88" stroke-width="2"/><rect x="17" y="25" width="15" height="5" rx="2.5" fill="#D4EBE2" stroke="#5E9B88" stroke-width="1.2"/>'}
 };
 function kind(name,cat=''){
- const value=String(name||'');
- if(/おしりふき|お尻ふき|手口ふき/.test(value))return 'wipes';
- if(/粉ミルク|液体ミルク|らくらくミルク|らくらくキューブ|ほほえみ|ステップ|ぐんぐん|チルミル|つよいこ|グローアップミルク|すこやかM1|E赤ちゃん|はいはい|はぐくみ|アイクレオ|バランスミルク/.test(value))return 'milk';
+ const value=String(name||'').normalize('NFKC');
+ if(/おしりふき|お尻ふき|おしり拭き|お尻拭き|手口ふき|手口拭き/.test(value))return 'wipes';
+ if(cat==='ベビー'&&value.trim()==='ミルク')return 'milk';
+ if(/粉ミルク|液体ミルク|らくらくミルク|らくらくキューブ|ほほえみ|ステップ|ぐんぐん|チルミル|つよいこ|フォローアップミルク|グローアップミルク|すこやかM1|E赤ちゃん|はいはい|はぐくみ|アイクレオ|バランスミルク/.test(value))return 'milk';
  if(/おむつ|オムツ|ムーニーマン|マミーポコ|パンパース|メリーズ|グーン|オヤスミマン/.test(value))return 'diaper';
  return null;
 }
