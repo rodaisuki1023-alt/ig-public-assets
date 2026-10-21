@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 279141d594747ca747f90609e74ea93872fcd12b
+          ref: d6b870739aa2c2538860d3caa22c21f2bd1b0248
           path: _preview_v19_source
           persist-credentials: false
 
@@ -352,9 +352,13 @@ jobs:
           assert 'atkRoutineBuyCommit' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
           assert 'baby-flow-v17.js?v=25' in html
-          assert 'baby-kit-v17.js?v=26' in html
+          assert 'baby-kit-v17.js?v=27' in html
           assert 'baby-focus-v17.css?v=25' in html
-          assert 'quick-add.js?v=26' in html
+          assert 'quick-add.js?v=27' in html
+          assert 'quick-add.css?v=27' in html
+          quick = (base / 'quick-add.js').read_text()
+          assert 'MILK_PRODUCTS' in quick and 'customBrand' in quick and 'グローアップミルク' in quick
+          assert "'カークランド','Rico','baby care'" in quick
           for name in ['diaper-bear-v24', 'wipes-bear-v24', 'milk-bear-v26']:
               image = f'icons/baby/{name}.webp'
               assert (base / image).is_file() and image in worker
@@ -363,7 +367,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v26'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v27'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
