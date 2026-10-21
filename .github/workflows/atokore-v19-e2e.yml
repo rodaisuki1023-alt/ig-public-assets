@@ -37,6 +37,7 @@ jobs:
           node tests/atokore-receipt-product-names.test.cjs
           node tests/atokore-pwa.test.cjs
           node --test tests/atokore-routine-catalog-v20.test.cjs
+          node --test tests/atokore-routine-stock-one-tap.test.cjs
           node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \
             tests/atokore-mobile-dom.test.cjs tests/atokore-distinct-icons.test.cjs tests/atokore-edit-after-add.test.cjs \
             tests/atokore-baby-focus-v17.test.cjs tests/atokore-add-clarity-v18.test.cjs \
