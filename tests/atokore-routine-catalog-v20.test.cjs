@@ -61,6 +61,21 @@ test('stock milk and diaper taps persist two repeat items without changing inven
  assert.ok($('atkRoutineCatalogOpen'));
  dom.window.close();
 });
+test('cancel the stock-item confirmation to prevent accidental additions to the repeat list',()=>{
+ const {dom,w,$}=browser(),id=create(w,$);
+ $('atkRoutineCatalogOpen').click();
+ const before=w.localStorage.getItem('atokoreTrialV4');
+ let prompts=0;
+ w.confirm=msg=>{prompts++;assert.match(msg,/追加してもいいですか/);assert.match(msg,/ストック数は変わりません/);return false};
+ stockRow($,'牛乳').click();
+ assert.equal(prompts,1);
+ assert.equal(w.localStorage.getItem('atokoreTrialV4'),before,'cancelled item is not saved');
+ assert.equal(stored(w).routines.find(r=>r.id===id).items.length,0);
+ w.confirm=()=>true;
+ stockRow($,'牛乳').click();
+ assert.equal(stored(w).routines.find(r=>r.id===id).items.length,1);
+ dom.window.close();
+});
 test('repeat tap does not increase item quantity',()=>{
  const {dom,w,$}=browser(),id=create(w,$);
  $('atkRoutineCatalogOpen').click();
