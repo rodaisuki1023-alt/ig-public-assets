@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: fab90405677bc35a462f02241fc3f5a0c99cb75a
+          ref: 1cc788b6afb7a4df429802578b626cfd9656d73b
           path: _preview_v19_source
           persist-credentials: false
 
@@ -351,19 +351,22 @@ jobs:
           assert '次の商品をいつものリストに追加しますか？' in (base / 'quick-add.js').read_text()
           assert 'atkRoutineBuyCommit' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
-          assert 'baby-flow-v17.js?v=34' in html
+          assert 'baby-flow-v17.js?v=35' in html
           assert 'baby-kit-v17.js?v=33' in html
-          assert 'baby-focus-v17.css?v=34' in html
+          assert 'baby-food-catalog-v35.js?v=35' in html
+          assert 'baby-food-catalog-v35.js' in worker
+          assert '離乳食' in (base / 'baby-food-catalog-v35.js').read_text()
+          assert 'baby-focus-v17.css?v=35' in html
           assert 'decorateStockCards' in (base / 'baby-flow-v17.js').read_text()
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
           assert 'product-photos-v30.js?v=30' in html and 'product-photos-v30.css?v=31' in html
-          assert 'atokore-redesign.js?v=30' in html and 'edit-after-add.js?v=30' in html
+          assert 'atokore-redesign.js?v=30' in html and 'edit-after-add.js?v=35' in html
           photos = (base / 'product-photos-v30.js').read_text()
           assert 'atokorePreviewProductPhotosV19' in photos and 'indexedDB.open' in photos
           assert 'localStorage.setItem' not in photos and 'fetch(' not in photos
           assert "'./product-photos-v30.js'" in worker and "'./product-photos-v30.css'" in worker
-          assert 'quick-add.js?v=34' in html
+          assert 'quick-add.js?v=35' in html
           assert 'quick-add.css?v=27' in html
           quick = (base / 'quick-add.js').read_text()
           assert 'groupsFor' in quick and 'subgroupOf' in quick and 'isBabyFood' in quick
@@ -378,7 +381,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v34'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v35'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
@@ -392,6 +395,7 @@ jobs:
             _preview_v19_source/tests/atokore-routine-stock-one-tap.test.cjs \
             _preview_v19_source/tests/atokore-product-identity.test.cjs
           node --test _preview_v19_source/tests/atokore-product-photos-v30.test.cjs
+          node --test _preview_v19_source/tests/atokore-baby-food-v35.test.cjs
           # Chromium + WebKit smoke and confirmation E2E checks run on source branch: atokore-v19-e2e.yml.
 
       - name: Configure Pages
