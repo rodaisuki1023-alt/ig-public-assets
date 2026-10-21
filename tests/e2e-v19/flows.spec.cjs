@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, chooseBaby, baseState, KEY, shot } = require('./helpers.cjs');
+const { open, go, stored, chooseBaby, baseState, KEY, shot, commitBatch } = require('./helpers.cjs');
 
 test.describe('register, edit, delete', () => {
   test('several items survive reload; edit and delete only touch their own record', async ({ page }) => {
@@ -9,8 +9,8 @@ test.describe('register, edit, delete', () => {
     await chooseBaby(page, { kind: 'wipes', brand: 'Rico' });
     await page.click('[data-qa-cat="食料品"]');
     await page.click('[data-qa-pick="バナナ"]');
-    await page.click('#qaCommit');
-    await expect(page.locator('#qaNotice')).toContainText('3種類をストックに保存しました');
+    await commitBatch(page);
+    await expect(page.locator('#qaNotice')).toContainText('3商品（数量の合計3点）をストックに保存しました');
     await page.reload();
     let data = await stored(page);
     expect(data.items.map(x => x.name)).toEqual(expect.arrayContaining(['ムーニー オヤスミマン おむつ パンツ L', 'Rico おしりふき', 'バナナ']));
@@ -19,14 +19,15 @@ test.describe('register, edit, delete', () => {
     // Registering an existing product again adds to it instead of creating or overwriting a record.
     await page.click('#bfNavAdd');
     await chooseBaby(page, { kind: 'diaper', brand: 'パンパース', type: 'テープ', size: 'M', series: 'さらさらケア' });
-    await page.click('#qaCommit');
+    await commitBatch(page);
     await expect(page.locator('#qaNotice')).toContainText('合算');
     data = await stored(page);
     expect(data.items).toHaveLength(before);
     expect(data.items.find(x => x.id === 2).qty).toBe(3);
 
-    // Edit
+    // Edit (the stock list opened on ベビー to show the added diaper; show every category)
     await go(page, 'stock');
+    await page.locator('#catChips').getByRole('button', { name: 'すべて', exact: true }).click();
     await page.locator('#stockList [data-stock-id="3"] .name').click();
     await page.click('.atk-edit-open');
     await page.fill('#atkEditForm input[name="name"]', '卵（Lサイズ）');
@@ -114,7 +115,7 @@ test.describe('いつものセット', () => {
     await page.click('#bfDestination [data-qa-dest="buy"]');
     await expect(page.locator('#qaNotice')).toContainText('買い物リスト');
     await expect(page.locator('#qaTrayDest')).toContainText('保存先：買い物リスト');
-    await page.click('#qaCommit');
+    await commitBatch(page);
     const data = await stored(page);
     expect(data.items).toEqual(stockBefore);
     expect(data.buys.some(x => x.name === 'パンパース おむつ パンツ L')).toBe(true);

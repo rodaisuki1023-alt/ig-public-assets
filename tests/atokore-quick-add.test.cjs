@@ -52,17 +52,17 @@ test('select and batch register groceries using real PWA storage and inventory r
  const {w,$,click,dom}=browser();
  assert.ok($('qaPanel'));assert.equal($('qaSwitchDetails'),null,'advanced entry should not be shown');
  w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-pick="牛乳"]');click('[data-qa-pick="玉ねぎ"]');
- assert.match($('qaTotal').textContent,/3種類/);
+ assert.match($('qaTotal').textContent,/3商品/);
  click('[data-qa-pick="卵"]');
  assert.match($('qaTotal').textContent,/4点/);
- click('[data-qa-commit]');
+ click('[data-qa-review]');click('[data-qa-commit]');
  const data=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(data.items.find(x=>x.name==='卵'&&x.qty===2));
  assert.ok(data.items.find(x=>x.name==='牛乳'));
  assert.ok(data.items.find(x=>x.name==='玉ねぎ'));
  assert.equal($('qaTray').hidden,true);
  assert.match($('stockList').innerHTML,/qa-picture-badge/);
- w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-commit]');
+ w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-review]');click('[data-qa-commit]');
  const newer=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  const eggs=newer.items.filter(x=>x.name==='卵');
  assert.equal(eggs.length,2,'an existing expiring egg lot must remain separate');
@@ -80,8 +80,8 @@ test('baby products can be added to the tray by brand/type/size without overwrit
  click('[data-qa-babyadd]');
  click('[data-qa-baby="size"][data-value="L"]');
  click('[data-qa-babyadd]');
- assert.match($('qaTotal').textContent,/2種類/);
- click('[data-qa-commit]');
+ assert.match($('qaTotal').textContent,/2商品/);
+ click('[data-qa-review]');click('[data-qa-commit]');
  const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  const found=saved.items.filter(x=>x.name.includes('マミーポコ'));
  assert.equal(found.length,2);
@@ -97,9 +97,9 @@ test('advanced registration is replaced by later stock editing',()=>{
 test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
- assert.match(html,/quick-add\.js\?v=35/);assert.match(html,/quick-add\.css\?v=27/);
+ assert.match(html,/quick-add\.js\?v=36/);assert.match(html,/quick-add\.css\?v=27/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v35/);
+ assert.match(sw,/atokore-pwa-v36/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 
@@ -114,12 +114,13 @@ test('show-more reveals additional food choices and selecting does not auto-save
  click('[data-qa-group="meat"]');
  assert.ok($('qaTiles').textContent.includes('鶏むね肉'));
  click('[data-qa-pick="鶏むね肉"]');
- assert.equal($('qaTray').hidden,false);
+ // Choosing shows only the compact bar; the list opens on the review screen.
+ assert.equal($('qaBar').hidden,false);assert.equal($('qaTray').hidden,true);click('[data-qa-review]');assert.equal($('qaTray').hidden,false);
  const beforeSave=JSON.parse(w.localStorage.getItem('atokoreTrialV4')||'null');
  assert.ok(!beforeSave||!beforeSave.items.some(x=>x.name==='鶏むね肉'),'tapping tiles must not persist until batch confirmation');
  click('[data-qa-adjust="0"][data-step="1"]');
  assert.match($('qaTotal').textContent,/合計2点/);
- click('[data-qa-commit]');
+ click('[data-qa-review]');click('[data-qa-commit]');
  assert.ok(JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.some(x=>x.name==='鶏むね肉'&&x.qty===2));
  dom.window.close();
 });
@@ -130,7 +131,7 @@ test('food baby-food suggestions and household groups stage selections without s
  w.AtokoreQuickAdd.setCategory('日用品');click('[data-qa-group="laundry"]');
  assert.ok($('qaTiles').textContent.includes('洗濯洗剤'));assert.ok(!$('qaTiles').textContent.includes('食器用洗剤'));
  click('[data-qa-group="care"]');assert.ok($('qaTiles').textContent.includes('シャンプー'));
- click('[data-qa-commit]');const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
+ click('[data-qa-review]');click('[data-qa-commit]');const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(saved.items.some(x=>x.name.includes('緑黄色野菜とさつまいも')&&x.cat==='離乳食'&&x.qty===1));
  dom.window.close();
 });
@@ -139,7 +140,7 @@ test('other-category custom entries remain categorized as other and details are 
  w.atkOpenAdd();click('[data-qa-cat="その他"]');
  $('qaFree').value='自作の保存用品';
  click('[data-qa-free]');
- click('[data-qa-commit]');
+ click('[data-qa-review]');click('[data-qa-commit]');
  const entry=JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.find(x=>x.name==='自作の保存用品');
  assert.ok(entry);assert.equal(entry.cat,'その他');
  w.atkOpenAdd();assert.equal($('qaSwitchDetails'),null);

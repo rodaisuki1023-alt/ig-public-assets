@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, chooseBaby, shot } = require('./helpers.cjs');
+const { open, go, stored, chooseBaby, shot, commitBatch } = require('./helpers.cjs');
 
 const options = (page, field) => page.$$eval(`#qaBaby [data-qa-baby="${field}"]`, els => els.map(e => e.dataset.value));
 const pick = (page, field, value) => page.click(`[data-qa-baby="${field}"][data-value="${value}"]`);
@@ -65,7 +65,7 @@ test('liquid formula is named 液体ミルク, never 粉ミルク 液体', async
   await chooseBaby(page, { kind: 'milk', brand: '明治', type: 'キューブ', series: 'ほほえみ' });
   const names = await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => x.name));
   expect(names).toEqual(['明治 ほほえみ 液体ミルク 液体', '明治 ほほえみ 粉ミルク キューブ']);
-  await page.click('#qaCommit');
+  await commitBatch(page);
   await go(page, 'stock');
   const text = await page.locator('#stockList').innerText();
   expect(text).not.toContain('粉ミルク 液体');

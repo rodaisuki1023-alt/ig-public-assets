@@ -79,6 +79,23 @@ function decorateFoodRows(selector='#stockList [data-stock-id]'){
   }
  });
 }
+// After a batch is saved, show exactly those records: a filter, search word or subgroup left over
+// from earlier must not hide them. Runs only after a confirmed save, so a failed save keeps the view.
+function revealStock(ids){
+ const wanted=new Set((Array.isArray(ids)?ids:[]).map(String)),added=records().filter(x=>wanted.has(String(x.id)));
+ if(!added.length)return 0;
+ const cats=[...new Set(added.map(x=>foodCatalog?.isRecord(x)?'離乳食':x.cat||'その他'))];
+ const search=$('stockSearch');if(search)search.value='';
+ stockGroup='all';foodStockMonth='';foodStockSeries='';
+ try{stockSelected.clear()}catch(e){}
+ root.setFilter?.(cats.length===1?cats[0]:'すべて');
+ const shown=()=>new Set([...(doc?.querySelectorAll('#stockList [data-stock-id]')||[])].map(row=>row.dataset.stockId));
+ if(added.some(x=>!shown().has(String(x.id)))&&stockCategory()!=='すべて')root.setFilter?.('すべて');
+ const rows=[...(doc?.querySelectorAll('#stockList [data-stock-id]')||[])].filter(row=>wanted.has(row.dataset.stockId));
+ rows.forEach(row=>row.classList.add('bf-stock-added'));
+ rows[0]?.scrollIntoView?.({block:'center'});
+ return added.filter(x=>shown().has(String(x.id))).length;
+}
 function catFor(name){
  const n=String(name||'');
  const exact=records().find(x=>x.name===n);if(exact?.cat)return exact.cat;
@@ -107,10 +124,11 @@ function directRoutineToStock(id){
  const more=r.entries.length>5?'\nほか'+(r.entries.length-5)+'種類':'';
  const prompt='「'+r.routine.name+'」の'+r.entries.length+'種類をストックに追加してもいいですか？\n\n'+preview+more+'\n\n※ 登録済みの商品は在庫数が増えます。';
  if(!root.confirm?.(prompt))return false;
+ let oldItems,total,next,saved=false;
  try{
   root.AtokoreDataSafety?.assertWritable?.();
-  const oldItems=records(),total=oldItems.length;
-  const next=root.AtokoreQuickAdd?.buildBatch?.(oldItems,r.entries,Date.now());
+  oldItems=records();total=oldItems.length;
+  next=root.AtokoreQuickAdd?.buildBatch?.(oldItems,r.entries,Date.now());
   if(!Array.isArray(next))throw Error('商品の在庫反映に失敗しました');
   const store=root.localStorage,key='atokoreTrialV4';
   const serialized=JSON.stringify({items:next,buys,routines});
@@ -118,17 +136,23 @@ function directRoutineToStock(id){
   if(store.getItem(key)!==serialized)throw Error('保存結果を確認できませんでした');
   items=next;
   lastDirectStock={id:idText,at:Date.now()};
-  root.closeM?.();
-  root.go?.('stock');
-  const merged=r.entries.length-(next.length-total);
-  const message=r.entries.length+'種類をストックに追加しました'+(merged>0?'（既存の在庫にも反映）':'');
-  if(typeof root.notifyAtokoreV125H==='function')root.notifyAtokoreV125H(message);
-  return true;
+  saved=true;
  }catch(err){
   root.console?.error?.('いつものリストからストックへの反映失敗',err);
   root.alert?.('ストックを保存できませんでした。内容は変更していません。');
   return false;
  }
+ // Saved: a drawing problem from here on is not a failed save and must not invite a second add.
+ let displayFailed=false;
+ const step=fn=>{try{fn()}catch(e){displayFailed=true;root.console?.error?.('あとこれ: 保存後の表示更新に失敗',e)}};
+ step(()=>root.closeM?.());
+ step(()=>root.go?.('stock'));
+ // The same leftover filters as a batch add could hide these records; show them.
+ step(()=>revealStock(r.entries.map(v=>next.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'))?.id)));
+ const merged=r.entries.length-(next.length-total);
+ const message=r.entries.length+'種類をストックに追加しました'+(merged>0?'（既存の在庫にも反映）':'')+(displayFailed?'。画面の更新に失敗しました。再読み込みすると表示されます（もう一度追加する必要はありません）':'');
+ step(()=>root.notifyAtokoreV125H?.(message));
+ return saved;
 }
 function fromRoutine(id,dest){
  const r=prepared(id);if(!r)return;
@@ -355,7 +379,7 @@ function install(){
  syncFab();
  syncStockCategory();renderStockCategories();renderStockBabyFilters();showSets();decorateBabyRows('#stockList [data-stock-id]');decorateStockCards();decorateBabyRows('#buyList [data-buy-id]');decorateHome();decorateFoodRows();decorateFoodRows('#pg-home [data-atk-open]');
 }
-const api=Object.freeze({catFor,prepared,directRoutineToStock});
+const api=Object.freeze({catFor,prepared,directRoutineToStock,revealStock});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreBabyFlow=Object.freeze({...api,addRoutineToStock:directRoutineToStock,addRoutineToBuy:directRoutineToBuy});
 if(doc&&typeof window!=='undefined')install();

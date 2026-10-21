@@ -1,5 +1,5 @@
 const {test,expect}=require('@playwright/test');
-const {open,go,stored,baseState,KEY,shot}=require('./helpers.cjs');
+const {open,go,stored,baseState,KEY,shot,commitBatch}=require('./helpers.cjs');
 function fixture(){
  const state=baseState({buys:[]});
  const names=[
@@ -48,7 +48,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await page.click('#bfNavAdd');await expect(page.locator('#qaBabyFood')).toBeVisible();await page.click('[data-qa-food-maker="other"]');
    for(const [field,value] of [['Brand','手作り'],['Name','野菜ペースト'],['Amount','30g'],['Format','冷凍']])await page.fill('#qaFood'+field,value);
    await page.click('[data-qa-food-add]');expect(await stored(page)).toEqual(adjusted);
-   await page.click('#qaCommit');const added=await stored(page);
+   await commitBatch(page);const added=await stored(page);
    expect(added.items.filter(x=>x.name==='手作り 離乳食 野菜ペースト 30g 冷凍')).toHaveLength(1);
    expect(added.items.find(x=>x.name==='手作り 離乳食 野菜ペースト 30g 冷凍')).toMatchObject({cat:'離乳食',qty:1});
    expect(added.items.filter(x=>x.name!=='手作り 離乳食 野菜ペースト 30g 冷凍')).toEqual(adjusted.items);

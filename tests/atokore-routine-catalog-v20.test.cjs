@@ -36,14 +36,22 @@ test('main product button opens add catalog and confirms an unregistered product
  assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),true);
  assert.equal($('bfDestination').hidden,true);
  pickBanana(w,$);
+ // v36: the review screen is the confirmation (no extra dialog on top of it).
  let prompts=0;
- w.confirm=message=>{prompts++;assert.match(message,/バナナ × 1/);return false};
+ w.confirm=()=>{prompts++;return true};
  const raw=w.localStorage.getItem('atokoreTrialV4');
  $('qaCommit').click();
- assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw);
+ assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw,'nothing is saved before the list is reviewed');
+ $('qaBar').click();
+ assert.match($('qaTrayList').textContent,/バナナ/);
+ assert.match($('qaTrayList').textContent,/在庫数は変わりません/);
+ assert.match($('qaTrayDest').textContent,/いつものリスト/);
+ assert.equal($('qaCommit').textContent,'選んだ商品をいつものリストに追加');
+ assert.equal($('qaTray').querySelector('.qa-review-dest-switch').hidden,true,'the routine destination cannot be switched to stock');
+ $('qaTray').querySelector('[data-qa-review-back]').click();
+ assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw,'going back saves nothing');
  assert.equal(w.AtokoreQuickAdd.getTray().length,1);
- w.confirm=()=>true;
- $('qaCommit').click();$('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();$('qaCommit').click();
  const after=stored(w);
  assert.deepEqual(after.items,before.items);assert.deepEqual(after.buys,before.buys);
  assert.equal(after.routines.find(x=>x.id===id).items.length,1);
@@ -51,7 +59,7 @@ test('main product button opens add catalog and confirms an unregistered product
  assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),false);
  assert.equal($('pg-buy').classList.contains('on'),true);
  assert.equal($('modal').classList.contains('on'),true);
- assert.equal(prompts,1);
+ assert.equal(prompts,0);
  dom.window.close();
 });
 test('catalog save failure retains selection and memory for a safe retry',()=>{
@@ -60,13 +68,13 @@ test('catalog save failure retains selection and memory for a safe retry',()=>{
  const original=w.Storage.prototype.setItem;
  w.Storage.prototype.setItem=function(){throw Error('quota')};
  try{
-  $('qaCommit').click();
+  $('qaBar').click();$('qaCommit').click();
   assert.deepEqual(stored(w),before);
   assert.deepEqual(JSON.parse(w.eval('JSON.stringify({items,buys,routines})')),before);
   assert.equal(w.AtokoreQuickAdd.getTray().length,1);
   assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),true);
  }finally{w.Storage.prototype.setItem=original}
- $('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();
  assert.equal(stored(w).routines.find(x=>x.id===id).items.length,1);
  dom.window.close();
 });
@@ -80,7 +88,7 @@ test('leaving catalog asks to discard selection and cannot hijack later stock ad
  assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),false);
  assert.equal(w.AtokoreQuickAdd.getTray().length,0);
  assert.deepEqual(stored(w),before);
- w.atkOpenAdd();pickBanana(w,$);$('qaCommit').click();
+ w.atkOpenAdd();pickBanana(w,$);$('qaBar').click();$('qaCommit').click();
  const after=stored(w);
  assert.deepEqual(after.routines,before.routines);
  assert.equal(after.items.length,before.items.length+1);
@@ -189,7 +197,7 @@ test('script and stylesheet cache versions updated',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8'),sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
  assert.match(html,/routine-catalog-v20\.js\?v=26/);
  assert.match(html,/routine-catalog-v20\.css\?v=24/);
- assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v35'/);
+ assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v36'/);
  const css=fs.readFileSync(path.join(base,'routine-catalog-v20.css'),'utf8');
  assert.match(css,/atk-routine-stock-mode/);
 });

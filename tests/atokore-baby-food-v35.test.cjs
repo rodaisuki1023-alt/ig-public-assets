@@ -51,7 +51,7 @@ test('manufacturer, series and age selection requires an explicit product, stage
  $('qaFoodSeriesSelect').value='カップシリーズ';$('qaFoodSeriesSelect').dispatchEvent(new w.Event('change',{bubbles:true}));
  click('[data-qa-food-product="pigeon-2813"]');assert.equal($('qaBabyFood').querySelectorAll('[data-qa-food-product]').length,1);
  click('[data-qa-food-step="1"]');click('[data-qa-food-add]');assert.equal(w.localStorage.getItem(KEY),raw);
- click('[data-qa-commit]');const data=JSON.parse(w.localStorage.getItem(KEY));const item=data.items.find(x=>x.name===catalog.fullName(catalog.get('pigeon-2813')));assert.ok(item);assert.equal(item.qty,2);assert.equal(item.cat,'離乳食');
+ click('[data-qa-review]');click('[data-qa-commit]');const data=JSON.parse(w.localStorage.getItem(KEY));const item=data.items.find(x=>x.name===catalog.fullName(catalog.get('pigeon-2813')));assert.ok(item);assert.equal(item.qty,2);assert.equal(item.cat,'離乳食');
  w.AtokoreEditAfterAdd?.open?.(item.id);
  const editor=require('../atokore-live-v125/edit-after-add.js');assert.equal(editor.validate({...item,name:item.name+' メモ',expType:'期限なし'},item).cat,'離乳食');dom.window.close();
 });
@@ -68,7 +68,7 @@ test('failed storage retains the infant-food tray and retries exactly once witho
  const {dom,w,click}=browser();w.eval('save()');const raw=w.localStorage.getItem(KEY);
  w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('離乳食');click('[data-qa-food-maker="morinaga"]');click('[data-qa-food-product="morinaga-9923"]');click('[data-qa-food-add]');
  const set=w.Storage.prototype.setItem;w.Storage.prototype.setItem=function(key,value){if(key===KEY)throw Error('quota');return set.call(this,key,value)};
- click('[data-qa-commit]');assert.equal(w.localStorage.getItem(KEY),raw);assert.equal(w.AtokoreQuickAdd.getTray().length,1);
- w.Storage.prototype.setItem=set;click('[data-qa-commit]');click('[data-qa-commit]');
+ click('[data-qa-review]');click('[data-qa-commit]');assert.equal(w.localStorage.getItem(KEY),raw);assert.equal(w.AtokoreQuickAdd.getTray().length,1);
+ w.Storage.prototype.setItem=set;click('[data-qa-review]');click('[data-qa-commit]');click('[data-qa-commit]');
  const after=JSON.parse(w.localStorage.getItem(KEY));assert.equal(after.items.filter(x=>x.name===catalog.fullName(catalog.get('morinaga-9923'))).length,1);assert.equal(w.AtokoreQuickAdd.getTray().length,0);dom.window.close();
 });

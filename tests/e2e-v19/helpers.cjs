@@ -42,6 +42,13 @@ async function chooseBaby(page, { kind, brand, type, size, series }) {
   await page.click('[data-qa-babyadd]');
 }
 
+// v36: pending products are saved only from the review screen. Opens it (unless already open)
+// and presses the destination-specific final button.
+async function commitBatch(page) {
+  if (await page.locator('#qaBar').isVisible()) await page.click('#qaBar');
+  await page.click('#qaCommit');
+}
+
 async function shot(page, testInfo, name) {
   fs.mkdirSync(screenDir, { recursive: true });
   const file = path.join(screenDir, `${testInfo.project.name}-${name}.png`);
@@ -62,4 +69,4 @@ function baseState(extra = {}) {
   };
 }
 
-module.exports = { APP, KEY, HISTORY, seed, open, stored, go, chooseBaby, shot, baseState };
+module.exports = { APP, KEY, HISTORY, seed, open, stored, go, chooseBaby, commitBatch, shot, baseState };

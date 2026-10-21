@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, chooseBaby, shot, baseState, KEY } = require('./helpers.cjs');
+const { open, go, chooseBaby, shot, baseState, KEY, commitBatch } = require('./helpers.cjs');
 
 const WIDTHS = [[320, 568], [375, 667], [390, 844], [430, 932]];
 
@@ -64,25 +64,49 @@ for (const [width, height] of WIDTHS) {
       }
     });
 
-    test('batch tray and save button stay fully on screen above the tab bar', async ({ page }, testInfo) => {
+    test('pending bar and review screen stay on screen and never cover the picker or the list controls', async ({ page }, testInfo) => {
       await open(page, { [KEY]: baseState() });
       await page.click('#bfNavAdd');
+      await expect(page.locator('#qaBar')).toBeHidden();
       await chooseBaby(page, { kind: 'diaper', brand: 'ムーニー', type: 'パンツ', size: 'L' });
       await chooseBaby(page, { kind: 'milk', brand: '明治', type: '液体', series: 'ほほえみ' });
-      await page.locator('#qaCommit').scrollIntoViewIfNeeded();
-      const box = await page.evaluate(() => {
-        const r = id => document.getElementById(id).getBoundingClientRect();
-        const tray = r('qaTray'), commit = r('qaCommit'), nav = document.querySelector('.tabs').getBoundingClientRect();
-        return { tray: [tray.left, tray.right, tray.bottom], commit: [commit.left, commit.right, commit.top, commit.bottom], navTop: nav.top, vw: innerWidth };
+      // Only a compact bar while choosing: no list, no save button on the picker.
+      await expect(page.locator('#qaBar')).toBeVisible();
+      await expect(page.locator('#qaTray')).toBeHidden();
+      const bar = await page.locator('#qaBar').evaluate(el => {
+        const r = el.getBoundingClientRect(), nav = document.querySelector('.tabs').getBoundingClientRect();
+        return { left: r.left, right: r.right, bottom: r.bottom, height: r.height, navTop: nav.top, vw: innerWidth };
       });
-      expect(box.tray[0]).toBeGreaterThanOrEqual(0);
-      expect(box.tray[1]).toBeLessThanOrEqual(box.vw);
-      expect(box.commit[0]).toBeGreaterThanOrEqual(0);
-      expect(box.commit[1]).toBeLessThanOrEqual(box.vw);
-      expect(box.commit[3]).toBeLessThanOrEqual(box.navTop + 0.5);
-      expect(await coveredControls(page, '#qaTray button')).toEqual([]);
+      expect(bar.left).toBeGreaterThanOrEqual(0);
+      expect(bar.right).toBeLessThanOrEqual(bar.vw);
+      expect(bar.bottom).toBeLessThanOrEqual(bar.navTop + 0.5);
+      expect(bar.height).toBeLessThanOrEqual(80);
+      // Each picker control can still be reached and tapped with the bar shown (Playwright refuses covered targets).
+      for (const selector of ['[data-qa-step="1"]', '[data-qa-babyadd]', '[data-qa-cat="食料品"]']) {
+        await page.locator(selector).first().scrollIntoViewIfNeeded();
+        expect(await coveredControls(page, selector), selector).toEqual([]);
+      }
+      await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
+      // Follow-up milk choices inside the closed <details> are not rendered and are skipped.
+      expect(await coveredControls(page, '#qaPanel button:not(.qa-followup:not([open]) *), #qaPanel input'), 'end of the picker').toEqual([]);
+      await shot(page, testInfo, `${width}-add-pending-bar`);
+      await page.click('#qaBar');
+      await expect(page.locator('#qaTray')).toBeVisible();
+      await expect(page.locator('#qaPanel')).toBeHidden();
       await expect(page.locator('#qaTrayDest')).toContainText('保存先：ストック');
-      await shot(page, testInfo, `${width}-add-tray`);
+      expect((await layoutFacts(page)).overflowX).toBeLessThanOrEqual(0);
+      for (const selector of ['#qaTray [data-step="1"]', '#qaTray [data-qa-remove]', '#qaCommit', '[data-qa-review-back]']) {
+        await page.locator(selector).first().scrollIntoViewIfNeeded();
+        expect(await coveredControls(page, selector), selector).toEqual([]);
+      }
+      // At the end of the page the final button sits above the tab bar.
+      await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
+      const commit = await page.locator('#qaCommit').evaluate(el => { const r = el.getBoundingClientRect(); return [r.left, r.right, r.bottom, document.querySelector('.tabs').getBoundingClientRect().top, innerWidth]; });
+      expect(commit[0]).toBeGreaterThanOrEqual(0);
+      expect(commit[1]).toBeLessThanOrEqual(commit[4]);
+      expect(commit[2]).toBeLessThanOrEqual(commit[3] + 0.5);
+      await page.locator('#qaTray').scrollIntoViewIfNeeded();
+      await shot(page, testInfo, `${width}-add-review`);
       await page.click('#qaCommit');
       await expect(page.locator('#pg-stock')).toHaveClass(/on/);
     });

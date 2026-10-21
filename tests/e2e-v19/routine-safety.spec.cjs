@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, baseState, chooseBaby, KEY, HISTORY, shot } = require('./helpers.cjs');
+const { open, go, stored, baseState, chooseBaby, KEY, HISTORY, shot, commitBatch } = require('./helpers.cjs');
 const raw = page => page.evaluate(k => localStorage.getItem(k), KEY);
 const memory = page => page.evaluate(() => JSON.parse(JSON.stringify({ items, buys, routines })));
 
@@ -93,34 +93,35 @@ for (const [width, height] of [[320, 568], [375, 667], [390, 844], [430, 932]]) 
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await shot(page, info, `${width}-routine-catalog`);
       page.removeAllListeners('dialog');
-      let approve = false;
       const confirmations = [];
-      page.on('dialog', async dialog => {
-        confirmations.push(dialog.message());
-        approve ? await dialog.accept() : await dialog.dismiss();
-      });
-      await page.click('#qaCommit');
+      page.on('dialog', async dialog => { confirmations.push(dialog.message()); await dialog.accept(); });
+      // v36: the review screen is the confirmation; opening it and going back saves nothing.
+      await page.click('#qaBar');
+      await expect(page.locator('#qaTrayList .qa-tray-item')).toHaveCount(2);
+      await expect(page.locator('#qaTrayList')).toContainText('明治 ほほえみ');
+      await expect(page.locator('#qaTrayList')).toContainText('バナナ');
+      await expect(page.locator('#qaTrayList')).toContainText('在庫数は変わりません');
+      await expect(page.locator('#qaTrayDest')).toContainText('いつものリスト');
+      await expect(page.locator('#qaCommit')).toHaveText('選んだ商品をいつものリストに追加');
+      await expect(page.locator('#qaTray .qa-review-dest-switch')).toBeHidden();
+      await page.click('[data-qa-review-back]');
       expect(await stored(page)).toEqual(initial);
       expect(await memory(page)).toEqual(initial);
-      expect(confirmations[0]).toContain('明治 ほほえみ');
-      expect(confirmations[0]).toContain('バナナ × 1');
-      await expect(page.locator('#qaTrayList .qa-tray-item')).toHaveCount(2);
-      approve = true;
       await failWrites(page);
-      await page.click('#qaCommit');
+      await commitBatch(page);
       expect(await stored(page)).toEqual(initial);
       expect(await memory(page)).toEqual(initial);
       await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
       await expect(page.locator('#qaTrayList .qa-tray-item')).toHaveCount(2);
       await page.evaluate(() => window.__restoreRoutineStorage());
-      await page.click('#qaCommit');
+      await commitBatch(page);
       const saved = await stored(page);
       expect(saved.items).toEqual(initial.items);
       expect(saved.buys).toEqual(initial.buys);
       expect(saved.routines[0].items).toHaveLength(2);
       expect(saved.routines[0].items[0]).toMatchObject({ name: '明治 ほほえみ 粉ミルク 缶', qty: 1, unit: '缶' });
       expect(saved.routines[0].items[1].name).toBe('バナナ');
-      expect(confirmations).toHaveLength(3);
+      expect(confirmations).toEqual([]);
       await expect(page.locator('#pg-buy')).toHaveClass(/on/);
       await expect(page.locator('#modal')).toHaveClass(/on/);
       await shot(page, info, `${width}-routine-picker`);
@@ -167,7 +168,7 @@ test('leaving a routine catalog can cancel or discard, then normal add saves onl
  approve=true;await go(page,'home');await expect(page.locator('#pg-home')).toHaveClass(/on/);
  await page.click('#bfNavAdd');await expect(page.locator('#qaRoutinePicker')).toBeHidden();
  await page.click('[data-qa-cat="食料品"]');await page.click('[data-qa-pick="バナナ"]');
- await page.click('#qaCommit');const saved=await stored(page);
+ await commitBatch(page);const saved=await stored(page);
  expect(saved.routines).toEqual(initial.routines);expect(saved.buys).toEqual(initial.buys);
  expect(saved.items).toHaveLength(initial.items.length+1);
 });

@@ -45,7 +45,7 @@ test('baby button matches target: stock selection then confirmed save',()=>{
  assert.equal(w.localStorage.getItem('atokoreTrialV4'),before,'selection must not prematurely save stock');
  assert.equal(w.AtokoreQuickAdd.getTray().length,1);
  assert.equal($('qaCommit').textContent,'まとめてストックに追加');
- $('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();
  assert.ok(JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.some(x=>x.name.includes('Rico')));
  assert.equal($('pg-stock').classList.contains('on'),true,'returns to stock page after commit');
  dom.window.close();
@@ -64,7 +64,7 @@ test('shopping page opens add with correct label and does not modify stock',()=>
  assert.equal($('qaCommit').textContent,'まとめて買い物リストに追加');
  const savedBefore=w.localStorage.getItem('atokoreTrialV4');
  assert.equal(savedBefore,previousItems);
- $('qaCommit').click();
+ $('qaBar').click();$('qaCommit').click();
  const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  assert.ok(saved.buys.some(x=>x.name.includes('パンパース')));
  const original=JSON.parse(previousItems||'null');
@@ -89,10 +89,14 @@ test('pwa includes v18 overrides in correct order and cache refresh',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
  assert.match(html,/add-clarity-v18\.css\?v=18/);
- assert.match(html,/quick-add\.js\?v=35/);
- assert.match(html,/baby-flow-v17\.js\?v=35/);
+ assert.match(html,/quick-add\.js\?v=36/);
+ assert.match(html,/baby-flow-v17\.js\?v=36/);
  assert.ok(html.indexOf('baby-focus-v17.css')<html.indexOf('add-clarity-v18.css'));
- assert.match(sw,/atokore-pwa-v35/);
+ assert.match(sw,/atokore-pwa-v36/);
  assert.match(sw,/'\.\/add-clarity-v18.css'/);
  assert.match(sw,/'\.\/p0-fixes-v19.css'/);
+ // v36 review screen styles load after every older layer and are cached for offline use.
+ assert.match(html,/batch-review-v36\.css\?v=36/);
+ assert.ok(html.indexOf('product-photos-v30.css')<html.indexOf('batch-review-v36.css'));
+ assert.match(sw,/'\.\/batch-review-v36.css'/);
 });
