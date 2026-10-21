@@ -64,19 +64,20 @@ function babyChoiceError(s=state){
  return '';
 }
 const TOP={
- '食料品':['卵','牛乳','鶏むね肉','豚こま肉','玉ねぎ','にんじん','じゃがいも','トマト','キャベツ','ブロッコリー','バナナ','りんご','豆腐','納豆','食パン','米','鮭','ヨーグルト','冷凍うどん','麦茶','味噌','チーズ','離乳食（おかゆ）','離乳食（野菜ペースト）','離乳食（レトルトパウチ）','離乳食（カップ）'],
+ '食料品':['卵','牛乳','鶏むね肉','豚こま肉','玉ねぎ','にんじん','じゃがいも','トマト','キャベツ','ブロッコリー','バナナ','りんご','豆腐','納豆','食パン','米','鮭','ヨーグルト','冷凍うどん','麦茶','味噌','チーズ'],
  '日用品':['ティッシュ','トイレットペーパー','洗濯洗剤','柔軟剤','食器用洗剤','キッチンペーパー','ラップ','ゴミ袋','シャンプー','ハンドソープ','スポンジ','浴室洗剤','除菌シート'],
  'ベビー':['おしりふき','おしりふき詰替','ベビーソープ','ベビーローション','液体ミルク','哺乳瓶洗剤','オムツM'],
  '衛生・薬':['マスク','絆創膏','消毒液','歯ブラシ','歯磨き粉','綿棒','ハンドクリーム']
 };
 const LABEL={meat:'お肉',egg:'卵',vegetable:'野菜',fruit:'果物',milk:'牛乳・乳製品',bread:'パン',fish:'魚',rice:'ご飯・主食',frozen:'冷凍食品',beans:'豆腐・納豆',drink:'飲み物',season:'調味料',house:'日用品',paper:'紙製品',wash:'洗剤',baby:'ベビー',babyfood:'離乳食',laundry:'洗濯用品',kitchen:'キッチン用品',cleaning:'掃除用品',care:'お風呂・ケア',health:'衛生・薬',other:'その他'};
 function groupsFor(cat){
- if(cat==='食料品')return ['すべて','meat','egg','vegetable','fruit','milk','fish','bread','rice','beans','frozen','drink','season','babyfood','other'];
+ if(cat==='食料品')return ['すべて','meat','egg','vegetable','fruit','milk','fish','bread','rice','beans','frozen','drink','season','other'];
  if(cat==='日用品')return ['すべて','paper','laundry','kitchen','cleaning','care','other'];
  return ['すべて'];
 }
 function groupLabel(key){return key==='すべて'?'すべて':LABEL[key]||'その他'}
 function isBabyFood(name){
+ if(root.AtokoreBabyFood)return root.AtokoreBabyFood.isFood(name);
  const n=String(name||'').normalize('NFKC');
  return /離乳食|ベビーフード|栄養マルシェ|グーグーキッチン|手作り応援|らくらくまんま/.test(n)&&!/スプーン|フォーク|食器|エプロン|保存容器|調理器具/.test(n);
 }
@@ -150,6 +151,7 @@ function shape(k,color){
  }
 }
 function iconFor(name,cat='食料品'){
+ if(root.AtokoreBabyFood&&(cat==='離乳食'||isBabyFood(name)))return root.AtokoreBabyFood.icon();
  const babyKind=root.AtokoreBabyKit?.kind(name,cat);
  if(babyKind)return root.AtokoreBabyKit.icon(babyKind,42);
  const individual=root.AtokoreIndividualIcons?.icon(name);
@@ -190,6 +192,45 @@ function buildBatch(existing,selected,time=Date.now()){
  return next;
 }
 const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,loadedSet:null,loadedSnapshot:'',routineTarget:null};
+const food={maker:'',series:'',month:'',query:'',limit:24,selected:'',qty:1,customBrand:'',customSeries:'',customName:'',customAge:'',customAmount:'',customFormat:''};
+function syncFoodInputs(){for(const field of ['Brand','Series','Name','Age','Amount','Format']){const input=$('qaFood'+field);if(input)food['custom'+field]=input.value}}
+function foodInput(field,label,limit=45){return '<label>'+safe(label)+'<input id="qaFood'+field+'" maxlength="'+limit+'" value="'+safe(food['custom'+field])+'" autocomplete="off"></label>'}
+function renderFood(){
+ const el=$('qaBabyFood'),catalog=root.AtokoreBabyFood;if(!el||!catalog)return;
+ const active=doc.activeElement?.id,position=doc.activeElement?.selectionStart;
+ const selected=catalog.get(food.selected),maker=catalog.makers.find(m=>m.key===food.maker);
+ const option=(key,label)=>'<button type="button" data-qa-food-maker="'+key+'" aria-pressed="'+(food.maker===key)+'">'+safe(label)+'</button>';
+ let body='';
+ if(food.maker==='other')body='<div class="qa-food-custom">'+foodInput('Brand','メーカー・手作りの名前',30)+foodInput('Series','シリーズ（任意）',35)+foodInput('Name','商品名',55)+foodInput('Age','商品に表示された月齢（任意）',18)+foodInput('Amount','内容量・個数（例：80g、80g×2）',25)+foodInput('Format','形状（パウチ・カップ・冷凍など）',15)+'</div>';
+ else if(maker){
+  const available=catalog.find({maker:food.maker,ended:!!maker.ended}),series=[...new Set(available.map(p=>p.series))];
+  const list=catalog.find({maker:food.maker,series:food.series,month:food.month,query:food.query,ended:!!maker.ended});
+  const shown=selected?list.filter(p=>p.id===selected.id):list.slice(0,food.limit);
+  body=(maker.ended?'<p class="qa-food-ended">キユーピーは2026年8月末で育児食の生産終了。手元の商品を登録する場合の候補です。</p>':'')+
+   '<label class="qa-food-series">② シリーズ<select id="qaFoodSeriesSelect"><option value="">すべてのシリーズ</option>'+series.map(s=>'<option'+(food.series===s?' selected':'')+'>'+safe(s)+'</option>').join('')+'</select></label>'+
+   '<div class="qa-food-months" role="group" aria-label="商品の表示月齢"><button type="button" data-qa-food-month="" aria-pressed="'+(!food.month)+'">すべて</button>'+[...new Set(available.map(p=>p.month))].sort((a,b)=>a-b).map(m=>'<button type="button" data-qa-food-month="'+m+'" aria-pressed="'+(food.month===String(m))+'">'+safe(m<12?m+'か月頃':m===12?'12か月頃':'1歳'+(m-12)+'か月頃')+'</button>').join('')+'</div>'+
+   '<label class="qa-food-search">商品名を検索<input id="qaFoodSearch" type="search" value="'+safe(food.query)+'" placeholder="例：おかゆ、しらす" autocomplete="off"></label>'+
+   '<p class="qa-food-result">③ 商品を選ぶ（'+list.length+'件）</p><div class="qa-food-products">'+shown.map(p=>'<button type="button" data-qa-food-product="'+p.id+'" aria-pressed="'+(food.selected===p.id)+'"><strong>'+safe(p.name)+'</strong><small>'+safe(p.age)+'・'+safe(p.amount)+'・'+safe(p.format)+'</small></button>').join('')+(list.length?'':'<p>該当する商品がありません。月齢や検索条件を変えてください。</p>')+'</div>'+
+   (selected?'<button type="button" data-qa-food-unselect class="qa-more">別の商品を選ぶ</button>':list.length>food.limit?'<button type="button" data-qa-food-more class="qa-more">さらに表示（残り'+(list.length-food.limit)+'件）</button>':'');
+ }
+ el.innerHTML='<div class="qa-baby-intro"><span class="qa-baby-intro-icon">'+catalog.icon(48)+'</span><span><strong>離乳食を追加</strong><small>メーカーから商品を選べます</small></span></div><div class="qa-subtitle">① メーカー</div><div class="qa-food-makers">'+catalog.makers.filter(m=>!m.ended).map(m=>option(m.key,m.name)).join('')+option('other','その他・手作り')+'</div><details class="qa-food-legacy"'+(maker?.ended?' open':'')+'><summary>生産終了品を登録する</summary><div class="qa-food-makers">'+catalog.makers.filter(m=>m.ended).map(m=>option(m.key,m.name+'（生産終了）')).join('')+'</div></details>'+body+
+  (food.maker?'<p class="qa-food-selected">'+(food.maker==='other'?'入力した商品':selected?'選択中：'+safe(catalog.fullName(selected)):'商品はまだ選択していません')+'</p><div class="qa-baby-bottom"><label>数量 <span>表示の1商品を1個として数えます</span></label><div class="qa-step"><button type="button" data-qa-food-step="-1" aria-label="離乳食の数量を減らす">−</button><b>'+food.qty+'</b><button type="button" data-qa-food-step="1" aria-label="離乳食の数量を増やす">＋</button></div></div><button type="button" class="qa-baby-add" data-qa-food-add>＋ 追加予定に入れる</button><p class="qa-food-note">2個入りなども表示内容量の1商品で1個です。月齢・内容量はお手元の商品表示をご確認ください。まだ保存されません。</p>':'');
+ if(active?.startsWith('qaFood')){const input=$(active);input?.focus({preventScroll:true});if(typeof position==='number'&&input?.type==='text')input.setSelectionRange?.(position,position)}
+}
+function addFood(){
+ syncFoodInputs();try{
+  let entry;
+  if(food.maker==='other'){
+   if(!food.customBrand.trim()||!food.customName.trim()||!food.customAmount.trim()||!food.customFormat.trim())throw Error('メーカー（手作りの名前）・商品名・内容量・形状を入力してください');
+   entry={name:[food.customBrand,'離乳食',food.customSeries,food.customName,food.customAge,food.customAmount,food.customFormat].map(s=>s.trim()).filter(Boolean).join(' '),cat:'離乳食',qty:food.qty,unit:'個'};
+  }else{
+   const p=root.AtokoreBabyFood?.get(food.selected),maker=root.AtokoreBabyFood?.makers.find(m=>m.key===food.maker);
+   if(!p||p.maker!==maker?.name)throw Error('商品を選んでください');
+   entry=root.AtokoreBabyFood.line(p.id,food.qty);
+  }
+  addLine(entry);notify('追加予定に入れました（まだ保存されていません）。下の「'+commitLabel()+'」で保存します');
+ }catch(e){notify(e.message||'内容を確認してください')}
+}
 const destLabel=d=>state.routineTarget?'いつものリスト':d==='buy'?'買い物リスト':'ストック';
 const commitLabel=()=>state.routineTarget?'選んだ商品をいつものリストに追加':'まとめて'+destLabel(state.destination)+'に追加';
 const traySnapshot=()=>JSON.stringify(state.tray.map(x=>[modelKey(x),x.qty]));
@@ -208,7 +249,7 @@ function addLine(entry){
 }
 function renderNav(){
  const el=$('qaTabs');if(!el)return;
- const tabs=[['ベビー','ベビー'],['食料品','食品'],['日用品','日用品'],['衛生・薬','衛生・薬'],['その他','その他']];
+ const tabs=[['ベビー','ベビー'],['離乳食','離乳食'],['食料品','食品'],['日用品','日用品'],['衛生・薬','衛生・薬'],['その他','その他']];
  el.innerHTML=tabs.map(([cat,label])=>'<button type="button" class="'+(state.cat===cat?'selected':'')+'" data-qa-cat="'+safe(cat)+'">'+label+'</button>').join('');
 }
 function groupOptions(){
@@ -373,6 +414,7 @@ function commit(){
   renderTray();
   root.render?.();
   root.go?.(state.destination==='buy'?'buy':'stock');
+  if(state.destination!=='buy'&&tray.some(x=>x.cat==='離乳食'))root.setFilter?.(tray.every(x=>x.cat==='離乳食')?'離乳食':'すべて');
   notify(tray.length+'種類を'+destLabel(state.destination)+'に保存しました'+(merged?'（うち'+merged+'種類は登録済みの商品に数量を合算）':''));
  }catch(err){
   state.committing=false;renderTray();
@@ -389,12 +431,13 @@ function openQuick(){
  try{root.go('add')}catch(e){}
  renderAll();
 }
-function renderAll(){renderNav();renderGroups();renderItems();renderRecent();renderBaby();renderTray();switchCatVisibility();renderDestination()}
+function renderAll(){renderNav();renderGroups();renderItems();renderRecent();renderBaby();renderFood();renderTray();switchCatVisibility();renderDestination()}
 function switchCatVisibility(){
- const baby=state.cat==='ベビー';
+ const baby=state.cat==='ベビー',babyfood=state.cat==='離乳食';
  $('qaBaby')?.classList.toggle('qa-hidden',!baby);
- $('qaCatalogSection')?.classList.toggle('qa-hidden',baby);
- $('qaRecent')?.classList.toggle('qa-hidden',baby);
+ $('qaBabyFood')?.classList.toggle('qa-hidden',!babyfood);
+ $('qaCatalogSection')?.classList.toggle('qa-hidden',baby||babyfood);
+ $('qaRecent')?.classList.toggle('qa-hidden',baby||babyfood);
 }
 function setup(){
  const p=$('pg-add');if(!p)return;
@@ -405,7 +448,7 @@ function setup(){
  '<div class="bf-destination" id="bfDestination"><button type="button" data-qa-dest="stock">ストックに追加</button><button type="button" data-qa-dest="buy">買い物リストに追加</button></div>'+ 
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button><div class="qa-free"><input id="qaFree" placeholder="リストにない商品名を入力" maxlength="120"><button type="button" data-qa-free>＋追加</button></div></div>'+
- '<div id="qaBaby" class="qa-baby"></div><div id="qaRecent"></div></div>';
+ '<div id="qaBaby" class="qa-baby"></div><div id="qaBabyFood" class="qa-babyfood"></div><div id="qaRecent"></div></div>';
  const heading=p.querySelector('.atk-page-title');
  if(heading)heading.insertAdjacentElement('afterend',pane);else p.prepend(pane);
  p.classList.add('qa-quick-mode');
@@ -414,6 +457,18 @@ function setup(){
  p.appendChild(tray);
  renderAll();
  $('qaBaby').addEventListener('input',syncBabyInputs);
+ $('qaBabyFood').addEventListener('input',e=>{syncFoodInputs();if(e.target.id==='qaFoodSearch'){food.query=e.target.value;food.selected='';food.limit=24;renderFood()}});
+ $('qaBabyFood').addEventListener('change',e=>{if(e.target.id==='qaFoodSeriesSelect'){food.series=e.target.value;food.selected='';food.limit=24;renderFood()}});
+ $('qaBabyFood').addEventListener('click',e=>{
+  const button=e.target.closest('button');if(!button)return;syncFoodInputs();
+  if(button.hasAttribute('data-qa-food-maker')){const key=button.dataset.qaFoodMaker;if(key!=='other'&&!root.AtokoreBabyFood?.makers.some(m=>m.key===key))return;food.maker=key;food.series='';food.month='';food.query='';food.selected='';food.limit=24;renderFood()}
+  else if(button.hasAttribute('data-qa-food-month')){food.month=button.dataset.qaFoodMonth;food.selected='';food.limit=24;renderFood()}
+  else if(button.hasAttribute('data-qa-food-product')){const p=root.AtokoreBabyFood?.get(button.dataset.qaFoodProduct);if(p&&root.AtokoreBabyFood.makerOf(p.maker)===food.maker){food.selected=p.id;renderFood()}}
+  else if(button.hasAttribute('data-qa-food-more')){food.limit+=24;renderFood()}
+  else if(button.hasAttribute('data-qa-food-unselect')){food.selected='';renderFood()}
+  else if(button.hasAttribute('data-qa-food-step')){food.qty=Math.max(1,Math.min(99,food.qty+Number(button.dataset.qaFoodStep)));renderFood()}
+  else if(button.hasAttribute('data-qa-food-add'))addFood();
+ });
  $('qaSearch').addEventListener('input',e=>{state.query=e.target.value;state.showAll=false;renderItems()});
  $('qaFree').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addFree()}});
  const originalOpen=root.atkOpenAdd;

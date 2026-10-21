@@ -15,7 +15,7 @@ test('shared food and household groups recognize purpose before ingredients with
   ['シャンプー','日用品','care'],['自分で登録した道具','日用品','other']
  ])assert.equal(quick.subgroupOf(name,cat),group,name);
  assert.equal(quick.isBabyFood('離乳食用スプーン'),false);assert.equal(quick.isBabyFood('離乳食の保存容器'),false);
- assert.equal(quick.groupsFor('食料品').includes('babyfood'),true);
+ assert.equal(quick.groupsFor('食料品').includes('babyfood'),false,'baby food now has its own category');
  assert.equal(quick.groupLabel('babyfood'),'離乳食');
  const input=[{id:1,name:'離乳食 鶏と野菜 5か月',cat:'食料品',unit:'パック',qty:2}];
  const next=quick.buildBatch(input,[{name:'離乳食 鶏と野菜 7か月',cat:'食料品',unit:'パック',qty:1}]);
@@ -25,7 +25,7 @@ function browser(){
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const dom=new JSDOM(html,{url:'https://example.invalid/atokore/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','quick-add.js']){
+ for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-food-catalog-v35.js','quick-add.js']){
   w.eval(fs.readFileSync(path.join(root,file),'utf8'));
  }
  const $=id=>w.document.getElementById(id);
@@ -97,9 +97,9 @@ test('advanced registration is replaced by later stock editing',()=>{
 test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
- assert.match(html,/quick-add\.js\?v=34/);assert.match(html,/quick-add\.css\?v=27/);
+ assert.match(html,/quick-add\.js\?v=35/);assert.match(html,/quick-add\.css\?v=27/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v34/);
+ assert.match(sw,/atokore-pwa-v35/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 
@@ -125,14 +125,13 @@ test('show-more reveals additional food choices and selecting does not auto-save
 });
 test('food baby-food suggestions and household groups stage selections without saving early',()=>{
  const {w,$,click,dom}=browser();w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');
- const raw=w.localStorage.getItem('atokoreTrialV4');click('[data-qa-group="babyfood"]');
- assert.equal($('qaTiles').querySelectorAll('[data-qa-pick]').length,4);
- click('[data-qa-pick="離乳食（野菜ペースト）"]');assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw);
+ const raw=w.localStorage.getItem('atokoreTrialV4');w.AtokoreQuickAdd.setCategory('離乳食');
+ click('[data-qa-food-maker="morinaga"]');click('[data-qa-food-product="morinaga-9528"]');click('[data-qa-food-add]');assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw);
  w.AtokoreQuickAdd.setCategory('日用品');click('[data-qa-group="laundry"]');
  assert.ok($('qaTiles').textContent.includes('洗濯洗剤'));assert.ok(!$('qaTiles').textContent.includes('食器用洗剤'));
  click('[data-qa-group="care"]');assert.ok($('qaTiles').textContent.includes('シャンプー'));
  click('[data-qa-commit]');const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
- assert.ok(saved.items.some(x=>x.name==='離乳食（野菜ペースト）'&&x.cat==='食料品'&&x.qty===1));
+ assert.ok(saved.items.some(x=>x.name.includes('緑黄色野菜とさつまいも')&&x.cat==='離乳食'&&x.qty===1));
  dom.window.close();
 });
 test('other-category custom entries remain categorized as other and details are available',()=>{

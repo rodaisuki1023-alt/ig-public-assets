@@ -22,7 +22,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await expect(page.locator('#bfStockBabyFilters')).toHaveCount(0);
    await category(page,'ベビー');expect(await ids(page)).toEqual([2,4,5,6,7,8,9,10,11]);
    const bar=page.getByRole('group',{name:'ベビー用品の種類'});
-   await expect(bar.getByRole('button')).toHaveText(['すべて','おむつ','ミルク','おしりふき','離乳食','その他']);
+   await expect(bar.getByRole('button')).toHaveText(['すべて','おむつ','ミルク','おしりふき','その他']);
    await group(page,'diaper').click();expect(await ids(page)).toEqual([2,9]);
    await group(page,'milk').focus();await group(page,'milk').press('Enter');
    await expect(group(page,'milk')).toBeFocused();await expect(group(page,'milk')).toHaveAttribute('aria-pressed','true');

@@ -3,7 +3,7 @@
 'use strict';
 const $=id=>typeof document==='undefined'?null:document.getElementById(id);
 const esc=text=>String(text??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const CATEGORIES=['食料品','日用品','衛生・薬','ベビー','子ども','衣類','家電・生活用品','防災','その他'];
+const CATEGORIES=['食料品','日用品','衛生・薬','ベビー','離乳食','子ども','衣類','家電・生活用品','防災','その他'];
 const UNITS=['個','本','袋','箱','パック','枚','缶','セット','g','kg','mL','L'];
 const PLACES=['','冷蔵庫','冷凍庫','パントリー','洗面所','トイレ','収納','防災収納','その他'];
 const EXPIRY=['期限なし','賞味期限','消費期限','使用期限'];

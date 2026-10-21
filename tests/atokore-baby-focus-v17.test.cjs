@@ -7,7 +7,7 @@ const base=path.resolve(__dirname,'../atokore-live-v125');
 function browser(){
  const dom=new JSDOM(fs.readFileSync(path.join(base,'index.html'),'utf8'),{url:'https://example.invalid/preview-baby-v17/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
+ for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','baby-food-catalog-v35.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
   w.eval(fs.readFileSync(path.join(base,file),'utf8'));
  return {dom,w,$:id=>w.document.getElementById(id)};
 }
@@ -55,10 +55,10 @@ test('food and household stock use the add-page groups, reset on category change
  const ids=()=>Array.from($('stockList').querySelectorAll('[data-stock-id]'),e=>Number(e.dataset.stockId));
  const group=k=>w.document.querySelector('[data-bf-stock-kind="'+k+'"]').click();
  w.setFilter('食料品');assert.ok($('bfStockHouseholdFilters'));group('vegetable');assert.deepEqual(ids(),[1]);
- group('frozen');assert.deepEqual(ids(),[2]);group('babyfood');assert.deepEqual(ids(),[3]);
+ group('frozen');assert.deepEqual(ids(),[2]);w.setFilter('離乳食');assert.deepEqual(ids(),[3,4]);
  w.setFilter('日用品');assert.deepEqual(ids(),[5,6]);assert.equal($('bfStockHouseholdFilters').dataset.category,'日用品');
  group('laundry');assert.deepEqual(ids(),[6]);group('kitchen');assert.deepEqual(ids(),[5]);
- w.setFilter('ベビー');group('babyfood');assert.deepEqual(ids(),[4]);group('other');assert.deepEqual(ids(),[7]);
+ w.setFilter('ベビー');group('other');assert.deepEqual(ids(),[7]);
  w.setFilter('すべて');assert.equal($('bfStockHouseholdFilters'),null);assert.equal($('bfStockBabyFilters'),null);
  assert.equal(writes,0);assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw);dom.window.close();
 });
@@ -155,12 +155,12 @@ test('buy page picker opens baby-first selection and shopping-only destination',
 test('offline shell has complete v17 scripts and separate palette',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=34'));
+ assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=35'));
  assert.ok(html.indexOf('baby-flow-v17.js')>html.indexOf('edit-after-add.js'));
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v34/);
+ assert.match(worker,/atokore-pwa-v35/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{
