@@ -17,5 +17,10 @@ Node回帰80件成功。スマホ320・375・390・430px × Chromium/WebKitで�
 WebKit未対応のSW2件はスキップ（Chromiumで確認済み）。
 既存商品・フォローアップ・半角と漢字表記の分類、検索・空表示・種類切替、44pxボタンと横幅、数量変更、一括選択の解除・表示中商品のみの買い物追加、再読込時のデータ保持を確認済み。
 CI: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39594739035
+320px Chromium・390px WebKitの画面を目視確認済み。
+公開PR #46: https://github.com/rodaisuki1023-alt/ig-public-assets/pull/46
+Pages配信成功: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39595722297
+配信コミット: `5c1607f3564ae24c53c3a4a0e3538cf8b6262fe9`
+公開後のSHA-256比較で通常版16/16ファイル不変、試用版35/35ファイルが検証済みビルドと一致。
 実機iPhoneの操作感は未確認。任意の商品名は「その他」になる場合がある。
 次は実際の登録商品で3種類の絞り込みと検索の組み合わせを確認する。
