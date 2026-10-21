@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: ad5e75ff9b1854cfa1401e0c4ae826ea8ef4c286
+          ref: 019b4d9702cc7af42cc2163db7e5dda79174c9fa
           path: _preview_v19_source
           persist-credentials: false
 
@@ -351,9 +351,9 @@ jobs:
           assert '次の商品をいつものリストに追加しますか？' in (base / 'quick-add.js').read_text()
           assert 'atkRoutineBuyCommit' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
-          assert 'baby-flow-v17.js?v=29' in html
-          assert 'baby-kit-v17.js?v=28' in html
-          assert 'baby-focus-v17.css?v=32' in html
+          assert 'baby-flow-v17.js?v=33' in html
+          assert 'baby-kit-v17.js?v=33' in html
+          assert 'baby-focus-v17.css?v=33' in html
           assert 'decorateStockCards' in (base / 'baby-flow-v17.js').read_text()
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
@@ -376,7 +376,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v32'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v33'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
