@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 157f4ea738caa3c44a07400f91b09c407f4028a3
+          ref: 82ebb8a5aeff039610a1a1b8a537b49ae404dafe
           path: _preview_v19_source
           persist-credentials: false
 
@@ -357,6 +357,12 @@ jobs:
           assert 'decorateStockCards' in (base / 'baby-flow-v17.js').read_text()
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
+          assert 'product-photos-v30.js?v=30' in html and 'product-photos-v30.css?v=30' in html
+          assert 'atokore-redesign.js?v=30' in html and 'edit-after-add.js?v=30' in html
+          photos = (base / 'product-photos-v30.js').read_text()
+          assert 'atokorePreviewProductPhotosV19' in photos and 'indexedDB.open' in photos
+          assert 'localStorage.setItem' not in photos and 'fetch(' not in photos
+          assert "'./product-photos-v30.js'" in worker and "'./product-photos-v30.css'" in worker
           assert 'quick-add.js?v=27' in html
           assert 'quick-add.css?v=27' in html
           quick = (base / 'quick-add.js').read_text()
@@ -370,7 +376,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v29'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v30'" in worker
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
@@ -383,6 +389,7 @@ jobs:
             _preview_v19_source/tests/atokore-routine-catalog-v20.test.cjs \
             _preview_v19_source/tests/atokore-routine-stock-one-tap.test.cjs \
             _preview_v19_source/tests/atokore-product-identity.test.cjs
+          node --test _preview_v19_source/tests/atokore-product-photos-v30.test.cjs
           # Chromium + WebKit smoke and confirmation E2E checks run on source branch: atokore-v19-e2e.yml.
 
       - name: Configure Pages
