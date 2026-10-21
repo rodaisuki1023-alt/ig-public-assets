@@ -3,11 +3,17 @@
   let idSequence=0;
   const Core={
     uniqueId(){return Date.now()*1000+(idSequence++%1000)},
+    // A stock ID survives edits. It cannot by itself identify the product that was
+    // put on the shopping list before a size/series/form/unit change.
+    // Older shopping records have no category: keep those records compatible.
+    sameProduct(a,b){
+      return a.name===b.name&&(a.unit||'個')===(b.unit||'個')&&(!a.cat||!b.cat||a.cat===b.cat);
+    },
     addStockToBuy(list,item,qty=1){
       if(!item||!Array.isArray(list))return false;
       const unit=item.unit||'個';
       const amount=Math.max(1,Number(qty)||1);
-      let found=list.find(v=>Number(v.stockId)===Number(item.id)||(v.name===item.name&&v.unit===unit));
+      let found=list.find(v=>Core.sameProduct(v,item));
       if(found)found.qty=(Number(found.qty)||0)+amount;
       else list.push({id:Core.uniqueId(),name:item.name,qty:amount,unit,stockId:item.id,cat:item.cat||''});
       return true;
@@ -20,8 +26,8 @@
       const selected=new Set([...ids].map(Number).filter(Number.isFinite));
       const picked=(Array.isArray(list)?list:[]).filter(x=>selected.has(Number(x.id)));
       for(const bought of picked){
-        let target=bought.stockId!=null?stock.find(x=>Number(x.id)===Number(bought.stockId)):null;
-        if(!target)target=stock.find(x=>x.name===bought.name&&x.unit===bought.unit);
+        let target=bought.stockId!=null?stock.find(x=>Number(x.id)===Number(bought.stockId)&&Core.sameProduct(x,bought)):null;
+        if(!target)target=stock.find(x=>Core.sameProduct(x,bought));
         if(target)target.qty=(Number(target.qty)||0)+(Number(bought.qty)||1);
         else stock.push({id:Core.uniqueId(),name:bought.name,cat:bought.cat||inferCat(bought.name),qty:Number(bought.qty)||1,unit:bought.unit||'個',place:'その他',expType:'期限なし',exp:'',usage:1});
       }
