@@ -47,6 +47,21 @@ test('baby subgroup bulk actions select only visible products and clear hidden s
  const after=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));assert.deepEqual(after.items,before);assert.deepEqual(after.buys.map(x=>x.name),['Rico おしりふき']);
  dom.window.close();
 });
+test('food and household stock use the add-page groups, reset on category change and retain legacy baby food',()=>{
+ const {dom,w,$}=browser();
+ const products=[['玉ねぎ','食料品'],['冷凍ブロッコリー','食料品'],['離乳食 白身魚と野菜','食料品'],['離乳食','ベビー'],['食器用洗剤','日用品'],['洗濯洗剤','日用品'],['ベビーローション','ベビー']];
+ w.eval('items='+JSON.stringify(products.map(([name,cat],i)=>({id:i+1,name,cat,qty:2,unit:'個'})))+';save();go("stock")');
+ const raw=w.localStorage.getItem('atokoreTrialV4');let writes=0;const original=w.Storage.prototype.setItem;w.Storage.prototype.setItem=function(...a){writes++;return original.apply(this,a)};
+ const ids=()=>Array.from($('stockList').querySelectorAll('[data-stock-id]'),e=>Number(e.dataset.stockId));
+ const group=k=>w.document.querySelector('[data-bf-stock-kind="'+k+'"]').click();
+ w.setFilter('食料品');assert.ok($('bfStockHouseholdFilters'));group('vegetable');assert.deepEqual(ids(),[1]);
+ group('frozen');assert.deepEqual(ids(),[2]);group('babyfood');assert.deepEqual(ids(),[3]);
+ w.setFilter('日用品');assert.deepEqual(ids(),[5,6]);assert.equal($('bfStockHouseholdFilters').dataset.category,'日用品');
+ group('laundry');assert.deepEqual(ids(),[6]);group('kitchen');assert.deepEqual(ids(),[5]);
+ w.setFilter('ベビー');group('babyfood');assert.deepEqual(ids(),[4]);group('other');assert.deepEqual(ids(),[7]);
+ w.setFilter('すべて');assert.equal($('bfStockHouseholdFilters'),null);assert.equal($('bfStockBabyFilters'),null);
+ assert.equal(writes,0);assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw);dom.window.close();
+});
 test('single row navigation with the add action in the centre of the tab bar',()=>{
  const {dom,w,$}=browser();
  const add=w.document.querySelector('.tabs .tab[data-p="add"]');
@@ -140,12 +155,12 @@ test('buy page picker opens baby-first selection and shopping-only destination',
 test('offline shell has complete v17 scripts and separate palette',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=27'));
+ assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=34'));
  assert.ok(html.indexOf('baby-flow-v17.js')>html.indexOf('edit-after-add.js'));
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v33/);
+ assert.match(worker,/atokore-pwa-v34/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{

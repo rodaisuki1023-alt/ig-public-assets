@@ -39,13 +39,15 @@ body.atk-v17 #pg-stock .atk-page-title button[data-atk-add]{
  color:#fff!important;font-size:13px!important;font-weight:850!important;cursor:pointer!important;
 }
 body.atk-v17 #pg-stock #stockSearch{min-width:0!important}
-body.atk-v17 #bfStockBabyFilters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
-body.atk-v17 #bfStockBabyFilters button{
+body.atk-v17 .bf-stock-subfilters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+body.atk-v17 .bf-stock-subfilters.bf-stock-many-filters{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding:3px 1px 6px}
+body.atk-v17 .bf-stock-subfilters button{
  min-height:44px;padding:8px 10px;border:1px solid #E8D3C8;border-radius:12px;
  background:#FCF1EB;color:#805D4E;font-size:12px;font-weight:800;line-height:1.3;
 }
-body.atk-v17 #bfStockBabyFilters button[aria-pressed="true"]{background:#EED8CC;border-color:#BE8B76;color:#6B4334}
-body.atk-v17 #bfStockBabyFilters button:focus-visible{outline:3px solid #A45D49;outline-offset:2px}
+body.atk-v17 .bf-stock-many-filters button{flex:0 0 auto;white-space:nowrap}
+body.atk-v17 .bf-stock-subfilters button[aria-pressed="true"]{background:#EED8CC;border-color:#BE8B76;color:#6B4334}
+body.atk-v17 .bf-stock-subfilters button:focus-visible{outline:3px solid #A45D49;outline-offset:2px}
 body.atk-v17 #pg-add .qa-tray{bottom:calc(80px + env(safe-area-inset-bottom,0px))!important}
 body.atk-v17 .bf-destination{
  display:grid;grid-template-columns:1fr 1fr;gap:6px;

@@ -9,14 +9,19 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const kit=root.AtokoreBabyKit;
 function records(){try{return Array.isArray(items)?items:[]}catch(e){return []}}
 function sets(){try{return Array.isArray(routines)?routines:[]}catch(e){return []}}
-const STOCK_BABY_GROUPS=[['all','すべて'],['diaper','おむつ'],['milk','ミルク'],['wipes','おしりふき'],['other','その他']];
-let stockBabyGroup='all',lastStockCategory;
+const STOCK_BABY_GROUPS=[['all','すべて'],['diaper','おむつ'],['milk','ミルク'],['wipes','おしりふき'],['babyfood','離乳食'],['other','その他']];
+let stockGroup='all',lastStockCategory;
 function stockCategory(){try{return filter}catch(e){return ''}}
+function stockGroups(category=stockCategory()){
+ if(category==='ベビー')return STOCK_BABY_GROUPS;
+ if(category==='食料品'||category==='日用品')return (root.AtokoreQuickAdd?.groupsFor(category)||[]).map(key=>[key==='すべて'?'all':key,root.AtokoreQuickAdd.groupLabel(key)]);
+ return [];
+}
 function syncStockCategory(){
  const category=stockCategory();
  if(category!==lastStockCategory){
-  if(category==='ベビー'||lastStockCategory==='ベビー'){
-   stockBabyGroup='all';
+  if(stockGroups(category).length||stockGroups(lastStockCategory).length){
+   stockGroup='all';
    // Changing the visible group must not leave hidden products selected for a bulk action.
    try{stockSelected.clear()}catch(e){}
   }
@@ -24,13 +29,19 @@ function syncStockCategory(){
  }
 }
 function renderStockBabyFilters(){
- let bar=$('bfStockBabyFilters');
- if(stockCategory()!=='ベビー'){bar?.remove();return}
+ const category=stockCategory(),groups=stockGroups(),id=category==='ベビー'?'bfStockBabyFilters':'bfStockHouseholdFilters';
+ let bar=$('bfStockBabyFilters')||$('bfStockHouseholdFilters');
+ if(!groups.length){bar?.remove();return}
+ if(bar&&(bar.id!==id||bar.dataset.category!==category)){bar.remove();bar=null}
  const chips=$('catChips');if(!chips)return;
- if(!bar){bar=doc.createElement('div');bar.id='bfStockBabyFilters';bar.className='bf-stock-baby-filters';bar.setAttribute('role','group');bar.setAttribute('aria-label','ベビー用品の種類');chips.insertAdjacentElement('afterend',bar)}
+ if(!bar){bar=doc.createElement('div');bar.id=id;bar.className='bf-stock-subfilters';bar.dataset.category=category;bar.setAttribute('role','group');chips.insertAdjacentElement('afterend',bar)}
+ bar.classList.toggle('bf-stock-many-filters',category!=='ベビー');
+ bar.setAttribute('aria-label',category==='ベビー'?'ベビー用品の種類':category+'の種類');
+ const scrollLeft=bar.scrollLeft;
  const focused=bar.contains(doc.activeElement)?doc.activeElement.dataset.bfStockKind:null;
- bar.innerHTML=STOCK_BABY_GROUPS.map(([key,label])=>'<button type="button" data-bf-stock-kind="'+key+'" aria-pressed="'+(stockBabyGroup===key)+'">'+label+'</button>').join('');
- if(focused&&STOCK_BABY_GROUPS.some(([key])=>key===focused))bar.querySelector('[data-bf-stock-kind="'+focused+'"]').focus({preventScroll:true});
+ bar.innerHTML=groups.map(([key,label])=>'<button type="button" data-bf-stock-kind="'+key+'" aria-pressed="'+(stockGroup===key)+'">'+esc(label)+'</button>').join('');
+ bar.scrollLeft=scrollLeft;
+ if(focused&&groups.some(([key])=>key===focused))bar.querySelector('[data-bf-stock-kind="'+focused+'"]').focus({preventScroll:true});
 }
 function catFor(name){
  const n=String(name||'');
@@ -239,8 +250,8 @@ function install(){
  const oldVisibleStock=root.visibleStock;
  if(typeof oldVisibleStock==='function')root.visibleStock=function(...args){
   const visible=oldVisibleStock.apply(this,args);
-  if(stockCategory()!=='ベビー'||stockBabyGroup==='all')return visible;
-  return visible.filter(item=>(kit?.kind(item.name,item.cat)||'other')===stockBabyGroup);
+  if(!stockGroups().length||stockGroup==='all')return visible;
+  return visible.filter(item=>(stockCategory()==='ベビー'?(root.AtokoreQuickAdd?.isBabyFood(item.name)?'babyfood':kit?.kind(item.name,item.cat)||'other'):root.AtokoreQuickAdd?.subgroupOf(item.name,item.cat))===stockGroup);
  };
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
  if(typeof oldStock==='function')root.renderStock=function(...args){syncStockCategory();const x=oldStock.apply(this,args);renderStockBabyFilters();decorateBabyRows('#stockList [data-stock-id]');decorateStockCards();return x};
@@ -253,9 +264,9 @@ function install(){
  });
  doc.addEventListener('click',ev=>{
   const group=ev.target.closest?.('[data-bf-stock-kind]');
-  if(group&&stockCategory()==='ベビー'&&STOCK_BABY_GROUPS.some(([key])=>key===group.dataset.bfStockKind)){
-   if(stockBabyGroup!==group.dataset.bfStockKind){
-    stockBabyGroup=group.dataset.bfStockKind;
+  if(group&&stockGroups().some(([key])=>key===group.dataset.bfStockKind)){
+   if(stockGroup!==group.dataset.bfStockKind){
+    stockGroup=group.dataset.bfStockKind;
     try{stockSelected.clear()}catch(e){}
     root.renderStock?.();
    }

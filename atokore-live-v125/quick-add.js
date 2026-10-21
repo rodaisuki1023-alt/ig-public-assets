@@ -64,12 +64,40 @@ function babyChoiceError(s=state){
  return '';
 }
 const TOP={
- '食料品':['卵','牛乳','鶏むね肉','豚こま肉','玉ねぎ','にんじん','じゃがいも','トマト','キャベツ','ブロッコリー','バナナ','りんご','豆腐','納豆','食パン','米','鮭','ヨーグルト','冷凍うどん','麦茶','味噌','チーズ'],
+ '食料品':['卵','牛乳','鶏むね肉','豚こま肉','玉ねぎ','にんじん','じゃがいも','トマト','キャベツ','ブロッコリー','バナナ','りんご','豆腐','納豆','食パン','米','鮭','ヨーグルト','冷凍うどん','麦茶','味噌','チーズ','離乳食（おかゆ）','離乳食（野菜ペースト）','離乳食（レトルトパウチ）','離乳食（カップ）'],
  '日用品':['ティッシュ','トイレットペーパー','洗濯洗剤','柔軟剤','食器用洗剤','キッチンペーパー','ラップ','ゴミ袋','シャンプー','ハンドソープ','スポンジ','浴室洗剤','除菌シート'],
  'ベビー':['おしりふき','おしりふき詰替','ベビーソープ','ベビーローション','液体ミルク','哺乳瓶洗剤','オムツM'],
  '衛生・薬':['マスク','絆創膏','消毒液','歯ブラシ','歯磨き粉','綿棒','ハンドクリーム']
 };
-const LABEL={meat:'お肉',egg:'卵',vegetable:'野菜',fruit:'果物',milk:'牛乳・乳製品',bread:'パン',fish:'魚',rice:'ご飯・主食',frozen:'冷凍食品',beans:'豆腐・納豆',drink:'飲み物',season:'調味料',house:'日用品',paper:'紙製品',wash:'洗剤',baby:'ベビー',health:'衛生・薬',other:'その他'};
+const LABEL={meat:'お肉',egg:'卵',vegetable:'野菜',fruit:'果物',milk:'牛乳・乳製品',bread:'パン',fish:'魚',rice:'ご飯・主食',frozen:'冷凍食品',beans:'豆腐・納豆',drink:'飲み物',season:'調味料',house:'日用品',paper:'紙製品',wash:'洗剤',baby:'ベビー',babyfood:'離乳食',laundry:'洗濯用品',kitchen:'キッチン用品',cleaning:'掃除用品',care:'お風呂・ケア',health:'衛生・薬',other:'その他'};
+function groupsFor(cat){
+ if(cat==='食料品')return ['すべて','meat','egg','vegetable','fruit','milk','fish','bread','rice','beans','frozen','drink','season','babyfood','other'];
+ if(cat==='日用品')return ['すべて','paper','laundry','kitchen','cleaning','care','other'];
+ return ['すべて'];
+}
+function groupLabel(key){return key==='すべて'?'すべて':LABEL[key]||'その他'}
+function isBabyFood(name){
+ const n=String(name||'').normalize('NFKC');
+ return /離乳食|ベビーフード|栄養マルシェ|グーグーキッチン|手作り応援|らくらくまんま/.test(n)&&!/スプーン|フォーク|食器|エプロン|保存容器|調理器具/.test(n);
+}
+function subgroupOf(name,cat){
+ const n=String(name||'').normalize('NFKC');
+ if(cat==='食料品'){
+  // Match the product's purpose before its ingredients, e.g. fish/vegetables in baby food.
+  if(isBabyFood(n))return 'babyfood';
+  if(/冷凍|アイス/.test(n))return 'frozen';
+  const kind=kindOf(n,cat);return groupsFor(cat).includes(kind)?kind:'other';
+ }
+ if(cat==='日用品'){
+  if(/ティッシュ|ペーパー|トイレットロール/.test(n))return 'paper';
+  if(/洗濯|洗たく|柔軟|衣類用|おしゃれ着/.test(n))return 'laundry';
+  if(/食器|台所|キッチン|ラップ|アルミホイル|クッキングシート|スプーン|フォーク|保存容器/.test(n))return 'kitchen';
+  if(/掃除|浴室|風呂用洗剤|トイレ|カビ|床用|窓用|排水口|ゴミ袋|消臭|除湿|除菌|漂白/.test(n))return 'cleaning';
+  if(/シャンプー|コンディショナー|リンス|ボディ|ハンドソープ|石けん|石鹸|せっけん|洗顔|入浴|歯ブラシ|歯磨き|ローション|クリーム/.test(n))return 'care';
+  if(/スポンジ/.test(n))return 'kitchen';
+ }
+ return 'other';
+}
 const COLOR={
  meat:['#F9E0DA','#B8665D'],egg:['#FEF0D2','#C58B43'],vegetable:['#E2F1DB','#618B58'],
  fruit:['#F9E4D7','#C67D60'],milk:['#E2EAFB','#6485B8'],bread:['#F8E7CF','#AD814E'],
@@ -184,9 +212,7 @@ function renderNav(){
  el.innerHTML=tabs.map(([cat,label])=>'<button type="button" class="'+(state.cat===cat?'selected':'')+'" data-qa-cat="'+safe(cat)+'">'+label+'</button>').join('');
 }
 function groupOptions(){
- const available=state.cat==='食料品'?['すべて','meat','egg','vegetable','fruit','milk','fish','bread','rice','beans','frozen','drink','season','other'] :
- state.cat==='日用品'?['すべて','paper','wash','house','other']:['すべて'];
- return available;
+ return groupsFor(state.cat);
 }
 function renderGroups(){
  const el=$('qaGroups');if(!el)return;
@@ -195,7 +221,7 @@ function renderGroups(){
 function listed(){
  const full=state.cat==='その他'?[...new Set(['子ども','衣類','家電・生活用品','防災'].flatMap(c=>catalog(c)).map(n=>n))]:catalog(state.cat);
  const q=state.query.trim().normalize('NFKC').toLocaleLowerCase('ja');
- const arr=full.filter(n=>(state.group==='すべて'||kindOf(n,state.cat)===state.group)&&(!q||n.normalize('NFKC').toLocaleLowerCase('ja').includes(q)));
+ const arr=full.filter(n=>(state.group==='すべて'||subgroupOf(n,state.cat)===state.group)&&(!q||n.normalize('NFKC').toLocaleLowerCase('ja').includes(q)));
  return {total:arr.length,visible:arr.slice(0,state.showAll?120:24)};
 }
 function renderItems(){
@@ -505,7 +531,7 @@ function openWithEntries(entries,destination='stock',options={}){
  if(skipped)notify(skipped+'件は内容を確認できなかったため読み込みませんでした');
 }
 function setCategory(cat){state.cat=cat;state.group='すべて';state.query='';state.showAll=false;if($('qaSearch'))$('qaSearch').value='';renderAll()}
-const api=Object.freeze({kindOf,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
+const api=Object.freeze({kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreQuickAdd=api;
 if(doc&&typeof window!=='undefined')setup();
