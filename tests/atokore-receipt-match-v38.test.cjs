@@ -27,6 +27,9 @@ test('abbreviated receipt names suggest the registered product of the same size 
   assert.deepEqual(names('ﾍﾞﾋﾞｰﾜｲﾌﾟ'), [], 'no similar product: no guess');
   assert.equal(names('RICO おしりふき')[0], 'Rico おしりふき');
   assert.equal(names('牛乳 1000ml')[0], '牛乳');
+  // Kana on the receipt, kanji in the product name.
+  assert.equal(names('ﾒｲｼﾞ ﾎﾎｴﾐ ｶﾝ 800G')[0], '明治 ほほえみ 粉ミルク 缶 800g');
+  assert.equal(names('ﾀﾏｺﾞ 10ｺｲﾘ', [{ id: 1, name: '卵' }, { id: 2, name: '牛乳' }])[0], '卵');
 });
 
 test('different size, form, brand or content amount is never suggested', () => {

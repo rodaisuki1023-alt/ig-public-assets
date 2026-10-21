@@ -51,4 +51,13 @@ function receipts(count = 24) {
   }
   return out;
 }
-module.exports = { STOCK, PRODUCTS, receipts };
+// Held-out printed names, written after the matcher was tuned on PRODUCTS and never used for tuning.
+// [printed name, truth stock id or null]
+const HELD_OUT = [
+  ['ﾊﾟﾝﾊﾟｰｽ ﾃｰﾌﾟ Mｻｲｽﾞ 60ﾏｲ', 1], ['P&G ﾊﾟﾝﾊﾟｰｽ ｻﾗｻﾗ L', 2], ['ﾑｰﾆｰﾏﾝ ｴｱﾌｨｯﾄ L', 3], ['ﾑｰﾆｰﾏﾝ ﾊﾟﾝﾂ M 58ﾏｲ', null],
+  ['ﾒｲｼﾞﾎﾎｴﾐ800G', 4], ['ﾎﾎｴﾐ ｷｭｰﾌﾞ 48ｺ', 5], ['ﾘｺ ﾍﾞﾋﾞｰﾜｲﾌﾟ', 6], ['ｷﾞｭｳﾆｭｳ 1L', 7], ['ﾒｲｼﾞｵｲｼｲｷﾞｭｳﾆｭｳ', 7],
+  ['ﾀﾏｺﾞ Mｻｲｽﾞ 10ｺ', 8], ['ﾔﾏｻﾞｷ ｼｮｸﾊﾟﾝ 6ﾏｲ', 9], ['ﾈﾋﾟｱ ﾃｨｯｼｭ', 10], ['ﾌﾞﾙｶﾞﾘｱﾖｰｸﾞﾙﾄ', 11],
+  ['ｸﾞｰﾝ ﾃｰﾌﾟ M', null], ['ﾏﾐｰﾎﾟｺ ﾊﾟﾝﾂ L', null], ['ﾎﾎｴﾐ ｴｷﾀｲ', null], ['ﾅｯﾄｳ ｵｶﾒ', null], ['ﾄｲﾚｯﾄﾍﾟｰﾊﾟｰ 12R', null],
+  ['ﾊﾅｺｱﾃｨｯｼｭ', 10], ['ｱﾀｯｸ ｾﾝｻﾞｲ', null],
+];
+module.exports = { STOCK, PRODUCTS, HELD_OUT, receipts };

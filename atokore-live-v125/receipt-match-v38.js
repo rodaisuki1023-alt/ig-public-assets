@@ -15,11 +15,14 @@ function lineKey(raw){return nfkc(raw).toLowerCase().replace(/[\s\-‐‑–—�
 // OCR of receipt fonts often confuses small and large kana, doubles them, or drops the long-vowel
 // mark, so comparisons ignore those differences.
 const SMALL={'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ'};
-function compact(s){return hira(nfkc(s).toLowerCase()).replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\ー~〜]/g,'').replace(/[ぁぃぅぇぉっゃゅょゎ]/g,c=>SMALL[c]).replace(/(.)\1+/g,'$1')}
+// Receipts print kana for words a product name may hold in kanji or Latin letters (ﾒｲｼﾞ = 明治).
+const READINGS=[['明治','めいじ'],['森永','もりなが'],['和光堂','わこうどう'],['雪印','ゆきじるし'],['rico','りこ'],['粉ミルク','こなみるく'],['牛乳','ぎゅうにゅう'],['食パン','しょくぱん'],['卵','たまご'],['納豆','なっとう'],['洗剤','せんざい'],['柔軟剤','じゅうなんざい'],['缶','かん']];
+function readings(s){let t=s;for(const [k,v] of READINGS)t=t.split(k).join(v);return t}
+function compact(s){return hira(readings(nfkc(s).toLowerCase())).replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\ー~〜]/g,'').replace(/[ぁぃぅぇぉっゃゅょゎ]/g,c=>SMALL[c]).replace(/(.)\1+/g,'$1')}
 const SIZE=/(新生児|nb|ss|s|m|l|xl|ビッグより大きい|ビッグ|big|スーパービッグ)(?=$|[^a-z])/i;
 // Content amount of one sold unit: "60枚", "800g", "200ml", "3個入", "2本入". Never the purchase quantity.
 function amounts(s){
- const out=[];const t=nfkc(s).toLowerCase().replace(/ﾏｲ|マイ/g,'枚');
+ const out=[];const t=nfkc(s).toLowerCase().replace(/ﾏｲ|マイ/g,'枚').replace(/コイリ|ｺｲﾘ/g,'個入');
  for(const m of t.matchAll(/(\d+(?:\.\d+)?)\s*(kg|g|ml|l|枚|個入|本入|袋入|包|缶|入)/g)){
   let n=Number(m[1]),u=m[2];
   if(u==='kg'){n*=1000;u='g'}if(u==='l'){n*=1000;u='ml'}if(u==='個入'||u==='本入'||u==='袋入'||u==='入')u='入';
