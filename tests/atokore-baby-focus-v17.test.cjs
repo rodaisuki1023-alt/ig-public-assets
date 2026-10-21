@@ -16,6 +16,37 @@ function choose($,kind,brand,type,size){
  tap('kind',kind);tap('brand',brand);if(kind!=='wipes')tap('type',type);if(size)tap('size',size);
  $('qaBaby').querySelector('[data-qa-babyadd]').click();
 }
+test('baby stock groups classify existing names, combine with search and never write saved data',()=>{
+ const {dom,w,$}=browser();
+ const products=[['パンパース おむつ M','ベビー'],['ｵﾑﾂ L','ベビー'],['明治 ほほえみ','ベビー'],['ミルク','ベビー'],['フォローアップミルク','ベビー'],['パンパース おしりふき','ベビー'],['お尻拭き','ベビー'],['ベビーローション','ベビー'],['ミルクパン','食料品']];
+ w.eval('items='+JSON.stringify(products.map(([name,cat],i)=>({id:i+1,name,cat,qty:2,unit:'個'})))+';save();go("stock")');
+ const raw=w.localStorage.getItem('atokoreTrialV4');let writes=0;
+ const original=w.Storage.prototype.setItem;w.Storage.prototype.setItem=function(...args){writes++;return original.apply(this,args)};
+ const ids=()=>Array.from($('stockList').querySelectorAll('[data-stock-id]'),e=>Number(e.dataset.stockId));
+ const group=k=>$('bfStockBabyFilters').querySelector('[data-bf-stock-kind="'+k+'"]').click();
+ assert.equal($('bfStockBabyFilters'),null);w.setFilter('ベビー');assert.equal(ids().length,8);
+ group('diaper');assert.deepEqual(ids(),[1,2]);
+ group('milk');assert.deepEqual(ids(),[3,4,5]);
+ $('stockSearch').value='明治';w.renderStock();assert.deepEqual(ids(),[3]);
+ $('stockSearch').value='該当しない';w.renderStock();assert.match($('stockList').textContent,/該当なし/);assert.ok($('bfStockBabyFilters'));
+ $('stockSearch').value='';group('wipes');assert.deepEqual(ids(),[6,7]);
+ group('other');assert.deepEqual(ids(),[8]);
+ w.setFilter('食料品');assert.equal($('bfStockBabyFilters'),null);assert.deepEqual(ids(),[9]);
+ w.setFilter('ベビー');assert.equal(ids().length,8);assert.equal($('bfStockBabyFilters').querySelector('[aria-pressed="true"]').dataset.bfStockKind,'all');
+ assert.equal(writes,0);assert.equal(w.localStorage.getItem('atokoreTrialV4'),raw);dom.window.close();
+});
+test('baby subgroup bulk actions select only visible products and clear hidden selection on group changes',()=>{
+ const {dom,w,$}=browser();
+ w.eval('items=[{id:1,name:"おむつ",cat:"ベビー",qty:2,unit:"袋"},{id:2,name:"ほほえみ",cat:"ベビー",qty:3,unit:"缶"},{id:3,name:"Rico おしりふき",cat:"ベビー",qty:4,unit:"パック"}];buys=[];save();go("stock")');
+ const before=JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items;
+ w.setFilter('ベビー');w.toggleStockSelect();
+ const group=k=>$('bfStockBabyFilters').querySelector('[data-bf-stock-kind="'+k+'"]').click();
+ group('diaper');w.selectAllVisible();assert.match($('stockBulkMove').textContent,/1件/);
+ group('wipes');assert.match($('stockBulkMove').textContent,/0件/);
+ w.selectAllVisible();w.moveSelectedToBuy();
+ const after=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));assert.deepEqual(after.items,before);assert.deepEqual(after.buys.map(x=>x.name),['Rico おしりふき']);
+ dom.window.close();
+});
 test('single row navigation with the add action in the centre of the tab bar',()=>{
  const {dom,w,$}=browser();
  const add=w.document.querySelector('.tabs .tab[data-p="add"]');
@@ -114,7 +145,7 @@ test('offline shell has complete v17 scripts and separate palette',()=>{
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v32/);
+ assert.match(worker,/atokore-pwa-v33/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{
