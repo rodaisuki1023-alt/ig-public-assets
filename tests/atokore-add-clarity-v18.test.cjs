@@ -33,8 +33,8 @@ test('baby button matches target: stock selection then confirmed save',()=>{
  let babyButton=$('qaBaby').querySelector('[data-qa-babyadd]');
  assert.equal(babyButton.textContent,'＋ 追加予定に入れる','selecting is not saving');
  assert.match($('qaBaby').textContent,/まだ保存されません.*まとめてストックに追加.*保存/);
- // Wipes don't require an arbitrary size; manufacturer and package type are required.
- for(const [field,value] of [['kind','wipes'],['brand','ピジョン'],['type','本体']]){
+ // Wipes require just the selected brand; no package prompt.
+ for(const [field,value] of [['kind','wipes'],['brand','Rico']]){
   const b=$('qaBaby').querySelector('[data-qa-baby="'+field+'"][data-value="'+value+'"]');
   assert.ok(b,field+'='+value);b.click();
  }
@@ -46,7 +46,7 @@ test('baby button matches target: stock selection then confirmed save',()=>{
  assert.equal(w.AtokoreQuickAdd.getTray().length,1);
  assert.equal($('qaCommit').textContent,'まとめてストックに追加');
  $('qaCommit').click();
- assert.ok(JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.some(x=>x.name.includes('ピジョン')));
+ assert.ok(JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items.some(x=>x.name.includes('Rico')));
  assert.equal($('pg-stock').classList.contains('on'),true,'returns to stock page after commit');
  dom.window.close();
 });
@@ -89,10 +89,10 @@ test('pwa includes v18 overrides in correct order and cache refresh',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
  assert.match(html,/add-clarity-v18\.css\?v=18/);
- assert.match(html,/quick-add\.js\?v=26/);
+ assert.match(html,/quick-add\.js\?v=27/);
  assert.match(html,/baby-flow-v17\.js\?v=25/);
  assert.ok(html.indexOf('baby-focus-v17.css')<html.indexOf('add-clarity-v18.css'));
- assert.match(sw,/atokore-pwa-v26/);
+ assert.match(sw,/atokore-pwa-v27/);
  assert.match(sw,/'\.\/add-clarity-v18.css'/);
  assert.match(sw,/'\.\/p0-fixes-v19.css'/);
 });

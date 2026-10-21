@@ -81,9 +81,9 @@ test('advanced registration is replaced by later stock editing',()=>{
 test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
- assert.match(html,/quick-add\.js\?v=26/);assert.match(html,/quick-add\.css\?v=14/);
+ assert.match(html,/quick-add\.js\?v=27/);assert.match(html,/quick-add\.css\?v=27/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v26/);
+ assert.match(sw,/atokore-pwa-v27/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 

@@ -6,14 +6,14 @@ test.describe('register, edit, delete', () => {
     await open(page, { [KEY]: baseState() });
     await page.click('#bfNavAdd');
     await chooseBaby(page, { kind: 'diaper', brand: 'ムーニー', type: 'パンツ', size: 'L', series: 'オヤスミマン' });
-    await chooseBaby(page, { kind: 'wipes', brand: 'ピジョン', type: '詰替' });
+    await chooseBaby(page, { kind: 'wipes', brand: 'Rico' });
     await page.click('[data-qa-cat="食料品"]');
     await page.click('[data-qa-pick="バナナ"]');
     await page.click('#qaCommit');
     await expect(page.locator('#qaNotice')).toContainText('3種類をストックに保存しました');
     await page.reload();
     let data = await stored(page);
-    expect(data.items.map(x => x.name)).toEqual(expect.arrayContaining(['ムーニー オヤスミマン おむつ パンツ L', 'ピジョン おしりふき 詰替', 'バナナ']));
+    expect(data.items.map(x => x.name)).toEqual(expect.arrayContaining(['ムーニー オヤスミマン おむつ パンツ L', 'Rico おしりふき', 'バナナ']));
     const before = data.items.length;
 
     // Registering an existing product again adds to it instead of creating or overwriting a record.

@@ -10,32 +10,57 @@ const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'
 const BABY={
  diaper:{brands:['パンパース','グーン','マミーポコ','ムーニー','メリーズ'],types:['パンツ','テープ'],sizes:['新生児','S','M','L','ビッグ','ビッグより大きい']},
  milk:{brands:['明治','和光堂','森永','ビーンスターク','アイクレオ'],types:['缶','キューブ','スティック','液体']},
- wipes:{brands:['ムーニー','グーン','パンパース','メリーズ','ピジョン','レック','アカチャンホンポ','西松屋'],types:['詰替','本体']}
+ wipes:{brands:['ムーニー','グーン','パンパース','メリーズ','レック','アカチャンホンポ','西松屋','カークランド','Rico','baby care'],types:[]}
 };
-/* v19: only constraints confirmed on manufacturer sites (read 2026-10-20). The full product master
- * (per-series sizes, two newborn sizes, Mはいはい/Mたっち, スーパービッグ …) is a later phase.
- * - 新生児: tape only (Pampers, Merries, Moony, GOO.N, MamyPoko product pages list no newborn pants)
- * - マミーポコ: pants only (mamypoko.jp lists no tape type)
- * - 和光堂 はいはい: 810g/300g cans and stick packs only (wakodo.co.jp)
- * - ビーンスターク: cans, sticks (つよいこ) and liquid (すこやかM1) only (beanstalksnow.co.jp)
- * - 森永 / アイクレオ: no cube product on the official lineups (morinagamilk.co.jp/products/babyfood/, glico.com/jp/product/babyfood/icreo)
- * - 明治: lineup could not be read (site refuses automated access), so its options are unchanged
- * Brands not listed here keep every option because their lineup could not be confirmed. */
-const BABY_TYPES={diaper:{'マミーポコ':['パンツ']},milk:{'和光堂':['缶','スティック'],'ビーンスターク':['缶','スティック','液体'],'森永':['缶','スティック','液体'],'アイクレオ':['缶','スティック','液体']}};
+/* v27: per-product milk forms verified against manufacturer lineups on 2026-10-21.
+ * See docs/atokore-baby-products-v27-20261021.md for sources and exclusions.
+ * Other entries are user-authored; never migrate or relabel saved inventory. */
+const OTHER='その他';
+const MILK_PRODUCTS=[
+ {brand:'明治',name:'ほほえみ',types:['缶','キューブ','液体']},
+ {brand:'和光堂',name:'はいはい',types:['缶','スティック']},
+ {brand:'森永',name:'はぐくみ',types:['缶','スティック','エコらくパック はじめてセット','エコらくパック つめかえ用','液体']},
+ {brand:'森永',name:'E赤ちゃん',types:['缶','スティック','エコらくパック はじめてセット','エコらくパック つめかえ用']},
+ {brand:'ビーンスターク',name:'すこやかM1',types:['缶','スティック','液体']},
+ {brand:'アイクレオ',name:'バランスミルク',types:['缶','スティック']},
+ {brand:'アイクレオ',name:'赤ちゃんミルク',types:['液体']},
+ {brand:'明治',name:'ステップ',follow:true,types:['缶','キューブ','液体']},
+ {brand:'和光堂',name:'ぐんぐん',follow:true,types:['缶','スティック']},
+ {brand:'森永',name:'チルミル',follow:true,types:['缶','スティック','エコらくパック はじめてセット','エコらくパック つめかえ用']},
+ {brand:'ビーンスターク',name:'つよいこ',follow:true,types:['缶','スティック']},
+ {brand:'アイクレオ',name:'グローアップミルク',follow:true,types:['缶','スティック']}
+];
+const BABY_TYPES={diaper:{'マミーポコ':['パンツ']}};
 const TAPE_ONLY_SIZES=['新生児'];
 const SERIES={
  diaper:{'パンパース':['さらさらケア','肌へのいちばん','おやすみパンツ'],'グーン':['ぐんぐん吸収','モレ0へ','ナイト'],'マミーポコ':['マミーポコパンツ','夜用パンツ'],'ムーニー':['ムーニーマン','低刺激であんしん','オヤスミマン'],'メリーズ':['ずっと肌さら','ファーストプレミアム','ぐっすりパンツ']},
- milk:{'明治':['ほほえみ','ステップ'],'森永':['はぐくみ','E赤ちゃん','チルミル'],'和光堂':['はいはい','ぐんぐん'],'ビーンスターク':['すこやかM1','つよいこ'],'アイクレオ':['バランスミルク','フォローアップミルク']},
  // Wipes never borrow diaper series. Only names listed on jp.moony.com / jp.pampers.com.
  wipes:{'ムーニー':['極上の肌ふわごこち','水分たっぷり厚手','しあわせのベビーシトラスの香り','やわらか素材','トイレに流せるタイプ'],'パンパース':['肌へのいちばん']}
 };
-function babyTypes(kind=state.kind,brand=state.brand){return BABY_TYPES[kind]?.[brand]||BABY[kind].types}
+function milkProduct(s=state){return MILK_PRODUCTS.find(x=>x.brand===s.brand&&x.name===s.series)}
+function babyTypes(kind=state.kind,brand=state.brand,series=state.series){
+ if(kind==='milk')return milkProduct({brand,series})?.types||BABY.milk.types;
+ return BABY_TYPES[kind]?.[brand]||BABY[kind].types;
+}
+function chosen(field){return state[field]===OTHER?state['custom'+field[0].toUpperCase()+field.slice(1)].trim():state[field]}
+function syncBabyInputs(){
+ for(const field of ['Brand','Type','Size','Series','Unit']){
+  const input=$('qaBaby'+field);if(input)state['custom'+field]=input.value;
+ }
+}
+
 function babySizes(type=state.type){return BABY.diaper.sizes.filter(s=>type!=='パンツ'||!TAPE_ONLY_SIZES.includes(s))}
-function babyProductLabel(kind=state.kind,type=state.type){return kind==='diaper'?'おむつ':kind==='milk'?(type==='液体'?'液体ミルク':'粉ミルク'):'おしりふき'}
+function babyProductLabel(kind=state.kind,type=state.type){return kind==='diaper'?'おむつ':kind==='milk'?(type==='液体'?'液体ミルク':type===OTHER?'ミルク':'粉ミルク'):'おしりふき'}
 function babyChoiceError(s=state){
- if(!s.brand||!s.type||(s.kind==='diaper'&&!s.size))return 'ブランド・種類・サイズ（おむつの場合）を選んでください';
- if(!babyTypes(s.kind,s.brand).includes(s.type))return s.brand+'に「'+s.type+'」はありません';
- if(s.kind==='diaper'&&s.type==='パンツ'&&TAPE_ONLY_SIZES.includes(s.size))return '新生児サイズはテープタイプのみです';
+ if(!s.brand)return '商品・ブランドを選んでください';
+ if(s.brand===OTHER&&!s.customBrand.trim())return 'ブランド名を入力してください';
+ if(s.kind==='milk'&&(!s.series||(s.series===OTHER&&!s.customSeries.trim())))return '商品名を入力してください';
+ if(s.kind!=='wipes'&&!s.type)return '種類を選んでください';
+ if(s.type===OTHER&&!s.customType.trim())return '種類を入力してください';
+ if(s.kind==='diaper'&&(!s.size||(s.size===OTHER&&!s.customSize.trim())))return 'サイズを選ぶか入力してください';
+ if(s.series===OTHER&&!s.customSeries.trim()&&s.brand!==OTHER)return '商品名・シリーズを入力してください';
+ if(s.kind!=='wipes'&&s.type!==OTHER&&!babyTypes(s.kind,s.brand,s.series).includes(s.type))return 'この商品の種類を選び直してください';
+ if(s.kind==='diaper'&&s.type==='パンツ'&&TAPE_ONLY_SIZES.includes(s.size===OTHER?s.customSize.trim():s.size))return '新生児サイズはテープタイプのみです';
  return '';
 }
 const TOP={
@@ -136,7 +161,7 @@ function buildBatch(existing,selected,time=Date.now()){
  }
  return next;
 }
-const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',qty:1,committing:false,loadedSet:null,loadedSnapshot:'',routineTarget:null};
+const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,loadedSet:null,loadedSnapshot:'',routineTarget:null};
 const destLabel=d=>state.routineTarget?'いつものリスト':d==='buy'?'買い物リスト':'ストック';
 const commitLabel=()=>state.routineTarget?'選んだ商品をいつものリストに追加':'まとめて'+destLabel(state.destination)+'に追加';
 const traySnapshot=()=>JSON.stringify(state.tray.map(x=>[modelKey(x),x.qty]));
@@ -197,50 +222,73 @@ function renderRecent(){
  container.innerHTML=names.length?'<div class="qa-subtitle">最近登録した商品</div><div class="qa-recent">'+names.map((x,i)=>'<button type="button" data-qa-recent="'+i+'"><span>'+safe(x.name)+'</span><b>＋</b></button>').join('')+'</div>':'';
  container.__qaItems=names;
 }
-function babyBrands(){
- return BABY[state.kind].brands;
-}
-function chooseBabyField(type,val){
- if(type==='brand'){
-  state.brand=val;state.series='';
-  const allowed=babyTypes();
-  if(state.type&&!allowed.includes(state.type))state.type='';
-  if(allowed.length===1)state.type=allowed[0];
+function babyBrands(){return [...BABY[state.kind].brands,OTHER]}
+function resetCustom(){for(const field of ['Brand','Type','Size','Series'])state['custom'+field]='';state.customUnit='個'}
+function chooseBabyField(field,val){
+ syncBabyInputs();
+ if(field==='kind'){
+  if(!BABY[val])return;
+  state.kind=val;state.brand='';state.series='';state.type='';state.size='';resetCustom();
  }
- if(type==='kind'){state.kind=val;state.brand='';state.series='';state.type='';state.size=''}
- if(type==='type'&&babyTypes().includes(val)){
+ if(field==='brand'){
+  if(!babyBrands().includes(val))return;
+  state.brand=val;state.series=state.kind==='milk'?(MILK_PRODUCTS.find(x=>x.brand===val)?.name||OTHER):'';
+  state.type='';resetCustom();
+ }
+ if(field==='product'){
+  const product=MILK_PRODUCTS.find(x=>x.brand+'|'+x.name===val);if(!product)return;
+  state.brand=product.brand;state.series=product.name;state.type='';resetCustom();
+ }
+ if(field==='brand'||field==='product'){
+  const allowed=babyTypes();if(allowed.length===1)state.type=allowed[0];
+ }
+ if(field==='type'&&(val===OTHER||babyTypes().includes(val))){
   state.type=val;
   if(val==='パンツ'&&TAPE_ONLY_SIZES.includes(state.size)){state.size='';notify('新生児サイズはテープタイプのみです。サイズを選び直してください')}
  }
- if(type==='size'&&(state.kind!=='diaper'||babySizes().includes(val)))state.size=val;
- if(type==='series')state.series=val;
+ if(field==='size'&&(val===OTHER||babySizes().includes(val)))state.size=val;
+ if(field==='series')state.series=val;
  renderBaby();
+}
+function babyOption(field,value,label=value,extra=''){
+ return '<button type="button" class="'+(state[field]===value?'selected':'')+'" data-qa-baby="'+field+'" data-value="'+safe(value)+'">'+safe(label)+extra+'</button>';
+}
+function customInput(field,label,placeholder='',limit=45){
+ return '<label class="qa-custom-field">'+safe(label)+'<input id="qaBaby'+field+'" maxlength="'+limit+'" value="'+safe(state['custom'+field])+'" placeholder="'+safe(placeholder)+'" autocomplete="off"></label>';
+}
+function milkOptions(follow){
+ return MILK_PRODUCTS.filter(x=>!!x.follow===follow).map(x=>{
+  const first=MILK_PRODUCTS.find(p=>p.brand===x.brand)===x;
+  const field=first?'brand':'product',value=first?x.brand:x.brand+'|'+x.name;
+  const selected=state.brand===x.brand&&state.series===x.name;
+  return '<button type="button" class="'+(selected?'selected':'')+'" data-qa-baby="'+field+'" data-value="'+safe(value)+'"><span>'+safe(x.name)+'</span><small>'+safe(x.brand)+'</small></button>';
+ }).join('');
 }
 function renderBaby(){
  const el=$('qaBaby');if(!el)return;
- const b=state.kind;
- const suggestions=SERIES[b]||{};
- const icon=kind=>root.AtokoreBabyKit?.icon(kind)||'';
- const sizes=b==='diaper'?'<div class="qa-subtitle">③ サイズ</div><div class="qa-option-chips">'+babySizes().map(n=>'<button type="button" class="'+(state.size===n?'selected':'')+'" data-qa-baby="size" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>':'';
- const lines=(suggestions[state.brand]||[]).map(n=>'<button type="button" class="'+(state.series===n?'selected':'')+'" data-qa-baby="series" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('');
- el.innerHTML='<div class="qa-baby-intro"><span class="qa-baby-intro-icon">'+icon(b)+'</span><span><strong>'+({diaper:'おむつ',milk:'ミルク',wipes:'おしりふき'}[b])+'を追加</strong><small>メーカー・種類・サイズを選ぶだけ</small></span></div>'+
- '<div class="qa-baby-kind">'+[['diaper','おむつ'],['milk','ミルク'],['wipes','おしりふき']].map(([k,n])=>'<button type="button" class="'+(b===k?'selected':'')+'" data-qa-baby="kind" data-value="'+k+'">'+icon(k)+'<span>'+n+'</span></button>').join('')+'</div>'+
- '<div class="qa-subtitle">① ブランド</div><div class="qa-brand-chips">'+babyBrands().map(n=>'<button type="button" class="'+(state.brand===n?'selected':'')+'" data-qa-baby="brand" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
- '<div class="qa-subtitle">② '+(b==='wipes'?'包装':'種類')+'</div><div class="qa-option-chips">'+babyTypes().map(n=>'<button type="button" class="'+(state.type===n?'selected':'')+'" data-qa-baby="type" data-value="'+safe(n)+'">'+safe(n)+'</button>').join('')+'</div>'+
- sizes+
- (lines?'<div class="qa-subtitle">商品シリーズ（任意）</div><div class="qa-option-chips qa-lines">'+lines+'</div>':'')+
- '<details class="qa-baby-extra"><summary>シリーズを自分で入力する（任意）</summary><input id="qaBabySeries" maxlength="45" placeholder="例：さらさらケア" value="'+safe(state.series)+'"></details>'+
+ const b=state.kind,icon=kind=>root.AtokoreBabyKit?.icon(kind)||'';
+ const brands=b==='milk'?'<div class="qa-subtitle">① 商品</div><div class="qa-brand-chips qa-milk-products">'+milkOptions(false)+'</div><details class="qa-followup"><summary>フォローアップミルク</summary><div class="qa-brand-chips qa-milk-products">'+milkOptions(true)+'</div></details><div class="qa-option-chips">'+babyOption('brand',OTHER)+'</div>':'<div class="qa-subtitle">① ブランド</div><div class="qa-brand-chips">'+babyBrands().map(n=>babyOption('brand',n)).join('')+'</div>';
+ const customBrand=state.brand===OTHER?customInput('Brand','ブランド名','一覧にないブランド名')+(b==='milk'?customInput('Series','商品名','例：いつもの粉ミルク'):''):'';
+ const types=b==='wipes'?'':'<div class="qa-subtitle">② 種類</div><div class="qa-option-chips">'+[...babyTypes(),OTHER].map(n=>babyOption('type',n)).join('')+'</div>'+(state.type===OTHER?customInput('Type','種類','例：大袋')+customInput('Unit','数える単位','例：袋',12):'');
+ const sizes=b==='diaper'?'<div class="qa-subtitle">③ サイズ</div><div class="qa-option-chips">'+[...babySizes(),OTHER].map(n=>babyOption('size',n)).join('')+'</div>'+(state.size===OTHER?customInput('Size','サイズ','例：スーパービッグ'):''):'';
+ const series=b==='milk'?'':'<div class="qa-subtitle">商品名・シリーズ（任意）</div><div class="qa-option-chips qa-lines">'+[...(SERIES[b]?.[state.brand]||[]),OTHER].map(n=>babyOption('series',n)).join('')+'</div>'+(state.series===OTHER?customInput('Series','商品名・シリーズ','例：いつものシリーズ'):'');
+ el.innerHTML='<div class="qa-baby-intro"><span class="qa-baby-intro-icon">'+icon(b)+'</span><span><strong>'+({diaper:'おむつ',milk:'ミルク',wipes:'おしりふき'}[b])+'を追加</strong><small>'+({diaper:'ブランド・種類・サイズを選ぶだけ',milk:'商品名・種類を選ぶだけ',wipes:'ブランドを選ぶだけ'}[b])+'</small></span></div>'+
+ '<div class="qa-baby-kind">'+[['diaper','おむつ'],['milk','ミルク'],['wipes','おしりふき']].map(([k,n])=>'<button type="button" class="'+(b===k?'selected':'')+'" data-qa-baby="kind" data-value="'+k+'">'+icon(k)+'<span>'+n+'</span></button>').join('')+'</div>'+brands+customBrand+types+sizes+series+
  '<div class="qa-baby-bottom"><label>数量 <span>パック・缶などの個数</span></label><div class="qa-step"><button data-qa-step="-1" type="button" aria-label="減らす">−</button><b id="qaBabyQty">'+state.qty+'</b><button data-qa-step="1" type="button" aria-label="増やす">＋</button></div></div>'+
- '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ ストックに追加</button>'+ 
- '<p class="qa-baby-save-note" id="qaBabySaveNote"></p>';
+ '<button type="button" class="qa-baby-add" data-qa-babyadd>＋ 追加予定に入れる</button><p class="qa-baby-save-note" id="qaBabySaveNote"></p>';
+ // Keep the selected follow-up visible after changing forms or quantity.
+ if(b==='milk'&&milkProduct()?.follow)el.querySelector('.qa-followup').open=true;
  renderDestination();
 }
 function addBaby(){
- const problem=babyChoiceError();
- if(problem){notify(problem);return}
- const desc=[state.brand,state.series,babyProductLabel(),state.type,state.kind==='diaper'?state.size:''].filter(Boolean).join(' ');
- addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.kind==='wipes'?'パック':state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
- notify('追加予定に入れました（まだ保存されていません）。下の「'+commitLabel()+'」で保存します');
+ syncBabyInputs();
+ const problem=babyChoiceError();if(problem){notify(problem);return}
+ const brand=chosen('brand'),series=chosen('series'),type=state.kind==='wipes'?'':chosen('type');
+ const desc=[brand,series,babyProductLabel(),type,state.kind==='diaper'?chosen('size'):''].filter(Boolean).join(' ');
+ try{
+  addLine({cat:'ベビー',name:desc,qty:state.qty,unit:state.kind==='diaper'?'袋':state.kind==='wipes'?'パック':state.type===OTHER?(state.customUnit.trim()||'個'):state.type==='缶'?'缶':state.type==='液体'?'本':'箱'});
+  notify('追加予定に入れました（まだ保存されていません）。下の「'+commitLabel()+'」で保存します');
+ }catch(e){notify('商品名は120文字以内で入力してください')}
 }
 function renderTray(){
  const box=$('qaTray'),list=$('qaTrayList'),n=$('qaTotal'),button=$('qaCommit');
@@ -339,6 +387,7 @@ function setup(){
  tray.innerHTML='<div class="qa-tray-header"><b id="qaTotal">0件</b><button data-qa-clear type="button">全部取り消す</button></div><p id="qaTrayDest" class="qa-tray-dest"></p><div id="qaTrayList"></div><button id="qaCommit" type="button" data-qa-commit>まとめて登録する</button>';
  p.appendChild(tray);
  renderAll();
+ $('qaBaby').addEventListener('input',syncBabyInputs);
  $('qaSearch').addEventListener('input',e=>{state.query=e.target.value;state.showAll=false;renderItems()});
  $('qaFree').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addFree()}});
  const originalOpen=root.atkOpenAdd;
@@ -354,8 +403,8 @@ function setup(){
   if(btn.id==='qaMore'){state.showAll=true;renderItems();return}
   if(btn.hasAttribute('data-qa-recent')){const item=$('qaRecent').__qaItems[Number(btn.dataset.qaRecent)];if(item)addLine({name:item.name,cat:item.cat,qty:1,unit:item.unit});return}
   if(btn.dataset.qaBaby){chooseBabyField(btn.dataset.qaBaby,btn.dataset.value);return}
-  if(btn.hasAttribute('data-qa-step')){state.qty=Math.max(1,Math.min(99,state.qty+Number(btn.dataset.qaStep)));renderBaby();return}
-  if(btn.hasAttribute('data-qa-babyadd')){state.series=$('qaBabySeries')?.value.trim()||state.series||'';addBaby();return}
+  if(btn.hasAttribute('data-qa-step')){syncBabyInputs();state.qty=Math.max(1,Math.min(99,state.qty+Number(btn.dataset.qaStep)));renderBaby();return}
+  if(btn.hasAttribute('data-qa-babyadd')){addBaby();return}
   if(btn.hasAttribute('data-qa-free')){addFree();return}
   if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.min(999,v.qty+Number(btn.dataset.step));if(v.qty<=0)state.tray.splice(i,1);renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
