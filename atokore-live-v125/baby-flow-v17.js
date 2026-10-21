@@ -122,10 +122,30 @@ function decorateBabyRows(selector){
   if(!kind)return;
   const badge=row.querySelector('.atk-row-brand');
   if(badge&&!badge.classList.contains('bf-baby-product')){
-   const brand=kit.brand(raw);
+   const brand=kit.brandAppearance(raw);
    badge.classList.add('bf-baby-product');
-   badge.innerHTML=kit.icon(kind,42)+'<span class="bf-baby-brand">'+esc(brand||(kind==='diaper'?'おむつ':kind==='milk'?'ミルク':'おしりふき'))+'</span>';
+   badge.style.setProperty('--bf-brand-bg',brand.bg);
+   badge.style.setProperty('--bf-brand-fg',brand.fg);
+   badge.innerHTML=kit.icon(kind,42)+'<span class="bf-baby-brand">'+esc(brand.label||(kind==='diaper'?'おむつ':kind==='milk'?'ミルク':'おしりふき'))+'</span>';
   }
+ });
+}
+function decorateStockCards(){
+ const list=$('stockList');if(!list)return;
+ list.classList.add('bf-stock-grid');
+ list.querySelectorAll('[data-stock-id]').forEach(row=>{
+  const item=records().find(x=>String(x.id)===row.dataset.stockId);if(!item)return;
+  row.classList.add('bf-stock-card');row.classList.toggle('bf-stock-select',!!row.querySelector('.stableCheck'));
+  row.setAttribute('role','group');row.tabIndex=0;
+  row.setAttribute('aria-label',item.name+'の詳細');
+  const spacer=row.firstElementChild;
+  if(spacer?.style.width==='4px')spacer.classList.add('bf-stock-spacer');
+  let count=row.querySelector('.bf-stock-count');
+  if(!count){count=doc.createElement('span');count.className='bf-stock-count';count.setAttribute('aria-hidden','true');row.append(count)}
+  count.textContent=Number(item.qty)>0?'残り '+item.qty+(item.unit||'個'):'在庫なし';
+  count.classList.toggle('bf-stock-low',Number(item.qty)<=1);
+  const controls=row.querySelectorAll('.qty button');
+  controls.forEach((button,i)=>button.setAttribute('aria-label',item.name+'のストックを1つ'+(i===0?'減らす':'増やす')));
  });
 }
 function decorateHome(){
@@ -136,6 +156,10 @@ function decorateHome(){
   const item=records().find(x=>String(x.id)===String(row.dataset.atkOpen));
   const raw=item?.name||(title+' '+brand.textContent);
   const type=kit.kind(raw);if(!type)return;
+  const appearance=kit.brandAppearance(raw);
+  brand.style.setProperty('--brand-bg',appearance.bg);
+  brand.style.setProperty('--brand-fg',appearance.fg);
+  if(appearance.homeLabel)brand.textContent=appearance.homeLabel;
   brand.classList.add('bf-home-product');
   brand.insertAdjacentHTML('afterbegin',kit.icon(type,32));
  });
@@ -190,10 +214,14 @@ function install(){
  const oldRenderRoutines=root.renderRoutines;
  root.renderRoutines=function(...args){if(typeof oldRenderRoutines==='function')oldRenderRoutines.apply(this,args);showSets()};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
- if(typeof oldStock==='function')root.renderStock=function(...args){const x=oldStock.apply(this,args);decorateBabyRows('#stockList [data-stock-id]');return x};
+ if(typeof oldStock==='function')root.renderStock=function(...args){const x=oldStock.apply(this,args);decorateBabyRows('#stockList [data-stock-id]');decorateStockCards();return x};
  if(typeof oldBuy==='function')root.renderBuy=function(...args){const x=oldBuy.apply(this,args);decorateBabyRows('#buyList [data-buy-id]');return x};
  if(typeof oldHome==='function')root.renderHome=function(...args){const x=oldHome.apply(this,args);decorateHome();return x};
  modifyBuy();
+ $('stockList')?.addEventListener('keydown',ev=>{
+  if(!ev.target.matches?.('.bf-stock-card')||!['Enter',' '].includes(ev.key))return;
+  ev.preventDefault();ev.target.click();
+ });
  doc.addEventListener('click',ev=>{
   const r=ev.target.closest?.('[data-bf-routine],[data-bf-routine-stock],[data-bf-routine-buy],[data-bf-routine-edit],#bfBuyPick');
   if(!r)return;
@@ -227,7 +255,7 @@ function install(){
   if(modal)new MutationObserver(syncFab).observe(modal,{attributes:true,attributeFilter:['class','style','aria-hidden']});
  }
  syncFab();
- showSets();decorateBabyRows('#stockList [data-stock-id]');decorateBabyRows('#buyList [data-buy-id]');decorateHome();
+ showSets();decorateBabyRows('#stockList [data-stock-id]');decorateStockCards();decorateBabyRows('#buyList [data-buy-id]');decorateHome();
 }
 const api=Object.freeze({catFor,prepared,directRoutineToStock});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;

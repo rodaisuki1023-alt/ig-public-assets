@@ -24,7 +24,21 @@ function brand(name){
  const s=String(name||'').normalize('NFKC');
  return BRANDS.find(v=>s.includes(v))||'';
 }
-const api=Object.freeze({kind,icon,brand,motifs});
+const EXTRA_BRAND_COLORS={
+ 'ビーンスターク':['#DFECF7','#3B6083'],'アイクレオ':['#F8E6DC','#855342'],
+ 'カークランド':['#E1E8EE','#425567'],'Rico':['#DDEFE6','#3D6653'],
+ 'baby care':['#DDEEF5','#3E6576'],'ピジョン':['#F6E2E8','#85435D'],
+ 'レック':['#E6EDDC','#566C40'],'西松屋':['#FFF0CF','#795C25'],
+ 'アカチャンホンポ':['#FBE2DA','#8C5142'],'雪印':['#E4EAF6','#4B6088']
+};
+function brandAppearance(name){
+ // Reuse the home's established palette instead of assigning another stock-only color.
+ const known=root.AtokorePeachUI?.describe({name})?.brand;
+ if(known)return {label:known.jp,homeLabel:known.en,bg:known.bg,fg:known.fg};
+ const label=brand(name),colors=EXTRA_BRAND_COLORS[label]||['#EEE5DE','#6B5D55'];
+ return {label,homeLabel:label,bg:colors[0],fg:colors[1]};
+}
+const api=Object.freeze({kind,icon,brand,brandAppearance,motifs});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreBabyKit=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
