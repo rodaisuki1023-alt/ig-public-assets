@@ -25,5 +25,9 @@ WebKit未対応SWの2件はスキップ（Chromiumで確認済み）。
 横1行・44pxタップ範囲・横はみ出しなし、分類と検索、カテゴリー切替時のリセット、一括選択の解除と表示中商品のみの追加、月齢の異なる在庫の分離、離乳食の追加から再読込までを確認済み。
 CI: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39597667749
 320px Chromium・390px WebKitのスクリーンショットを目視確認済み。
+公開PR #48: https://github.com/rodaisuki1023-alt/ig-public-assets/pull/48
+Pages配信成功: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39598731810
+配信コミット: `e8fb6d82ecd680a7d53231088c503cd8dc01bc6f`
+公開後のSHA-256比較で通常版16/16ファイル不変、試用版35/35ファイルが検証済みビルドと一致。
 実機iPhoneの操作感は未確認。任意の商品名の分類精度は実データでの追加確認が必要。
 次は横スクロールの選びやすさと実際の離乳食の登録・補充を確認する。
