@@ -58,7 +58,7 @@ function panel(){
  el=doc.createElement('section');el.id='atkRoutineStockPicker';el.className='atk-routine-stock-picker';
  el.setAttribute('aria-label','いつものリストに商品を追加');
  const heading=doc.createElement('strong');heading.id='atkRoutineStockHeading';
- const hint=doc.createElement('p');hint.textContent='商品を1回タップすると、このリストにすぐ追加されます。在庫数は変わりません。';
+ const hint=doc.createElement('p');hint.textContent='商品を選ぶと確認画面が出ます。承認後にこのリストだけに追加され、ストック数は変わりません。';
  const done=doc.createElement('button');done.type='button';done.id='atkRoutineStockDone';done.textContent='✓ 完了してリストに戻る';
  done.addEventListener('click',()=>finish());
  el.append(heading,hint,done);
@@ -90,7 +90,7 @@ function refresh(){
  const r=routine(pickerId);
  if(!r){finish();return}
  $('atkRoutineStockHeading').textContent='「'+r.name+'」に追加する商品を選ぶ';
- const hint=p.querySelector('.atk-stock-hint');if(hint)hint.textContent='商品をタップして「いつものリスト」に追加できます。';
+ const hint=p.querySelector('.atk-stock-hint');if(hint)hint.textContent='商品をタップして確認後に「いつものリスト」に追加できます。';
  decorateStockRows();
 }
 function finish(){
@@ -107,6 +107,9 @@ function addStockItem(id){
   return true;
  }
  // A repeat-shopping entry defaults to 1 purchase unit, not the current stock quantity.
+ const list=routine(pickerId);
+ const prompt='「'+product.name+'」を「'+(list?.name||'いつものリスト')+'」に追加してもいいですか？\n\n※ ストック数は変わりません。';
+ if(!root.confirm?.(prompt))return false;
  const succeeded=saveSelected(pickerId,[{name:product.name,qty:1,unit:product.unit||'個'}]);
  if(succeeded){
   decorateStockRows();
@@ -132,8 +135,14 @@ function decorateRoutineModal(id){
  const button=doc.createElement('button');button.type='button';button.id='atkRoutineCatalogOpen';
  button.className='atk-routine-catalog-button';button.textContent='＋ ストックから商品を追加';
  button.addEventListener('click',()=>start(r.id));
- const help=doc.createElement('p');help.textContent='ストック一覧の商品をタップするだけ。登録中の在庫数は変わりません。';
- wrapper.append(button,help);inline.after(wrapper);
+ const help=doc.createElement('p');help.textContent='ストックの商品を選び、確認後にリストへ追加できます。在庫数は変わりません。';
+ wrapper.append(button,help);
+ const stock=doc.createElement('button');stock.type='button';stock.className='atk-routine-catalog-button atk-routine-stock-commit';
+ stock.id='atkRoutineStockCommit';stock.textContent='＋ このリストをストックに追加';
+ stock.addEventListener('click',()=>root.AtokoreBabyFlow?.addRoutineToStock?.(r.id));
+ const note=doc.createElement('p');note.textContent='追加前に商品と数量を確認します。';
+ wrapper.append(stock,note);
+ inline.after(wrapper);
 }
 const oldOpen=root.openRoutine;
 if(typeof oldOpen==='function')root.openRoutine=function(id,...args){

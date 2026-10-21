@@ -32,6 +32,10 @@ function directRoutineToStock(id){
  const r=prepared(id);
  if(!r){root.alert?.('いつものリストが見つかりません');return false}
  if(!r.entries.length){root.alert?.('リストに商品がありません。編集から商品を追加してください');return false}
+ const preview=r.entries.slice(0,5).map(x=>'・'+x.name+' × '+x.qty+x.unit).join('\n');
+ const more=r.entries.length>5?'\nほか'+(r.entries.length-5)+'種類':'';
+ const prompt='「'+r.routine.name+'」の'+r.entries.length+'種類をストックに追加してもいいですか？\n\n'+preview+more+'\n\n※ 登録済みの商品は在庫数が増えます。';
+ if(!root.confirm?.(prompt))return false;
  try{
   root.AtokoreDataSafety?.assertWritable?.();
   const oldItems=records(),total=oldItems.length;
@@ -74,8 +78,8 @@ function showSets(){
  el.innerHTML=all.map(x=>{
   const count=Array.isArray(x.items)?x.items.length:0,first=(x.items||[]).slice(0,3).map(i=>i.name).join('、');
   return '<article class="bf-routine">'+
-   '<button type="button" class="bf-routine-main" data-bf-routine="'+esc(x.id)+'"><span class="bf-routine-icon">♡</span><span class="bf-routine-copy"><strong>'+esc(x.name)+'</strong><small>'+count+'商品'+(first?' ・ '+esc(first):'')+'</small></span><span class="bf-arrow">›</span></button>'+
-   '<div class="bf-routine-actions"><button type="button" data-bf-routine="'+esc(x.id)+'">＋ ストックに追加</button>'+ 
+   '<button type="button" class="bf-routine-main" data-bf-routine="'+esc(x.id)+'" aria-label="'+esc(x.name)+'のリストを開く"><span class="bf-routine-icon">♡</span><span class="bf-routine-copy"><strong>'+esc(x.name)+'</strong><small>'+count+'商品'+(first?' ・ '+esc(first):'')+'</small></span><span class="bf-arrow">›</span></button>'+
+   '<div class="bf-routine-actions"><button type="button" data-bf-routine-stock="'+esc(x.id)+'">＋ ストックに追加</button>'+ 
    '<button type="button" data-bf-routine-buy="'+esc(x.id)+'">買い物へ追加</button>'+
    '<button type="button" data-bf-routine-edit="'+esc(x.id)+'" aria-label="'+esc(x.name)+'を編集">編集</button></div></article>'
  }).join('');
@@ -160,14 +164,16 @@ function install(){
  if(typeof oldHome==='function')root.renderHome=function(...args){const x=oldHome.apply(this,args);decorateHome();return x};
  modifyBuy();
  doc.addEventListener('click',ev=>{
-  const r=ev.target.closest?.('[data-bf-routine],[data-bf-routine-buy],[data-bf-routine-edit],#bfBuyPick');
+  const r=ev.target.closest?.('[data-bf-routine],[data-bf-routine-stock],[data-bf-routine-buy],[data-bf-routine-edit],#bfBuyPick');
   if(!r)return;
   if(r.id==='bfBuyPick'){
    root.AtokoreQuickAdd?.setDestination('buy');
    root.AtokoreQuickAdd?.openWithEntries([],'buy');
    root.AtokoreQuickAdd?.setCategory('ベビー');
   }else if(r.hasAttribute('data-bf-routine')){
-   directRoutineToStock(r.dataset.bfRoutine);
+   root.openRoutine?.(Number(r.dataset.bfRoutine));
+  }else if(r.hasAttribute('data-bf-routine-stock')){
+   directRoutineToStock(r.dataset.bfRoutineStock);
   }else if(r.hasAttribute('data-bf-routine-buy')){
    fromRoutine(r.dataset.bfRoutineBuy,'buy');
   }else if(r.hasAttribute('data-bf-routine-edit')){
@@ -194,6 +200,6 @@ function install(){
 }
 const api=Object.freeze({catFor,prepared,directRoutineToStock});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
-root.AtokoreBabyFlow=api;
+root.AtokoreBabyFlow=Object.freeze({...api,addRoutineToStock:directRoutineToStock});
 if(doc&&typeof window!=='undefined')install();
 })(typeof globalThis!=='undefined'?globalThis:this);

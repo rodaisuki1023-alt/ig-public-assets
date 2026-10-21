@@ -57,18 +57,35 @@ test.describe('いつものセット', () => {
     await page.click('[data-bf-routine-buy="901"]');
     expect(await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => [x.name, x.qty]))).toEqual(first);
     await expect(page.locator('#qaNotice')).toContainText('読み込み済み');
-    // One tap on the stock action writes immediately, then opens stock.
+    // The list card is read-only. Only the explicit "stock add" button may persist.
     await go(page, 'buy');
     const beforeStock = await stored(page);
     await page.click('[data-bf-routine="901"]');
+    await expect(page.locator('#modal')).toHaveClass(/on/);
+    await expect(page.locator('#atkRoutineStockCommit')).toBeVisible();
+    expect(await stored(page)).toEqual(beforeStock);
+    expect(page.__dialogs).toEqual([]);
+    page.removeAllListeners('dialog');
+    const approvals = [];
+    const answers = [false, true];
+    page.on('dialog', async dialog => {
+      approvals.push(dialog.message());
+      if (answers.shift()) await dialog.accept();
+      else await dialog.dismiss();
+    });
+    await page.click('#atkRoutineStockCommit');
+    await expect(page.locator('#modal')).toHaveClass(/on/);
+    expect(await stored(page)).toEqual(beforeStock); // rejected confirmation
+    await page.click('#atkRoutineStockCommit');
     await expect(page.locator('#pg-stock')).toHaveClass(/on/);
     await expect(page.locator('#pg-add')).not.toHaveClass(/on/);
     const afterStock = await stored(page);
     expect(afterStock.items.find(x => x.id === 2).qty).toBe(beforeStock.items.find(x => x.id === 2).qty + 2);
     expect(afterStock.buys).toEqual(beforeStock.buys);
     expect(afterStock.routines).toEqual(beforeStock.routines);
-    expect(page.__dialogs).toEqual([]);
-    await shot(page, testInfo, 'set-one-tap-stock');
+    expect(approvals).toHaveLength(2);
+    expect(approvals[0]).toMatch(/追加してもいいですか/);
+    await shot(page, testInfo, 'set-confirmed-stock');
   });
 
   test('loading a shopping set over edited items asks first; cancel keeps them', async ({ page }) => {
