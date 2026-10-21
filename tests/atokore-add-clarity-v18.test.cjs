@@ -92,7 +92,7 @@ test('pwa includes v18 overrides in correct order and cache refresh',()=>{
  assert.match(html,/quick-add\.js\?v=18/);
  assert.match(html,/baby-flow-v17\.js\?v=22/);
  assert.ok(html.indexOf('baby-focus-v17.css')<html.indexOf('add-clarity-v18.css'));
- assert.match(sw,/atokore-pwa-v20/);
+ assert.match(sw,/atokore-pwa-v22/);
  assert.match(sw,/'\.\/add-clarity-v18.css'/);
  assert.match(sw,/'\.\/p0-fixes-v19.css'/);
 });
