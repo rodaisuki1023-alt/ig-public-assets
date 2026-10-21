@@ -83,7 +83,7 @@ test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
  assert.match(html,/quick-add\.js\?v=18/);assert.match(html,/quick-add\.css\?v=14/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v19/);
+ assert.match(sw,/atokore-pwa-v20/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 
