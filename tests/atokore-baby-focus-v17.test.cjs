@@ -109,5 +109,5 @@ test('offline shell has complete v17 scripts and separate palette',()=>{
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v19/);
+ assert.match(worker,/atokore-pwa-v20/);
 });
