@@ -75,6 +75,9 @@ body.atk-v17 .qa-brand-chips button{
 body.atk-v17 .qa-lines button{font-size:12px}
 body.atk-v17 .bf-baby-icon{display:inline-flex;align-items:center;justify-content:center;line-height:0;flex:none}
 body.atk-v17 .bf-baby-icon svg{display:block}
+body.atk-v17 .bf-baby-art{display:block;object-fit:contain;flex:none}
+body.atk-v17 .qa-baby-kind button .bf-baby-art{width:45px;height:45px}
+body.atk-v17 .bf-home-product .bf-baby-art{width:31px;height:31px}
 body.atk-v17 #stockList .bf-baby-product,body.atk-v17 #buyList .bf-baby-product{
  background:#FFF9F5!important;display:flex!important;flex-direction:column!important;
  justify-content:center!important;align-items:center!important;gap:3px!important;

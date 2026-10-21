@@ -1,5 +1,5 @@
-/* v21: choose an existing stock item directly for an "いつものリスト".
- * A single tap immediately saves ONLY the routine entry, never changes inventory.
+/* v24: edit list contents separately from the two confirmed destination actions.
+ * Stock selection saves ONLY the routine entry, never changes inventory.
  */
 (function(root){
 'use strict';
@@ -129,21 +129,64 @@ function start(id){
  return true;
 }
 function decorateRoutineModal(id){
- const r=routine(toId(id)),inline=$('sheet')?.querySelector('.routineInline');
+ const sheet=$('sheet'),r=routine(toId(id)),inline=sheet?.querySelector('.routineInline');
  if(!r||!inline||$('atkRoutineCatalogOpen'))return;
+ sheet.classList.add('atk-routine-sheet');
+ const nameSave=sheet.querySelector('[onclick^="saveRoutineName("]');
+ if(nameSave){nameSave.classList.add('atk-routine-name-save');nameSave.removeAttribute('style')}
+ if(inline.previousElementSibling?.classList.contains('section'))inline.previousElementSibling.textContent='リストの商品';
  const wrapper=doc.createElement('div');wrapper.className='atk-routine-catalog-entry';
  const button=doc.createElement('button');button.type='button';button.id='atkRoutineCatalogOpen';
- button.className='atk-routine-catalog-button';button.textContent='＋ ストックから商品を追加';
+ button.className='atk-routine-catalog-button';button.textContent='商品を選ぶ';
+ button.title='ストックの商品を選び、いつものリストに追加';
  button.addEventListener('click',()=>start(r.id));
- const help=doc.createElement('p');help.textContent='ストックの商品を選び、確認後にリストへ追加できます。在庫数は変わりません。';
- wrapper.append(button,help);
+ wrapper.append(button);
+ const manual=doc.createElement('details');manual.className='atk-routine-manual';
+ const summary=doc.createElement('summary');summary.textContent='商品名を手入力する';manual.append(summary);
+ inline.before(wrapper,manual);manual.append(inline);
+ sheet.querySelectorAll('.routineCheck').forEach(el=>el.remove());
+ sheet.querySelectorAll('.routineActions').forEach(el=>el.remove());
+ sheet.querySelector('[onclick^="addSelectedRoutine("]')?.remove();
+ const remove=sheet.querySelector('[onclick^="deleteRoutine("]');
+ if(remove){
+  const manage=doc.createElement('details');manage.className='atk-routine-manage';
+  const label=doc.createElement('summary');label.textContent='リストの管理';manage.append(label);
+  remove.before(manage);manage.append(remove);
+ }
+ for(const row of $('routineItems')?.querySelectorAll('.row')||[]){
+  const name=row.querySelector('.name'),line=r.items[Array.from($('routineItems').children).indexOf(row)];
+  if(!name||!line)continue;
+  name.title=line.name;
+  const info=root.AtokorePeachUI?.describe(line),kind=root.AtokoreBabyKit?.kind(line.name);
+  const picture=doc.createElement('span');picture.className='atk-routine-product-icon';
+  picture.innerHTML=kind?root.AtokoreBabyKit.icon(kind,52):(root.AtokoreQuickAdd?.iconFor(line.name)||'');
+  row.prepend(picture);
+  if(info?.brand){
+   name.textContent=info.brand.jp+' '+info.line;
+   const meta=doc.createElement('small');meta.className='atk-routine-variant';
+   meta.textContent=[info.type,info.size?info.size+'サイズ':''].filter(Boolean).join('・');
+   name.after(meta);
+  }
+  const del=row.querySelector('.danger');
+  if(del){del.textContent='削除';del.setAttribute('aria-label',line.name+'をリストから削除')}
+ }
+ const scroll=doc.createElement('div');scroll.className='atk-routine-scroll';
+ scroll.append(...Array.from(sheet.childNodes));sheet.append(scroll);
+ const footer=doc.createElement('footer');footer.className='atk-routine-footer';
+ const note=doc.createElement('p');note.textContent='追加する前に、商品と数量を確認します。';
+ const actions=doc.createElement('div');actions.className='atk-routine-destinations';
  const stock=doc.createElement('button');stock.type='button';stock.className='atk-routine-catalog-button atk-routine-stock-commit';
- stock.id='atkRoutineStockCommit';stock.textContent='＋ このリストをストックに追加';
+ stock.id='atkRoutineStockCommit';stock.textContent='ストックに追加';
  stock.addEventListener('click',()=>root.AtokoreBabyFlow?.addRoutineToStock?.(r.id));
- const note=doc.createElement('p');note.textContent='追加前に商品と数量を確認します。';
- wrapper.append(stock,note);
- inline.after(wrapper);
+ const buy=doc.createElement('button');buy.type='button';buy.className='atk-routine-catalog-button atk-routine-buy-commit';
+ buy.id='atkRoutineBuyCommit';buy.textContent='買い物へ追加';
+ buy.addEventListener('click',()=>root.AtokoreBabyFlow?.addRoutineToBuy?.(r.id));
+ actions.append(stock,buy);footer.append(note,actions);sheet.append(footer);
 }
+const previousOpenM=root.openM;
+if(typeof previousOpenM==='function')root.openM=function(...args){
+ $('sheet')?.classList.remove('atk-routine-sheet');return previousOpenM.apply(this,args);
+};
 const oldOpen=root.openRoutine;
 if(typeof oldOpen==='function')root.openRoutine=function(id,...args){
  const result=oldOpen.call(this,id,...args);decorateRoutineModal(id);return result;

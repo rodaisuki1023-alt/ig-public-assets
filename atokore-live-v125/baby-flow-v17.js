@@ -68,6 +68,36 @@ function fromRoutine(id,dest){
  if(r.entries.some(x=>x.cat==='ベビー'))root.AtokoreQuickAdd?.setCategory('ベビー');
  else root.AtokoreQuickAdd?.setCategory('食料品');
 }
+let lastDirectBuy={id:null,at:0};
+function directRoutineToBuy(id){
+ const idText=String(id);
+ if(lastDirectBuy.id===idText&&Date.now()-lastDirectBuy.at<1300)return false;
+ const r=prepared(id);
+ if(!r?.entries.length){root.alert?.('リストに商品がありません。商品を選んでください');return false}
+ const preview=r.entries.map(x=>'・'+x.name+' × '+x.qty+x.unit).join('\n');
+ if(!root.confirm?.('「'+r.routine.name+'」の'+r.entries.length+'種類を買い物リストに追加してもいいですか？\n\n'+preview+'\n\n※ ストック数は変わりません。'))return false;
+ try{
+  root.AtokoreDataSafety?.assertWritable?.();
+  const next=buys.map(x=>({...x})),ids=new Set(next.map(x=>Number(x.id)));
+  let sequence=Date.now();
+  for(const line of r.entries){
+   const found=next.find(x=>root.__atokoreCoreV125H.sameProduct(x,line));
+   if(found)found.qty=(Number(found.qty)||0)+line.qty;
+   else{while(ids.has(sequence))sequence++;ids.add(sequence);next.push({id:sequence++,...line})}
+  }
+  const raw=JSON.stringify({items,buys:next,routines}),key='atokoreTrialV4';
+  root.localStorage.setItem(key,raw);
+  if(root.localStorage.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
+  buys=next;lastDirectBuy={id:idText,at:Date.now()};
+  root.closeM?.();root.go?.('buy');
+  root.notifyAtokoreV125H?.(r.entries.length+'種類を買い物リストに追加しました');
+  return true;
+ }catch(error){
+  root.console?.error?.('いつものリストから買い物への反映失敗',error);
+  root.alert?.('買い物リストを保存できませんでした。内容は変更していません。');
+  return false;
+ }
+}
 function showSets(){
  const el=$('routineList');if(!el)return;
  const all=sets();
@@ -200,6 +230,6 @@ function install(){
 }
 const api=Object.freeze({catFor,prepared,directRoutineToStock});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
-root.AtokoreBabyFlow=Object.freeze({...api,addRoutineToStock:directRoutineToStock});
+root.AtokoreBabyFlow=Object.freeze({...api,addRoutineToStock:directRoutineToStock,addRoutineToBuy:directRoutineToBuy});
 if(doc&&typeof window!=='undefined')install();
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -26,6 +26,6 @@ http.createServer((req, res) => {
   if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
   if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
   if (!fs.existsSync(file)) { res.writeHead(404).end('not found'); return; }
-  res.writeHead(200, { 'Content-Type': types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+  res.writeHead(200, { 'Content-Type': path.extname(file) === '.webp' ? 'image/webp' : types[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
   fs.createReadStream(file).pipe(res);
 }).listen(port, '127.0.0.1', () => console.log(`e2e site on http://127.0.0.1:${port}/ig-public-assets/`));

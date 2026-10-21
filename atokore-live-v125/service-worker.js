@@ -1,7 +1,7 @@
 // Several apps share this origin (the production app at the site root and sandboxed trials in
 // sub-directories). This worker therefore only touches its own directory and its own caches.
 // Refreshed worker for the direct one-tap repeat-list stock-add release.
-const CACHE_VERSION = 'atokore-pwa-v23';
+const CACHE_VERSION = 'atokore-pwa-v24';
 const SCOPE_PATH = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CACHE_PREFIX = 'atokore-shell:' + SCOPE_PATH + ':';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -38,7 +38,9 @@ const APP_SHELL = [
   './manifest.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',
-  './icons/icon-512.png'
+  './icons/icon-512.png',
+  './icons/baby/diaper-bear-v24.webp',
+  './icons/baby/wipes-bear-v24.webp'
 ];
 
 // Only files directly in this directory (plus icons/) belong to this app. Nested directories

@@ -16,6 +16,7 @@ function kind(name,cat=''){
 function icon(type,size=42){
  const a=motifs[type];if(!a)return '';
  const dim=Math.max(32,Math.min(72,Number(size)||42));
+ if(type==='diaper'||type==='wipes')return '<span class="bf-baby-icon bf-icon-'+type+'" aria-hidden="true"><img class="bf-baby-art" src="./icons/baby/'+type+'-bear-v24.webp" width="'+dim+'" height="'+dim+'" alt="" decoding="async" style="object-fit:contain"></span>';
  return '<span class="bf-baby-icon bf-icon-'+type+'" aria-hidden="true"><svg viewBox="0 0 48 48" width="'+dim+'" height="'+dim+'" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="14" fill="'+a.bg+'"/>'+a.shape+'</svg></span>';
 }
 const BRANDS=['パンパース','グーン','マミーポコ','ムーニー','メリーズ','明治','森永','和光堂','ビーンスターク','アイクレオ','雪印','ピジョン','レック','西松屋','アカチャンホンポ'];
