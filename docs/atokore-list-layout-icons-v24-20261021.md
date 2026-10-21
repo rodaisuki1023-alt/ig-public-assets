@@ -3,7 +3,7 @@
 日付：2026-10-21（日本時間）
 
 - ソースPR：<https://github.com/rodaisuki1023-alt/ig-public-assets/pull/28>（保管用Draft、mainへマージしない）
-- 試用版ソース：`53842fecc033c2dd780b0d7d470781b6eaa0889e`
+- 試用版ソース：`7056057b2e9a863fc05b7e7e98c144fdd097a4a5`
 - 公開先：<https://rodaisuki1023-alt.github.io/ig-public-assets/preview-baby-v19/>
 
 ## ユーザー承認に基づく変更
@@ -26,7 +26,7 @@
 - `atokore-live-v125/icons/baby/wipes-bear-v24.webp`
 - プロンプト・用途：同ディレクトリの `README.md`（ソースPR #28）
 
-両画像を試用版自身のService Workerキャッシュに追加。別アプリや通常版のキャッシュには触れない。関連JS・CSSとキャッシュのバージョンはv24。追加先ボタンの白文字とのコントラスト比は、ストック4.95:1・買い物5.29:1。
+両画像を試用版自身のService Workerキャッシュに追加。別アプリや通常版のキャッシュには触れない。初版のキャッシュはv24。ホームの省略表示でも元の商品データから正しい画像を選ぶ修正を加え、関連JS・CSSとキャッシュをv25へ更新した。追加先ボタンの白文字とのコントラスト比は、ストック4.95:1・買い物5.29:1。
 
 ## 検証
 
@@ -34,8 +34,8 @@
 - ローカルChromium：既存41件＋追加8件合格。320/375/390/430pxでボタン横並び・クリック妨害なし・画像読込・手入力維持、確認取消・保存失敗・再試行・連打・再読込後の保持を確認。
 - 新しい2画像のオフライン表示を追加検証し合格。
 - 320pxと390pxの実ブラウザ画像で配置を目視確認。短い画面では商品欄を内部スクロールし、下部2ボタンは表示を維持する。
-- 最終ソースのChromium/WebKit CI：96件合格、2件はWebKitでのSW検査対象外。同検査はChromiumで合格。<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39533766398>
-- 配信PR：<https://github.com/rodaisuki1023-alt/ig-public-assets/pull/29>。公開後のファイル照合結果を追記する。
+- 最終ソースのChromium/WebKit CI：96件合格、2件はWebKitでのSW検査対象外。同検査はChromiumで合格。<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39534435185>
+- 配信PR #29で初版を公開。ホームで商品名が省略されてもおむつアイコンが出るように追加修正し、4幅で検証した。最終配信と公開後照合の結果を追記する。
 
 ## 未確認事項と次の作業
 
