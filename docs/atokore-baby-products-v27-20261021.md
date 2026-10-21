@@ -62,4 +62,11 @@ Node回帰・実ブラウザの320/375/390/430px、Chromium/WebKitで確認し�
 - 320/375/390/430pxで「その他」の入力・編集・数量変更後の保持・未登録商品・3種のおしりふき・ほほえみとステップの別保存・再読込を検証。
 - 5種類のフォローアップを買い物へ保存し、実際の在庫が変わらないこと、別商品・形状が合算されないことを確認。
 - 既存の保存失敗・確認取消・再試行・連打・XSS・オフライン画像・バックアップの回帰も成功。
-- GitHub ActionsのChromium/WebKit検証ステップ成功：<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39542254095>。
+- GitHub ActionsのChromium/WebKit：108件合格、WebKitのSW2件は対象外（Chromiumで合格）。<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39542254095>。
+
+### 公開後の確認
+
+- 配信PR：<https://github.com/rodaisuki1023-alt/ig-public-assets/pull/34>（マージ済み）。配信コミット `3ad55725286e273d4e075c1a130bd6f06ee83775`。
+- GitHub Pages成功：<https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39542704953>。
+- 公開ブラウザでbaby-kit/quick-addのv27、その他・12種類のミルク商品（うちフォローアップ系5種類）・おしりふきの3追加ブランドとピジョン／包装選択の削除を確認。商品追加・削除・初期化は行っていない。
+- 公開ファイル照合：試用版33/33が検証済みビルドと一致。通常版16/16は変更前と同一。
