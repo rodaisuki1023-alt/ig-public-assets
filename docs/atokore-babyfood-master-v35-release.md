@@ -28,6 +28,12 @@ WebKit未対応のService Worker 2件はスキップ（Chromiumで検証済み�
 メーカー・シリーズ・月齢、商品を選ぶまで登録しないこと、追加予定中は保存しないこと、販売単位の数量、旧データ分類、保存失敗時の復元と再試行、写真と再読み込み、XSS・通常版とストレージ/SW分離を確認した。
 最終CIの320px Chromium・390px WebKitの追加/ストック画面を目視確認した。
 
+公開PR #50（マージ済み）: https://github.com/rodaisuki1023-alt/ig-public-assets/pull/50
+Pages配信成功: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39605620063
+配信コミット: `1b8e4171a6a71110dc9ab66ecd703d3106c178d0`
+公開後のSHA-256比較で通常版16/16ファイル不変、試用版36/36ファイルが検証済みv19ビルドと一致。
+試用版: https://rodaisuki1023-alt.github.io/ig-public-assets/preview-baby-v19/
+
 実機iPhoneのタップ感・カメラ、各商品の店頭パッケージ目視照合、実際の利用者データでの任意名分類は未確認。
 月齢は商品表示による分類で、食事の進め方やアレルゲンの判定はしない。手元の商品表示の確認を案内する。
 次は実際に使うメーカーで2商品を選び、容量・数量の確認、再読み込み後の保持、メーカー絞り込みをiPhoneで確認する。
