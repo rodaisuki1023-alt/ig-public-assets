@@ -13,6 +13,7 @@ function browser(){
 function setup(w,$,id=801,entries=[{id:11,name:'パンパース おむつ パンツ M',qty:2,unit:'袋'},{id:12,name:'卵',qty:1,unit:'パック'}]){
  w.eval('routines.push('+JSON.stringify({id,name:'いつものセット',items:entries})+');renderRoutines();save()');
  assert.ok($('routineList').querySelector('[data-bf-routine="'+id+'"]'));
+ w.go('buy');
 }
 function get(w){return JSON.parse(w.localStorage.getItem('atokoreTrialV4'))}
 test('one tap on stock CTA commits items and routes directly to stock, not product-add screen',()=>{
