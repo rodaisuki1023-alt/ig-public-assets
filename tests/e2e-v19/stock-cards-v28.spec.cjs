@@ -17,7 +17,7 @@ const products=[
 const initialState=()=>baseState({items:products.map(([name,unit,qty],i)=>({id:101+i,name,unit,qty,cat:i===10?'食料品':'ベビー',place:'収納',expType:'期限なし',exp:'',usage:1}))});
 const row=(page,id)=>page.locator(`#stockList [data-stock-id="${id}"]`);
 for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
- test.describe(`v29 stock cards ${width}px`,()=>{
+ test.describe(`v31 stock cards ${width}px`,()=>{
   test.use({viewport:{width,height}});
   test('manufacturer colors match home, compact three columns fit, corner controls remain separate',async({page},info)=>{
    const initial=initialState();await open(page,{[KEY]:initial});
@@ -34,15 +34,16 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
       return [minus,plus].every(r=>r.width>=44&&r.height>=44&&r.left>=p.left&&r.right<=p.right&&r.top-p.top<2&&r.bottom<=art.top+1)
        &&minus.right<=plus.left&&minus.left-p.left<2&&p.right-plus.right<2;
      }),
-     compact:cards.every(c=>c.getBoundingClientRect().height<=240),
+     compact:cards.every(c=>c.getBoundingClientRect().height<=280),
+     largeArt:cards.every(c=>{const image=c.querySelector('.atk-row-brand img,.atk-row-brand svg'),r=image.getBoundingClientRect();return r.width>=70&&r.height>=96}),
      countBelowImage:cards.every(c=>c.querySelector('.bf-stock-count').getBoundingClientRect().top>=c.querySelector('.atk-row-brand').getBoundingClientRect().bottom)};
    });
    expect(facts.grid).toBe('grid');expect(facts.columns).toBe(3);expect(facts.overflow).toBeLessThanOrEqual(0);expect(facts.controlsFit).toBe(true);
-   expect(facts.compact).toBe(true);expect(facts.countBelowImage).toBe(true);
+   expect(facts.compact).toBe(true);expect(facts.countBelowImage).toBe(true);expect(facts.largeArt).toBe(true);
    for(const c of home)expect(facts.colors.find(x=>x.id===c.id).bg).toBe(c.bg);
    expect(new Set(facts.colors.slice(0,9).map(x=>x.bg)).size).toBe(9);
    for(const id of [101,103,107])await expect.poll(()=>row(page,id).locator('img').evaluate(i=>i.naturalWidth)).toBe(256);
-   await row(page,101).scrollIntoViewIfNeeded();await shot(page,info,`${width}-v29-stock-cards`);
+   await row(page,101).scrollIntoViewIfNeeded();await shot(page,info,`${width}-v31-stock-cards`);
    await row(page,101).locator('.name').click();await expect(page.locator('#modal')).toHaveClass(/on/);
    expect(await stored(page)).toEqual(initial);await page.click('#sheet .close');
    await row(page,101).locator('.qty button').last().click();
