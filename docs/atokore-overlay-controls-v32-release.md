@@ -12,4 +12,9 @@
 Node回帰78件成功。Chromium/WebKitの320・375・390・430pxでブラウザ138件成功、WebKit未対応SWの2件はスキップ（Chromiumで確認済み）。
 画像高96px、画像に重なる44pxボタン、カード高246px以内、数量操作、写真保存を確認済み。
 CI: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39588717577
+320px Chromium・390px WebKitの標準アイコンと写真付きカードのスクリーンショットを目視確認済み。
+公開PR #44: https://github.com/rodaisuki1023-alt/ig-public-assets/pull/44
+Pages配信成功: https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39589648220
+配信コミット: `f5b6704f01e28c6ddf877700b1848009f903e253`
+公開後のSHA-256比較で通常版16/16ファイル不変、試用版35/35ファイルが検証済みビルドと一致。
 実機iPhoneの操作感は未確認。次はスクロール量と重ねたボタンの押しやすさを確認する。
