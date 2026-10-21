@@ -31,9 +31,14 @@ const go = (page, p) => page.evaluate(p => window.go(p), p);
 async function chooseBaby(page, { kind, brand, type, size, series }) {
   await page.click(`[data-qa-baby="kind"][data-value="${kind}"]`);
   await page.click(`[data-qa-baby="brand"][data-value="${brand}"]`);
-  if (type) await page.click(`[data-qa-baby="type"][data-value="${type}"]`);
+  if (kind === 'milk' && series && !['ほほえみ','はいはい','はぐくみ','すこやかM1','バランスミルク'].includes(series)) {
+    const follow=page.locator('.qa-followup');
+    if (await follow.count()) await follow.locator('summary').click();
+    await page.click(`[data-qa-baby="product"][data-value="${brand}|${series}"]`);
+  }
+  if (type && kind !== 'wipes') await page.click(`[data-qa-baby="type"][data-value="${type}"]`);
   if (size) await page.click(`[data-qa-baby="size"][data-value="${size}"]`);
-  if (series) await page.click(`[data-qa-baby="series"][data-value="${series}"]`);
+  if (series && kind !== 'milk') await page.click(`[data-qa-baby="series"][data-value="${series}"]`);
   await page.click('[data-qa-babyadd]');
 }
 

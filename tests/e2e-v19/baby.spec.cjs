@@ -24,7 +24,7 @@ test('マミーポコ offers pants only and selects it', async ({ page }) => {
   await open(page);
   await page.click('#bfNavAdd');
   await pick(page, 'brand', 'マミーポコ');
-  expect(await options(page, 'type')).toEqual(['パンツ']);
+  expect(await options(page, 'type')).toEqual(['パンツ', 'その他']);
   expect(await page.$eval('#qaBaby [data-qa-baby="type"][data-value="パンツ"]', e => e.classList.contains('selected'))).toBe(true);
 });
 
@@ -38,7 +38,7 @@ test('wipes never show diaper series', async ({ page }, testInfo) => {
   for (const diaper of ['ムーニーマン', 'オヤスミマン', '低刺激であんしん']) expect(series).not.toContain(diaper);
   await shot(page, testInfo, 'wipes-series');
   await pick(page, 'brand', 'グーン');
-  expect(await options(page, 'series')).toEqual([]);
+  expect(await options(page, 'series')).toEqual(['その他']);
 });
 
 test('formula forms follow the official lineups that could be confirmed', async ({ page }) => {
@@ -46,16 +46,16 @@ test('formula forms follow the official lineups that could be confirmed', async 
   await page.click('#bfNavAdd');
   await pick(page, 'kind', 'milk');
   await pick(page, 'brand', '和光堂');
-  expect(await options(page, 'type')).toEqual(['缶', 'スティック']);
+  expect(await options(page, 'type')).toEqual(['缶', 'スティック', 'その他']);
   await pick(page, 'brand', '森永');
-  expect(await options(page, 'type')).toEqual(['缶', 'スティック', '液体']);
+  expect(await options(page, 'type')).toEqual(['缶', 'スティック', 'エコらくパック はじめてセット', 'エコらくパック つめかえ用', '液体', 'その他']);
   await pick(page, 'brand', 'アイクレオ');
   expect(await options(page, 'type')).not.toContain('キューブ');
   await pick(page, 'brand', 'ビーンスターク');
   expect(await options(page, 'type')).not.toContain('キューブ');
-  // 明治's lineup could not be read on the official site, so its options are left unchanged.
+  // Confirmed on Meiji's current product list: no powdered-stick option for ほほえみ.
   await pick(page, 'brand', '明治');
-  expect(await options(page, 'type')).toEqual(['缶', 'キューブ', 'スティック', '液体']);
+  expect(await options(page, 'type')).toEqual(['缶', 'キューブ', '液体', 'その他']);
 });
 
 test('liquid formula is named 液体ミルク, never 粉ミルク 液体', async ({ page }) => {

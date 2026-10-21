@@ -13,7 +13,7 @@ function browser(){
 }
 function choose($,kind,brand,type,size){
  const tap=(field,value)=>{const button=$('qaBaby').querySelector('[data-qa-baby="'+field+'"][data-value="'+value+'"]');assert.ok(button,field+' '+value);button.click()};
- tap('kind',kind);tap('brand',brand);tap('type',type);if(size)tap('size',size);
+ tap('kind',kind);tap('brand',brand);if(kind!=='wipes')tap('type',type);if(size)tap('size',size);
  $('qaBaby').querySelector('[data-qa-babyadd]').click();
 }
 test('single row navigation with the add action in the centre of the tab bar',()=>{
@@ -33,20 +33,20 @@ test('single row navigation with the add action in the centre of the tab bar',()
  assert.ok($('bfDestination').querySelector('[data-qa-dest="stock"]').classList.contains('selected'));
  dom.window.close();
 });
-test('wipes are distinct by brand and pack mode; no guesswork about manufacturer',()=>{
+test('wipes select only a brand and preserve distinct products without package controls',()=>{
  const {dom,w,$}=browser();$('bfNavAdd').click();
- choose($,'wipes','ムーニー','詰替');
- choose($,'wipes','ピジョン','本体');
+ choose($,'wipes','ムーニー');
+ choose($,'wipes','Rico');
  const tray=w.AtokoreQuickAdd.getTray();
  assert.equal(tray.length,2);
- assert.ok(tray.some(x=>x.name.includes('ムーニー')&&x.name.includes('詰替')));
- assert.ok(tray.some(x=>x.name.includes('ピジョン')&&x.name.includes('本体')));
+ assert.ok(tray.some(x=>x.name==='ムーニー おしりふき'));
+ assert.ok(tray.some(x=>x.name==='Rico おしりふき'));
  $('qaCommit').click();
  const saved=JSON.parse(w.localStorage.getItem('atokoreTrialV4')).items;
  assert.ok(saved.some(x=>x.name.includes('ムーニー おしりふき')));
- assert.ok(saved.some(x=>x.name.includes('ピジョン おしりふき')));
+ assert.ok(saved.some(x=>x.name.includes('Rico おしりふき')));
  assert.match($('stockList').innerHTML,/bf-baby-product/);
- assert.match($('stockList').textContent,/ピジョン/);
+ assert.match($('stockList').textContent,/Rico/);
  dom.window.close();
 });
 test('diaper and formula render individual original baby icons, full brand names',()=>{
@@ -109,10 +109,74 @@ test('buy page picker opens baby-first selection and shopping-only destination',
 test('offline shell has complete v17 scripts and separate palette',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=26'));
+ assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=27'));
  assert.ok(html.indexOf('baby-flow-v17.js')>html.indexOf('edit-after-add.js'));
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v26/);
+ assert.match(worker,/atokore-pwa-v27/);
+});
+
+test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{
+ const {dom,w,$}=browser();$('bfNavAdd').click();
+ const tap=(f,v)=>$('qaBaby').querySelector('[data-qa-baby="'+f+'"][data-value="'+v+'"]').click();
+ tap('kind','milk');
+ for(const [brand,name] of [['明治','ほほえみ'],['和光堂','はいはい'],['森永','はぐくみ']]){
+  const button=$('qaBaby').querySelector('[data-qa-baby="brand"][data-value="'+brand+'"]');
+  assert.match(button.textContent,new RegExp(name));button.click();tap('type','缶');
+  $('qaBaby').querySelector('[data-qa-babyadd]').click();
+ }
+ for(const [brand,name] of [['明治','ステップ'],['和光堂','ぐんぐん'],['森永','チルミル'],['ビーンスターク','つよいこ'],['アイクレオ','グローアップミルク']]){
+  tap('product',brand+'|'+name);
+  const forms=Array.from($('qaBaby').querySelectorAll('[data-qa-baby="type"]'),e=>e.dataset.value);
+  if(brand!=='明治'){assert.ok(!forms.includes('キューブ'));assert.ok(!forms.includes('液体'))}
+  tap('type','缶');$('qaBaby').querySelector('[data-qa-babyadd]').click();
+ }
+ const tray=w.AtokoreQuickAdd.getTray();assert.equal(tray.length,8);
+ assert.equal(new Set(tray.map(x=>x.name)).size,8);
+ assert.ok(tray.some(x=>x.name==='明治 ほほえみ 粉ミルク 缶'));
+ assert.ok(tray.some(x=>x.name==='明治 ステップ 粉ミルク 缶'));
+ tap('product','森永|E赤ちゃん');
+ assert.ok(!$('qaBaby').querySelector('[data-qa-baby="type"][data-value="液体"]'));
+ tap('product','アイクレオ|赤ちゃんミルク');
+ assert.match($('qaBaby').querySelector('[data-qa-baby="type"].selected').textContent,/液体/);
+ dom.window.close();
+});
+test('other values stay editable across quantity changes and never save the literal other label',()=>{
+ const {dom,w,$}=browser();$('bfNavAdd').click();
+ const tap=(f,v)=>$('qaBaby').querySelector('[data-qa-baby="'+f+'"][data-value="'+v+'"]').click();
+ const input=(f,v)=>{$('qaBaby'+f).value=v;$('qaBaby'+f).dispatchEvent(new w.Event('input',{bubbles:true}))};
+ const before=w.localStorage.getItem('atokoreTrialV4');
+ tap('brand','その他');tap('type','その他');tap('size','その他');tap('series','その他');
+ $('qaBaby').querySelector('[data-qa-babyadd]').click();assert.equal(w.AtokoreQuickAdd.getTray().length,0);
+ input('Brand','独自ブランド');input('Type','夜用パンツ');input('Size','スーパービッグ');input('Series','やさしい素材');
+ $('qaBaby').querySelector('[data-qa-step="1"]').click();
+ assert.equal($('qaBabyBrand').value,'独自ブランド');assert.equal($('qaBabySize').value,'スーパービッグ');
+ input('Brand','変更したブランド');$('qaBaby').querySelector('[data-qa-babyadd]').click();
+ assert.equal(w.AtokoreQuickAdd.getTray()[0].name,'変更したブランド やさしい素材 おむつ 夜用パンツ スーパービッグ');
+ assert.equal(w.AtokoreQuickAdd.getTray()[0].qty,2);
+ tap('kind','milk');tap('brand','その他');input('Brand','別メーカー');input('Series','別ミルク');tap('type','缶');
+ $('qaBaby').querySelector('[data-qa-babyadd]').click();
+ assert.equal(w.AtokoreQuickAdd.getTray()[1].name,'別メーカー 別ミルク 粉ミルク 缶');
+ tap('type','その他');input('Type','大袋');input('Unit','袋');$('qaBaby').querySelector('[data-qa-babyadd]').click();
+ assert.equal(w.AtokoreQuickAdd.getTray()[2].name,'別メーカー 別ミルク ミルク 大袋');assert.equal(w.AtokoreQuickAdd.getTray()[2].unit,'袋');
+ assert.equal(w.localStorage.getItem('atokoreTrialV4'),before);
+ dom.window.close();
+});
+test('new wipes brands and custom names can be added without packaging, existing stored names stay intact',()=>{
+ const {dom,w,$}=browser();$('bfNavAdd').click();
+ const tap=(f,v)=>$('qaBaby').querySelector('[data-qa-baby="'+f+'"][data-value="'+v+'"]').click();
+ tap('kind','wipes');
+ assert.ok(!$('qaBaby').textContent.includes('包装'));
+ assert.equal($('qaBaby').querySelectorAll('[data-qa-baby="type"]').length,0);
+ assert.ok(!$('qaBaby').querySelector('[data-qa-baby="brand"][data-value="ピジョン"]'));
+ for(const brand of ['カークランド','Rico','baby care']){tap('brand',brand);$('qaBaby').querySelector('[data-qa-babyadd]').click()}
+ const tray=w.AtokoreQuickAdd.getTray();assert.deepEqual(Array.from(tray,x=>x.name),['カークランド おしりふき','Rico おしりふき','baby care おしりふき']);
+ tap('brand','その他');$('qaBabyBrand').value='<img src=x onerror="window.__bad=1">';
+ $('qaBabyBrand').dispatchEvent(new w.Event('input',{bubbles:true}));
+ $('qaBaby').querySelector('[data-qa-step="1"]').click();
+ assert.equal($('qaBabyBrand').value,'<img src=x onerror="window.__bad=1">');
+ $('qaBaby').querySelector('[data-qa-babyadd]').click();
+ assert.equal(w.__bad,undefined);assert.equal($('qaTrayList').querySelectorAll('img[src="x"]').length,0);
+ dom.window.close();
 });

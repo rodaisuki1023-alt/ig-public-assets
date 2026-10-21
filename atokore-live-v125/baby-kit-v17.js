@@ -9,7 +9,7 @@ const motifs={
 function kind(name,cat=''){
  const value=String(name||'');
  if(/おしりふき|お尻ふき|手口ふき/.test(value))return 'wipes';
- if(/粉ミルク|液体ミルク|らくらくミルク|らくらくキューブ|ほほえみ|すこやかM1|E赤ちゃん|はいはい|はぐくみ|アイクレオ|バランスミルク/.test(value))return 'milk';
+ if(/粉ミルク|液体ミルク|らくらくミルク|らくらくキューブ|ほほえみ|ステップ|ぐんぐん|チルミル|つよいこ|グローアップミルク|すこやかM1|E赤ちゃん|はいはい|はぐくみ|アイクレオ|バランスミルク/.test(value))return 'milk';
  if(/おむつ|オムツ|ムーニーマン|マミーポコ|パンパース|メリーズ|グーン|オヤスミマン/.test(value))return 'diaper';
  return null;
 }
@@ -19,7 +19,7 @@ function icon(type,size=42){
  if(type==='diaper'||type==='wipes'||type==='milk')return '<span class="bf-baby-icon bf-icon-'+type+'" aria-hidden="true"><img class="bf-baby-art" src="./icons/baby/'+type+'-bear-v'+(type==='milk'?'26':'24')+'.webp" width="'+dim+'" height="'+dim+'" alt="" decoding="async" style="object-fit:contain"></span>';
  return '<span class="bf-baby-icon bf-icon-'+type+'" aria-hidden="true"><svg viewBox="0 0 48 48" width="'+dim+'" height="'+dim+'" xmlns="http://www.w3.org/2000/svg"><rect width="48" height="48" rx="14" fill="'+a.bg+'"/>'+a.shape+'</svg></span>';
 }
-const BRANDS=['パンパース','グーン','マミーポコ','ムーニー','メリーズ','明治','森永','和光堂','ビーンスターク','アイクレオ','雪印','ピジョン','レック','西松屋','アカチャンホンポ'];
+const BRANDS=['パンパース','グーン','マミーポコ','ムーニー','メリーズ','明治','森永','和光堂','ビーンスターク','アイクレオ','雪印','ピジョン','レック','西松屋','アカチャンホンポ','カークランド','Rico','baby care'];
 function brand(name){
  const s=String(name||'').normalize('NFKC');
  return BRANDS.find(v=>s.includes(v))||'';
