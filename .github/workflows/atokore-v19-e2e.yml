@@ -85,7 +85,10 @@ jobs:
       - name: Real-browser tests (Chromium + WebKit)
         env:
           E2E_SCREEN_DIR: ${{ runner.temp }}/screens
-        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs
+        run: |
+          # Check the critical shared-data/auth paths first, then all remaining tests once.
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs household-google-v40 household-sync-v37
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs --grep-invert 'household-(google-v40|sync-v37)\.spec\.cjs'
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

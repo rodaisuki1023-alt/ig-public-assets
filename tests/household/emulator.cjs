@@ -9,8 +9,8 @@ const crypto = require('node:crypto');
 const { createDb, call } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
-let db, codes, tokens, refresh, oauth;
-async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); }
+let db, codes, tokens, refresh, oauth, dropPush;
+async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
@@ -33,6 +33,12 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__test/reset') { await reset(); return send(res, 200, { ok: true }); }
     if (url.pathname === '/__test/otp') return send(res, 200, { code: codes.get(String(url.searchParams.get('email')).toLowerCase()) || null });
     if (url.pathname === '/__test/sql') return send(res, 200, (await db.query(body.sql)).rows);
+    if (url.pathname === '/__test/drop-push') {
+      const uid=uidFor(body.email||url.searchParams.get('email'));
+      const fault=dropPush.get(uid)||{enabled:false,attempts:0};
+      if(req.method==='POST'){fault.enabled=body.enabled===true;dropPush.set(uid,fault)}
+      return send(res,200,fault);
+    }
     if (url.pathname === '/auth/v1/authorize') {
       const redirect = new URL(url.searchParams.get('redirect_to'));
       const challenge = url.searchParams.get('code_challenge');
@@ -74,6 +80,10 @@ http.createServer(async (req, res) => {
       const token = String(req.headers.authorization || '').replace(/^Bearer /, '');
       const uid = tokens.get(token) || null;
       if (token && token !== 'emu-anon-key' && !uid) return send(res, 401, { code: 'PGRST301', message: 'JWT expired' });
+      // Real connection failure, after CORS preflight succeeds, before SQL can apply the push.
+      // This avoids browser-specific request-interception behaviour in offline/retry tests.
+      const fault=dropPush.get(uid);
+      if(m[1]==='hh_push'&&fault?.enabled){fault.attempts++;res.destroy();return}
       try { return send(res, 200, await call(db, uid, m[1], body)); }
       catch (e) { return send(res, e.code === '42501' ? 403 : e.code === '42883' ? 404 : 400, { code: e.code, message: e.message }); }
     }

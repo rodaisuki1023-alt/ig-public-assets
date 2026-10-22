@@ -247,7 +247,7 @@ async function sharedPair(browser, request, info) {
   return { A, B };
 }
 
-test('both use stock while offline, rapid taps, reload while the server is unreachable: every change counts once', async ({ browser, request }, info) => {
+test('both use stock offline; rapid taps and reload while the write endpoint is unavailable count once', async ({ browser, request }, info) => {
   const { A, B } = await sharedPair(browser, request, info);
   expect(await qty(B.page, diaper)).toBe(2);
   await A.ctx.setOffline(true); await B.ctx.setOffline(true);
@@ -263,24 +263,32 @@ test('both use stock while offline, rapid taps, reload while the server is unrea
   expect(await qty(A.page, diaper)).toBe(0);
   expect(await qty(B.page, diaper)).toBe(0);
 
-  // Server unreachable: three quick taps are kept across a reload and arrive exactly once.
+  // Write endpoint unavailable: three quick taps survive a reload and arrive exactly once.
   // WebKit throttles timers in background pages; exercise the phone's active screen.
   await B.page.bringToFront();
-  let blocked = 0;
-  await B.ctx.route(EMU + '/**', r => { if(r.request().url().endsWith('/rest/v1/rpc/hh_push'))blocked++; return r.abort(); });
+  // Cut the actual HTTP connection in the server instead of Playwright route interception.
+  await request.post(EMU+'/__test/drop-push',{data:{email:'papa@example.test',enabled:true}});
   await tapStock(B.page, '牛乳', '+');
   const milkId = await idOf(B.page, '牛乳');
   for (let i = 0; i < 2; i++) await B.page.locator(`#stockList [data-stock-id="${milkId}"] .qty button`).nth(1).click();
   expect(await qty(B.page, '牛乳')).toBe(4);
   // Exercise the same explicit retry as "今すぐ同期"; background timer scheduling differs in WebKit.
   // The first half above separately checks that automatic local-change detection shows pending/offline.
-  await sync(B.page);
-  await expect.poll(() => blocked, { timeout: 10000 }).toBeGreaterThan(0);
+  // A retry can join a pull already in flight when the taps occurred. Keep explicitly retrying
+  // until an authenticated write actually reaches the failing endpoint; never infer this from a timer.
+  await expect.poll(async()=>{
+    const failed=await sync(B.page);
+    const fault=await(await request.get(EMU+'/__test/drop-push?email=papa%40example.test')).json();
+    return {seen:fault.attempts>0,attempts:fault.attempts,state:failed.state,navigatorOnline:await B.page.evaluate(()=>navigator.onLine),status:await B.page.evaluate(()=>window.AtokoreHousehold.status())};
+  },{timeout:10000}).toMatchObject({seen:true,state:'offline'});
   expect(await B.page.evaluate(() => window.AtokoreHousehold.status().pending)).toBeGreaterThan(0);
+  const operationIds=await B.page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewHouseholdSyncV19')).engine.outbox.map(o=>o.op_id));
+  await sync(A.page);expect(await qty(A.page,'牛乳')).toBe(1);
   await B.page.reload();
   await B.page.waitForFunction(() => !!window.AtokoreHousehold);
   expect(await qty(B.page, '牛乳')).toBe(4);
-  await B.ctx.unroute(EMU + '/**');
+  expect(await B.page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewHouseholdSyncV19')).engine.outbox.map(o=>o.op_id))).toEqual(operationIds);
+  await request.post(EMU+'/__test/drop-push',{data:{email:'papa@example.test',enabled:false}});
   await sync(B.page); await sync(B.page); await sync(A.page);
   expect(await qty(A.page, '牛乳')).toBe(4);
   expect(await qty(B.page, '牛乳')).toBe(4);
