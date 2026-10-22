@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 316b573b58a992b8d49a9e350ceb18ba45f23f68
+          ref: 22cc9b86419bb4789be62c8ecdfe604b255483a8
           path: _preview_v19_source
           persist-credentials: false
 
@@ -385,11 +385,13 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v40'" in worker
-          # v37 household sharing: shipped switched off (no backend configured = no menu, no requests).
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v41'" in worker
+          # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
-          assert 'window.ATOKORE_HOUSEHOLD_CONFIG = window.ATOKORE_HOUSEHOLD_CONFIG || null;' in config
-          assert 'http' not in config.split('*/')[-1]
+          assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
+          assert "url: 'https://vzyxurodowpjltwbgbyc.supabase.co'" in config
+          assert "anonKey: 'sb_publishable_" in config
+          assert 'google: true' in config and 'email: false' in config
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
           for name, version in [('household-config-v37.js', 37), ('household-core-v37.js', 40), ('household-sync-v37.js', 40), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
