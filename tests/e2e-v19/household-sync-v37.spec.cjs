@@ -14,7 +14,7 @@ async function person(browser, info, state, { config = CONFIG } = {}) {
   const page = await ctx.newPage();
   page.__requests = [];
   page.on('request', r => { if (r.url().startsWith(EMU)) page.__requests.push(r.url()); });
-  if (config) await page.addInitScript(c => { window.ATOKORE_HOUSEHOLD_CONFIG = c; }, config);
+  await page.addInitScript(c => { window.ATOKORE_HOUSEHOLD_CONFIG = c; }, config);
   await open(page, state ? { [KEY]: state } : undefined);
   return { ctx, page };
 }

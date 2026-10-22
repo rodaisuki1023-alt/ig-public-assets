@@ -17,6 +17,8 @@ fs.rmSync(root, { recursive: true, force: true });
 fs.mkdirSync(site, { recursive: true });
 fs.cpSync(path.join(repo, 'atokore-live-v125'), site, { recursive: true });
 fs.writeFileSync(path.join(site, 'family.js'), '/* e2e production stand-in: family sync disabled */\n');
+// The actual production build does not load the trial's new sharing backend.
+fs.writeFileSync(path.join(site, 'household-config-v37.js'), 'window.ATOKORE_HOUSEHOLD_CONFIG = null;\n');
 execFileSync('python3', ['-I', path.join(repo, 'scripts/atokore/build-preview.py'), path.join(repo, 'atokore-live-v125'), path.join(site, 'preview-baby-v19'), '19'], { stdio: 'inherit' });
 
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml' };
