@@ -2,7 +2,7 @@
 
 ## 公開対象
 
-- source：`596f16a1d87ce213769b15212cd9c1945c2f8980`（実装は `cdfa2cd45900d3229a9b1dc5e6e242ef0ee58c18` と同一、差分は検証記録のみ）
+- source：`711dbb9d8271a0babe9930b79a328695b687ecd4`（アプリの配信ファイルは `cdfa2cd45900d3229a9b1dc5e6e242ef0ee58c18` と同一、後続は検証記録とテスト環境の修正のみ）
 - Draft source PR：https://github.com/rodaisuki1023-alt/ig-public-assets/pull/57 （baseはPR54のソースブランチ。mainへソースをマージしない）
 - 試用版：https://rodaisuki1023-alt.github.io/ig-public-assets/preview-baby-v19/
 - この公開PRの変更はPagesワークフローと本記録だけ。通常版ソースは変更しない。
@@ -21,9 +21,10 @@ GoogleログインのPKCE/S256を準備。保存キーは試用版専用で、�
 
 - ローカルNode回帰と配信ビルド手順の再現：成功。
 - 重点ブラウザ：13件成功。Googleは模擬リダイレクトであり、実Googleログインの確認ではない。
-- CI：https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39770664973
+- CI：https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/39773011586
 - CIの使い捨てPostgreSQL17.11：別接続で実際のロック待ちを確認する6項目成功。脱退後の更新・招待作成・招待無効化・利用回数消費を拒否し、同時参加失敗の上限と同時数量変更を検証。
 - Chromium/WebKit全体の最終結果と公開後の配信照合は、完了後に記録する。
+- 最初のCIではWebKitがPlaywrightのroute.fulfillによる302疑似リダイレクトに非対応のため5件失敗。テスト用Authサーバーから実HTTP302を返し、PKCE検証と一度限りのコード交換を行う方式へ修正した。1件のオフライン復帰確認はフォアグラウンドと通信の拒否を明示して検証するよう補強。アプリのコードをテストに合わせて弱める変更は行っていない。
 
 ## 維持するものと残る確認
 
