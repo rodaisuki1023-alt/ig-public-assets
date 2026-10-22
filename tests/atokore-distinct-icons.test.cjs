@@ -70,5 +70,5 @@ test('offline app includes the new glyph library before the UI and cache is bump
  assert.ok(html.indexOf('product-icons.js')<html.indexOf('quick-add.js'));
  assert.match(sw,/'\.\/product-icons.js'/);
  assert.match(sw,/'\.\/compact-add.css'/);
- assert.match(sw,/atokore-pwa-v38/);
+ assert.match(sw,/atokore-pwa-v39/);
 });

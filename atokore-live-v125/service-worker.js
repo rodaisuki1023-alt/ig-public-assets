@@ -1,7 +1,7 @@
 // Several apps share this origin (the production app at the site root and sandboxed trials in
 // sub-directories). This worker therefore only touches its own directory and its own caches.
 // Refreshed worker for the direct one-tap repeat-list stock-add release.
-const CACHE_VERSION = 'atokore-pwa-v38';
+const CACHE_VERSION = 'atokore-pwa-v39';
 const SCOPE_PATH = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CACHE_PREFIX = 'atokore-shell:' + SCOPE_PATH + ':';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -32,6 +32,8 @@ const APP_SHELL = [
   './household-sync-v37.js',
   './receipt-v38.css',
   './receipt-match-v38.js',
+  './onboarding-v39.js',
+  './onboarding-v39.css',
   './baby-kit-v17.js',
   './baby-food-catalog-v35.js',
   './baby-flow-v17.js',

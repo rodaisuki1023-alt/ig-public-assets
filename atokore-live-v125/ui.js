@@ -36,7 +36,7 @@
  function catCount(cat){return stock().filter(x=>x.cat===cat).length}
  function renderHomeV11(){
   const home=document.getElementById('pg-home');if(!home)return;
-  const arr=stock(),bs=buy();const exp=arr.filter(x=>x.exp&&days(x.exp)<=3);const expired=arr.filter(x=>x.exp&&days(x.exp)<0);const pred=arr.filter(x=>Number(x.qty)<=1).length;
+  const arr=stock(),bs=buy();const exp=arr.filter(x=>x.exp&&days(x.exp)<=3);const expired=arr.filter(x=>x.exp&&days(x.exp)<0);const pred=arr.filter(x=>window.atokoreIsLow?window.atokoreIsLow(x):Number(x.qty)<=1).length;
   const status=expired.length?'dangerState':(exp.length||bs.length?'attn':'');const icon=expired.length?'!':(exp.length||bs.length?'⚠':'✓');const title=expired.length?`${expired.length}件の期限切れがあります`:(exp.length||bs.length?`${exp.length+bs.length}件を確認`:'今日は急ぎなし');
   const urgent=exp.slice().sort((a,b)=>days(a.exp)-days(b.exp)).slice(0,5);
   const urgentHtml=urgent.length?urgent.map(x=>{const d=days(x.exp),c=cv(x.cat);return `<div class="row ${d<=3?'expiryNear':''}" style="${vars(x.cat)}"><div class="grow"><div class="name">${esc(x.name)}</div><span class="catMark" style="${vars(x.cat)}">${c.i} ${esc(x.cat)}</span></div><div style="text-align:right"><b>${esc(x.qty)}${esc(x.unit)}</b><div class="expiryBadge ${d<0?'expiryExpired':''}">${d<0?`期限切れ ${Math.abs(d)}日`:(d===0?'今日まで':`あと${d}日`)}</div></div></div>`}).join(''):`<div class="empty">期限が近いものはありません</div>`;

@@ -31,8 +31,14 @@ function validate(input,current){
  if(store.length>120)throw Error('購入店舗は120文字以内で入力してください');
  const price=Number(input.price||0);
  if(!Number.isFinite(price)||price<0||price>10000000)throw Error('購入価格を確認してください');
- return {...current,name,cat,qty,unit,place,expType,exp,memo,store,price,
+ // Optional reorder line: empty means the default (要補充 at 1 or less).
+ const rawMin=input.minQty==null?'':String(input.minQty).trim();
+ const minQty=rawMin===''?null:Number(rawMin);
+ if(minQty!==null&&(!Number.isSafeInteger(minQty)||minQty<0||minQty>9999))throw Error('補充の目安は0〜9999の整数で入力してください（空欄なら1）');
+ const next={...current,name,cat,qty,unit,place,expType,exp,memo,store,price,
   purchase:String(input.purchase||'')};
+ if(minQty===null)delete next.minQty;else next.minQty=minQty;
+ return next;
 }
 function edit(id){
  const item=read(id);if(!item){root.alert?.('商品が見つかりません');return}
@@ -43,6 +49,7 @@ function edit(id){
  '<label>商品名<input name="name" id="atkEditName" maxlength="120" required value="'+esc(item.name)+'"></label>'+
  '<div class="atk-edit-pair"><label>在庫数<input name="qty" type="number" required min="0" max="99999" step="1" inputmode="numeric" value="'+esc(item.qty)+'"></label>'+
  '<label>単位<select name="unit">'+formOptions(UNITS,item.unit||'個')+'</select></label></div>'+
+ '<label class="atk-edit-reorder">補充の目安（任意）<span class="atk-edit-inline"><span>残り</span><input name="minQty" type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" value="'+esc(item.minQty??'')+'"><span>以下で「要補充」に表示</span></span><small>空欄なら残り1以下で表示します</small></label>'+
  '<label>カテゴリー<select name="cat">'+formOptions(CATEGORIES,item.cat||'その他')+'</select></label>'+
  '<label>保管場所<select name="place"><option value="">未設定</option>'+formOptions(PLACES,item.place||'')+'</select></label>'+
  '<div class="atk-edit-pair"><label>期限の種類<select name="expType">'+formOptions(EXPIRY,item.expType||'期限なし')+'</select></label>'+
