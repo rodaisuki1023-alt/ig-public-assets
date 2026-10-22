@@ -158,11 +158,16 @@ test('both use stock while offline, rapid taps, reload while the server is unrea
   expect(await qty(B.page, diaper)).toBe(0);
 
   // Server unreachable: three quick taps are kept across a reload and arrive exactly once.
-  await B.ctx.route(EMU + '/**', r => r.abort());
+  // WebKit throttles timers in background pages; exercise the phone's active screen.
+  await B.page.bringToFront();
+  let blocked = 0;
+  await B.ctx.route(EMU + '/**', r => { blocked++; return r.abort(); });
   await tapStock(B.page, '牛乳', '+');
   const milkId = await idOf(B.page, '牛乳');
   for (let i = 0; i < 2; i++) await B.page.locator(`#stockList [data-stock-id="${milkId}"] .qty button`).nth(1).click();
-  await expect.poll(async () => (await B.page.evaluate(() => window.AtokoreHousehold.status().pending))).toBeGreaterThan(0);
+  expect(await qty(B.page, '牛乳')).toBe(4);
+  await expect.poll(() => blocked, { timeout: 10000 }).toBeGreaterThan(0);
+  expect(await B.page.evaluate(() => window.AtokoreHousehold.status().pending)).toBeGreaterThan(0);
   await B.page.reload();
   await B.page.waitForFunction(() => !!window.AtokoreHousehold);
   expect(await qty(B.page, '牛乳')).toBe(4);

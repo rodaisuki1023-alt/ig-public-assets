@@ -9,8 +9,8 @@ const crypto = require('node:crypto');
 const { createDb, call } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
-let db, codes, tokens, refresh;
-async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); }
+let db, codes, tokens, refresh, oauth;
+async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
@@ -33,6 +33,17 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/__test/reset') { await reset(); return send(res, 200, { ok: true }); }
     if (url.pathname === '/__test/otp') return send(res, 200, { code: codes.get(String(url.searchParams.get('email')).toLowerCase()) || null });
     if (url.pathname === '/__test/sql') return send(res, 200, (await db.query(body.sql)).rows);
+    if (url.pathname === '/auth/v1/authorize') {
+      const redirect = new URL(url.searchParams.get('redirect_to'));
+      const challenge = url.searchParams.get('code_challenge');
+      if (url.searchParams.get('provider') !== 'google' || url.searchParams.get('code_challenge_method') !== 's256' || !/^[A-Za-z0-9_-]{43}$/.test(challenge || '') ||
+          !['127.0.0.1', 'localhost'].includes(redirect.hostname) || redirect.pathname !== '/ig-public-assets/preview-baby-v19/' || !redirect.searchParams.has('atokore_auth')) return send(res, 400, { message: 'invalid test authorize request' });
+      const code = crypto.randomUUID();
+      oauth.set(code, { challenge, email: 'google@example.test' });
+      redirect.searchParams.set('code', code);
+      // Real HTTP redirect: WebKit cannot simulate a 302 with Playwright route.fulfill().
+      res.writeHead(302, { Location: redirect.href, 'Cache-Control': 'no-store' }); res.end(); return;
+    }
     if (req.headers.apikey !== 'emu-anon-key') return send(res, 401, { message: 'Invalid API key' });
     if (url.pathname === '/auth/v1/otp') {
       const email = String(body.email || '').trim().toLowerCase();
@@ -51,6 +62,11 @@ http.createServer(async (req, res) => {
       if (!r) return send(res, 400, { code: 'refresh_token_not_found', msg: 'Invalid Refresh Token' });
       refresh.delete(body.refresh_token);
       return send(res, 200, session(r.uid, r.email));
+    }
+    if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type') === 'pkce') {
+      const attempt = oauth.get(body.auth_code); oauth.delete(body.auth_code);
+      if (!attempt || crypto.createHash('sha256').update(String(body.code_verifier || '')).digest('base64url') !== attempt.challenge) return send(res, 400, { message: 'invalid PKCE exchange' });
+      return send(res, 200, session(uidFor(attempt.email), attempt.email));
     }
     if (url.pathname === '/auth/v1/logout') { tokens.delete(String(req.headers.authorization || '').replace(/^Bearer /, '')); return send(res, 204); }
     const m = url.pathname.match(/^\/rest\/v1\/rpc\/([a-z_]+)$/);

@@ -4,26 +4,19 @@ const {createHash}=require('node:crypto');
 const {open,go,stored,baseState,KEY,shot}=require('./helpers.cjs');
 const EMU='http://127.0.0.1:'+(process.env.E2E_HH_PORT||4720);
 const OAUTH='atokorePreviewHouseholdOAuthV19',SESSION='atokorePreviewHouseholdSessionV19';
-const cors={'access-control-allow-origin':'*','access-control-allow-headers':'apikey,content-type','access-control-allow-methods':'POST,OPTIONS'};
 test.beforeEach(async({request})=>{await request.post(EMU+'/__test/reset')});
 async function google(page,request){
- const email='google@example.test',headers={apikey:'emu-anon-key'};
- await request.post(EMU+'/auth/v1/otp',{headers,data:{email}});
- const {code}=await(await request.get(EMU+'/__test/otp?email='+email)).json();
- const s=await(await request.post(EMU+'/auth/v1/verify',{headers,data:{type:'email',email,token:code}})).json();
  let exchanges=0,challenge=null;
  await page.addInitScript(config=>{window.ATOKORE_HOUSEHOLD_CONFIG=config},{url:EMU,anonKey:'emu-anon-key',google:true,email:false});
- await page.route(EMU+'/auth/v1/authorize?**',async route=>{
-  const u=new URL(route.request().url());challenge=u.searchParams.get('code_challenge');
-  expect(u.searchParams.get('code_challenge_method')).toBe('s256');
-  await route.fulfill({status:302,headers:{location:u.searchParams.get('redirect_to')+'&code=fake-google-code'}});
- });
- await page.route(EMU+'/auth/v1/token?grant_type=pkce',async route=>{
-  if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers:cors});
-  exchanges++;expect(route.request().headers().authorization).toBeUndefined();
-  expect(route.request().postDataJSON().auth_code).toBe('fake-google-code');
-  expect(challenge).toBe(createHash('sha256').update(route.request().postDataJSON().code_verifier).digest('base64url'));
-  await route.fulfill({status:200,contentType:'application/json',headers:cors,body:JSON.stringify(s)});
+ page.on('request',req=>{
+  if(req.url().startsWith(EMU+'/auth/v1/authorize?')){
+   const u=new URL(req.url());challenge=u.searchParams.get('code_challenge');expect(u.searchParams.get('code_challenge_method')).toBe('s256');
+  }
+  if(req.url().includes('/auth/v1/token?grant_type=pkce')&&req.method()==='POST'){
+   exchanges++;expect(req.headers().authorization).toBeUndefined();
+   expect(req.postDataJSON().auth_code).toBeTruthy();
+   expect(challenge).toBe(createHash('sha256').update(req.postDataJSON().code_verifier).digest('base64url'));
+  }
  });
  return ()=>exchanges;
 }
