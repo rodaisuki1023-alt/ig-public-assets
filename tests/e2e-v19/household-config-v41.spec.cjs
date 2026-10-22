@@ -50,9 +50,13 @@ test('cancelled provider navigation cleans the URL and preserves existing stock'
   await open(page,{[KEY]:baseState()});const before=await stored(page);
   await go(page,'premium');await page.click('#atkHouseholdCard');
   const authorized=page.waitForRequest(r=>r.url().startsWith(BACKEND+'/auth/v1/authorize?'));
+  const appURL=new URL(page.url());
+  const returned=page.waitForURL(u=>u.origin===appURL.origin&&u.pathname===appURL.pathname&&u.searchParams.get('error')==='access_denied',{waitUntil:'commit'});
   await page.getByRole('button',{name:'Googleでログイン'}).click();
   await authorized;
-  // Wait for this attempt to be consumed, rather than matching the old document's blank URL.
+  // Await the callback document before reading storage; the previous document is being replaced.
+  await returned;
+  await page.waitForLoadState('load');
   await expect.poll(()=>page.evaluate(k=>localStorage.getItem(k),OAUTH)).toBeNull();
   await expect.poll(()=>new URL(page.url()).search).toBe('');
   await expect(page.getByRole('button',{name:'Googleでログイン'})).toBeVisible();
