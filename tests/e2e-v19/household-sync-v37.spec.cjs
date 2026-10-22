@@ -254,6 +254,10 @@ test('both use stock while offline, rapid taps, reload while the server is unrea
   await tapStock(A.page, diaper, '-');
   await tapStock(B.page, diaper, '-');
   await expect(A.page.locator('#atkHouseholdChip')).toHaveText(/送信待ち|オフライン/);
+  // An immediate offline failure must release the in-flight guard; a resolved promise must
+  // not stay assigned forever and prevent all later reconnect/retry requests.
+  expect((await sync(A.page)).state).toBe('offline');
+  expect((await sync(B.page)).state).toBe('offline');
   await A.ctx.setOffline(false); await B.ctx.setOffline(false);
   await sync(A.page); await sync(B.page); await sync(A.page);
   expect(await qty(A.page, diaper)).toBe(0);

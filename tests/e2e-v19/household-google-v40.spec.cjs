@@ -41,7 +41,13 @@ test('session storage failure after callback does not claim sign-in or change st
  await google(page,request);
  await page.addInitScript(key=>{const set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k===key)throw new DOMException('quota','QuotaExceededError');return set.call(this,k,v)}},SESSION);
  await open(page,{[KEY]:baseState()});const before=await stored(page);
- await go(page,'premium');await page.click('#atkHouseholdCard');await page.getByRole('button',{name:'Googleでログイン'}).click();
+ await go(page,'premium');await page.click('#atkHouseholdCard');
+ // The pre-navigation login button is already visible; wait for the callback's real exchange
+ // before asserting the failed-session UI, otherwise WebKit can inspect the old document.
+ const exchanged=page.waitForResponse(r=>r.url().includes('/auth/v1/token?grant_type=pkce')&&r.request().method()==='POST');
+ await page.getByRole('button',{name:'Googleでログイン'}).click();
+ expect((await exchanged).ok()).toBe(true);
+ await expect.poll(()=>new URL(page.url()).search).toBe('');
  await expect(page.getByRole('button',{name:'Googleでログイン'})).toBeVisible();
  await expect(page.locator('#atkHhName')).toHaveCount(0);
  expect(await stored(page)).toEqual(before);

@@ -80,7 +80,9 @@ function setStatus(state,detail){status={state,detail,pending:engine?engine.stat
 async function syncNow(){
  if(!engine||!household)return status;
  if(syncing)return syncing;
- syncing=(async()=>{
+ // Defer execution until the guard is assigned. An offline failure can happen before the
+ // first await; an immediately invoked async function would clear then overwrite the guard.
+ syncing=Promise.resolve().then(async()=>{
   try{
    if(root.navigator&&root.navigator.onLine===false)throw new NetError('offline','network',0);
    setStatus('syncing');
@@ -95,9 +97,9 @@ async function syncNow(){
    else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
    else setStatus('error',e.message);
    root.console?.warn?.('あとこれ 家族共有の同期',e);
-  }finally{syncing=null}
+  }
   return status;
- })();
+ }).finally(()=>{syncing=null});
  return syncing;
 }
 // Local saves are noticed by comparing the stored data; sending waits a moment to batch quick taps.
