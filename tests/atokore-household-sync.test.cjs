@@ -174,15 +174,34 @@ test('a device that cannot save locally keeps its data and sync state, then catc
   assert.equal(qtyOf(b, 'パンパース テープ M'), 9);
 });
 
-test('changes the server refuses are reported and leave the queue, and the server copy wins', async () => {
+test('a refused change blocks sync, preserves local data across reloads, and needs explicit recovery', async () => {
   const { a, b } = await household(start());
   await b.engine.adopt({ useShared: true });
   a.edit(s => { s.items[0].name = 'あ'.repeat(130); });
-  await a.engine.sync();
+  await assert.rejects(a.engine.sync(), /sync_rejected/);
   assert.equal(a.engine.status().pending, 0);
   assert.equal(a.engine.status().rejected, 1);
   assert.equal(a.engine.meta().rejected[0].status, 'rejected:bad_field');
-  assert.equal(a.state().items[0].name, 'パンパース テープ M');
+  assert.equal(a.state().items[0].name, 'あ'.repeat(130));
+  a.boot();
+  await assert.rejects(a.engine.sync(), /sync_rejected/);
+  await assert.rejects(a.engine.pull(), /sync_rejected/);
+  assert.equal(a.state().items[0].name, 'あ'.repeat(130));
   await b.engine.sync();
   assert.equal(b.state().items[0].name, 'パンパース テープ M');
+  a.engine.resolveRejected();
+  await a.engine.sync();
+  assert.equal(a.state().items[0].name, 'パンパース テープ M');
+});
+
+test('a lost rejection response cannot make a refused new product disappear on retry', async () => {
+  const { db, a } = await household(start());
+  await db.exec('update atokore_private.households set record_limit = 3');
+  a.edit(s => s.items.push(item(99, 'ローカルだけの商品', 2)));
+  a.net.mode = 'lose-response';
+  await assert.rejects(a.engine.sync(), /response lost/);
+  a.boot();
+  await assert.rejects(a.engine.sync(), /sync_rejected/);
+  assert.equal(qtyOf(a, 'ローカルだけの商品'), 2);
+  assert.equal(a.engine.meta().rejected[0].status, 'rejected:record_limit');
 });

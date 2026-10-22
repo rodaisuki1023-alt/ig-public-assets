@@ -16,6 +16,31 @@ permissions:
   contents: read
 
 jobs:
+  postgres-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: atokore_ci
+          POSTGRES_PASSWORD: atokore-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts pg@8.16.3
+      - name: Real PostgreSQL lock and revocation races
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/revocation-postgres.cjs
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -38,6 +63,7 @@ jobs:
           node --test tests/atokore-baby-food-v35.test.cjs
           node --test tests/atokore-batch-review-v36.test.cjs
           node --test tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs
+          node --test tests/atokore-household-google-v40.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs

@@ -12,12 +12,14 @@ const cfg=root.ATOKORE_HOUSEHOLD_CONFIG;
 const core=root.AtokoreHouseholdCore;
 const DATA_KEY='atokoreTrialV4',META_KEY='atokoreHouseholdSyncV1',SESSION_KEY='atokoreHouseholdSessionV1';
 const BEFORE_SHARE=DATA_KEY+'BeforeShare';
+const RECOVERY=DATA_KEY+'SyncRecovery';
 function validConfig(c){
  if(!c||typeof c.url!=='string'||typeof c.anonKey!=='string'||!c.anonKey)return false;
  try{const u=new URL(c.url);return u.protocol==='https:'||((u.hostname==='127.0.0.1'||u.hostname==='localhost')&&u.protocol==='http:')}catch(e){return false}
 }
 if(!doc||!core||!validConfig(cfg))return;
 const base=cfg.url.replace(/\/+$/,'');
+const googleAuth=cfg.google===true&&root.AtokoreGoogleAuth?root.AtokoreGoogleAuth.create({url:base,key:cfg.anonKey,storage:()=>root.localStorage,location:root.location,history:root.history,crypto:root.crypto,fetch:(...args)=>root.fetch(...args),navigate:href=>root.location.assign(href)}):null;
 const $=id=>doc.getElementById(id);
 const store=()=>{try{return root.localStorage}catch(e){return null}};
 const readJSON=k=>{try{return JSON.parse(store()?.getItem(k)||'null')}catch(e){return null}};
@@ -28,13 +30,13 @@ let meta=readJSON(META_KEY)||{};
 if(!meta.device){meta.device='web-'+core.newSid('d').slice(2,12);writeJSON(META_KEY,meta)}
 let session=readJSON(SESSION_KEY);
 let household=meta.household||null,engine=null,syncing=null,lastRaw=null,status={state:'local'},timer=null,pending=null,puller=null;
-const saveMeta=patch=>{meta={...meta,...patch};return writeJSON(META_KEY,meta)};
+const saveMeta=patch=>{const next={...meta,...patch};if(!writeJSON(META_KEY,next))return false;meta=next;return true};
 
 // ---------------------------------------------------------------- network (Supabase Auth + PostgREST RPC)
 class NetError extends Error{constructor(m,code,status){super(m);this.code=code;this.status=status}}
 async function request(path,body,auth){
  let res;
- try{res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.anonKey,Authorization:'Bearer '+(auth||cfg.anonKey)},body:JSON.stringify(body||{})})}
+ try{res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.anonKey,...(auth?{Authorization:'Bearer '+auth}:{})},body:JSON.stringify(body||{})})}
  catch(e){throw new NetError('offline','network',0)}
  const text=await res.text();let data=null;try{data=text?JSON.parse(text):null}catch(e){}
  if(!res.ok)throw new NetError(data?.message||data?.msg||data?.error_description||('HTTP '+res.status),data?.code||'http',res.status);
@@ -42,8 +44,9 @@ async function request(path,body,auth){
 }
 function keepSession(s){
  if(!s?.access_token||!s?.refresh_token||!s?.user?.id)throw new NetError('bad_session','auth',0);
- session={access_token:s.access_token,refresh_token:s.refresh_token,expires_at:Number(s.expires_at)||Math.floor(Date.now()/1000)+Number(s.expires_in||3600),user:{id:s.user.id,email:s.user.email||''}};
- writeJSON(SESSION_KEY,session);
+ const next={access_token:s.access_token,refresh_token:s.refresh_token,expires_at:Number(s.expires_at)||Math.floor(Date.now()/1000)+Number(s.expires_in||3600),user:{id:s.user.id,email:s.user.email||''}};
+ if(!writeJSON(SESSION_KEY,next))throw new NetError('ログイン情報を端末に保存できませんでした','storage',0);
+ session=next;
 }
 async function refreshSession(){
  if(!session?.refresh_token)throw new NetError('signed_out','auth',401);
@@ -85,7 +88,8 @@ async function syncNow(){
    const s=engine.status();
    setStatus(s.pending?'pending':'synced');
   }catch(e){
-   if(e.code==='network')setStatus('offline');
+   if(e.code==='rejected')setStatus('blocked');
+   else if(e.code==='network')setStatus('offline');
    else if(e.code==='auth'||e.status===401)setStatus('auth');
    else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
    else setStatus('error',e.message);
@@ -121,6 +125,7 @@ function el(tag,props,children){
  return n;
 }
 const STATUS_TEXT={local:'共有していません',syncing:'同期しています…',synced:'家族と共有済み',pending:'送信待ちがあります',offline:'オフライン：この端末に保存済み。つながったら送ります',auth:'ログインし直してください',error:'送信に失敗しました。自動でやり直します',removed:'この世帯から外れました（端末の在庫は残っています）'};
+STATUS_TEXT.blocked='共有できない変更があります。端末のデータを残して同期を止めています';
 function statusLine(){
  const s=engine?engine.status():{pending:0,rejected:0};
  let t=STATUS_TEXT[status.state]||'';
@@ -156,6 +161,12 @@ function downloadBackup(){
  const url=URL.createObjectURL(new Blob([JSON.stringify({app:'atokore',format:1,exportedAt:new Date(b.at).toISOString(),data:b.data},null,1)],{type:'application/json'}));
  const a=el('a',{href:url,download:'atokore-before-share.json'});doc.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
+function downloadRecovery(saved=false){
+ const b=saved===true?readJSON(RECOVERY):{at:Date.now(),data:readState(),engine:engine?.meta()};
+ if(!b?.data)return;
+ const url=URL.createObjectURL(new Blob([JSON.stringify({app:'atokore',format:1,exportedAt:new Date(b.at).toISOString(),data:b.data},null,1)],{type:'application/json'}));
+ const a=el('a',{href:url,download:'atokore-sync-recovery.json'});doc.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
+}
 const counts=s=>'在庫'+(s?.items?.length||0)+'件・買い物'+(s?.buys?.length||0)+'件・いつものリスト'+(s?.routines?.length||0)+'件';
 
 // ---------------------------------------------------------------- screens
@@ -169,6 +180,7 @@ async function open(){
  return dashboard();
 }
 function signIn(){
+ const google=googleAuth?button('Googleでログイン',e=>busy(e.target,()=>googleAuth.start())):null;
  const email=el('input',{type:'email',autocomplete:'email',inputmode:'email',placeholder:'you@example.com',id:'atkHhEmail'});
  const code=el('input',{type:'text',inputmode:'numeric',autocomplete:'one-time-code',maxlength:'6',placeholder:'6桁',id:'atkHhCode'});
  const step2=el('div',{class:'atk-hh-step',hidden:''},[field('メールに届いた6桁のコード',code),button('ログイン',e=>busy(e.target,async()=>{
@@ -177,9 +189,10 @@ function signIn(){
   await afterSignIn();
  }))]);
  sheet('家族共有（限定テスト）',[
-  note('家族それぞれが自分のメールアドレスでログインし、同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。写真はこの端末だけに保存され、共有されません。'),
-  field('メールアドレス',email),
-  button('確認コードを送る',e=>busy(e.target,async()=>{
+  note('家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインし、同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。写真はこの端末だけに保存され、共有されません。'),
+  google,
+  cfg.email===false?null:field('メールアドレス',email),
+  cfg.email===false?null:button('確認コードを送る',e=>busy(e.target,async()=>{
    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value.trim()))throw 'メールアドレスを確認してください';
    await request('/auth/v1/otp',{email:email.value.trim(),create_user:true});
    step2.hidden=false;code.focus();notice('確認コードを送りました。メールを確認してください');
@@ -188,6 +201,7 @@ function signIn(){
 async function afterSignIn(){
  const my=await rpc('hh_my',{});
  if(my?.household){
+  if(meta.household?.id===my.household.id&&meta.engine?.shadow){makeEngine();watch();await syncNow();return dashboard()}
   // Same account on a new or reset device: receive the household, choosing what happens to local data.
   household={id:my.household.id,name:my.household.name};saveMeta({household});
   makeEngine();engine.startAsJoiner();
@@ -265,7 +279,16 @@ async function dashboard(){
   button('変更履歴（だれが何を変えたか）',e=>busy(e.target,async()=>{
    const rows=await rpc('hh_changes',{p_limit:50});history.replaceChildren(...(rows||[]).map(r=>el('li',{text:changeText(r)})));history.hidden=false;
   }),'atk-hh-secondary'),history,
-  rejected.length?el('details',{class:'atk-hh-rejected'},[el('summary',{text:'送れなかった変更 '+rejected.length+'件（共有のデータを優先しました）'}),...rejected.slice(-10).map(r=>el('p',{text:(r.op.type)+'：'+r.status}))]):null,
+  rejected.length?el('div',{class:'atk-hh-rejected'},[
+   note('送れなかった変更が'+rejected.length+'件あります。端末の内容を残して同期を止めています。'),
+   button('今の端末データをファイルに保存',downloadRecovery,'atk-hh-secondary'),
+   button('控えを残して共有データに合わせる',e=>busy(e.target,async()=>{
+    if(!root.confirm?.('送れなかった変更は共有の内容に合わせます。今の端末データを控えとして残してから再開します。よろしいですか？'))return;
+    const data=readState();
+    if(!data||!writeJSON(RECOVERY,{at:Date.now(),data,engine:engine.meta()}))throw '控えを保存できなかったため中止しました';
+    engine.resolveRejected();await syncNow();dashboard();
+   }),'atk-hh-link')]):null,
+  readJSON(RECOVERY)?button('同期を再開する前の控えをファイルに保存',()=>downloadRecovery(true),'atk-hh-link'):null,
   note('写真はこの端末だけに保存され、家族には共有されません。'),
   readJSON(BEFORE_SHARE)?button('共有前の控えをファイルに保存',downloadBackup,'atk-hh-link'):null,
   button('この世帯から抜ける（端末の在庫は残ります）',e=>busy(e.target,leave),'atk-hh-link'),
@@ -324,6 +347,8 @@ function installEntry(){
 }
 
 installEntry();
-if(session&&household&&meta.engine?.shadow){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow()}
+if(googleAuth?.hasCallback()){
+ googleAuth.finish().then(async s=>{if(s){keepSession(s);await afterSignIn()}}).catch(e=>{signIn();notice(friendly(e))});
+}else if(session&&household&&meta.engine?.shadow){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow()}
 root.AtokoreHousehold=Object.freeze({open,syncNow,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

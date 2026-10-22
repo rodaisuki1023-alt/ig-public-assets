@@ -40,6 +40,26 @@ async function tapStock(page, name, which) {
 
 test.beforeEach(async ({ request }) => { await request.post(EMU + '/__test/reset'); });
 
+test('rejected local edits stay on device across reload; recovery saves a copy before accepting shared data', async ({ browser, request }, info) => {
+  const { A, B } = await sharedPair(browser, request, info);
+  const bad='あ'.repeat(130);
+  await A.page.evaluate(({key,bad})=>{const s=JSON.parse(localStorage.getItem(key));s.items[0].name=bad;localStorage.setItem(key,JSON.stringify(s))},{key:KEY,bad});
+  await sync(A.page);
+  expect((await stored(A.page)).items[0].name).toBe(bad);
+  await A.page.reload();await A.page.waitForFunction(()=>!!window.AtokoreHousehold);
+  await sync(A.page);
+  expect((await stored(A.page)).items[0].name).toBe(bad);
+  await go(A.page,'premium');await A.page.click('#atkHouseholdCard');
+  await expect(A.page.locator('.atk-hh-rejected')).toContainText('端末の内容を残して同期を止めています');
+  await A.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();
+  await expect(A.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  const copy=await A.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
+  expect(copy.data.items[0].name).toBe(bad);expect(copy.engine.rejected).toHaveLength(1);
+  expect((await stored(A.page)).items[0].name).toBe('牛乳');
+  await sync(B.page);expect((await stored(B.page)).items[0].name).toBe('牛乳');
+  await A.ctx.close();await B.ctx.close();
+});
+
 test('without a configured backend nothing is shown and nothing is sent', async ({ browser }, info) => {
   const { ctx, page } = await person(browser, info, baseState(), { config: null });
   await go(page, 'premium');

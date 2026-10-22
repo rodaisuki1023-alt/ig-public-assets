@@ -170,6 +170,7 @@ function createEngine(io){
   return ops.length;
  }
  async function push(){
+  assertResolved();
   while(meta.outbox.length){
    const batch=meta.outbox.slice(0,100);
    const res=await io.rpc('hh_push',{p_ops:batch,p_device:io.device||null});
@@ -178,10 +179,12 @@ function createEngine(io){
    for(const o of batch){const s=answered.get(o.op_id);if(s&&s.startsWith('rejected'))rejected.push({op:o,status:s,at:now()})}
    const outbox=meta.outbox.filter(o=>!answered.has(o.op_id));
    if(outbox.length===meta.outbox.length)throw Object.assign(Error('push_not_acknowledged'),{code:'server'});
-   save({...meta,outbox,rejected:rejected.slice(-50)});
+   save({...meta,outbox,rejected});
+   assertResolved();
   }
  }
  async function pull(){
+  assertResolved();
   let more=true,base={...meta.base},cursor=meta.cursor;
   while(more){
    const res=await io.rpc('hh_pull',{p_since:cursor});
@@ -193,6 +196,7 @@ function createEngine(io){
  }
  // Rebuild the device's data from the server's records plus operations still waiting to be sent.
  function apply(){
+  assertResolved();
   flush();
   const view=rebase(meta.base,meta.outbox);
   const {state,map}=materialize(view,meta.map,io.readState()||EMPTY,{now:now()});
@@ -202,7 +206,10 @@ function createEngine(io){
  }
  // Never pull while operations may have reached the server without an answer: their effect
  // would be counted twice on screen. The next push gets "duplicate" for them and clears them.
- async function sync(){flush();await push();await pull();return status()}
+ function assertResolved(){if(meta.rejected.length)throw Object.assign(Error('sync_rejected'),{code:'rejected'})}
+ // Called only after the person explicitly chooses recovery and the UI saves a device backup.
+ function resolveRejected(){save({...meta,rejected:[]})}
+ async function sync(){flush();assertResolved();await push();await pull();return status()}
  function status(){return {pending:meta.outbox.length,rejected:meta.rejected.length,lastSync:meta.lastSync,cursor:meta.cursor,started:!!meta.shadow}}
  // Creating a household: everything on this device becomes the first shared data.
  function startAsCreator(){save({...freshMeta(),shadow:clone(EMPTY)});return flush()}
@@ -235,7 +242,7 @@ function createEngine(io){
   await push();
   return state.state;
  }
- return {flush,push,pull,apply,sync,status,startAsCreator,startAsJoiner,adopt,meta:()=>clone(meta)};
+ return {flush,push,pull,apply,sync,status,resolveRejected,startAsCreator,startAsJoiner,adopt,meta:()=>clone(meta)};
 }
 
 const api=Object.freeze({records,diff,rebase,materialize,matchLocal,identity,newSid,uuid,createEngine,freshMeta});
