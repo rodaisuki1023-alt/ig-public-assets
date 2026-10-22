@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: ec08418a0fc9c95d6df42af5851d93ffb9e33f7c
+          ref: 4716c8783fbb846848caa62dce0d463af4b19626
           path: _preview_v19_source
           persist-credentials: false
 
@@ -355,7 +355,7 @@ jobs:
           assert 'batch-review-v36.css?v=36' in html and "'./batch-review-v36.css'" in worker
           assert 'atkRoutineBuyCommit' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
-          assert 'baby-flow-v17.js?v=36' in html
+          assert 'baby-flow-v17.js?v=39' in html
           assert 'baby-kit-v17.js?v=33' in html
           assert 'baby-food-catalog-v35.js?v=35' in html
           assert 'baby-food-catalog-v35.js' in worker
@@ -365,7 +365,7 @@ jobs:
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
           assert 'product-photos-v30.js?v=30' in html and 'product-photos-v30.css?v=31' in html
-          assert 'atokore-redesign.js?v=30' in html and 'edit-after-add.js?v=35' in html
+          assert 'atokore-redesign.js?v=39' in html and 'edit-after-add.js?v=39' in html
           photos = (base / 'product-photos-v30.js').read_text()
           assert 'atokorePreviewProductPhotosV19' in photos and 'indexedDB.open' in photos
           assert 'localStorage.setItem' not in photos and 'fetch(' not in photos
@@ -385,7 +385,32 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v36'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v39'" in worker
+          # v37 household sharing: shipped switched off (no backend configured = no menu, no requests).
+          config = (base / 'household-config-v37.js').read_text()
+          assert 'window.ATOKORE_HOUSEHOLD_CONFIG = window.ATOKORE_HOUSEHOLD_CONFIG || null;' in config
+          assert 'http' not in config.split('*/')[-1]
+          sync = (base / 'household-sync-v37.js').read_text()
+          assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
+          for name in ['household-config-v37.js', 'household-core-v37.js', 'household-sync-v37.js', 'household-sync-v37.css']:
+              assert name + '?v=37' in html and f"'./{name}'" in worker, name
+          # No server secrets in the browser: only the public anon key could ever be configured.
+          built = ''.join(p.read_text() for p in base.glob('*.js'))
+          assert 'service_role' not in built and 'sb_secret_' not in built
+          # v38 receipts: pinned on-device OCR, suggestions, receipt history on trial-only storage.
+          receipt_js = (base / 'receipt.js').read_text()
+          assert 'receipt.js?v=38' in html and 'tesseract.js@5.1.1' in receipt_js
+          assert 'どの商品ですか？' in receipt_js and '読み取れなかった行' in receipt_js
+          assert 'atokorePreviewReceiptHistoryV19' in receipt_js
+          assert 'receipt-match-v38.js?v=38' in html and 'receipt-v38.css?v=38' in html
+          assert "'./receipt-match-v38.js'" in worker and "'./receipt-v38.css'" in worker
+          # v39 first run and reorder line.
+          onboarding = (base / 'onboarding-v39.js').read_text()
+          assert 'onboarding-v39.js?v=39' in html and 'onboarding-v39.css?v=39' in html
+          assert 'atokorePreviewOnboardingV19' in onboarding and 'atokorePreviewTrialV19' in onboarding
+          assert "'./onboarding-v39.js'" in worker and "'./onboarding-v39.css'" in worker
+          assert 'atokoreIsLow' in (base / 'atokore-redesign.js').read_text()
+          assert 'name="minQty"' in (base / 'edit-after-add.js').read_text()
           assert 'family sync is intentionally disabled' in (base / 'family.js').read_text()
           PY
           for f in "$PREVIEW"/*.js; do node --check "$f"; done
@@ -401,6 +426,11 @@ jobs:
           node --test _preview_v19_source/tests/atokore-product-photos-v30.test.cjs
           node --test _preview_v19_source/tests/atokore-baby-food-v35.test.cjs
           node --test _preview_v19_source/tests/atokore-batch-review-v36.test.cjs
+          node --test _preview_v19_source/tests/atokore-household-core.test.cjs
+          node --test _preview_v19_source/tests/atokore-receipt-match-v38.test.cjs
+          node _preview_v19_source/tests/atokore-receipt-product-names.test.cjs
+          node --test _preview_v19_source/tests/atokore-peach-ui.test.cjs
+          # Server rules (PGlite), two-account sharing and Chromium + WebKit checks run on the source branch.
           # Chromium + WebKit smoke and confirmation E2E checks run on source branch: atokore-v19-e2e.yml.
 
       - name: Configure Pages
