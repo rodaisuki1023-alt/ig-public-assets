@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 4716c8783fbb846848caa62dce0d463af4b19626
+          ref: 316b573b58a992b8d49a9e350ceb18ba45f23f68
           path: _preview_v19_source
           persist-credentials: false
 
@@ -385,15 +385,17 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v39'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v40'" in worker
           # v37 household sharing: shipped switched off (no backend configured = no menu, no requests).
           config = (base / 'household-config-v37.js').read_text()
           assert 'window.ATOKORE_HOUSEHOLD_CONFIG = window.ATOKORE_HOUSEHOLD_CONFIG || null;' in config
           assert 'http' not in config.split('*/')[-1]
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
-          for name in ['household-config-v37.js', 'household-core-v37.js', 'household-sync-v37.js', 'household-sync-v37.css']:
-              assert name + '?v=37' in html and f"'./{name}'" in worker, name
+          for name, version in [('household-config-v37.js', 37), ('household-core-v37.js', 40), ('household-sync-v37.js', 40), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
+              assert name + f'?v={version}' in html and f"'./{name}'" in worker, name
+          assert 'atokorePreviewHouseholdOAuthV19' in (base / 'household-google-v40.js').read_text()
+          assert 'sync_rejected' in (base / 'household-core-v37.js').read_text()
           # No server secrets in the browser: only the public anon key could ever be configured.
           built = ''.join(p.read_text() for p in base.glob('*.js'))
           assert 'service_role' not in built and 'sb_secret_' not in built
@@ -427,6 +429,7 @@ jobs:
           node --test _preview_v19_source/tests/atokore-baby-food-v35.test.cjs
           node --test _preview_v19_source/tests/atokore-batch-review-v36.test.cjs
           node --test _preview_v19_source/tests/atokore-household-core.test.cjs
+          node --test _preview_v19_source/tests/atokore-household-google-v40.test.cjs
           node --test _preview_v19_source/tests/atokore-receipt-match-v38.test.cjs
           node _preview_v19_source/tests/atokore-receipt-product-names.test.cjs
           node --test _preview_v19_source/tests/atokore-peach-ui.test.cjs
