@@ -155,13 +155,32 @@ function matchLocal(localState,view){
  * "Saved on this device" and "shared with the family" stay separate: an operation leaves the outbox
  * only when the server has answered for it. */
 const EMPTY={items:[],buys:[],routines:[]};
-function freshMeta(){return {shadow:null,map:{},outbox:[],base:{},cursor:0,rejected:[],lastSync:0}}
+function freshMeta(){return {shadow:null,map:{},outbox:[],base:{},cursor:0,rejected:[],pendingApply:null,lastSync:0}}
 function createEngine(io){
  const now=io.now||(()=>Date.now()),rand=io.rand||Math.random;
  let meta={...freshMeta(),...(io.readMeta()||{})};
  const save=next=>{if(!io.writeMeta(next))throw Object.assign(Error('sync_meta_not_saved'),{code:'storage'});meta=next};
+ // The app state and sync metadata are separate storage entries. Journal BEFORE the state write
+ // so a crash/quota failure between them can never turn a received change into a new local delta.
+ function recoverApply(){
+  const p=meta.pendingApply;if(!p)return;
+  if(!p.after||!['items','buys','routines'].every(k=>Array.isArray(p.after[k]))||!p.map||typeof p.map!=='object')throw Object.assign(Error('sync_recovery_needed'),{code:'recovery'});
+  const current=io.readState();
+  if(!same(current,p.after)){
+   if(!same(current,p.before))throw Object.assign(Error('sync_recovery_needed'),{code:'recovery'});
+   // The app edits its in-memory arrays in place; never expose the journal's own target object.
+   if(!io.writeState(clone(p.after)))throw Object.assign(Error('local_save_failed'),{code:'storage'});
+  }
+  save({...meta,map:p.map,shadow:clone(p.after),pendingApply:null,lastSync:p.at});
+ }
+ function commitState(state,map){
+  recoverApply();
+  save({...meta,pendingApply:{before:clone(io.readState()),after:clone(state),map:clone(map),at:now()}});
+  recoverApply();
+ }
  // Local changes since the last check become operations (persisted before anything is sent).
  function flush(){
+  recoverApply();
   if(!meta.shadow)return 0;
   const cur=io.readState();if(!cur)return 0;
   const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand});
@@ -170,6 +189,7 @@ function createEngine(io){
   return ops.length;
  }
  async function push(){
+  recoverApply();
   assertResolved();
   while(meta.outbox.length){
    const batch=meta.outbox.slice(0,100);
@@ -184,6 +204,7 @@ function createEngine(io){
   }
  }
  async function pull(){
+  recoverApply();
   assertResolved();
   let more=true,base={...meta.base},cursor=meta.cursor;
   while(more){
@@ -200,24 +221,31 @@ function createEngine(io){
   flush();
   const view=rebase(meta.base,meta.outbox);
   const {state,map}=materialize(view,meta.map,io.readState()||EMPTY,{now:now()});
-  if(!io.writeState(state))throw Object.assign(Error('local_save_failed'),{code:'storage'});
-  save({...meta,map,shadow:clone(state),lastSync:now()});
+  commitState(state,map);
   return state;
  }
  // Never pull while operations may have reached the server without an answer: their effect
  // would be counted twice on screen. The next push gets "duplicate" for them and clears them.
  function assertResolved(){if(meta.rejected.length)throw Object.assign(Error('sync_rejected'),{code:'rejected'})}
  // Called only after the person explicitly chooses recovery and the UI saves a device backup.
- function resolveRejected(){save({...meta,rejected:[]})}
+ function resolveRejected(){
+  const current=io.readState();
+  if(meta.pendingApply&&!current)throw Object.assign(Error('sync_recovery_needed'),{code:'recovery'});
+  save({...meta,rejected:[],...(meta.pendingApply?{shadow:clone(current),map:meta.pendingApply.map,pendingApply:null}:{})});
+ }
  async function sync(){flush();assertResolved();await push();await pull();return status()}
- function status(){return {pending:meta.outbox.length,rejected:meta.rejected.length,lastSync:meta.lastSync,cursor:meta.cursor,started:!!meta.shadow}}
+ function status(){return {pending:meta.outbox.length,rejected:meta.rejected.length,recovering:!!meta.pendingApply,lastSync:meta.lastSync,cursor:meta.cursor,started:!!meta.shadow}}
  // Creating a household: everything on this device becomes the first shared data.
- function startAsCreator(){save({...freshMeta(),shadow:clone(EMPTY)});return flush()}
+ function startAsCreator(){recoverApply();save({...freshMeta(),shadow:clone(EMPTY)});return flush()}
  // Joining: nothing local is sent until the person chooses (see adopt()).
- function startAsJoiner(){save({...freshMeta()})}
+ function startAsJoiner(){recoverApply();save({...freshMeta()})}
  /* After joining and pulling: choices = {useShared:true} or {add:[{key, mode:'new'|'sum'|'skip'}]}.
   * Records not added stay out of the shared list; the caller keeps a backup of the device's data. */
  async function adopt(choices){
+  recoverApply();
+  // Retrying the placement button must resume its original operation ids/quantities. Once the
+  // chosen state is committed, rebuilding "sum" from that state would count it a second time.
+  if(meta.shadow){await sync();return io.readState()}
   let more=true,base={},cursor=0;
   while(more){const res=await io.rpc('hh_pull',{p_since:cursor});for(const r of res.records||[])base[r.kind+':'+r.id]={kind:r.kind,id:r.id,fields:r.fields||{},qty:Number(r.qty)||0,deleted:!!r.deleted};cursor=Number(res.cursor)||cursor;more=!!res.more&&(res.records||[]).length>0}
   const local=records(io.readState()||EMPTY),view=rebase(base,[]),map={},outbox=[];
@@ -237,8 +265,7 @@ function createEngine(io){
   }
   save({...freshMeta(),base,cursor,map,outbox,shadow:null});
   const state=materialize(rebase(base,outbox),map,io.readState()||EMPTY,{now:now()});
-  if(!io.writeState(state.state))throw Object.assign(Error('local_save_failed'),{code:'storage'});
-  save({...meta,map:state.map,shadow:clone(state.state),lastSync:now()});
+  commitState(state.state,state.map);
   await push();
   return state.state;
  }

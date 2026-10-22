@@ -88,7 +88,8 @@ async function syncNow(){
    const s=engine.status();
    setStatus(s.pending?'pending':'synced');
   }catch(e){
-   if(e.code==='rejected')setStatus('blocked');
+   if(e.code==='rejected'||e.code==='recovery')setStatus('blocked');
+   else if(e.code==='storage')setStatus('storage');
    else if(e.code==='network')setStatus('offline');
    else if(e.code==='auth'||e.status===401)setStatus('auth');
    else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
@@ -126,6 +127,7 @@ function el(tag,props,children){
 }
 const STATUS_TEXT={local:'共有していません',syncing:'同期しています…',synced:'家族と共有済み',pending:'送信待ちがあります',offline:'オフライン：この端末に保存済み。つながったら送ります',auth:'ログインし直してください',error:'送信に失敗しました。自動でやり直します',removed:'この世帯から外れました（端末の在庫は残っています）'};
 STATUS_TEXT.blocked='共有できない変更があります。端末のデータを残して同期を止めています';
+STATUS_TEXT.storage='変更を端末に保存できませんでした。在庫は残っています。空き容量とブラウザの保存設定を確認してください';
 function statusLine(){
  const s=engine?engine.status():{pending:0,rejected:0};
  let t=STATUS_TEXT[status.state]||'';
@@ -174,9 +176,10 @@ async function open(){
  if(!session)return signIn();
  if(!household)return chooseHousehold();
  // Joined earlier but the choice about this device's data was never made: ask again before syncing.
- if(!meta.engine?.shadow){
+ if(!meta.engine?.shadow&&!meta.engine?.pendingApply){
   try{makeEngine();engine.startAsJoiner();return await choosePlacement(await rpc('hh_my',{}))}catch(e){notice(friendly(e));return}
  }
+ if(!engine)makeEngine();
  return dashboard();
 }
 function signIn(){
@@ -201,7 +204,7 @@ function signIn(){
 async function afterSignIn(){
  const my=await rpc('hh_my',{});
  if(my?.household){
-  if(meta.household?.id===my.household.id&&meta.engine?.shadow){makeEngine();watch();await syncNow();return dashboard()}
+  if(meta.household?.id===my.household.id&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();await syncNow();return dashboard()}
   // Same account on a new or reset device: receive the household, choosing what happens to local data.
   household={id:my.household.id,name:my.household.name};saveMeta({household});
   makeEngine();engine.startAsJoiner();
@@ -273,17 +276,18 @@ async function dashboard(){
  const inviteBox=el('div',{class:'atk-hh-invite'});
  const history=el('ol',{class:'atk-hh-history',hidden:''});
  const rejected=engine?.meta().rejected||[];
+ const checkpoint=engine?.meta().pendingApply;
  const s=sheet((household?.name||'わが家')+'の家族共有',[
   statusEl,members,inviteBox,
   button('今すぐ同期',e=>busy(e.target,async()=>{await syncNow();statusEl.textContent=statusLine()}),'atk-hh-secondary'),
   button('変更履歴（だれが何を変えたか）',e=>busy(e.target,async()=>{
    const rows=await rpc('hh_changes',{p_limit:50});history.replaceChildren(...(rows||[]).map(r=>el('li',{text:changeText(r)})));history.hidden=false;
   }),'atk-hh-secondary'),history,
-  rejected.length?el('div',{class:'atk-hh-rejected'},[
-   note('送れなかった変更が'+rejected.length+'件あります。端末の内容を残して同期を止めています。'),
+  rejected.length||checkpoint?el('div',{class:'atk-hh-rejected'},[
+   note(checkpoint?'前回の同期が端末への保存の途中で止まりました。端末の内容を残しています。まず「今すぐ同期」をお試しください。': '送れなかった変更が'+rejected.length+'件あります。端末の内容を残して同期を止めています。'),
    button('今の端末データをファイルに保存',downloadRecovery,'atk-hh-secondary'),
    button('控えを残して共有データに合わせる',e=>busy(e.target,async()=>{
-    if(!root.confirm?.('送れなかった変更は共有の内容に合わせます。今の端末データを控えとして残してから再開します。よろしいですか？'))return;
+    if(!root.confirm?.('端末の内容を共有の内容に合わせます。今の端末データを控えとして残してから再開します。よろしいですか？'))return;
     const data=readState();
     if(!data||!writeJSON(RECOVERY,{at:Date.now(),data,engine:engine.meta()}))throw '控えを保存できなかったため中止しました';
     engine.resolveRejected();await syncNow();dashboard();
@@ -349,6 +353,6 @@ function installEntry(){
 installEntry();
 if(googleAuth?.hasCallback()){
  googleAuth.finish().then(async s=>{if(s){keepSession(s);await afterSignIn()}}).catch(e=>{signIn();notice(friendly(e))});
-}else if(session&&household&&meta.engine?.shadow){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow()}
+}else if(session&&household&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow()}
 root.AtokoreHousehold=Object.freeze({open,syncNow,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

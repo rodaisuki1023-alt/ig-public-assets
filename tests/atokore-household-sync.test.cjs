@@ -14,7 +14,7 @@ function device(db, uid, initial, name) {
   const store = new Map([['data', JSON.stringify(initial)]]);
   const net = { mode: 'up' };
   const dev = {
-    name, store, net, failLocalWrite: false,
+    name, store, net, failLocalWrite: false, failMetaWrite: null,
     state: () => JSON.parse(store.get('data')),
     edit(fn) { const s = dev.state(); fn(s); store.set('data', JSON.stringify(s)); },
     engine: null,
@@ -23,11 +23,11 @@ function device(db, uid, initial, name) {
         readState: () => JSON.parse(store.get('data') || 'null'),
         writeState: s => { if (dev.failLocalWrite) return false; store.set('data', JSON.stringify(s)); return true; },
         readMeta: () => JSON.parse(store.get('meta') || 'null'),
-        writeMeta: m => { store.set('meta', JSON.stringify(m)); return true; },
+        writeMeta: m => { if(dev.failMetaWrite?.(m))return false;store.set('meta', JSON.stringify(m)); return true; },
         rpc: async (fn, args) => {
           if (net.mode === 'down') throw Object.assign(Error('offline'), { code: 'network' });
           const res = await call(db, uid, fn, args);
-          if (net.mode === 'lose-response') { net.mode = 'up'; throw Object.assign(Error('response lost'), { code: 'network' }); }
+          if (net.mode === 'lose-response'||(net.mode==='lose-push-response'&&fn==='hh_push')) { net.mode = 'up'; throw Object.assign(Error('response lost'), { code: 'network' }); }
           return res;
         },
         device: name, rand,
@@ -204,4 +204,69 @@ test('a lost rejection response cannot make a refused new product disappear on r
   await assert.rejects(a.engine.sync(), /sync_rejected/);
   assert.equal(qtyOf(a, 'ローカルだけの商品'), 2);
   assert.equal(a.engine.meta().rejected[0].status, 'rejected:record_limit');
+});
+
+test('metadata failure after receiving stock cannot turn a remote increment into a new local increment', async () => {
+  const { a, b } = await household(start());await b.engine.adopt({useShared:true});
+  a.edit(s=>{s.items[0].qty++});await a.engine.sync();
+  b.failMetaWrite=m=>!m.pendingApply&&m.shadow?.items[0]?.qty===4;
+  await assert.rejects(b.engine.sync(),/sync_meta_not_saved/);
+  assert.equal(qtyOf(b,'パンパース テープ M'),4);
+  assert.ok(JSON.parse(b.store.get('meta')).pendingApply);
+  b.failMetaWrite=null;b.boot();await b.engine.sync();await a.engine.sync();
+  assert.equal(qtyOf(a,'パンパース テープ M'),4);assert.equal(qtyOf(b,'パンパース テープ M'),4);
+  assert.equal(b.engine.status().pending,0);assert.equal(b.engine.meta().pendingApply,null);
+});
+
+test('a checkpoint that cannot be persisted leaves stock untouched; retry receives the change once', async () => {
+  const {a,b}=await household(start());await b.engine.adopt({useShared:true});
+  a.edit(s=>{s.items[0].qty++});await a.engine.sync();
+  b.failMetaWrite=m=>!!m.pendingApply;
+  await assert.rejects(b.engine.sync(),/sync_meta_not_saved/);assert.equal(qtyOf(b,'パンパース テープ M'),3);
+  b.failMetaWrite=null;b.boot();await b.engine.sync();await a.engine.sync();assert.equal(qtyOf(a,'パンパース テープ M'),4);
+});
+
+test('a crash after the checkpoint but before the state write recovers without treating the old state as an edit', async () => {
+  const {a,b}=await household(start());await b.engine.adopt({useShared:true});
+  a.edit(s=>{s.items[0].qty++});await a.engine.sync();
+  b.failLocalWrite=true;await assert.rejects(b.engine.sync(),/local_save_failed/);
+  assert.ok(b.engine.meta().pendingApply);assert.equal(qtyOf(b,'パンパース テープ M'),3);
+  b.failLocalWrite=false;b.boot();await b.engine.sync();await a.engine.sync();
+  assert.equal(qtyOf(a,'パンパース テープ M'),4);assert.equal(qtyOf(b,'パンパース テープ M'),4);
+});
+
+test('edits after interrupted state commit block before diff/network and preserve the current data for recovery', async () => {
+  const {a,b}=await household(start());await b.engine.adopt({useShared:true});
+  a.edit(s=>{s.items[0].qty++});await a.engine.sync();
+  b.failMetaWrite=m=>!m.pendingApply&&m.shadow?.items[0]?.qty===4;
+  await assert.rejects(b.engine.sync(),/sync_meta_not_saved/);
+  b.edit(s=>{s.items[0].qty=5});b.failMetaWrite=null;b.boot();
+  await assert.rejects(b.engine.sync(),/sync_recovery_needed/);
+  assert.equal(qtyOf(b,'パンパース テープ M'),5);assert.equal(b.engine.status().pending,0);
+  await a.engine.sync();assert.equal(qtyOf(a,'パンパース テープ M'),4);
+  // The UI saves a backup and asks first; the engine then accepts the shared copy.
+  b.engine.resolveRejected();await b.engine.sync();await a.engine.sync();assert.equal(qtyOf(b,'パンパース テープ M'),4);assert.equal(qtyOf(a,'パンパース テープ M'),4);
+});
+
+test('interrupted joining recovers the chosen new stock once without losing the unsent adoption queue', async () => {
+  const mine={items:[item(99,'Rico おしりふき',2)],buys:[],routines:[]};
+  const {a,b}=await household(start(),mine);
+  b.failMetaWrite=m=>!m.pendingApply&&m.shadow!==null;
+  await assert.rejects(b.engine.adopt({add:[{key:'item:99',mode:'new'}]}),/sync_meta_not_saved/);
+  assert.ok(b.engine.meta().pendingApply);assert.equal(b.engine.meta().shadow,null);
+  b.failMetaWrite=null;b.boot();await b.engine.sync();await a.engine.sync();await b.engine.sync();
+  assert.equal(qtyOf(a,'Rico おしりふき'),2);assert.equal(qtyOf(b,'Rico おしりふき'),2);assert.equal(b.engine.status().pending,0);
+});
+
+for(const failure of ['metadata','lost-response'])test('retrying a summed adoption after '+failure+' resumes the original operation once',async()=>{
+  const mine={items:[item(7,'パンパース テープ M',5)],buys:[],routines:[]};
+  const {a,b}=await household(start(),mine),choices={add:[{key:'item:7',mode:'sum'}]};
+  if(failure==='metadata')b.failMetaWrite=m=>!m.pendingApply&&m.shadow!==null;
+  else b.net.mode='lose-push-response';
+  await assert.rejects(b.engine.adopt(choices),failure==='metadata'?/sync_meta_not_saved/:/response lost/);
+  const operation=b.engine.meta().outbox[0];assert.equal(operation.delta,5);
+  b.failMetaWrite=null;b.boot();
+  assert.equal(b.engine.meta().outbox[0].op_id,operation.op_id);
+  await b.engine.adopt(choices);await a.engine.sync();await b.engine.sync();
+  assert.equal(qtyOf(a,'パンパース テープ M'),8);assert.equal(qtyOf(b,'パンパース テープ M'),8);assert.equal(b.engine.status().pending,0);
 });
