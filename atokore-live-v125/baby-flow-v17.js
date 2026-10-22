@@ -238,7 +238,7 @@ function decorateStockCards(){
   let count=row.querySelector('.bf-stock-count');
   if(!count){count=doc.createElement('span');count.className='bf-stock-count';row.append(count)}
   count.textContent=Number(item.qty)>0?'残り '+item.qty+(item.unit||'個'):'在庫なし';
-  count.classList.toggle('bf-stock-low',Number(item.qty)<=1);
+  count.classList.toggle('bf-stock-low',root.atokoreIsLow?root.atokoreIsLow(item):Number(item.qty)<=1);
   const controls=row.querySelectorAll('.qty button');
   controls.forEach((button,i)=>button.setAttribute('aria-label',item.name+'のストックを1つ'+(i===0?'減らす':'増やす')));
  });

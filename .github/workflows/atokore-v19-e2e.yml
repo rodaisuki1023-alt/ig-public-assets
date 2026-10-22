@@ -7,6 +7,7 @@ on:
     paths:
       - 'atokore-live-v125/**'
       - 'scripts/atokore/**'
+      - 'supabase/**'
       - 'tests/**'
       - '.github/workflows/atokore-v19-e2e.yml'
   workflow_dispatch:
@@ -25,7 +26,7 @@ jobs:
           node-version: '22'
       - name: Install test tools
         run: |
-          npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1
+          npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
           npx playwright install --with-deps chromium webkit
       - name: Syntax and unit regressions
         run: |
@@ -36,9 +37,11 @@ jobs:
           node --test tests/atokore-product-photos-v30.test.cjs
           node --test tests/atokore-baby-food-v35.test.cjs
           node --test tests/atokore-batch-review-v36.test.cjs
+          node --test tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
+          node --test tests/atokore-receipt-match-v38.test.cjs
           node tests/atokore-pwa.test.cjs
           node --test tests/atokore-routine-catalog-v20.test.cjs
           node --test tests/atokore-routine-stock-one-tap.test.cjs

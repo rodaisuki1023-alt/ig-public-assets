@@ -32,3 +32,6 @@ body .atk-edit-save{background:#B96F56;color:#fff;border:0;border-radius:14px;mi
 body #atkEditExpiryWrap[hidden]{display:none!important}
 body .sheet{max-height:min(86dvh,790px);overflow-y:auto;overscroll-behavior:contain}
 @media(max-width:350px){body.atk-v16 .tabs .tab{font-size:9px!important}body.atk-v16 .tabs .tab b{font-size:20px}body.atk-v16 #pg-stock .atk-page-title button[data-atk-add]{min-width:126px;font-size:12px!important}}
+body .atk-edit-inline{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;font-weight:650;color:#5E4B42}
+body .atk-edit-form .atk-edit-inline input{width:88px;flex:0 0 88px;text-align:center}
+body .atk-edit-reorder small{font-weight:500;color:#8A7A72;font-size:11px}

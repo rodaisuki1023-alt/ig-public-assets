@@ -221,7 +221,12 @@ assert.match(source, /要確認・未選択/);
 assert.match(source, /receiptCompactTop/);
 assert.match(source, /receiptItemDetails/);
 assert.match(source, /receiptSelectAllV7/);
-assert.match(source, /通常は商品名と数量だけ確認してください/);
+// v38 review: each row asks which registered product it is, unreadable lines can be added, and
+// saving happens on the shared confirmation screen, not here.
+assert.match(source, /どの商品ですか？/);
+assert.match(source, /読み取れなかった行/);
+assert.match(source, /確認画面へ進む/);
+assert.doesNotMatch(source, /tesseract\.js@5\//, 'the OCR library version is pinned');
 assert.match(source, /tessedit_pageseg_mode:'6'/);
 assert.match(source, /tsv:true/);
 

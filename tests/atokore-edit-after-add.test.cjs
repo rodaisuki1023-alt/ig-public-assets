@@ -99,10 +99,15 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.throws(()=>editor.validate({name:'',qty:1,cat:'食料品',unit:'個'},sample),/商品名/);
  assert.throws(()=>editor.validate({name:'卵',qty:-1,cat:'食料品',unit:'個'},sample),/在庫数/);
  assert.throws(()=>editor.validate({name:'卵',qty:1,cat:'食料品',unit:'個',expType:'賞味期限'},sample),/期限日/);
+ // Optional reorder line: empty keeps the default, integers 0-9999 only.
+ assert.throws(()=>editor.validate({name:'卵',qty:1,cat:'食料品',unit:'個',minQty:'10000'},sample),/補充の目安/);
+ assert.throws(()=>editor.validate({name:'卵',qty:1,cat:'食料品',unit:'個',minQty:'1.5'},sample),/補充の目安/);
+ assert.equal(editor.validate({name:'卵',qty:1,cat:'食料品',unit:'個',minQty:'0'},sample).minQty,0);
+ assert.equal('minQty' in editor.validate({name:'卵',qty:1,cat:'食料品',unit:'個',minQty:''},{...sample,minQty:4}),false);
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.match(html,/edit-after-add\.js\?v=35/);
- assert.match(html,/edit-after-add\.css\?v=16/);
+ assert.match(html,/edit-after-add\.js\?v=39/);
+ assert.match(html,/edit-after-add\.css\?v=39/);
  assert.match(worker,/'\.\/edit-after-add.js'/);
- assert.match(worker,/atokore-pwa-v36/);
+ assert.match(worker,/atokore-pwa-v39/);
 });

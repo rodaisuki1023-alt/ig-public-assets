@@ -31,7 +31,10 @@ function describe(item){
 }
 function stock(){try{return Array.isArray(items)?items:[]}catch(e){return []}}
 function shopping(){try{return Array.isArray(buys)?buys:[]}catch(e){return []}}
-const low=x=>Number(x.qty)<=1;
+// 要補充: at or below the product's own reorder line (minQty), or 1 when none is set.
+const reorderAt=x=>{const m=x?.minQty;return m===''||m==null||!Number.isSafeInteger(Number(m))?1:Number(m)};
+const low=x=>Number(x.qty)<=reorderAt(x);
+root.atokoreIsLow=low;root.atokoreReorderAt=reorderAt;
 function expSoon(x){if(!x.exp)return false;const date=new Date(x.exp+'T00:00:00');const now=new Date();now.setHours(0,0,0,0);return Math.round((date-now)/86400000)<=3}
 function brandHtml(b){return b?'<span class="atk-brand" style="--brand-bg:'+b.bg+';--brand-fg:'+b.fg+'">'+esc(b.en)+'</span>':'<span class="atk-brand atk-brand-generic">ストック</span>'}
 function itemCard(item,attention){

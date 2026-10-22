@@ -1,0 +1,19 @@
+/* Atokore v39 first-run card (peach). Tap targets are at least 44px. */
+.atk-ob{margin:0 0 14px;padding:16px;border-radius:18px;background:#FFF6F0;border:1px solid #F0D9CB;box-shadow:0 6px 18px rgba(150,96,70,.08);display:flex;flex-direction:column;gap:10px;min-width:0}
+.atk-ob h3{margin:0;font-size:17px;line-height:1.4;color:#48372F}
+.atk-ob-sub,.atk-ob-note{margin:0;font-size:12px;line-height:1.6;color:#7A6B64}
+.atk-ob-chips{display:flex;flex-wrap:wrap;gap:8px}
+.atk-ob-chip{min-height:44px;padding:8px 13px;border-radius:999px;border:1px solid #E3CBBE;background:#FFFEFC;color:#5A463C;font-size:14px;font-weight:700;display:inline-flex;align-items:center;gap:6px;max-width:100%}
+.atk-ob-chip.on{background:#B96F56;border-color:#B96F56;color:#fff}
+.atk-ob-chip:focus-visible,.atk-ob-primary:focus-visible,.atk-ob-later:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}
+.atk-ob-more{border:1px solid #EBDAD0;border-radius:12px;padding:10px;background:#FFFCFA;display:flex;flex-direction:column;gap:8px}
+.atk-ob-more summary{font-size:13px;font-weight:750;color:#745B4E;min-height:32px;display:flex;align-items:center;cursor:pointer}
+.atk-ob-line{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:750;color:#5E4B42}
+.atk-ob-line-input{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-weight:600;font-size:12px;color:#6F5D54}
+.atk-ob-line-input input{width:76px;min-height:44px;border:1px solid #DBC8BE;border-radius:10px;padding:8px;font-size:16px;text-align:center;background:#fff;color:#413831}
+.atk-ob-error{margin:0;font-size:12px;color:#9F3E37;line-height:1.5}
+.atk-ob-actions{display:flex;flex-wrap:wrap;gap:8px}
+.atk-ob-primary{flex:1 1 180px;min-height:48px;border:0;border-radius:14px;background:#B96F56;color:#fff;font-weight:850;font-size:14px}
+.atk-ob-primary[disabled]{background:#E3CFC4;color:#7E6A60}
+.atk-ob-later{flex:0 1 auto;min-height:48px;padding:0 14px;border-radius:14px;border:1px solid #E3CBBE;background:transparent;color:#6F5A4F;font-weight:750;font-size:13px}
+.atk-ob-tip{background:#F3F8F1;border-color:#D5E5CF}
