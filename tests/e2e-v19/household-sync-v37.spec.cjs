@@ -161,7 +161,7 @@ test('both use stock while offline, rapid taps, reload while the server is unrea
   // WebKit throttles timers in background pages; exercise the phone's active screen.
   await B.page.bringToFront();
   let blocked = 0;
-  await B.ctx.route(EMU + '/**', r => { blocked++; return r.abort(); });
+  await B.ctx.route(EMU + '/**', r => { if(r.request().url().endsWith('/rest/v1/rpc/hh_push'))blocked++; return r.abort(); });
   await tapStock(B.page, '牛乳', '+');
   const milkId = await idOf(B.page, '牛乳');
   for (let i = 0; i < 2; i++) await B.page.locator(`#stockList [data-stock-id="${milkId}"] .qty button`).nth(1).click();
