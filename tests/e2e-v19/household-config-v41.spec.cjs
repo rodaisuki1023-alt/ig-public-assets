@@ -43,11 +43,17 @@ test('cancelled provider navigation cleans the URL and preserves existing stock'
     expect(callback.pathname).toBe('/ig-public-assets/preview-baby-v19/');
     expect(callback.searchParams.get('atokore_auth')).toMatch(/^[A-Za-z0-9_-]{32}$/);
     callback.searchParams.set('error','access_denied');
-    await route.fulfill({status:302,headers:{location:callback.href},body:''});
+    // WebKit cannot fulfill a mocked 302; a simulated provider page navigates back instead.
+    const destination=JSON.stringify(callback.href).replace(/</g,'\\u003c');
+    await route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><script>location.replace('+destination+')</script>'});
   });
   await open(page,{[KEY]:baseState()});const before=await stored(page);
   await go(page,'premium');await page.click('#atkHouseholdCard');
+  const authorized=page.waitForRequest(r=>r.url().startsWith(BACKEND+'/auth/v1/authorize?'));
   await page.getByRole('button',{name:'Googleでログイン'}).click();
+  await authorized;
+  // Wait for this attempt to be consumed, rather than matching the old document's blank URL.
+  await expect.poll(()=>page.evaluate(k=>localStorage.getItem(k),OAUTH)).toBeNull();
   await expect.poll(()=>new URL(page.url()).search).toBe('');
   await expect(page.getByRole('button',{name:'Googleでログイン'})).toBeVisible();
   await expect(page.locator('#atkHhName')).toHaveCount(0);
