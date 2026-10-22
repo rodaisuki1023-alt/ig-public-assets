@@ -16,18 +16,50 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  postgres-concurrency:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: atokore_ci
+          POSTGRES_PASSWORD: atokore-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm install --no-save --ignore-scripts pg@8.16.3
+      - name: Real PostgreSQL lock and revocation races
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/revocation-postgres.cjs
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container:
+      # Same Playwright/browser versions as the npm package, with dependencies preinstalled.
+      # The image digest is pinned so an upstream tag update cannot change the release gate.
+      image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+      options: --shm-size=1gb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install test tools
         run: |
           npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
-          npx playwright install --with-deps chromium webkit
       - name: Syntax and unit regressions
         run: |
           for f in atokore-live-v125/*.js; do node --check "$f"; done
@@ -38,6 +70,7 @@ jobs:
           node --test tests/atokore-baby-food-v35.test.cjs
           node --test tests/atokore-batch-review-v36.test.cjs
           node --test tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs
+          node --test tests/atokore-household-google-v40.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
@@ -52,7 +85,10 @@ jobs:
       - name: Real-browser tests (Chromium + WebKit)
         env:
           E2E_SCREEN_DIR: ${{ runner.temp }}/screens
-        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs
+        run: |
+          # Check the critical shared-data/auth paths first, then all remaining tests once.
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs household-google-v40 household-sync-v37
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs --grep-invert 'household-(google-v40|sync-v37)\.spec\.cjs'
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

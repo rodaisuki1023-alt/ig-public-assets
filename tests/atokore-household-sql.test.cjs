@@ -160,6 +160,41 @@ test('invites: single use, expire, can be revoked, replaced by a new one; wrong 
   await assert.rejects(call(db, D, 'hh_join', { p_code: 'ZZZZZZZZ', p_display_name: 'だれか' }), /too_many_attempts/);
 });
 
+test('missing kind or fields and malformed nested values reject only their own operation, including retries', async () => {
+  const db = await pair();
+  const missingKind = { ...create('item-no-kind', 'x') }; delete missingKind.kind;
+  const missingFields = { ...create('item-no-fields', 'x') }; delete missingFields.fields;
+  const badRoutine = { ...create('routine-bad-items', 'x'), kind: 'routine', fields: { name: 'x', items: 3 } };
+  const ops = [create('item-valid-before', '前'), missingKind, missingFields, badRoutine, create('item-valid-after', '後')];
+  assert.deepEqual(statuses(await call(db, A, 'hh_push', { p_ops: ops })), ['applied', 'rejected:bad_target', 'rejected:bad_fields', 'rejected:bad_fields', 'applied']);
+  assert.deepEqual(statuses(await call(db, A, 'hh_push', { p_ops: ops })), ['duplicate', 'rejected:bad_target', 'rejected:bad_fields', 'rejected:bad_fields', 'duplicate']);
+  assert.deepEqual(Object.keys(await state(db, A)).sort(), ['item-valid-after', 'item-valid-before']);
+  await assert.rejects(call(db, A, 'hh_push', { p_ops: null }), /bad_batch/);
+});
+
+test('a rejected purchase completion rolls back its tombstone and preserves the rest of the batch', async () => {
+  const db = await pair();
+  await call(db, A, 'hh_push', { p_ops: [{ ...create('buy-rollback-1', 'おしりふき'), kind: 'buy' }] });
+  const done = { op_id: opId(), type: 'complete_buy', buy: 'buy-rollback-1', item: 'item-rollback-1', delta: 1, item_fields: { cat: 'ベビー' } };
+  assert.deepEqual(statuses(await call(db, A, 'hh_push', { p_ops: [done, create('item-still-saved', '卵')] })), ['rejected:bad_fields', 'applied']);
+  const s = await state(db, A);
+  assert.equal(s['buy-rollback-1'].deleted, false);
+  assert.equal(s['item-rollback-1'], undefined);
+  assert.equal(s['item-still-saved'].qty, 1);
+});
+
+test('removing a member revokes their invitation and mutation rights', async () => {
+  const db = await pair();
+  await db.exec('update atokore_private.households set seat_limit = 4');
+  const { code } = await call(db, B, 'hh_invite_create');
+  await call(db, A, 'hh_remove_member', { p_user: B });
+  assert.equal((await call(db, C, 'hh_join', { p_code: code, p_display_name: '別の人' })).error, 'revoked_code');
+  for (const [fn,args] of [['hh_push',{p_ops:[]}],['hh_invite_create',{}],['hh_invite_revoke',{}],['hh_consume',{p_feature:'server_receipt_reads',p_event_key:'event-after-removal'}]]) {
+    await assert.rejects(call(db, B, fn, args), /not_member/);
+  }
+  await assert.rejects(asRole(db, A, `select atokore_private.lock_member('${A}')`), /permission denied/);
+});
+
 test('two accounts per household on the free plan; a second device of the same person is not a member', async () => {
   const db = await pair();
   await assert.rejects(call(db, A, 'hh_invite_create'), /seat_limit/);

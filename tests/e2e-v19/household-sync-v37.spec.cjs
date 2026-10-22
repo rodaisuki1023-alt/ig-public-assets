@@ -40,6 +40,128 @@ async function tapStock(page, name, which) {
 
 test.beforeEach(async ({ request }) => { await request.post(EMU + '/__test/reset'); });
 
+async function failFinalMetadata(page){
+  await page.evaluate(()=>{
+    const original=Storage.prototype.setItem;
+    window.restoreFinalMetadata=()=>{Storage.prototype.setItem=original};
+    let checkpointWritten=false;
+    Storage.prototype.setItem=function(k,v){
+      if(k==='atokorePreviewHouseholdSyncV19'){
+        const m=JSON.parse(v).engine;
+        if(m?.pendingApply)checkpointWritten=true;
+        if(checkpointWritten&&m?.shadow&&!m.pendingApply)throw new DOMException('quota','QuotaExceededError');
+      }
+      return original.call(this,k,v);
+    };
+  });
+}
+
+test('interrupted metadata commit reloads without counting the remote stock increment twice',async({browser,request},info)=>{
+  const {A,B}=await sharedPair(browser,request,info);
+  await tapStock(A.page,diaper,'+');await sync(A.page);
+  await failFinalMetadata(B.page);await sync(B.page);
+  expect(await qty(B.page,diaper)).toBe(3);
+  expect((await B.page.evaluate(()=>window.AtokoreHousehold.status())).recovering).toBe(true);
+  await B.page.reload();await B.page.waitForFunction(()=>!!window.AtokoreHousehold);
+  await sync(B.page);await sync(A.page);
+  expect(await qty(A.page,diaper)).toBe(3);expect(await qty(B.page,diaper)).toBe(3);
+  expect((await B.page.evaluate(()=>window.AtokoreHousehold.status())).recovering).toBe(false);
+  await A.ctx.close();await B.ctx.close();
+});
+
+test('editing after interrupted sync keeps the device copy and requires backup before recovery',async({browser,request},info)=>{
+  const {A,B}=await sharedPair(browser,request,info);
+  await tapStock(A.page,diaper,'+');await sync(A.page);
+  await failFinalMetadata(B.page);await sync(B.page);
+  await tapStock(B.page,diaper,'+');expect(await qty(B.page,diaper)).toBe(4);
+  await B.page.reload();await B.page.waitForFunction(()=>!!window.AtokoreHousehold);
+  await sync(B.page);expect(await qty(B.page,diaper)).toBe(4);
+  await go(B.page,'premium');await B.page.click('#atkHouseholdCard');
+  await expect(B.page.locator('.atk-hh-rejected')).toContainText('保存の途中で止まりました');
+  await B.page.evaluate(key=>{
+    const original=Storage.prototype.setItem;window.restoreRecoveryStorage=()=>{Storage.prototype.setItem=original};
+    Storage.prototype.setItem=function(k,v){if(k===key+'SyncRecovery')throw new DOMException('quota','QuotaExceededError');return original.call(this,k,v)};
+  },KEY);
+  await B.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();
+  expect(await qty(B.page,diaper)).toBe(4);
+  expect((await B.page.evaluate(()=>window.AtokoreHousehold.status())).recovering).toBe(true);
+  await B.page.evaluate(()=>window.restoreRecoveryStorage());
+  await B.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();
+  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  const backup=await B.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
+  expect(backup.data.items.find(x=>x.name===diaper).qty).toBe(4);
+  await sync(A.page);expect(await qty(A.page,diaper)).toBe(3);expect(await qty(B.page,diaper)).toBe(3);
+  await A.ctx.close();await B.ctx.close();
+});
+
+test('interrupted first adoption reloads the original selection and sends the chosen product once',async({browser,request},info)=>{
+  const mine={items:[{id:51,name:'Rico おしりふき',cat:'ベビー',qty:2,unit:'パック',place:'収納',expType:'期限なし',exp:'',usage:1}],buys:[],routines:[]};
+  const A=await person(browser,info,baseState()),B=await person(browser,info,mine);
+  await signIn(A.page,request,'mama@example.test');await A.page.fill('#atkHhName','ママ');
+  await A.page.getByRole('button',{name:'世帯を作る'}).click();
+  await A.page.getByRole('button',{name:/家族を招待する/}).click();
+  const code=(await A.page.locator('#atkHhInviteCode').textContent()).trim();
+  await signIn(B.page,request,'papa@example.test');await B.page.fill('#atkHhName','パパ');
+  await B.page.fill('#atkHhJoinCode',code);await B.page.getByRole('button',{name:'参加する'}).click();
+  await B.page.getByRole('button',{name:/この端末の商品も共有に加える/}).click();
+  await failFinalMetadata(B.page);
+  await B.page.getByRole('button',{name:'選んだ内容で共有を始める'}).click();
+  await expect.poll(()=>B.page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewHouseholdSyncV19')).engine.pendingApply!=null)).toBe(true);
+  const interrupted=await B.page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewHouseholdSyncV19')).engine);
+  expect(interrupted.shadow).toBeNull();expect(interrupted.outbox).toHaveLength(1);
+  expect(await qty(B.page,'Rico おしりふき')).toBe(2);
+  await B.page.reload();await B.page.waitForFunction(()=>!!window.AtokoreHousehold);
+  await sync(B.page);await sync(A.page);
+  expect(await qty(A.page,'Rico おしりふき')).toBe(2);expect(await qty(B.page,'Rico おしりふき')).toBe(2);
+  expect((await stored(A.page)).items.filter(x=>x.name==='Rico おしりふき')).toHaveLength(1);
+  expect((await B.page.evaluate(()=>window.AtokoreHousehold.status())).recovering).toBe(false);
+  await go(B.page,'premium');await B.page.click('#atkHouseholdCard');
+  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await A.ctx.close();await B.ctx.close();
+});
+
+test('retrying the placement button after a metadata failure sums the original amount only once',async({browser,request},info)=>{
+  const mine={items:[{id:51,name:diaper,cat:'ベビー',qty:5,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1}],buys:[],routines:[]};
+  const A=await person(browser,info,baseState()),B=await person(browser,info,mine);
+  await signIn(A.page,request,'mama@example.test');await A.page.fill('#atkHhName','ママ');
+  await A.page.getByRole('button',{name:'世帯を作る'}).click();
+  await A.page.getByRole('button',{name:/家族を招待する/}).click();
+  const code=(await A.page.locator('#atkHhInviteCode').textContent()).trim();
+  await signIn(B.page,request,'papa@example.test');await B.page.fill('#atkHhName','パパ');
+  await B.page.fill('#atkHhJoinCode',code);await B.page.getByRole('button',{name:'参加する'}).click();
+  await B.page.getByRole('button',{name:/この端末の商品も共有に加える/}).click();
+  await B.page.locator('.atk-hh-offer select').selectOption('sum');
+  await failFinalMetadata(B.page);
+  const startSharing=B.page.getByRole('button',{name:'選んだ内容で共有を始める'});
+  await startSharing.click();await expect(startSharing).toBeEnabled();
+  expect(await qty(B.page,diaper)).toBe(7);
+  await B.page.evaluate(()=>window.restoreFinalMetadata());
+  await startSharing.click();await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await sync(A.page);await sync(B.page);
+  expect(await qty(A.page,diaper)).toBe(7);expect(await qty(B.page,diaper)).toBe(7);
+  await A.ctx.close();await B.ctx.close();
+});
+
+test('rejected local edits stay on device across reload; recovery saves a copy before accepting shared data', async ({ browser, request }, info) => {
+  const { A, B } = await sharedPair(browser, request, info);
+  const bad='あ'.repeat(130);
+  await A.page.evaluate(({key,bad})=>{const s=JSON.parse(localStorage.getItem(key));s.items[0].name=bad;localStorage.setItem(key,JSON.stringify(s))},{key:KEY,bad});
+  await sync(A.page);
+  expect((await stored(A.page)).items[0].name).toBe(bad);
+  await A.page.reload();await A.page.waitForFunction(()=>!!window.AtokoreHousehold);
+  await sync(A.page);
+  expect((await stored(A.page)).items[0].name).toBe(bad);
+  await go(A.page,'premium');await A.page.click('#atkHouseholdCard');
+  await expect(A.page.locator('.atk-hh-rejected')).toContainText('端末の内容を残して同期を止めています');
+  await A.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();
+  await expect(A.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  const copy=await A.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
+  expect(copy.data.items[0].name).toBe(bad);expect(copy.engine.rejected).toHaveLength(1);
+  expect((await stored(A.page)).items[0].name).toBe('牛乳');
+  await sync(B.page);expect((await stored(B.page)).items[0].name).toBe('牛乳');
+  await A.ctx.close();await B.ctx.close();
+});
+
 test('without a configured backend nothing is shown and nothing is sent', async ({ browser }, info) => {
   const { ctx, page } = await person(browser, info, baseState(), { config: null });
   await go(page, 'premium');
@@ -125,28 +247,48 @@ async function sharedPair(browser, request, info) {
   return { A, B };
 }
 
-test('both use stock while offline, rapid taps, reload while the server is unreachable: every change counts once', async ({ browser, request }, info) => {
+test('both use stock offline; rapid taps and reload while the write endpoint is unavailable count once', async ({ browser, request }, info) => {
   const { A, B } = await sharedPair(browser, request, info);
   expect(await qty(B.page, diaper)).toBe(2);
   await A.ctx.setOffline(true); await B.ctx.setOffline(true);
   await tapStock(A.page, diaper, '-');
   await tapStock(B.page, diaper, '-');
   await expect(A.page.locator('#atkHouseholdChip')).toHaveText(/送信待ち|オフライン/);
+  // An immediate offline failure must release the in-flight guard; a resolved promise must
+  // not stay assigned forever and prevent all later reconnect/retry requests.
+  expect((await sync(A.page)).state).toBe('offline');
+  expect((await sync(B.page)).state).toBe('offline');
   await A.ctx.setOffline(false); await B.ctx.setOffline(false);
   await sync(A.page); await sync(B.page); await sync(A.page);
   expect(await qty(A.page, diaper)).toBe(0);
   expect(await qty(B.page, diaper)).toBe(0);
 
-  // Server unreachable: three quick taps are kept across a reload and arrive exactly once.
-  await B.ctx.route(EMU + '/**', r => r.abort());
+  // Write endpoint unavailable: three quick taps survive a reload and arrive exactly once.
+  // WebKit throttles timers in background pages; exercise the phone's active screen.
+  await B.page.bringToFront();
+  // Cut the actual HTTP connection in the server instead of Playwright route interception.
+  await request.post(EMU+'/__test/drop-push',{data:{email:'papa@example.test',enabled:true}});
   await tapStock(B.page, '牛乳', '+');
   const milkId = await idOf(B.page, '牛乳');
   for (let i = 0; i < 2; i++) await B.page.locator(`#stockList [data-stock-id="${milkId}"] .qty button`).nth(1).click();
-  await expect.poll(async () => (await B.page.evaluate(() => window.AtokoreHousehold.status().pending))).toBeGreaterThan(0);
+  expect(await qty(B.page, '牛乳')).toBe(4);
+  // Exercise the same explicit retry as "今すぐ同期"; background timer scheduling differs in WebKit.
+  // The first half above separately checks that automatic local-change detection shows pending/offline.
+  // A retry can join a pull already in flight when the taps occurred. Keep explicitly retrying
+  // until an authenticated write actually reaches the failing endpoint; never infer this from a timer.
+  await expect.poll(async()=>{
+    const failed=await sync(B.page);
+    const fault=await(await request.get(EMU+'/__test/drop-push?email=papa%40example.test')).json();
+    return {seen:fault.attempts>0,attempts:fault.attempts,state:failed.state,navigatorOnline:await B.page.evaluate(()=>navigator.onLine),status:await B.page.evaluate(()=>window.AtokoreHousehold.status())};
+  },{timeout:10000}).toMatchObject({seen:true,state:'offline'});
+  expect(await B.page.evaluate(() => window.AtokoreHousehold.status().pending)).toBeGreaterThan(0);
+  const operationIds=await B.page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewHouseholdSyncV19')).engine.outbox.map(o=>o.op_id));
+  await sync(A.page);expect(await qty(A.page,'牛乳')).toBe(1);
   await B.page.reload();
   await B.page.waitForFunction(() => !!window.AtokoreHousehold);
   expect(await qty(B.page, '牛乳')).toBe(4);
-  await B.ctx.unroute(EMU + '/**');
+  expect(await B.page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewHouseholdSyncV19')).engine.outbox.map(o=>o.op_id))).toEqual(operationIds);
+  await request.post(EMU+'/__test/drop-push',{data:{email:'papa@example.test',enabled:false}});
   await sync(B.page); await sync(B.page); await sync(A.page);
   expect(await qty(A.page, '牛乳')).toBe(4);
   expect(await qty(B.page, '牛乳')).toBe(4);
