@@ -49,7 +49,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
  });
 }
 test('legacy infant-food photo survives home/stock decorations and reload without rewriting inventory',async({page})=>{
- const initial=fixture();await open(page,{[KEY]:initial});await go(page,'stock');await category(page,'離乳食');
+ const initial=fixture();initial.items.find(x=>x.id===4).qty=1;await open(page,{[KEY]:initial});await go(page,'stock');await category(page,'離乳食');
  const row=page.locator('#stockList [data-stock-id="4"]');await row.locator('.name').click();await page.click('.atk-photo-open');
  const buffer=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=80;c.height=80;const x=c.getContext('2d');x.fillStyle='#be865b';x.fillRect(0,0,80,80);return Array.from(Uint8Array.from(atob(c.toDataURL('image/png').split(',')[1]),s=>s.charCodeAt(0)))});
  await page.locator('#atkPhotoEditor input[type=file]').setInputFiles({name:'handmade.png',mimeType:'image/png',buffer:Buffer.from(buffer)});
