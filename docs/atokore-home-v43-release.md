@@ -2,7 +2,7 @@
 
 2026-10-23。ユーザーが承認したホーム画像案を試用版へ実装する。
 
-- ソース：Draft PR #64、固定SHA `369374946182fabc3610ba6f2d5f1c35d26187ef`。
+- ソース：Draft PR #64、固定SHA `bd81dfa5b52a896d2968430afda612bb28add0d6`。
 - 試用版：`https://rodaisuki1023-alt.github.io/ig-public-assets/preview-baby-v19/`。
 - ソースはmainへマージしない。公開ワークフローの試用版参照と検証、公開記録だけを更新する。
 
