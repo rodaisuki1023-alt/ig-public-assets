@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 2e9632fbc841d2de4f9b0e6e0992231aa507396f
+          ref: 369374946182fabc3610ba6f2d5f1c35d26187ef
           path: _preview_v19_source
           persist-credentials: false
 
@@ -339,6 +339,10 @@ jobs:
           worker = (base / 'service-worker.js').read_text()
           bootstrap = (base / 'storage-bootstrap-v19.js').read_text()
           assert 'ベビー特化 試用版 v19' in html
+          assert 'home-v43.js?v=43' in html and 'home-v43.css?v=43' in html
+          assert "'./home-v43.js'" in worker and "'./home-v43.css'" in worker
+          assert '家族の最近の変更' in (base / 'home-v43.js').read_text()
+          assert 'history.js?v=43' in html
           assert 'storage-bootstrap-v19.js' in html and 'data-safety-v19.js' in html and 'p0-fixes-v19.css' in html
           assert 'atokorePreviewTrialV19' in bootstrap
           assert 'atokorePreviewTrialV17' in bootstrap  # one-time copy of the v17 trial only
@@ -365,12 +369,12 @@ jobs:
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
           assert 'product-photos-v30.js?v=30' in html and 'product-photos-v30.css?v=31' in html
-          assert 'atokore-redesign.js?v=39' in html and 'edit-after-add.js?v=39' in html
+          assert 'atokore-redesign.js?v=43' in html and 'edit-after-add.js?v=39' in html
           photos = (base / 'product-photos-v30.js').read_text()
           assert 'atokorePreviewProductPhotosV19' in photos and 'indexedDB.open' in photos
           assert 'localStorage.setItem' not in photos and 'fetch(' not in photos
           assert "'./product-photos-v30.js'" in worker and "'./product-photos-v30.css'" in worker
-          assert 'quick-add.js?v=36' in html
+          assert 'quick-add.js?v=43' in html
           assert 'quick-add.css?v=27' in html
           quick = (base / 'quick-add.js').read_text()
           assert 'groupsFor' in quick and 'subgroupOf' in quick and 'isBabyFood' in quick
@@ -385,7 +389,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v42'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v43'" in worker
           # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
           assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
@@ -394,7 +398,7 @@ jobs:
           assert 'google: true' in config and 'email: false' in config and 'guest: true' in config
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
-          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 42), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
+          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 43), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
               assert name + f'?v={version}' in html and f"'./{name}'" in worker, name
           assert 'atokorePreviewHouseholdInviteV19' in sync
           assert 'Googleなしで共有に参加する' in sync and 'recoveryHelp' in sync
@@ -412,7 +416,7 @@ jobs:
           assert "'./receipt-match-v38.js'" in worker and "'./receipt-v38.css'" in worker
           # v39 first run and reorder line.
           onboarding = (base / 'onboarding-v39.js').read_text()
-          assert 'onboarding-v39.js?v=39' in html and 'onboarding-v39.css?v=39' in html
+          assert 'onboarding-v39.js?v=43' in html and 'onboarding-v39.css?v=39' in html
           assert 'atokorePreviewOnboardingV19' in onboarding and 'atokorePreviewTrialV19' in onboarding
           assert "'./onboarding-v39.js'" in worker and "'./onboarding-v39.css'" in worker
           assert 'atokoreIsLow' in (base / 'atokore-redesign.js').read_text()
@@ -434,6 +438,7 @@ jobs:
           node --test _preview_v19_source/tests/atokore-batch-review-v36.test.cjs
           node --test _preview_v19_source/tests/atokore-household-core.test.cjs
           node --test _preview_v19_source/tests/atokore-household-google-v40.test.cjs
+          node --test _preview_v19_source/tests/atokore-home-v43.test.cjs
           node --test _preview_v19_source/tests/atokore-receipt-match-v38.test.cjs
           node _preview_v19_source/tests/atokore-receipt-product-names.test.cjs
           node --test _preview_v19_source/tests/atokore-peach-ui.test.cjs
