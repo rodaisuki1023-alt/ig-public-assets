@@ -75,6 +75,7 @@ test('invalid code retry reuses guest; owner can replace a lost guest while reta
  await b.page.fill('#atkHhGuestCode',a.code);await b.page.getByRole('button',{name:'Googleなしで共有に参加する',exact:true}).click();
  await expect(b.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');expect((await user(b.page)).id).toBe(uid);
  expect(b.requests.filter(u=>u.includes('/signup'))).toHaveLength(1);
+ await a.page.getByRole('button',{name:'閉じる',exact:true}).click();
  await go(a.page,'premium');await a.page.click('#atkHouseholdCard');
  await a.page.getByRole('button',{name:'外して再招待：旧端末',exact:true}).click();
  await a.page.getByRole('button',{name:/家族を招待する/}).click();const link=await a.page.locator('#atkHhInviteLink').inputValue();
