@@ -23,6 +23,7 @@ PRODUCTION_KEYS = {
     'atokoreHouseholdSyncV1': 'atokorePreviewHouseholdSyncV{v}',
     'atokoreHouseholdSessionV1': 'atokorePreviewHouseholdSessionV{v}',
     'atokoreHouseholdOAuthV1': 'atokorePreviewHouseholdOAuthV{v}',
+    'atokoreHouseholdInviteV1': 'atokorePreviewHouseholdInviteV{v}',
     'atokoreReceiptHistoryV1': 'atokorePreviewReceiptHistoryV{v}',
     'atokoreOnboardingV1': 'atokorePreviewOnboardingV{v}',
 }

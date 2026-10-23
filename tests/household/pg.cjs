@@ -13,6 +13,8 @@ const PRELUDE = `
   create schema auth;
   create function auth.uid() returns uuid language sql stable as
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+  create function auth.jwt() returns jsonb language sql stable as
+    $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
   grant usage on schema auth to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
   grant usage on schema public to anon, authenticated;
@@ -39,7 +41,7 @@ class RpcError extends Error {
 }
 
 // Calls a public function as a signed-in user (or anonymously when uid is null), like PostgREST.
-async function call(db, uid, fn, args = {}) {
+async function call(db, uid, fn, args = {}, claims = {}) {
   const sig = SIGNATURES[fn];
   if (!sig) throw new RpcError('unknown_function', '42883');
   const used = sig.filter(([name]) => args[name] !== undefined);
@@ -49,6 +51,7 @@ async function call(db, uid, fn, args = {}) {
     return await db.transaction(async tx => {
       await tx.exec(`set local role ${uid ? 'authenticated' : 'anon'}`);
       await tx.query("select set_config('request.jwt.claim.sub', $1, true)", [uid || '']);
+      await tx.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({...claims,sub:uid||''})]);
       const res = await tx.query(sql, params);
       return res.rows[0].r;
     });
