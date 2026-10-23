@@ -24,7 +24,7 @@ body.atk-home-v43 .content{padding-top:10px!important}
 .atk-home-stock .atk-brand{padding:0;background:transparent;border-radius:10px;min-height:48px;width:48px;white-space:normal}
 .atk-home-stock .bf-baby-icon img,.atk-home-stock .bf-baby-icon{width:48px!important;height:48px!important;max-width:48px}
 .atk-home-stock .atk-brand svg{width:44px;height:44px}
-.atk-home-stock .bf-baby-brand{display:none}
+body.atk-home-v43 #pg-home .atk-home-stock .bf-baby-brand{display:none!important}
 .atk-home-stock .atk-item-copy{gap:4px}
 .atk-home-stock .atk-item-copy strong{font-size:14px;line-height:1.45;white-space:normal;overflow-wrap:anywhere}
 .atk-home-stock .atk-item-copy small{font-size:11px;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
