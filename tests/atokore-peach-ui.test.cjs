@@ -25,7 +25,7 @@ test('integrations stay on the existing storage and action layer',()=>{
  const script=fs.readFileSync(path.join(dir,'atokore-redesign.js'),'utf8');
  const css=fs.readFileSync(path.join(dir,'atokore-theme.css'),'utf8');
  const worker=fs.readFileSync(path.join(dir,'service-worker.js'),'utf8');
- assert.match(index,/atokore-theme\.css\?v=13/);assert.match(index,/atokore-redesign\.js\?v=39/);
+ assert.match(index,/atokore-theme\.css\?v=13/);assert.match(index,/atokore-redesign\.js\?v=43/);
  assert.match(worker,/\.\/atokore-theme\.css/);assert.match(worker,/\.\/atokore-redesign\.js/);
  assert.match(script,/root\.registerItem\(\)/);
  assert.match(script,/root\.showPremium\('receipt'\)/);

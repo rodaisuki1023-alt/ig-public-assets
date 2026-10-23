@@ -43,6 +43,7 @@ function itemCard(item,attention){
  return '<button class="atk-item-card" type="button" '+act+'><span class="atk-item-id">'+brandHtml(d.brand)+'</span><span class="atk-item-copy"><strong>'+esc(d.line)+'</strong><small>'+esc(details||item.cat||'')+'</small></span><span class="atk-count '+(low(item)?'atk-count-low':'')+'">'+(attention?'残り ':'')+esc(item.qty)+' '+esc(item.unit||'個')+'</span><span class="atk-chevron">›</span></button>';
 }
 function homeHTML(){
+ if(root.AtokoreHome)return root.AtokoreHome.html();
  return '<div class="atk-home">'+
  '<div class="atk-welcome" id="homeHero"><div><span class="atk-eyebrow">わが家のストック</span><h2>買い忘れを、なくそう。</h2><p>買うものも、残りの数も。家族でひと目に。</p></div><svg class="atk-family-art" viewBox="0 0 115 88" aria-hidden="true"><circle cx="31" cy="31" r="14" fill="#c79279"/><circle cx="79" cy="29" r="13" fill="#bd856c"/><circle cx="56" cy="54" r="10" fill="#eec7a6"/><path d="M6 79 Q12 51 31 50 Q47 51 46 79" fill="#c8b4aa"/><path d="M67 79 Q66 51 79 49 Q97 49 107 79" fill="#87978e"/><path d="M41 85 Q43 64 56 63 Q72 63 75 85" fill="#f4d6c5"/></svg></div>'+
  '<div class="atk-summary"><button class="atk-metric atk-metric-peach" data-atk-nav="stock"><span>◉ 要補充</span><b id="atkLowCount">0</b></button><button class="atk-metric atk-metric-lilac" data-atk-nav="buy"><span>▣ 買い物中</span><b id="atkBuyCount">0</b></button><button class="atk-metric atk-metric-sage" data-atk-nav="stock"><span>◷ 期限近い</span><b id="atkExpiryCount">0</b></button></div>'+
@@ -51,6 +52,7 @@ function homeHTML(){
  '<div class="atk-section-head"><h3>いつものストック</h3><button data-atk-nav="stock">一覧を見る ›</button></div><div id="atkRecent" class="atk-tasks"></div></div>';
 }
 function renderHome(){
+ if(root.AtokoreHome)return root.AtokoreHome.render();
  if(!$('atkLowCount'))return;
  const a=stock(),needs=a.filter(low),b=shopping(),expiry=a.filter(expSoon);
  $('atkLowCount').textContent=needs.length;$('atkBuyCount').textContent=b.length;$('atkExpiryCount').textContent=expiry.length;
@@ -192,6 +194,7 @@ function events(){
 function install(){
  document.body.classList.add('atk-v13');
  initHome();initNavigation();initStock();initAdd();events();
+ root.AtokoreHome?.install();
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldGo=root.go;
  if(typeof oldStock==='function')root.renderStock=function(...args){const result=oldStock.apply(this,args);decorateStock();return result};
  if(typeof oldBuy==='function')root.renderBuy=function(...args){const result=oldBuy.apply(this,args);decorateShopping();return result};

@@ -125,11 +125,11 @@
     const top=document.querySelector('.top');
     if(top&&!document.getElementById('historyTopBtn')){const b=document.createElement('button');b.id='historyTopBtn';b.className='historyTopBtn';b.title='更新履歴';b.setAttribute('aria-label','更新履歴');b.textContent='🕘';b.onclick=()=>window.openAtokoreHistory();top.appendChild(b)}
     const home=document.getElementById('pg-home');
-    if(home&&!document.getElementById('historyHomeV10')){const d=document.createElement('div');d.id='historyHomeV10';d.innerHTML='<div class="historyHead"><div class="section">最近の更新</div><button class="btn ghost" style="padding:6px 9px" onclick="openAtokoreHistory()">すべて見る</button></div><div id="historyHomeListV10"></div>';home.appendChild(d)}
+    if(home&&!document.getElementById('atkHomeActivity')&&!document.getElementById('historyHomeV10')){const d=document.createElement('div');d.id='historyHomeV10';d.innerHTML='<div class="historyHead"><div class="section">最近の更新</div><button class="btn ghost" style="padding:6px 9px" onclick="openAtokoreHistory()">すべて見る</button></div><div id="historyHomeListV10"></div>';home.appendChild(d)}
     const premium=document.getElementById('pg-premium');
     if(premium&&!document.getElementById('historyCardV10')){const d=document.createElement('div');d.id='historyCardV10';d.className='row';d.setAttribute('role','button');d.tabIndex=0;d.innerHTML='<div class="grow"><div class="name">🕘 更新履歴</div><div class="meta">在庫・買い物の操作履歴 / アプリ更新内容</div></div>›';d.onclick=()=>window.openAtokoreHistory();premium.insertBefore(d,premium.firstChild?.nextSibling||premium.firstChild)}
   }
-  function renderHome(){const e=document.getElementById('historyHomeListV10');if(e)e.innerHTML=recentHtml(3);else if(document.getElementById('historyHomeV11')&&typeof window.renderHome==='function')window.renderHome()}
+  function renderHome(){if(document.getElementById('atkHomeActivity')){window.renderHome?.();return}const e=document.getElementById('historyHomeListV10');if(e)e.innerHTML=recentHtml(3);else if(document.getElementById('historyHomeV11')&&typeof window.renderHome==='function')window.renderHome()}
   function activityHtml(){
     const a=load();
     if(!a.length)return '<div class="empty">まだ操作履歴はありません。<br>v10以降の追加・数量変更・削除などを記録します。</div>';
@@ -138,6 +138,7 @@
   function updatesHtml(){return updates.map(u=>`<div class="historyItem"><div class="historyIcon">⬆</div><div><div class="name">${esc(u.title)}</div><div class="historyDetail">${esc(u.detail)}</div></div><div class="historyVersion">${u.v}</div></div>`).join('')}
   function modalHtml(){return `<button class="close" onclick="closeM()">閉じる</button><h2>🕘 更新履歴</h2><div class="historyTabs"><button class="historyTab ${tab==='activity'?'on':''}" onclick="setAtokoreHistoryTab('activity')">操作履歴</button><button class="historyTab ${tab==='app'?'on':''}" onclick="setAtokoreHistoryTab('app')">アプリ更新</button></div><div id="historyModalBody">${tab==='activity'?activityHtml():updatesHtml()}</div>${tab==='activity'&&load().length?'<button class="btn danger" style="width:100%;margin-top:12px" onclick="clearAtokoreHistory()">操作履歴を消去</button>':''}`}
   window.openAtokoreHistory=()=>{ensureUI();openM(modalHtml())};
+  window.AtokoreHistory=Object.freeze({recent:()=>load().map(h=>({...h})),add});
   window.setAtokoreHistoryTab=t=>{tab=t==='app'?'app':'activity';openM(modalHtml())};
   window.clearAtokoreHistory=()=>{if(!confirm('操作履歴をすべて消去しますか？'))return;store([]);renderHome();openM(modalHtml())};
 

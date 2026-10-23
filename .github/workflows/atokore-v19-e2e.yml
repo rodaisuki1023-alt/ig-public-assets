@@ -71,6 +71,7 @@ jobs:
           node --test tests/atokore-batch-review-v36.test.cjs
           node --test --test-concurrency=1 tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs tests/atokore-household-guest-v42.test.cjs
           node --test tests/atokore-household-google-v40.test.cjs
+          node --test tests/atokore-home-v43.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
