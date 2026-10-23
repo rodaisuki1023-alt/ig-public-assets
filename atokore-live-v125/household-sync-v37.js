@@ -11,6 +11,7 @@ const doc=typeof document==='undefined'?null:document;
 const cfg=root.ATOKORE_HOUSEHOLD_CONFIG;
 const core=root.AtokoreHouseholdCore;
 const DATA_KEY='atokoreTrialV4',META_KEY='atokoreHouseholdSyncV1',SESSION_KEY='atokoreHouseholdSessionV1';
+const INVITE_KEY='atokoreHouseholdInviteV1';
 const BEFORE_SHARE=DATA_KEY+'BeforeShare';
 const RECOVERY=DATA_KEY+'SyncRecovery';
 function validConfig(c){
@@ -29,6 +30,25 @@ const notice=m=>{try{root.notifyAtokoreV125H?root.notifyAtokoreV125H(m):root.ale
 let meta=readJSON(META_KEY)||{};
 if(!meta.device){meta.device='web-'+core.newSid('d').slice(2,12);writeJSON(META_KEY,meta)}
 let session=readJSON(SESSION_KEY);
+let inviteCode='';
+function rememberInvite(code){
+ inviteCode=code;
+ try{if(code)root.sessionStorage.setItem(INVITE_KEY,code);else root.sessionStorage.removeItem(INVITE_KEY)}catch(e){}
+}
+function captureInvite(initial=false){
+ try{
+  const u=new URL(root.location.href),hash=new URLSearchParams(u.hash.slice(1));
+  const value=hash.get('invite');
+  if(value!==null){
+   hash.delete('invite');u.hash=hash.toString();root.history.replaceState(null,'',u.pathname+u.search+u.hash);
+   rememberInvite(/^[A-HJ-NP-Z2-9]{8}$/.test(value.toUpperCase())?value.toUpperCase():'');
+   return true;
+  }
+  if(initial){const saved=root.sessionStorage.getItem(INVITE_KEY)||'';inviteCode=/^[A-HJ-NP-Z2-9]{8}$/.test(saved)?saved:''}
+ }catch(e){}
+ return false;
+}
+captureInvite(true);
 let household=meta.household||null,engine=null,syncing=null,lastRaw=null,status={state:'local'},timer=null,pending=null,puller=null;
 const saveMeta=patch=>{const next={...meta,...patch};if(!writeJSON(META_KEY,next))return false;meta=next;return true};
 
@@ -44,7 +64,7 @@ async function request(path,body,auth){
 }
 function keepSession(s){
  if(!s?.access_token||!s?.refresh_token||!s?.user?.id)throw new NetError('bad_session','auth',0);
- const next={access_token:s.access_token,refresh_token:s.refresh_token,expires_at:Number(s.expires_at)||Math.floor(Date.now()/1000)+Number(s.expires_in||3600),user:{id:s.user.id,email:s.user.email||''}};
+ const next={access_token:s.access_token,refresh_token:s.refresh_token,expires_at:Number(s.expires_at)||Math.floor(Date.now()/1000)+Number(s.expires_in||3600),user:{id:s.user.id,email:s.user.email||'',is_anonymous:s.user.is_anonymous===true}};
  if(!writeJSON(SESSION_KEY,next))throw new NetError('ログイン情報を端末に保存できませんでした','storage',0);
  session=next;
 }
@@ -154,7 +174,7 @@ const note=t=>el('p',{class:'atk-hh-note',text:t});
 const field=(label,input)=>el('label',{class:'atk-hh-field'},[el('span',{text:label}),input]);
 const button=(text,onclick,cls='atk-hh-primary')=>el('button',{type:'button',class:cls,text,onclick});
 const ERR={invalid_code:'招待コードが正しくありません',used_code:'この招待コードはすでに使われています',revoked_code:'この招待コードは無効になっています',expired_code:'招待コードの期限（24時間）が切れています',seat_limit:'無料の家族共有は2人までです',already_member:'すでに別の世帯に参加しています',too_many_attempts:'失敗が続いたため1時間ほど待ってからお試しください',offline:'通信できません。電波の良い所でお試しください'};
-const friendly=e=>ERR[e?.message]||ERR[e]||('うまくいきませんでした（'+(e?.message||e)+'）');
+const friendly=e=>e?.code==='anonymous_provider_disabled'?'Googleなしの参加は準備中です。Googleで参加するか、設定完了後にお試しください':ERR[e?.message]||ERR[e]||('うまくいきませんでした（'+(e?.message||e)+'）');
 async function busy(btn,fn){btn.disabled=true;try{return await fn()}catch(e){notice(friendly(e));root.console?.warn?.(e)}finally{btn.disabled=false}}
 function backupDevice(){
  const s=readState();if(!s)return false;
@@ -172,6 +192,64 @@ function downloadRecovery(saved=false){
  const a=el('a',{href:url,download:'atokore-sync-recovery.json'});doc.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
 const counts=s=>'在庫'+(s?.items?.length||0)+'件・買い物'+(s?.buys?.length||0)+'件・いつものリスト'+(s?.routines?.length||0)+'件';
+
+function recoveryHelp(){
+ sheet('機種変更・データの復旧',[
+  el('h3',{text:'Googleで参加した方'}),
+  note('新しい端末で同じ試用版を開き、マイページ → 家族共有 → 同じGoogleアカウントでログインします。「共有のデータを使う」を選び、内容を確認してください。新しい世帯を作る必要はありません。'),
+  note('復旧できるのは、共有先へ送信済みの在庫・買い物リスト・いつものリストです。Googleログインだけではバックアップになりません。家族共有を開始し「家族と共有済み」になっていることを旧端末で確認してください。'),
+  note('写真・未送信の変更・端末内だけの控え・表示設定は、Googleログインだけでは戻りません。Googleは本人確認に使い、共有データはあとこれ側に保存します。'),
+  el('h3',{text:'Googleなしで参加した方'}),
+  note('同じ端末・同じブラウザなら次回も自動接続します。機種変更、ブラウザのデータ削除、ログアウト後は同じ参加者として戻れません。作成者の家族共有画面で以前の参加者を「外して再招待」し、新しい招待リンクから参加してください。'),
+  note('再招待しても、共有済みの在庫は残ります。旧端末だけの写真や未送信の変更は戻りません。Safariとホーム画面アプリなど、保存領域が分かれる場合も再参加が必要です。'),
+  button('家族共有へ戻る',()=>open(),'atk-hh-secondary')]);
+}
+function invitationURL(code){
+ const u=new URL(root.location.href);u.search='';u.hash='invite='+code;return u.href;
+}
+function codeValue(value){return String(value||'').trim().toUpperCase().replace(/[\s-]/g,'')}
+async function joinWithCode(name,value){
+ const code=codeValue(value),display=String(name||'').trim();
+ if(!display||display.length>20)throw '表示名を1〜20文字で入れてください';
+ if(!/^[A-HJ-NP-Z2-9]{8}$/.test(code))throw '招待コードを8文字で入力してください';
+ rememberInvite(code);
+ if(!session){
+  if(cfg.guest!==true)throw 'Googleでログインしてから参加してください';
+  // A session is created only by an explicit Join, never by opening an invitation.
+  keepSession(await request('/auth/v1/signup',{}));
+ }
+ // A lost join response must not consume a second invitation or add stock twice.
+ let my=await rpc('hh_my',{});
+ if(my?.household){
+  if(meta.pendingJoin?.user!==session.user.id||meta.pendingJoin?.code!==code)throw 'already_member';
+ }else{
+  if(!saveMeta({pendingJoin:{user:session.user.id,code}}))throw '参加準備を保存できませんでした';
+  my=await rpc('hh_join',{p_code:code,p_display_name:display});
+  if(my?.error){saveMeta({pendingJoin:null});throw my.error}
+ }
+ if(!my?.household?.id)throw '共有先を確認できませんでした';
+ const next={id:my.household.id,name:my.household.name};
+ if(!saveMeta({household:next,pendingJoin:null}))throw '参加情報を保存できませんでした。もう一度お試しください';
+ household=next;rememberInvite('');makeEngine();engine.startAsJoiner();
+ await choosePlacement(my);
+}
+function joinScreen(){
+ if(household)return dashboard();
+ const name=el('input',{id:'atkHhGuestName',type:'text',maxlength:'20',autocomplete:'nickname',placeholder:'例：パパ'});
+ const code=el('input',{id:'atkHhGuestCode',type:'text',maxlength:'12',autocapitalize:'characters',autocomplete:'off',placeholder:'8文字',value:inviteCode});
+ const canJoin=!!session||cfg.guest===true;
+ sheet('招待コードで家族に参加',[
+  note('名前と招待コードを入れて参加します。コードは発行から24時間・1回だけ使えます。開いただけで在庫が変わることはありません。'),
+  field('家族に表示される名前',name),field('家族から届いた招待コード',code),
+  canJoin?button(session?'共有に参加する':'Googleなしで共有に参加する',e=>busy(e.target,()=>joinWithCode(name.value,code.value))):note('この試用版では、Googleでログインしてから参加します。'),
+  !session&&googleAuth?button('Googleで参加する（機種変更時に復旧しやすい）',e=>busy(e.target,()=>{
+   const c=codeValue(code.value);if(!/^[A-HJ-NP-Z2-9]{8}$/.test(c))throw '招待コードを8文字で入力してください';
+   rememberInvite(c);return googleAuth.start();
+  }),'atk-hh-secondary'):null,
+  note('Googleなしの参加情報はこのブラウザに保存されます。機種変更・データ削除時は作成者から再招待してもらってください。アプリを開いたときや通信が戻ったときに自動同期します。'),
+  button('機種変更・復旧の手順を見る',recoveryHelp,'atk-hh-link'),
+  button('戻る',()=>open(),'atk-hh-link')]);
+}
 
 // ---------------------------------------------------------------- screens
 async function open(){
@@ -194,8 +272,11 @@ function signIn(){
   await afterSignIn();
  }))]);
  sheet('家族共有（限定テスト）',[
-  note('家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインし、同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。写真はこの端末だけに保存され、共有されません。'),
+  note((cfg.guest===true?'作成者はGoogleでログイン。招待された方はGoogleなしでも参加できます。':'家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインします。')+'同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。写真はこの端末だけに保存され、共有されません。'),
+  button('招待コードを入力して参加する',joinScreen),
   google,
+  note('作成者はGoogleでログインして世帯を作ります。Googleで参加した方は、端末変更後も同じアカウントから共有済みデータを引き継げます。'),
+  button('機種変更・復旧の手順を見る',recoveryHelp,'atk-hh-link'),
   cfg.email===false?null:field('メールアドレス',email),
   cfg.email===false?null:button('確認コードを送る',e=>busy(e.target,async()=>{
    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.value.trim()))throw 'メールアドレスを確認してください';
@@ -212,11 +293,13 @@ async function afterSignIn(){
   makeEngine();engine.startAsJoiner();
   return choosePlacement(my);
  }
+ if(inviteCode)return joinScreen();
  chooseHousehold();
 }
 function chooseHousehold(){
+ if(session?.user?.is_anonymous)return joinScreen();
  const name=el('input',{type:'text',maxlength:'20',placeholder:'例：ママ',id:'atkHhName'});
- const code=el('input',{type:'text',maxlength:'9',autocapitalize:'characters',placeholder:'8文字',id:'atkHhJoinCode'});
+ const code=el('input',{type:'text',maxlength:'12',autocapitalize:'characters',placeholder:'8文字',id:'atkHhJoinCode',value:inviteCode});
  const local=readState();
  sheet('家族共有（限定テスト）',[
   field('家族に表示される名前',name),
@@ -232,13 +315,9 @@ function chooseHousehold(){
    }))]),
   el('div',{class:'atk-hh-card'},[el('h3',{text:'招待コードで参加する'}),field('家族から届いた招待コード',code),
    button('参加する',e=>busy(e.target,async()=>{
-    if(!name.value.trim())throw '名前を入れてください';
-    const my=await rpc('hh_join',{p_code:code.value.trim(),p_display_name:name.value.trim()});
-    if(my?.error)throw my.error;
-    household={id:my.household.id,name:my.household.name};saveMeta({household});
-    makeEngine();engine.startAsJoiner();
-    await choosePlacement(my);
+    await joinWithCode(name.value,code.value);
    }),'atk-hh-secondary')]),
+  button('機種変更・復旧の手順を見る',recoveryHelp,'atk-hh-link'),
   button('ログアウト',()=>signOut(),'atk-hh-link')]);
 }
 // Joining with data already on this device: never replace it silently.
@@ -281,6 +360,8 @@ async function dashboard(){
  const checkpoint=engine?.meta().pendingApply;
  const s=sheet((household?.name||'わが家')+'の家族共有',[
   statusEl,members,inviteBox,
+  note(session?.user?.is_anonymous?'Googleなしで参加中。このブラウザに参加情報を保存しています。機種変更やデータ削除後は、作成者から再招待してもらってください。': 'ログイン中：'+(session?.user?.email||'登録済みアカウント')+'。機種変更後も同じアカウントでログインすると、共有先へ送信済みのデータを引き継げます。'),
+  button('機種変更・復旧の手順を見る',recoveryHelp,'atk-hh-link'),
   button('今すぐ同期',e=>busy(e.target,async()=>{await syncNow();statusEl.textContent=statusLine()}),'atk-hh-secondary'),
   button('変更履歴（だれが何を変えたか）',e=>busy(e.target,async()=>{
    const rows=await rpc('hh_changes',{p_limit:50});history.replaceChildren(...(rows||[]).map(r=>el('li',{text:changeText(r)})));history.hidden=false;
@@ -303,14 +384,23 @@ async function dashboard(){
  try{
   const my=await rpc('hh_my',{});
   if(!my?.household){household=null;saveMeta({household:null});setStatus('removed');return chooseHousehold()}
-  members.replaceChildren(...my.members.map(m=>el('li',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')})));
+  members.replaceChildren(...my.members.map(m=>el('li',{},[
+   el('span',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')}),
+   my.me?.role==='owner'&&!m.is_me?button('外して再招待：'+m.display_name,e=>busy(e.target,async()=>{
+    if(!root.confirm?.(m.display_name+'さんの以前の参加情報を外します。以前の端末は今後共有できなくなります。共有済みの在庫は残ります。その後、新しい招待コードを作ってください。続けますか？'))return;
+    await rpc('hh_remove_member',{p_user:m.user_id});await dashboard();
+   }),'atk-hh-link'):null
+  ])));
   const free=my.members.length<my.household.seat_limit;
   inviteBox.replaceChildren(free?button('家族を招待する（招待コードを作る）',e=>busy(e.target,async()=>{
    const inv=await rpc('hh_invite_create',{});
    const until=new Date(inv.expires_at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
-   inviteBox.replaceChildren(el('p',{class:'atk-hh-code',id:'atkHhInviteCode',text:inv.code}),note('このコードを家族に伝えてください。'+until+'まで・1回だけ使えます。'),
-    root.navigator?.share?button('コードを送る',()=>root.navigator.share({text:'あとこれの家族共有の招待コード：'+inv.code}).catch(()=>{}),'atk-hh-secondary'):null,
-    button('このコードを無効にする',e2=>busy(e2.target,async()=>{await rpc('hh_invite_revoke',{});inviteBox.replaceChildren(note('招待コードを無効にしました'))}),'atk-hh-link'));
+   const link=invitationURL(inv.code);
+   const linkInput=el('input',{id:'atkHhInviteLink',type:'text',readonly:'',value:link});
+   inviteBox.replaceChildren(...[el('p',{class:'atk-hh-code',id:'atkHhInviteCode',text:inv.code}),note('リンクを開くと参加画面が表示されます。名前を入れて参加してください。'+until+'まで・1回だけ使えます。'),
+    field('家族に送る招待リンク（長押しでコピーできます）',linkInput),
+    root.navigator?.share?button('招待リンクを送る',()=>root.navigator.share({title:'あとこれの家族共有',text:'あとこれで在庫を共有しましょう。下のリンクをSafariなどで開き、名前を入れて参加してください。招待コード：'+inv.code+'（24時間・1回限り）',url:link}).catch(()=>{}),'atk-hh-secondary'):null,
+    button('このコードを無効にする',e2=>busy(e2.target,async()=>{await rpc('hh_invite_revoke',{});inviteBox.replaceChildren(note('招待コードを無効にしました'))}),'atk-hh-link')].filter(Boolean));
   }),'atk-hh-secondary'):note('無料の家族共有は2人までです（同じ人の別の端末は人数に数えません）。'));
  }catch(e){statusEl.textContent=friendly(e)}
 }
@@ -331,9 +421,9 @@ async function leave(){
 function stop(){clearInterval(timer);clearInterval(puller);timer=puller=null;engine=null}
 function signOut(){
  const left=engine?engine.status().pending:0;
- if(!root.confirm?.((left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。'))return;
+ if(!root.confirm?.((left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+(session?.user?.is_anonymous?'Googleなしの参加情報は失われます。戻るには作成者から再招待が必要です。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。'))return;
  const token=session?.access_token;
- request('/auth/v1/logout',{},token).catch(()=>{});
+ request('/auth/v1/logout?scope=local',{},token).catch(()=>{});
  stop();session=null;household=null;try{store().removeItem(SESSION_KEY)}catch(e){}
  saveMeta({household:null,engine:null});setStatus('local');root.closeM?.();
 }
@@ -353,8 +443,14 @@ function installEntry(){
 }
 
 installEntry();
+root.addEventListener?.('hashchange',()=>{
+ if(!captureInvite()||!inviteCode)return;
+ if(household){notice('すでに家族共有に参加しています。別の招待で自動的に切り替えることはありません');return}
+ joinScreen();
+});
 if(googleAuth?.hasCallback()){
  googleAuth.finish().then(async s=>{if(s){keepSession(s);await afterSignIn()}}).catch(e=>{signIn();notice(friendly(e))});
-}else if(session&&household&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow()}
+}else if(inviteCode&&!household){joinScreen()}
+else if(session&&household&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow();if(inviteCode)notice('すでに家族共有に参加しています。別の招待で自動的に切り替えることはありません')}
 root.AtokoreHousehold=Object.freeze({open,syncNow,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

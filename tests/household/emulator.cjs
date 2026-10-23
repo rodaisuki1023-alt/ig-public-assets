@@ -9,13 +9,13 @@ const crypto = require('node:crypto');
 const { createDb, call } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
-let db, codes, tokens, refresh, oauth, dropPush;
-async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); }
+let db, codes, tokens, refresh, oauth, dropPush, guests;
+async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
   tokens.set(access, uid); refresh.set(r, { uid, email });
-  return { access_token: access, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: r, user: { id: uid, email } };
+  return { access_token: access, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: r, user: { id: uid, email, is_anonymous:guests.has(uid) } };
 }
 function send(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'apikey, authorization, content-type, x-client-info', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' });
@@ -51,6 +51,10 @@ http.createServer(async (req, res) => {
       res.writeHead(302, { Location: redirect.href, 'Cache-Control': 'no-store' }); res.end(); return;
     }
     if (req.headers.apikey !== 'emu-anon-key') return send(res, 401, { message: 'Invalid API key' });
+    if (url.pathname === '/auth/v1/signup') {
+      if(body.email||body.password)return send(res,400,{message:'Only guest signup is simulated'});
+      const uid=crypto.randomUUID();guests.add(uid);return send(res,200,session(uid,''));
+    }
     if (url.pathname === '/auth/v1/otp') {
       const email = String(body.email || '').trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return send(res, 400, { code: 'validation_failed', msg: 'Unable to validate email address' });
@@ -84,7 +88,7 @@ http.createServer(async (req, res) => {
       // This avoids browser-specific request-interception behaviour in offline/retry tests.
       const fault=dropPush.get(uid);
       if(m[1]==='hh_push'&&fault?.enabled){fault.attempts++;res.destroy();return}
-      try { return send(res, 200, await call(db, uid, m[1], body)); }
+      try { return send(res, 200, await call(db, uid, m[1], body, {is_anonymous:guests.has(uid)})); }
       catch (e) { return send(res, e.code === '42501' ? 403 : e.code === '42883' ? 404 : 400, { code: e.code, message: e.message }); }
     }
     return send(res, 404, { message: 'not found' });
