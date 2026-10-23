@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 22cc9b86419bb4789be62c8ecdfe604b255483a8
+          ref: 2e9632fbc841d2de4f9b0e6e0992231aa507396f
           path: _preview_v19_source
           persist-credentials: false
 
@@ -385,17 +385,19 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v41'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v42'" in worker
           # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
           assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
           assert "url: 'https://vzyxurodowpjltwbgbyc.supabase.co'" in config
           assert "anonKey: 'sb_publishable_" in config
-          assert 'google: true' in config and 'email: false' in config
+          assert 'google: true' in config and 'email: false' in config and 'guest: true' in config
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
-          for name, version in [('household-config-v37.js', 37), ('household-core-v37.js', 40), ('household-sync-v37.js', 40), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
+          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 42), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
               assert name + f'?v={version}' in html and f"'./{name}'" in worker, name
+          assert 'atokorePreviewHouseholdInviteV19' in sync
+          assert 'Googleなしで共有に参加する' in sync and 'recoveryHelp' in sync
           assert 'atokorePreviewHouseholdOAuthV19' in (base / 'household-google-v40.js').read_text()
           assert 'sync_rejected' in (base / 'household-core-v37.js').read_text()
           # No server secrets in the browser: only the public anon key could ever be configured.
