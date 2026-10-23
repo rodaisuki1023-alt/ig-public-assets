@@ -142,6 +142,7 @@ async function syncNow(){
    else if(e.code==='auth'||e.status===401)setStatus('auth');
    else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
    else setStatus('error',e.message);
+   if(household&&session){const current=household.id+':'+session.user.id;if(changesFor!==current)changes=[];changesFor=current;historyState='error';paint()}
    root.console?.warn?.('あとこれ 家族共有の同期',e);
   }
   return status;

@@ -71,6 +71,10 @@ test('two household members see confirmed family history, retries do not duplica
   await b.page.evaluate(()=>AtokoreHousehold.syncNow());await expect(b.page.locator('#atkHomeHistoryNote')).toContainText('履歴を更新できませんでした');
   await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当');await expect(b.page.locator('#atkHomeHistoryRefresh')).toBeVisible();
   await b.page.unroute('**/rest/v1/rpc/hh_changes');await b.page.locator('#atkHomeHistoryRefresh').click();await expect(b.page.locator('#atkHomeHistoryRefresh')).toBeHidden();
+  await b.page.addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false}));await b.page.reload();
+  await expect(b.page.locator('#atkHomeHistoryNote')).toContainText('履歴を更新できませんでした');await expect(b.page.locator('#atkHouseholdChip')).toHaveText('オフライン');
+  await b.page.evaluate(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true}));await b.page.evaluate(()=>AtokoreHousehold.syncNow());
+  await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当が牛乳の数量を変更');
   await b.page.locator('#atkHouseholdChip').click();await b.page.getByRole('button',{name:'ログアウト',exact:true}).click();
   await expect(b.page.locator('#atkHomeHistoryTitle')).toHaveText('この端末の最近の変更');await expect(b.page.locator('#atkHomeActivity')).not.toContainText('共有テスト担当');
   expect(b.page.__errors).toEqual([]);
