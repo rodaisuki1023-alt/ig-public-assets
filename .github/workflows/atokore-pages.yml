@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: d99838781cde60c71507fdd4e28f4d2f3e84fa0b
+          ref: 64a56659781291db1f0c8e0e35f59facbdda28f1
           path: _preview_v19_source
           persist-credentials: false
 
@@ -339,10 +339,13 @@ jobs:
           worker = (base / 'service-worker.js').read_text()
           bootstrap = (base / 'storage-bootstrap-v19.js').read_text()
           assert 'ベビー特化 試用版 v19' in html
-          assert 'home-v43.js?v=43' in html and 'home-v43.css?v=43' in html
+          assert 'polish-v44.js?v=44' in html and 'polish-v44.css?v=44' in html
+          assert "'./polish-v44.js'" in worker and "'./polish-v44.css'" in worker
+          assert '写真なし・詳細一覧' in (base / 'polish-v44.js').read_text()
+          assert 'home-v43.js?v=44' in html and 'home-v43.css?v=43' in html
           assert "'./home-v43.js'" in worker and "'./home-v43.css'" in worker
           assert '家族の最近の変更' in (base / 'home-v43.js').read_text()
-          assert 'history.js?v=43' in html
+          assert 'history.js?v=44' in html
           assert 'storage-bootstrap-v19.js' in html and 'data-safety-v19.js' in html and 'p0-fixes-v19.css' in html
           assert 'atokorePreviewTrialV19' in bootstrap
           assert 'atokorePreviewTrialV17' in bootstrap  # one-time copy of the v17 trial only
@@ -368,13 +371,13 @@ jobs:
           assert 'decorateStockCards' in (base / 'baby-flow-v17.js').read_text()
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
-          assert 'product-photos-v30.js?v=30' in html and 'product-photos-v30.css?v=31' in html
-          assert 'atokore-redesign.js?v=43' in html and 'edit-after-add.js?v=39' in html
+          assert 'product-photos-v30.js?v=44' in html and 'product-photos-v30.css?v=31' in html
+          assert 'atokore-redesign.js?v=44' in html and 'edit-after-add.js?v=44' in html
           photos = (base / 'product-photos-v30.js').read_text()
           assert 'atokorePreviewProductPhotosV19' in photos and 'indexedDB.open' in photos
           assert 'localStorage.setItem' not in photos and 'fetch(' not in photos
           assert "'./product-photos-v30.js'" in worker and "'./product-photos-v30.css'" in worker
-          assert 'quick-add.js?v=43' in html
+          assert 'quick-add.js?v=44' in html
           assert 'quick-add.css?v=27' in html
           quick = (base / 'quick-add.js').read_text()
           assert 'groupsFor' in quick and 'subgroupOf' in quick and 'isBabyFood' in quick
@@ -384,12 +387,12 @@ jobs:
           for name in ['diaper-bear-v24', 'wipes-bear-v24', 'milk-bear-v26']:
               image = f'icons/baby/{name}.webp'
               assert (base / image).is_file() and image in worker
-          assert 'stability.js?v=23' in html
+          assert 'stability.js?v=44' in html
           assert 'sameProduct(x,bought)' in (base / 'stability.js').read_text()
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v43'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v44'" in worker
           # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
           assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
@@ -398,7 +401,7 @@ jobs:
           assert 'google: true' in config and 'email: false' in config and 'guest: true' in config
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
-          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 43), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
+          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 44), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
               assert name + f'?v={version}' in html and f"'./{name}'" in worker, name
           assert 'atokorePreviewHouseholdInviteV19' in sync
           assert 'Googleなしで共有に参加する' in sync and 'recoveryHelp' in sync
@@ -439,6 +442,7 @@ jobs:
           node --test _preview_v19_source/tests/atokore-household-core.test.cjs
           node --test _preview_v19_source/tests/atokore-household-google-v40.test.cjs
           node --test _preview_v19_source/tests/atokore-home-v43.test.cjs
+          node --test _preview_v19_source/tests/atokore-polish-v44.test.cjs
           node --test _preview_v19_source/tests/atokore-receipt-match-v38.test.cjs
           node _preview_v19_source/tests/atokore-receipt-product-names.test.cjs
           node --test _preview_v19_source/tests/atokore-peach-ui.test.cjs
