@@ -184,7 +184,7 @@ function buildBatch(existing,selected,time=Date.now()){
  for(const raw of selected){
   const v=validateLine(raw);
   const match=batchMatch(next,v);
-  if(match){const qty=(Number(match.qty)||0)+v.qty;if(v.draftEdited)Object.assign(match,draftFields(v));match.qty=qty;continue}
+  if(match){const qty=(Number(match.qty)||0)+v.qty;if(v.draftEdited){Object.assign(match,draftFields(v));if(!Object.prototype.hasOwnProperty.call(v,'minQty'))delete match.minQty}match.qty=qty;continue}
   while(ids.has(unique))unique++;
   ids.add(unique);
   next.push({id:unique++,name:v.name,cat:v.cat,qty:v.qty,unit:v.unit,expType:'期限なし',exp:'',purchase:'',price:0,store:'',place:v.cat==='食料品'?'冷蔵庫':'収納',memo:'',usage:1,...(v.draftEdited?draftFields(v):{})});
@@ -387,7 +387,7 @@ function renderTray(){
  box.hidden=!count||!state.reviewing;
  n.textContent=pendingSummary(lines);
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
- list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><span class="qa-tray-thumb">'+iconFor(v.name,v.cat)+'</span><div class="qa-review-copy"><button type="button" class="qa-review-name qa-review-edit" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+safe(v.name)+' <span aria-hidden="true">✎</span></button><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=999?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
+ list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><button type="button" class="qa-tray-thumb" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+iconFor(v.name,v.cat)+'</button><div class="qa-review-copy"><button type="button" class="qa-review-name qa-review-edit" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+safe(v.name)+' <span aria-hidden="true">✎</span></button><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=999?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
  button.disabled=!count||state.committing;
  $('pg-add')?.classList.toggle('qa-has-pending',count>0);
 }
@@ -438,8 +438,8 @@ function persist(tray){
  if(state.destination==='buy'){
   const nextBuys=buys.map(x=>({...x})),ids=new Set(nextBuys.map(x=>Number(x.id)));let merged=0,sequence=Date.now();
   for(const x of tray){const found=nextBuys.find(y=>y.name===x.name&&y.unit===x.unit);
-   if(found){found.qty=Number(found.qty||0)+x.qty;merged++}
-   else{while(ids.has(sequence))sequence++;ids.add(sequence);nextBuys.push({id:sequence++,name:x.name,qty:x.qty,unit:x.unit,cat:x.cat})}
+   if(found){found.qty=Number(found.qty||0)+x.qty;if(x.draftEdited)Object.assign(found,draftFields(x));merged++}
+   else{while(ids.has(sequence))sequence++;ids.add(sequence);nextBuys.push({id:sequence++,name:x.name,qty:x.qty,unit:x.unit,cat:x.cat,...(x.draftEdited?draftFields(x):{})})}
   }
   const raw=JSON.stringify({items,buys:nextBuys,routines});
   store.setItem(key,raw);if(store.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');

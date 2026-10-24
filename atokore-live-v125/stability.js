@@ -29,7 +29,7 @@
         let target=bought.stockId!=null?stock.find(x=>Number(x.id)===Number(bought.stockId)&&Core.sameProduct(x,bought)):null;
         if(!target)target=stock.find(x=>Core.sameProduct(x,bought));
         if(target)target.qty=(Number(target.qty)||0)+(Number(bought.qty)||1);
-        else stock.push({id:Core.uniqueId(),name:bought.name,cat:bought.cat||inferCat(bought.name),qty:Number(bought.qty)||1,unit:bought.unit||'個',place:'その他',expType:'期限なし',exp:'',usage:1});
+        else {const details={};for(const k of ['place','expType','exp','memo','minQty','qtyBasis','inUse'])if(bought[k]!==undefined)details[k]=bought[k];stock.push({id:Core.uniqueId(),name:bought.name,cat:bought.cat||inferCat(bought.name),qty:Number(bought.qty)||1,unit:bought.unit||'個',place:'その他',expType:'期限なし',exp:'',usage:1,...details})}
       }
       return {count:picked.length,remaining:(Array.isArray(list)?list:[]).filter(x=>!selected.has(Number(x.id)))};
     }

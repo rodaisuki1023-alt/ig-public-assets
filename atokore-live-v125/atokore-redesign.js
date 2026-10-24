@@ -166,7 +166,7 @@ function showDetail(id){
  const d=describe(x),safeId=Number(x.id);
  if(!Number.isSafeInteger(safeId))return;
  const inner='<button class="close" onclick="closeM()">閉じる</button><div class="atk-detail-head" data-atk-detail-id="'+safeId+'">'+brandHtml(d.brand)+'<h2>'+esc(d.line)+'</h2><p>'+esc([d.type,d.size].filter(Boolean).join('・')||x.name)+'</p></div>'+
- '<div class="atk-detail-qty"><b>現在の在庫</b><span>'+esc(x.qty)+' '+esc(x.unit||'個')+'</span></div>'+
+ '<div class="atk-detail-qty"><b>'+(x.qtyBasis==='unopened'?'未開封の予備':'現在の在庫')+'</b><span>'+esc(x.qty)+' '+esc(x.unit||'個')+(x.qtyBasis==='unopened'&&x.inUse?'・使用中あり':'')+'</span></div>'+
  '<div class="atk-detail-actions"><button onclick="adj('+safeId+',-1);atkShowDetail('+safeId+')">－ 減らす</button><button onclick="adj('+safeId+',1);atkShowDetail('+safeId+')">＋ 増やす</button></div>'+
  '<button type="button" class="atk-edit-open" onclick="atokoreEditStock('+safeId+')">✎ 商品情報を編集する</button>'+
  '<button class="btn atk-detail-cart" onclick="addStockOneToBuyV125H('+safeId+');closeM()">買い物リストへ追加</button>'+
