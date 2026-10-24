@@ -3,7 +3,7 @@
  * project (household-config-v37.js). Without it nothing is shown and nothing is sent anywhere.
  * Only the public anon key lives in the browser; every server rule is in the database functions.
  * The app keeps saving locally as before; household-core-v37.js turns saved changes into operations.
- * Photos stay on this device in this test and are not shared.
+ * Product photos are shared only after an explicit save/share choice, in a private bucket.
  */
 (function(root){
 'use strict';
@@ -54,6 +54,60 @@ let changes=[],historyState='loading',changesFor=null,changesRequest=null;
 function homeState(){
  const current=household&&session?household.id+':'+session.user.id:null;
  return {joined:!!current,state:status.state,lastSync:engine?.status().lastSync||0,historyState:current===changesFor?historyState:'loading',changes:current===changesFor?changes.map(r=>({...r})):[]};
+}
+function capturePurchases(ids){
+ if(!engine||!household||!session)return [];
+ engine.flush();
+ const m=engine.meta(),wanted=new Set(ids.map(id=>m.map['buy:'+id]));
+ return m.outbox.filter(o=>o.type==='complete_buy'&&wanted.has(o.buy)).map(o=>({op:o.op_id,household:household.id,user:session.user.id}));
+}
+async function undoPurchases(ticket){
+ if(!ticket?.length||ticket.some(x=>x.household!==household?.id||x.user!==session?.user?.id))throw Error('共有する家族が変わったため、この操作は戻せません。');
+ await syncNow();
+ if(status.state!=='synced')throw Error('通信できません。つながってから「元に戻す」を押してください。');
+ try{await rpc('hh_undo_purchases',{p_ops:ticket.map(x=>x.op)})}
+ catch(e){throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
+ await syncNow();
+ if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
+}
+function photoScope(id){
+ if(!engine||!household||!session)return null;
+ engine.flush();const sid=engine.meta().map['item:'+id];
+ return sid?{household:household.id,user:session.user.id,sid}:null;
+}
+function sameScope(a,b){return a&&b&&a.household===b.household&&a.user===b.user&&a.sid===b.sid}
+function validPhotoPath(path,scope){return typeof path==='string'&&scope&&path.startsWith(scope.household+'/'+scope.sid+'/')&&/^[0-9a-f-]{36}\/[A-Za-z0-9_-]{8,64}\/[0-9a-f-]{36}\.jpg$/.test(path)}
+async function photoRequest(path,method='GET',blob){
+ if(!session)throw Error('家族共有に参加してからお試しください。');
+ if(session.expires_at-60<Date.now()/1000)await refreshSession();
+ const controller=new root.AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+ try{
+  const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path,{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,...(blob?{'Content-Type':'image/jpeg','cache-control':'no-cache'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
+  if(!response.ok)throw Error('写真を共有できませんでした。通信状態を確認してお試しください。');
+  return method==='GET'?response.blob():null;
+ }finally{clearTimeout(timeout)}
+}
+async function fetchPhoto(id,path){
+ const scope=photoScope(id);if(!validPhotoPath(path,scope))return null;
+ const blob=await photoRequest(path);
+ if(!sameScope(scope,photoScope(id)))return null;
+ if(blob.type!=='image/jpeg'||blob.size>81920||blob.size===0)throw Error('写真の形式を確認できませんでした。');
+ return blob;
+}
+async function sharePhoto(id,blob){
+ const scope=photoScope(id);if(!scope)throw Error('家族共有に参加してからお試しください。');
+ if(blob&&(blob.type!=='image/jpeg'||blob.size>81920||blob.size===0))throw Error('写真の形式を確認できませんでした。');
+ await syncNow();if(status.state!=='synced')throw Error('端末には保存済みです。写真の共有は通信が戻ってからお試しください。');
+ const current=readState()?.items.find(x=>String(x.id)===String(id));if(!current||!sameScope(scope,photoScope(id)))throw Error('共有先が変わりました。商品を開き直してください。');
+ const expected=JSON.stringify([current.name,current.unit,current.photoPath]);
+ const path=blob?scope.household+'/'+scope.sid+'/'+root.crypto.randomUUID()+'.jpg':null;
+ if(blob)await photoRequest(path,'POST',blob);
+ const next=readState(),item=next?.items.find(x=>String(x.id)===String(id));
+ if(!item||!sameScope(scope,photoScope(id))||JSON.stringify([item.name,item.unit,item.photoPath])!==expected)throw Error('共有先か商品が変わりました。写真の共有は反映していません。');
+ item.photoPath=path;
+ if(!writeState(next))throw Error('端末の空き容量を確認してください。写真の共有情報を保存できませんでした。');
+ engine.flush();await syncNow();
+ return {shared:status.state==='synced'};
 }
 async function refreshChanges(){
  const target=household&&session?household.id+':'+session.user.id:null;
@@ -225,8 +279,8 @@ function recoveryHelp(){
  sheet('機種変更・データの復旧',[
   el('h3',{text:'Googleで参加した方'}),
   note('新しい端末で同じ試用版を開き、マイページ → 家族共有 → 同じGoogleアカウントでログインします。「共有のデータを使う」を選び、内容を確認してください。新しい世帯を作る必要はありません。'),
-  note('復旧できるのは、共有先へ送信済みの在庫・買い物リスト・いつものリストです。Googleログインだけではバックアップになりません。家族共有を開始し「家族と共有済み」になっていることを旧端末で確認してください。'),
-  note('写真・未送信の変更・端末内だけの控え・表示設定は、Googleログインだけでは戻りません。Googleは本人確認に使い、共有データはあとこれ側に保存します。'),
+  note('復旧できるのは、共有先へ送信済みの在庫・買い物リスト・いつものリスト・共有写真です。Googleログインだけではバックアップになりません。家族共有を開始し「家族と共有済み」になっていることを旧端末で確認してください。'),
+  note('端末だけの写真・未送信の変更・端末内だけの控え・表示設定は、Googleログインだけでは戻りません。Googleは本人確認に使い、共有データはあとこれ側に保存します。'),
   el('h3',{text:'Googleなしで参加した方'}),
   note('同じ端末・同じブラウザなら次回も自動接続します。機種変更、ブラウザのデータ削除、ログアウト後は同じ参加者として戻れません。作成者の家族共有画面で以前の参加者を「外して再招待」し、新しい招待リンクから参加してください。'),
   note('再招待しても、共有済みの在庫は残ります。旧端末だけの写真や未送信の変更は戻りません。Safariとホーム画面アプリなど、保存領域が分かれる場合も再参加が必要です。'),
@@ -300,7 +354,7 @@ function signIn(){
   await afterSignIn();
  }))]);
  sheet('家族共有（限定テスト）',[
-  note((cfg.guest===true?'作成者はGoogleでログイン。招待された方はGoogleなしでも参加できます。':'家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインします。')+'同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。写真はこの端末だけに保存され、共有されません。'),
+  note((cfg.guest===true?'作成者はGoogleでログイン。招待された方はGoogleなしでも参加できます。':'家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインします。')+'同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。端末だけの写真はこの端末だけに保存され、共有されません。'),
   button('招待コードを入力して参加する',joinScreen),
   google,
   note('作成者はGoogleでログインして世帯を作ります。Googleで参加した方は、端末変更後も同じアカウントから共有済みデータを引き継げます。'),
@@ -404,7 +458,7 @@ async function dashboard(){
     engine.resolveRejected();await syncNow();dashboard();
    }),'atk-hh-link')]):null,
   readJSON(RECOVERY)?button('同期を再開する前の控えをファイルに保存',()=>downloadRecovery(true),'atk-hh-link'):null,
-  note('写真はこの端末だけに保存され、家族には共有されません。'),
+  note('端末だけの写真は自動では共有されません。商品詳細の「写真を設定」から、家族と共有する写真を選べます。'),
   readJSON(BEFORE_SHARE)?button('共有前の控えをファイルに保存',downloadBackup,'atk-hh-link'):null,
   button('この世帯から抜ける（端末の在庫は残ります）',e=>busy(e.target,leave),'atk-hh-link'),
   button('ログアウト',()=>signOut(),'atk-hh-link')]);
@@ -480,5 +534,5 @@ if(googleAuth?.hasCallback()){
  googleAuth.finish().then(async s=>{if(s){keepSession(s);await afterSignIn()}}).catch(e=>{signIn();notice(friendly(e))});
 }else if(inviteCode&&!household){joinScreen()}
 else if(session&&household&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow();if(inviteCode)notice('すでに家族共有に参加しています。別の招待で自動的に切り替えることはありません')}
-root.AtokoreHousehold=Object.freeze({open,syncNow,homeState,refreshChanges,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

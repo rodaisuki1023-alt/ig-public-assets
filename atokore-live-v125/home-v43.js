@@ -34,10 +34,10 @@ function sharedEntries(rows){
  return groups.map(g=>{
   const r=g.rows[0],who=String(r.who||'家族'),name=String(r.name||'削除済みの商品');
   const place=r.kind==='buy'?'買い物リスト':r.kind==='routine'?'いつものリスト':'ストック';
-  const what=r.type==='complete_buy'?'を購入':r.type==='create'?'を追加':r.type==='delete'?'を削除':r.type==='add'?'の数量を変更':'を更新';
-  const qty=Number(r.delta),delta=r.type==='add'&&r.delta!==null&&Number.isFinite(qty)?'数量 '+(qty>0?'＋':'')+qty:place;
+  const what=r.type==='undo_purchase'?'の購入済みを取り消し':r.type==='complete_buy'?'を購入':r.type==='create'?'を追加':r.type==='delete'?'を削除':r.type==='add'?'の数量を変更':'を更新';
+  const qty=Number(r.delta),unit=String(r.unit||'個'),delta=r.type==='add'&&r.beforeQty!=null&&r.afterQty!=null?r.beforeQty+unit+' → '+r.afterQty+unit:r.type==='add'&&r.delta!==null&&Number.isFinite(qty)?'数量 '+(qty>0?'＋':'')+qty+unit:r.type==='create'&&r.afterQty!=null?place+'に'+r.afterQty+unit+'追加':r.type==='set'?({name:'商品名',place:'保管場所',exp:'期限',memo:'メモ',qtyBasis:'在庫の数え方',inUse:'使用中の有無',photoPath:'共有写真'}[r.field]||'商品情報')+'を変更':place;
   return {at:r.at,who,title:who+'が'+(g.rows.length>1?place+'の'+g.rows.length+'商品':name)+what,
-   detail:g.rows.length>1?g.rows.slice(0,2).map(x=>String(x.name||'削除済みの商品')).join('、')+(g.rows.length>2?' ほか'+(g.rows.length-2)+'商品':''):r.type==='complete_buy'?'購入済みにしてストックへ':delta,
+   detail:g.rows.length>1?g.rows.slice(0,2).map(x=>String(x.name||'削除済みの商品')).join('、')+(g.rows.length>2?' ほか'+(g.rows.length-2)+'商品':''):r.type==='complete_buy'?(r.delta!=null?r.delta+unit+'購入してストックへ':'購入済みにしてストックへ'):delta,
    type:r.type==='complete_buy'?'purchase':r.kind==='buy'?'buy':'stock'};
  }).sort((a,b)=>new Date(b.at)-new Date(a.at));
 }
@@ -46,8 +46,8 @@ function localEntries(rows){
   .map(r=>({at:Number(r.ts),who:'自分',title:String(r.title||'内容を変更'),detail:String(r.detail||''),type:r.type==='buy'?'buy':'stock'}))
   .sort((a,b)=>b.at-a.at);
 }
-function activityHTML(entries){
- return entries.map(r=>'<li class="atk-home-change"><span class="atk-home-avatar '+(r.type==='buy'?'is-buy':r.type==='purchase'?'is-purchase':'')+'" aria-hidden="true">'+esc(Array.from(r.who)[0]||'家')+'</span><span class="atk-home-change-copy"><strong>'+esc(r.title)+'</strong><small>'+esc(r.detail)+'</small></span><time datetime="'+esc(new Date(r.at).toISOString())+'">'+esc(relative(r.at))+'</time></li>').join('');
+function activityHTML(entries,exact=false){
+ return entries.map(r=>'<li class="atk-home-change"><span class="atk-home-avatar '+(r.type==='buy'?'is-buy':r.type==='purchase'?'is-purchase':'')+'" aria-hidden="true">'+esc(Array.from(r.who)[0]||'家')+'</span><span class="atk-home-change-copy"><strong>'+esc(r.title)+'</strong><small>'+esc(r.detail)+'</small></span><time datetime="'+esc(new Date(r.at).toISOString())+'">'+esc(exact?new Date(r.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):relative(r.at))+'</time></li>').join('');
 }
 function card(x){
  const item=x.item,raw=String(item.name||'商品'),id=Number(item.id),kit=root.AtokoreBabyKit;
@@ -59,8 +59,10 @@ function card(x){
   sub=[kit.brand(raw),d?.type,d?.line&&![title,'おむつ','おしりふき','粉ミルク'].includes(d.line)?d.line:''].filter(Boolean).join('・')||raw;
  }else art=(food?.isRecord(item)?food.icon(48):root.AtokoreIndividualIcons?.icon(raw))||icon('stock');
  const expiry=x.days===null||x.days>3?'':x.days<0?'期限を'+Math.abs(x.days)+'日過ぎています':x.days===0?'期限は今日':'期限まで'+x.days+'日';
- const labels=(x.low?'<span class="atk-home-low">'+(Number(item.qty)<=0?'在庫なし':'残り'+esc(item.qty)+esc(item.unit||'個'))+'</span>':'')+(expiry?'<span class="atk-home-expiry '+(x.days<=0?'is-overdue':'')+'">'+esc(expiry)+'</span>':'');
- return '<button type="button" class="atk-item-card atk-home-stock" '+(Number.isSafeInteger(id)?'data-atk-open="'+id+'"':'disabled')+'><span class="atk-item-id"><span class="atk-brand bf-home-product">'+art+'</span></span><span class="atk-item-copy"><strong>'+esc(title)+'</strong><small>'+esc(sub)+'</small></span><span class="atk-home-flags">'+labels+'</span><span class="atk-chevron" aria-hidden="true">›</span></button>';
+ const labels=(x.low?'<span class="atk-home-low">'+(Number(item.qty)<=0?(item.qtyBasis==='unopened'?'未開封の予備なし':'在庫なし'):esc(root.AtokorePolish?.stockLabel(item)||'残り'+item.qty+(item.unit||'個')))+'</span>':'')+(expiry?'<span class="atk-home-expiry '+(x.days<=0?'is-overdue':'')+'">'+esc(expiry)+'</span>':'');
+ const already=(()=>{try{return buys.some(b=>root.__atokoreCoreV125H?.sameProduct(b,item))}catch(_){return false}})();
+ const control=x.low&&Number.isSafeInteger(id)?'<button type="button" data-atk-replenish="'+id+'"'+(already?' disabled':'')+'>'+(already?'買い物に追加済み':'買い物に追加')+'</button>':'';
+ return '<div class="atk-home-stock-wrap"><button type="button" class="atk-item-card atk-home-stock" '+(Number.isSafeInteger(id)?'data-atk-open="'+id+'"':'disabled')+'><span class="atk-item-id"><span class="atk-brand bf-home-product">'+art+'</span></span><span class="atk-item-copy"><strong>'+esc(title)+'</strong><small>'+esc(sub)+'</small></span><span class="atk-home-flags">'+labels+'</span><span class="atk-chevron" aria-hidden="true">›</span></button>'+control+'</div>';
 }
 function html(){return '<div class="atk-home atk-home-v43">'+
  '<div class="atk-actions"><button type="button" data-atk-add class="atk-action atk-action-primary">'+icon('add')+'<span>ストック追加</span></button><button type="button" data-atk-receipt class="atk-action atk-action-peach">'+icon('receipt')+'<span>レシートで追加</span></button></div>'+
@@ -89,7 +91,7 @@ function render(){
 }
 function openAll(){
  const s=state(),list=entries(s),title=s.joined?'家族の変更履歴':'この端末の変更履歴';
- root.openM?.('<button class="close" onclick="closeM()">閉じる</button><h2>'+title+'</h2>'+(s.joined&&s.historyState==='error'?'<p>履歴を更新できませんでした。前回取得した履歴を表示しています。</p>':'')+'<ol class="atk-home-activity atk-home-all">'+activityHTML(list)+'</ol>'+(!list.length?'<p>まだ変更履歴はありません。</p>':''));
+ root.openM?.('<button class="close" onclick="closeM()">閉じる</button><h2>'+title+'</h2>'+(s.joined&&s.historyState==='error'?'<p>履歴を更新できませんでした。前回取得した履歴を表示しています。</p>':'')+'<ol class="atk-home-activity atk-home-all">'+activityHTML(list,true)+'</ol>'+(!list.length?'<p>まだ変更履歴はありません。</p>':''));
 }
 function install(){
  doc.body.classList.add('atk-home-v43');

@@ -6,11 +6,11 @@
 // Supabase behaviour (email delivery, token format, rate limits) is NOT verified by this emulator.
 const http = require('node:http');
 const crypto = require('node:crypto');
-const { createDb, call } = require('./pg.cjs');
+const { createDb, call, asRole } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
-let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory;
-async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false; }
+let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory, photos;
+async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map(); }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
@@ -18,7 +18,7 @@ function session(uid, email) {
   return { access_token: access, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: r, user: { id: uid, email, is_anonymous:guests.has(uid) } };
 }
 function send(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'apikey, authorization, content-type, x-client-info', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'apikey, authorization, content-type, x-client-info, cache-control', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' });
   res.end(body === undefined ? '' : JSON.stringify(body));
 }
 const readBody = req => new Promise(resolve => { let s = ''; req.on('data', c => { s += c; }); req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}); } catch (e) { resolve(null); } }); });
@@ -26,7 +26,8 @@ const readBody = req => new Promise(resolve => { let s = ''; req.on('data', c =>
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204);
-  const body = req.method === 'POST' ? await readBody(req) : {};
+  const binary=url.pathname.startsWith('/storage/v1/object/');
+  const body = req.method === 'POST' ? (binary?await new Promise(resolve=>{const parts=[];req.on('data',c=>parts.push(c));req.on('end',()=>resolve(Buffer.concat(parts)))}):await readBody(req)) : {};
   if (body === null) return send(res, 400, { code: 'PGRST102', message: 'invalid JSON' });
   try {
     if (url.pathname === '/__test/health') return send(res, db ? 200 : 503, { ok: !!db });
@@ -52,6 +53,18 @@ http.createServer(async (req, res) => {
       res.writeHead(302, { Location: redirect.href, 'Cache-Control': 'no-store' }); res.end(); return;
     }
     if (req.headers.apikey !== 'emu-anon-key') return send(res, 401, { message: 'Invalid API key' });
+    if(binary){
+      const uid=tokens.get(String(req.headers.authorization||'').replace(/^Bearer /,''));if(!uid)return send(res,401,{message:'not_authenticated'});
+      const name=decodeURIComponent(url.pathname.replace(/^\/storage\/v1\/object\/(authenticated\/)?atokore-product-photos\//,''));
+      if(!/^[0-9a-f-]{36}\/[A-Za-z0-9_-]{8,64}\/[0-9a-f-]{36}\.jpg$/.test(name))return send(res,400,{message:'invalid path'});
+      if(req.method==='POST'){
+        if(req.headers['content-type']!=='image/jpeg'||body.length>81920)return send(res,400,{message:'invalid JPEG'});
+        await asRole(db,uid,"insert into storage.objects(bucket_id,name) values('atokore-product-photos','"+name+"')");photos.set(name,body);return send(res,200,{Key:name});
+      }
+      const rows=await asRole(db,uid,"select name from storage.objects where bucket_id='atokore-product-photos' and name='"+name+"'");
+      if(!rows.length||!photos.has(name))return send(res,404,{message:'not found'});
+      res.writeHead(200,{'Content-Type':'image/jpeg','Access-Control-Allow-Origin':'*'});res.end(photos.get(name));return;
+    }
     if (url.pathname === '/auth/v1/signup') {
       if(body.email||body.password)return send(res,400,{message:'Only guest signup is simulated'});
       const uid=crypto.randomUUID();guests.add(uid);return send(res,200,session(uid,''));

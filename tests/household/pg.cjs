@@ -18,6 +18,12 @@ const PRELUDE = `
   grant usage on schema auth to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
   grant usage on schema public to anon, authenticated;
+  create schema storage;
+  create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text,metadata jsonb,unique(bucket_id,name));
+  alter table storage.objects enable row level security;
+  grant usage on schema storage to anon,authenticated;
+  grant select,insert,delete on storage.objects to authenticated;
 `;
 // Argument types of the client API, so JSON arguments are cast like PostgREST does.
 const SIGNATURES = {
@@ -25,12 +31,13 @@ const SIGNATURES = {
   hh_join: [['p_code', 'text'], ['p_display_name', 'text']], hh_leave: [], hh_remove_member: [['p_user', 'uuid']],
   hh_push: [['p_ops', 'jsonb'], ['p_device', 'text']], hh_pull: [['p_since', 'bigint'], ['p_limit', 'int']], hh_changes: [['p_limit', 'int']],
   hh_entitlements: [], hh_consume: [['p_feature', 'text'], ['p_event_key', 'text']],
+  hh_undo_purchases: [['p_ops','jsonb']],
 };
 
 async function createDb() {
   const db = new PGlite();
   await db.exec(PRELUDE);
-  for (const file of fs.readdirSync(MIGRATIONS).filter(f => f.endsWith('.sql') && !f.includes('storage')).sort()) {
+  for (const file of fs.readdirSync(MIGRATIONS).filter(f => f.endsWith('.sql')).sort()) {
     await db.exec(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'));
   }
   return db;

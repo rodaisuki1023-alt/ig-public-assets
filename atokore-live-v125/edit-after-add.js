@@ -37,18 +37,25 @@ function validate(input,current){
  if(minQty!==null&&(!Number.isSafeInteger(minQty)||minQty<0||minQty>9999))throw Error('補充の目安は0〜9999の整数で入力してください（空欄なら1）');
  const next={...current,name,cat,qty,unit,place,expType,exp,memo,store,price,
   purchase:String(input.purchase||'')};
+ if(input.qtyBasis!==undefined){
+  if(!['total','unopened'].includes(input.qtyBasis))throw Error('在庫の数え方を確認してください');
+  next.qtyBasis=input.qtyBasis;next.inUse=input.inUse==='on'||input.inUse===true;
+ }
  if(minQty===null)delete next.minQty;else next.minQty=minQty;
  return next;
 }
-function edit(id){
- const item=read(id);if(!item){root.alert?.('商品が見つかりません');return}
+function edit(id,options={}){
+ const draft=typeof options.onSave==='function';
+ const item=draft?options.item:read(id);if(!item){root.alert?.('商品が見つかりません');return}
  const n=Number(item.id);if(!Number.isSafeInteger(n))return;
  const panel='<button type="button" class="close" onclick="closeM()">閉じる</button>'+
  '<form id="atkEditForm" class="atk-edit-form">'+
- '<h2>商品情報を編集</h2><p class="atk-edit-hint">追加した後でも、必要な情報だけ変更できます。</p>'+
+ '<h2>'+(draft?'追加予定の商品を編集':'商品情報を編集')+'</h2><p class="atk-edit-hint">'+(draft?'確認画面へ戻ってから、まとめて追加するまで保存されません。':'必要な情報だけ変更できます。')+'</p>'+
  '<label>商品名<input name="name" id="atkEditName" maxlength="120" required value="'+esc(item.name)+'"></label>'+
  '<div class="atk-edit-pair"><label>在庫数<input name="qty" type="number" required min="0" max="99999" step="1" inputmode="numeric" value="'+esc(item.qty)+'"></label>'+
  '<label>単位<select name="unit">'+formOptions(UNITS,item.unit||'個')+'</select></label></div>'+
+ '<label>在庫の数え方<select name="qtyBasis"><option value="total"'+(item.qtyBasis!=='unopened'?' selected':'')+'>使用中を含む個数</option><option value="unopened"'+(item.qtyBasis==='unopened'?' selected':'')+'>未開封の予備だけ</option></select><small>数え方を変更しても数量は自動で変わりません。上の数を合わせてください。</small></label>'+
+ '<label class="atk-edit-inuse"><input name="inUse" type="checkbox"'+(item.inUse?' checked':'')+'>使用中の商品が別にある（任意）</label>'+
  '<label class="atk-edit-reorder">補充の目安（任意）<span class="atk-edit-inline"><span>残り</span><input name="minQty" type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" value="'+esc(item.minQty??'')+'"><span>以下で「要補充」に表示</span></span><small>空欄なら残り1以下で表示します</small></label>'+
  '<label>カテゴリー<select name="cat">'+formOptions(CATEGORIES,item.cat||'その他')+'</select></label>'+
  '<label>保管場所<select name="place"><option value="">未設定</option>'+formOptions(PLACES,item.place||'')+'</select></label>'+
@@ -60,7 +67,7 @@ function edit(id){
  '<label>購入価格<input name="price" type="number" min="0" max="10000000" step="1" inputmode="numeric" value="'+esc(item.price||0)+'"></label>'+
  '<label>購入店舗<input name="store" maxlength="120" value="'+esc(item.store||'')+'"></label></details>'+
  '<p id="atkEditError" class="atk-edit-error" role="alert" hidden></p>'+
- '<button type="submit" class="atk-edit-save">変更を保存する</button>'+
+ '<button type="submit" class="atk-edit-save">'+(draft?'確認画面に反映する':'変更を保存する')+'</button>'+
  '</form>';
  root.openM?.(panel);
  const form=$('atkEditForm');if(!form)return;
@@ -69,11 +76,12 @@ function edit(id){
  expiry.addEventListener('change',toggle);toggle();
  form.addEventListener('submit',event=>{
   event.preventDefault();
-  const curr=read(id),error=$('atkEditError');
+ const curr=draft?options.item:read(id),error=$('atkEditError');
   try{
    root.AtokoreDataSafety?.assertWritable?.();
    const values=Object.fromEntries(new FormData(form).entries());
    const next=validate(values,curr);
+   if(draft){options.onSave(next);root.closeM?.();return}
    // Optimistic in-memory updates are avoided: write to localStorage before UI mutation.
    const records=items.map(x=>Number(x.id)===n?next:x);
    localStorage.setItem('atokoreTrialV4',JSON.stringify({items:records,buys,routines}));
@@ -90,6 +98,7 @@ function edit(id){
    if(error){error.textContent=storageFailure?'保存できませんでした。端末の空き容量を確認してください（変更前の内容は残っています）':(e?.message||'保存に失敗しました');error.hidden=false}
   }
  });
+ if(draft){const close=$('sheet')?.querySelector('.close');if(close){close.removeAttribute('onclick');close.addEventListener('click',()=>{root.closeM?.();options.onCancel?.()})}}
 }
 function install(){
  const nav=document.querySelector('.tabs');

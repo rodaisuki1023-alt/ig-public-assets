@@ -183,14 +183,16 @@ function buildBatch(existing,selected,time=Date.now()){
  let unique=Math.max(Number(time)||1,1);
  for(const raw of selected){
   const v=validateLine(raw);
-  const match=next.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'));
-  if(match){match.qty=(Number(match.qty)||0)+v.qty;continue}
+  const match=batchMatch(next,v);
+  if(match){const qty=(Number(match.qty)||0)+v.qty;if(v.draftEdited)Object.assign(match,draftFields(v));match.qty=qty;continue}
   while(ids.has(unique))unique++;
   ids.add(unique);
-  next.push({id:unique++,name:v.name,cat:v.cat,qty:v.qty,unit:v.unit,expType:'期限なし',exp:'',purchase:'',price:0,store:'',place:v.cat==='食料品'?'冷蔵庫':'収納',memo:'',usage:1});
+  next.push({id:unique++,name:v.name,cat:v.cat,qty:v.qty,unit:v.unit,expType:'期限なし',exp:'',purchase:'',price:0,store:'',place:v.cat==='食料品'?'冷蔵庫':'収納',memo:'',usage:1,...(v.draftEdited?draftFields(v):{})});
  }
  return next;
 }
+function draftFields(v){const out={};for(const k of ['place','exp','expType','memo','minQty','purchase','store','price','qtyBasis','inUse'])if(v[k]!==undefined)out[k]=v[k];return out}
+function batchMatch(list,v){return list.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(v.draftEdited?(x.exp||'')===(v.exp||''):(!x.exp||x.expType==='期限なし')))}
 const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,reviewing:false,pickScroll:0,afterSave:null,loadedSet:null,loadedSnapshot:'',routineTarget:null};
 const food={maker:'',series:'',month:'',query:'',limit:24,selected:'',qty:1,customBrand:'',customSeries:'',customName:'',customAge:'',customAmount:'',customFormat:''};
 function syncFoodInputs(){for(const field of ['Brand','Series','Name','Age','Amount','Format']){const input=$('qaFood'+field);if(input)food['custom'+field]=input.value}}
@@ -361,7 +363,7 @@ function addBaby(){
 // Pending lines are counted as products and as a total quantity, never mixed up.
 function pendingSummary(lines=state.tray){return lines.length+'商品（数量の合計'+lines.reduce((sum,x)=>sum+x.qty,0)+'点）'}
 // What the final button will do to each line, using the same matching rules as commit().
-function stockMatch(v){return stockItems().find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'))}
+function stockMatch(v){return batchMatch(stockItems(),v)}
 function buyMatch(v){let list=[];try{list=Array.isArray(buys)?buys:[]}catch(e){}return list.find(y=>y.name===v.name&&y.unit===v.unit)}
 function lineEffect(v){
  if(state.routineTarget)return 'いつものリストに追加（在庫数は変わりません）';
@@ -385,9 +387,19 @@ function renderTray(){
  box.hidden=!count||!state.reviewing;
  n.textContent=pendingSummary(lines);
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
- list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><span class="qa-tray-thumb">'+iconFor(v.name,v.cat)+'</span><div class="qa-review-copy"><strong class="qa-review-name">'+safe(v.name)+'</strong><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=999?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
+ list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><span class="qa-tray-thumb">'+iconFor(v.name,v.cat)+'</span><div class="qa-review-copy"><button type="button" class="qa-review-name qa-review-edit" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+safe(v.name)+' <span aria-hidden="true">✎</span></button><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=999?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
  button.disabled=!count||state.committing;
  $('pg-add')?.classList.toggle('qa-has-pending',count>0);
+}
+function editPending(index){
+ const line=state.tray[index];if(!line||state.committing)return;
+ const found=stockMatch(line),draft={place:line.cat==='食料品'?'冷蔵庫':'収納',expType:'期限なし',exp:'',...(found||{}),...line,id:index+1};
+ root.atokoreEditStock?.(draft.id,{item:draft,onSave:next=>{
+  if(next.qty<1||next.qty>999)throw Error('追加する数量は1〜999で指定してください');
+  state.tray[index]={...line,name:next.name,cat:next.cat,unit:next.unit,qty:next.qty,...draftFields(next),draftEdited:true};
+  renderTray();renderItems();
+ },onCancel:()=>renderTray()});
+ const qty=doc.querySelector('#atkEditForm [name="qty"]');if(qty){qty.min='1';qty.max='999';qty.parentNode.firstChild.textContent='追加する数量'}
 }
 function setReviewing(on){
  const page=$('pg-add');
@@ -439,7 +451,7 @@ function persist(tray){
  store.setItem(key,raw);if(store.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
  items=next;
  // Ids of every record this batch created or added to (one per line), so the list can show them.
- const byLine=tray.map(v=>next.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(!x.exp||x.expType==='期限なし'))?.id??null);
+ const byLine=tray.map(v=>batchMatch(next,v)?.id??null);
  return {merged:tray.length-(next.length-before.length),ids:byLine.filter(id=>id!=null),byLine};
 }
 // The list opens right under the finger after a save; a fast second tap on the final button must not
@@ -552,8 +564,9 @@ function setup(){
  const originalOpen=root.atkOpenAdd;
  root.atkOpenAdd=function(){openQuick()};
  doc.addEventListener('click',e=>{
-  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit],[data-qa-dest],[data-qa-routine-back],[data-qa-review],[data-qa-review-back]');
+  const btn=e.target.closest?.('[data-qa-cat],[data-qa-group],[data-qa-pick],[data-qa-more],[data-qa-recent],[data-qa-baby],[data-qa-step],[data-qa-babyadd],[data-qa-free],[data-qa-adjust],[data-qa-remove],[data-qa-clear],[data-qa-commit],[data-qa-dest],[data-qa-routine-back],[data-qa-review],[data-qa-review-back],[data-qa-edit]');
   if(!btn||!p.contains(btn))return;
+  if(btn.hasAttribute('data-qa-edit')){editPending(Number(btn.dataset.qaEdit));return}
   if(btn.hasAttribute('data-qa-routine-back')){cancelRoutinePicker(true);return}
   if(btn.hasAttribute('data-qa-review')){openReview();return}
   if(btn.hasAttribute('data-qa-review-back')){closeReview();return}

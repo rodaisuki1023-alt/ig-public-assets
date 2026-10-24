@@ -89,10 +89,10 @@ test('pwa includes v18 overrides in correct order and cache refresh',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
  assert.match(html,/add-clarity-v18\.css\?v=18/);
- assert.match(html,/quick-add\.js\?v=43/);
+ assert.match(html,/quick-add\.js\?v=44/);
  assert.match(html,/baby-flow-v17\.js\?v=39/);
  assert.ok(html.indexOf('baby-focus-v17.css')<html.indexOf('add-clarity-v18.css'));
- assert.match(sw,/atokore-pwa-v43/);
+ assert.match(sw,/atokore-pwa-v44/);
  assert.match(sw,/'\.\/add-clarity-v18.css'/);
  assert.match(sw,/'\.\/p0-fixes-v19.css'/);
  // v36 review screen styles load after every older layer and are cached for offline use.

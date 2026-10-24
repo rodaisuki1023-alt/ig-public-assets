@@ -1,5 +1,5 @@
-/* Private product photos. No uploads, URLs from users, or inventory writes.
- * Compressed raster bytes live in a trial-only IndexedDB, outside stock localStorage.
+/* Private product photos. Local JPEGs stay in IndexedDB; explicit family sharing uses
+ * the household adapter's private Storage bucket. Never upload existing local photos automatically.
  */
 (function(root){
 'use strict';
@@ -60,6 +60,24 @@ async function load(k){
   .then(record=>cache.has(k)?cache.get(k):cacheBlob(k,recordBlob(record))).finally(()=>pending.delete(k));
  pending.set(k,task);return task;
 }
+const sharedCache=new Map(),sharedPending=new Map();let photoHousehold='';
+function scopeKey(){const s=root.AtokoreHousehold?.homeState?.();return s?.joined?root.AtokoreHousehold?.photoScope?.(readFirstId())?.household||'':''}
+function readFirstId(){try{return items[0]?.id}catch(_){return null}}
+function resetShared(){for(const url of sharedCache.values())if(url)root.URL.revokeObjectURL(url);sharedCache.clear();sharedPending.clear()}
+async function loadFor(item){
+ const hh=root.AtokoreHousehold,scope=hh?.photoScope?.(item.id);
+ if(!scope||!item.photoPath)return load(key(item));
+ const sk=scope.household+':'+scope.user+':'+item.photoPath;
+ if(sharedCache.has(sk))return sharedCache.get(sk);
+ if(sharedPending.has(sk))return sharedPending.get(sk);
+ const task=hh.fetchPhoto(item.id,item.photoPath).then(async blob=>{
+  const current=readItem(item.id),now=hh.photoScope(item.id);
+  if(!blob||!validBlob(blob)||!current||current.photoPath!==item.photoPath||now?.household!==scope.household||now?.user!==scope.user)return null;
+  if(fileKind(new Uint8Array(await blob.slice(0,32).arrayBuffer()))!=='jpeg')return null;
+  const url=root.URL.createObjectURL(blob);sharedCache.set(sk,url);return url;
+ }).finally(()=>{if(sharedPending.get(sk)===task)sharedPending.delete(sk)});
+ sharedPending.set(sk,task);return task;
+}
 async function compress(file){
  if(!file||!file.size||file.size>MAX_INPUT)throw Error('写真は20MB以下のJPEG・PNG・WebP・HEICを選んでください。');
  const bytes=new Uint8Array(await file.slice(0,32).arrayBuffer());
@@ -96,11 +114,12 @@ function picture(badge,url){
  badge.replaceChildren(img);if(label)badge.append(element('span','atk-photo-brand',label));badge.classList.add('atk-has-photo');
 }
 function decorate(){
- for(const row of doc.querySelectorAll('#stockList [data-stock-id],#pg-home [data-atk-open]')){
-  const item=readItem(row.dataset.stockId||row.dataset.atkOpen);if(!item)continue;
+ for(const row of doc.querySelectorAll('#stockList [data-stock-id],#pg-home [data-atk-open],#buyList [data-buy-id]')){
+  let item=readItem(row.dataset.stockId||row.dataset.atkOpen);
+  if(row.dataset.buyId){try{const buy=buys.find(x=>String(x.id)===row.dataset.buyId);item=items.find(x=>root.__atokoreCoreV125H.sameProduct(x,buy))}catch(_){}}
+  if(!item)continue;
   const k=key(item),badge=row.querySelector('.atk-row-brand,.atk-brand');if(!badge)continue;
-  if(cache.has(k))picture(badge,cache.get(k));
-  else load(k).then(url=>{if(row.isConnected&&key(readItem(item.id)||{})===k)picture(badge,url)}).catch(()=>{});
+  loadFor(item).then(url=>{if(row.isConnected&&key(readItem(item.id)||{})===k)picture(badge,url)}).catch(()=>picture(badge,null));
  }
 }
 let editor=null;
@@ -113,12 +132,16 @@ function detailPhoto(){
   button.addEventListener('click',()=>openEditor(item.id));head.append(button);
  }
  const k=key(item);
- load(k).then(url=>{
+ loadFor(item).then(url=>{
   if(!head.isConnected)return;
   let image=head.querySelector('.atk-detail-photo');
   if(url){if(!image){image=element('img','atk-detail-photo');image.alt='商品の写真';head.prepend(image)}image.src=url}
   else image?.remove();
   head.querySelector('.atk-photo-open').textContent=url?'写真を変更':'写真を設定';
+  if(url&&root.AtokoreHousehold?.homeState?.().joined&&!item.photoPath&&!head.querySelector('.atk-photo-share')){
+   const share=element('button','atk-photo-share','この端末の写真を家族と共有');share.type='button';
+   share.addEventListener('click',async()=>{share.disabled=true;try{const record=await transaction('readonly',(s,done)=>{const r=s.get(k);r.onsuccess=()=>done(r.result)});const blob=recordBlob(record);if(!blob)throw Error('写真が見つかりません');const result=await root.AtokoreHousehold.sharePhoto(item.id,blob);share.textContent=result.shared?'家族に写真を共有しました':'写真は送信待ちです';root.render?.()}catch(e){share.textContent='共有できませんでした。再試行';share.disabled=false}});head.append(share);
+  }
  }).catch(()=>{});
 }
 function openEditor(id){
@@ -134,8 +157,11 @@ function openEditor(id){
  const status=element('p','atk-photo-status');status.setAttribute('role','status');
  const save=element('button','atk-photo-save','この写真にする');save.type='button';save.disabled=true;
  const reset=element('button','atk-photo-reset','元のアイコンに戻す');reset.type='button';reset.hidden=true;
- const note=element('p','atk-photo-note','ご自身で撮った写真か、使用許可のある写真を選んでください。写真はこのブラウザ内だけに保存し、外部へ送信しません。共有・在庫バックアップには含まれません。ブラウザのデータを消すと写真も消えます。');
+ const joined=!!root.AtokoreHousehold?.homeState?.().joined;
+ const note=element('p','atk-photo-note',joined?'家族と共有する写真は、参加中の家族だけが見られます。共有済みの写真は同じGoogleアカウントで復旧できます。端末だけの写真は対象外です。':'写真はこのブラウザ内に保存されます。家族共有を始めた後、商品詳細から写真も共有できます。端末だけの写真はバックアップには含まれません。');
  panel.append(close,title,name,preview,pick,file,status,save,reset,note);sheet.append(panel);
+ let shareChoice=null;
+ if(joined){const label=element('label','atk-edit-inuse');shareChoice=element('input');shareChoice.type='checkbox';shareChoice.checked=true;shareChoice.disabled=!!item.photoPath;label.append(shareChoice,doc.createTextNode('この写真を家族と共有する'));note.before(label)}
  const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item)};editor=session;
  const active=()=>editor===session&&panel.isConnected;
  const busy=value=>{session.busy=value;pick.disabled=close.disabled=reset.disabled=value;save.disabled=value||!session.blob};
@@ -162,11 +188,16 @@ function openEditor(id){
    const bytes=remove?null:new Uint8Array(await session.blob.arrayBuffer());
    await transaction('readwrite',store=>remove?store.delete(session.key):store.put({bytes},session.key));
    cacheBlob(session.key,remove?null:session.blob);
+   if(joined&&(shareChoice?.checked||remove&&current.photoPath)){
+    const result=await root.AtokoreHousehold.sharePhoto(id,remove?null:session.blob);
+    if(!result.shared)root.notifyAtokoreV125H?.('写真は端末に保存済みです。家族への共有情報は送信待ちです。');
+   }
+   resetShared();
    dispose();root.renderHome?.();root.renderStock?.();root.atkShowDetail?.(id);
-  }catch(error){message(error.message);busy(false)}
+  }catch(error){message('端末に保存できた写真は残っています。'+error.message);busy(false)}
  }
  save.addEventListener('click',()=>commit(false));reset.addEventListener('click',()=>commit(true));
- load(session.key).then(url=>{if(active()&&!session.blob){if(url){preview.src=url;preview.hidden=false;reset.hidden=false}}}).catch(()=>message('写真の保存領域を読み込めませんでした。再読み込みしてお試しください。'));
+ loadFor(item).then(url=>{if(active()&&!session.blob){if(url){preview.src=url;preview.hidden=false;reset.hidden=false}}}).catch(()=>message('写真の保存領域を読み込めませんでした。再読み込みしてお試しください。'));
 }
 async function moveIdentity(before,after){
  const previous=key(before),next=key(after);if(previous===next)return;
@@ -181,13 +212,16 @@ async function moveIdentity(before,after){
 function install(){
  // Never enable this UI in the normal app or another trial sharing this origin.
  if(!/\/preview-baby-v19\//.test(root.location?.pathname||''))return;
- for(const name of ['renderHome','renderStock']){
+ for(const name of ['renderHome','renderStock','renderBuy']){
   const prior=root[name];if(typeof prior==='function')root[name]=function(...args){const result=prior.apply(this,args);decorate();return result};
  }
  const priorOpen=root.openM,priorClose=root.closeM;
  root.openM=function(...args){dispose();const result=priorOpen.apply(this,args);detailPhoto();return result};
  root.closeM=function(...args){if(editor?.busy)return;dispose();return priorClose.apply(this,args)};
  doc.addEventListener('atokore-stock-edited',event=>moveIdentity(event.detail.before,event.detail.after));
+ doc.addEventListener('atokore-household-updated',()=>{
+  const next=scopeKey();if(next!==photoHousehold){photoHousehold=next;resetShared();decorate();detailPhoto()}
+ });
  decorate();detailPhoto();
  root.addEventListener('pagehide',()=>{dispose();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
