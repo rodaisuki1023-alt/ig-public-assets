@@ -10,7 +10,7 @@ for(const width of [320,390,430])test(`home v43 has two safe actions, real local
  await expect(page.locator('.atk-home-v43 .atk-actions button')).toHaveCount(2);
  await expect(page.locator('#homeHero,.atk-summary')).toHaveCount(0);
  await expect(page.locator('#atkTasks [data-atk-open]')).toHaveCount(2);
- await expect(page.locator('#atkTasks')).toContainText('期限まで2日');
+ await expect(page.locator('#atkTasks')).toContainText('あと2日');
  await expect(page.locator('#atkHomeActivity li')).toHaveCount(3);
  await expect(page.locator('#atkHomeBuyBadge')).toHaveText('1');
  expect(await stored(page)).toEqual(state);
