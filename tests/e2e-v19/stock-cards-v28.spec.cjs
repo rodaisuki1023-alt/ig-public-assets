@@ -21,7 +21,8 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
   test.use({viewport:{width,height}});
   test('manufacturer colors match home, compact three columns fit, corner controls remain separate',async({page},info)=>{
    const initial=initialState();await open(page,{[KEY]:initial});
-   const home=await page.locator('#pg-home [data-atk-open]').evaluateAll(els=>els.map(el=>({id:el.dataset.atkOpen,bg:getComputedStyle(el.querySelector('.atk-brand')).backgroundColor})));
+   // The v43 home uses transparent illustrations. Stock keeps the established manufacturer palette.
+   const palette=await page.evaluate(state=>state.items.filter(item=>AtokoreBabyKit.kind(item.name,item.cat)).map(item=>{const c=document.createElement('span');c.style.backgroundColor=AtokoreBabyKit.brandAppearance(item.name).bg;document.body.append(c);const bg=getComputedStyle(c).backgroundColor;c.remove();return {id:String(item.id),bg}}),initial);
    await go(page,'stock');expect(await stored(page)).toEqual(initial);
    const facts=await page.locator('#stockList').evaluate(el=>{
     const cards=[...el.querySelectorAll('[data-stock-id]')];
@@ -40,7 +41,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    });
    expect(facts.grid).toBe('grid');expect(facts.columns).toBe(3);expect(facts.overflow).toBeLessThanOrEqual(0);expect(facts.controlsFit).toBe(true);
    expect(facts.compact).toBe(true);expect(facts.countBelowImage).toBe(true);expect(facts.largeArt).toBe(true);
-   for(const c of home)expect(facts.colors.find(x=>x.id===c.id).bg).toBe(c.bg);
+   for(const c of palette)expect(facts.colors.find(x=>x.id===c.id).bg).toBe(c.bg);
    expect(new Set(facts.colors.slice(0,9).map(x=>x.bg)).size).toBe(9);
    for(const id of [101,103,107])await expect.poll(()=>row(page,id).locator('img').evaluate(i=>i.naturalWidth)).toBe(256);
    await row(page,101).scrollIntoViewIfNeeded();await shot(page,info,`${width}-v32-stock-cards`);

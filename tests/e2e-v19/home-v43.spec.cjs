@@ -67,10 +67,10 @@ test('two household members see confirmed family history, retries do not duplica
   await go(b.page,'home');await expect(b.page.locator('#atkHomeHistoryTitle')).toHaveText('家族の最近の変更');
   await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当が牛乳の数量を変更');
   const content=await b.page.locator('#atkHomeActivity').textContent();await b.page.evaluate(()=>AtokoreHousehold.syncNow());expect(await b.page.locator('#atkHomeActivity').textContent()).toBe(content);
-  await b.page.route('**/rest/v1/rpc/hh_changes',r=>r.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'history unavailable'})}));
+  await request.post(EMU+'/__test/history-failure',{data:{enabled:true}});
   await b.page.evaluate(()=>AtokoreHousehold.syncNow());await expect(b.page.locator('#atkHomeHistoryNote')).toContainText('履歴を更新できませんでした');
   await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当');await expect(b.page.locator('#atkHomeHistoryRefresh')).toBeVisible();
-  await b.page.unroute('**/rest/v1/rpc/hh_changes');await b.page.locator('#atkHomeHistoryRefresh').click();await expect(b.page.locator('#atkHomeHistoryRefresh')).toBeHidden();
+  await request.post(EMU+'/__test/history-failure',{data:{enabled:false}});await b.page.locator('#atkHomeHistoryRefresh').click();await expect(b.page.locator('#atkHomeHistoryRefresh')).toBeHidden();
   await b.page.addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false}));await b.page.reload();
   await expect(b.page.locator('#atkHomeHistoryNote')).toContainText('履歴を更新できませんでした');await expect(b.page.locator('#atkHouseholdChip')).toHaveText('オフライン');
   await b.page.evaluate(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true}));await b.page.evaluate(()=>AtokoreHousehold.syncNow());

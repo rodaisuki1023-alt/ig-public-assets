@@ -9,8 +9,8 @@ const crypto = require('node:crypto');
 const { createDb, call } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
-let db, codes, tokens, refresh, oauth, dropPush, guests;
-async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); }
+let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory;
+async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false; }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
@@ -31,6 +31,7 @@ http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/__test/health') return send(res, db ? 200 : 503, { ok: !!db });
     if (url.pathname === '/__test/reset') { await reset(); return send(res, 200, { ok: true }); }
+    if (url.pathname === '/__test/history-failure') { failHistory=body.enabled===true;return send(res,200,{enabled:failHistory}); }
     if (url.pathname === '/__test/otp') return send(res, 200, { code: codes.get(String(url.searchParams.get('email')).toLowerCase()) || null });
     if (url.pathname === '/__test/sql') return send(res, 200, (await db.query(body.sql)).rows);
     if (url.pathname === '/__test/drop-push') {
@@ -88,6 +89,7 @@ http.createServer(async (req, res) => {
       // This avoids browser-specific request-interception behaviour in offline/retry tests.
       const fault=dropPush.get(uid);
       if(m[1]==='hh_push'&&fault?.enabled){fault.attempts++;res.destroy();return}
+      if(m[1]==='hh_changes'&&failHistory)return send(res,503,{message:'history unavailable'});
       try { return send(res, 200, await call(db, uid, m[1], body, {is_anonymous:guests.has(uid)})); }
       catch (e) { return send(res, e.code === '42501' ? 403 : e.code === '42883' ? 404 : 400, { code: e.code, message: e.message }); }
     }
