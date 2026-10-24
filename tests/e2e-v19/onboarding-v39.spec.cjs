@@ -88,7 +88,7 @@ test('a failed save keeps the first-run card and sets no reorder line; retry wor
 test('reorder line in the edit form: 要補充 follows it, empty means the default, bad values are refused', async ({ page }) => {
   await open(page, { [KEY]: { items: [{ id: 7, name: 'おしりふき', cat: 'ベビー', qty: 3, unit: 'パック', place: '収納', expType: '期限なし', exp: '' }], buys: [], routines: [] } });
   await go(page, 'home');
-  await expect(page.locator('#atkLowCount')).toHaveText('0');
+  await expect(page.locator('#atkTasks [data-atk-open="7"]')).toHaveCount(0);
   await page.evaluate(() => window.atokoreEditStock(7));
   const field = page.locator('#atkEditForm input[name="minQty"]');
   await expect(field).toHaveValue('');
@@ -102,12 +102,12 @@ test('reorder line in the edit form: 要補充 follows it, empty means the defau
   await page.click('.atk-edit-save');
   await expect.poll(async () => (await stored(page)).items[0].minQty).toBe(3);
   await go(page, 'home');
-  await expect(page.locator('#atkLowCount')).toHaveText('1');
+  await expect(page.locator('#atkTasks [data-atk-open="7"]')).toHaveCount(1);
   await page.evaluate(() => window.atokoreEditStock(7));
   await page.locator('#atkEditForm input[name="minQty"]').fill('');
   await page.click('.atk-edit-save');
   await expect.poll(async () => 'minQty' in (await stored(page)).items[0]).toBe(false);
   await go(page, 'home');
-  await expect(page.locator('#atkLowCount')).toHaveText('0');
+  await expect(page.locator('#atkTasks [data-atk-open="7"]')).toHaveCount(0);
   expect(page.__errors).toEqual([]);
 });

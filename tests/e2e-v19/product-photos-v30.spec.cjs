@@ -27,7 +27,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
  test.describe(`private product photo ${width}px`,()=>{
   test.use({viewport:{width,height}});
   test('preview cancellation, private commit, home/stock icons, reload and corner controls',async({page},info)=>{
-   const initial=baseState();initial.items.push({...initial.items[1],id:4,name:'パンパース さらさらケア おむつ テープ L'});
+   const initial=baseState();initial.items[1].qty=1;initial.items.push({...initial.items[1],id:4,name:'パンパース さらさらケア おむつ テープ L'});
    const uploads=[];page.on('request',r=>{if(['POST','PUT'].includes(r.method()))uploads.push(r.url())});
    await open(page,{[KEY]:initial});await go(page,'stock');await editor(page);await choose(page);
    await expect(page.locator('.atk-photo-preview')).toBeVisible();expect(await stored(page)).toEqual(initial);
@@ -49,7 +49,7 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    const img=row(page).locator('.atk-user-photo');await expect(img).toBeVisible();await expect.poll(()=>img.evaluate(i=>i.naturalWidth)).toBe(256);
    await row(page).locator('.name').scrollIntoViewIfNeeded();await shot(page,info,`${width}-v32-product-photo`);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(0);
-   await row(page).locator('.qty button').last().click();expect((await stored(page)).items.find(x=>x.id===2).qty).toBe(3);
+   await row(page).locator('.qty button').last().click();expect((await stored(page)).items.find(x=>x.id===2).qty).toBe(initial.items[1].qty+1);
    await expect(page.locator('#modal')).not.toHaveClass(/on/);await expect(row(page).locator('.atk-user-photo')).toBeVisible();
    expect(uploads).toEqual([]);
   });

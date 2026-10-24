@@ -50,13 +50,38 @@ function captureInvite(initial=false){
 }
 captureInvite(true);
 let household=meta.household||null,engine=null,syncing=null,lastRaw=null,status={state:'local'},timer=null,pending=null,puller=null;
+let changes=[],historyState='loading',changesFor=null,changesRequest=null;
+function homeState(){
+ const current=household&&session?household.id+':'+session.user.id:null;
+ return {joined:!!current,state:status.state,lastSync:engine?.status().lastSync||0,historyState:current===changesFor?historyState:'loading',changes:current===changesFor?changes.map(r=>({...r})):[]};
+}
+async function refreshChanges(){
+ const target=household&&session?household.id+':'+session.user.id:null;
+ if(!target)return;
+ if(changesRequest?.target===target)return changesRequest.promise;
+ if(changesFor!==target){changes=[];changesFor=target;historyState='loading';paint()}
+ const controller=new root.AbortController(),guard={target,controller,promise:null};
+ const timeout=setTimeout(()=>controller.abort(),8000);
+ const task=Promise.resolve().then(async()=>{
+  try{
+   const rows=await rpc('hh_changes',{p_limit:50},controller.signal);
+   if(changesRequest!==guard||(household&&session?household.id+':'+session.user.id:null)!==target)return;
+   if(!Array.isArray(rows))throw Error('invalid_history');
+   changes=rows;historyState='ready';
+  }catch(e){
+   if(changesRequest!==guard||(household&&session?household.id+':'+session.user.id:null)!==target)return;
+   historyState='error';
+  }finally{clearTimeout(timeout);if(changesRequest===guard)changesRequest=null;paint()}
+ });
+ guard.promise=task;changesRequest=guard;return task;
+}
 const saveMeta=patch=>{const next={...meta,...patch};if(!writeJSON(META_KEY,next))return false;meta=next;return true};
 
 // ---------------------------------------------------------------- network (Supabase Auth + PostgREST RPC)
 class NetError extends Error{constructor(m,code,status){super(m);this.code=code;this.status=status}}
-async function request(path,body,auth){
+async function request(path,body,auth,signal){
  let res;
- try{res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.anonKey,...(auth?{Authorization:'Bearer '+auth}:{})},body:JSON.stringify(body||{})})}
+ try{res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.anonKey,...(auth?{Authorization:'Bearer '+auth}:{})},body:JSON.stringify(body||{}),...(signal?{signal}:{})})}
  catch(e){throw new NetError('offline','network',0)}
  const text=await res.text();let data=null;try{data=text?JSON.parse(text):null}catch(e){}
  if(!res.ok)throw new NetError(data?.message||data?.msg||data?.error_description||('HTTP '+res.status),data?.code||'http',res.status);
@@ -72,11 +97,11 @@ async function refreshSession(){
  if(!session?.refresh_token)throw new NetError('signed_out','auth',401);
  keepSession(await request('/auth/v1/token?grant_type=refresh_token',{refresh_token:session.refresh_token}));
 }
-async function rpc(fn,args){
+async function rpc(fn,args,signal){
  if(!session)throw new NetError('signed_out','auth',401);
  if(session.expires_at-60<Date.now()/1000)await refreshSession();
- try{return await request('/rest/v1/rpc/'+fn,args,session.access_token)}
- catch(e){if(e.status===401){await refreshSession();return request('/rest/v1/rpc/'+fn,args,session.access_token)}throw e}
+ try{return await request('/rest/v1/rpc/'+fn,args,session.access_token,signal)}
+ catch(e){if(e.status===401){await refreshSession();return request('/rest/v1/rpc/'+fn,args,session.access_token,signal)}throw e}
 }
 
 // ---------------------------------------------------------------- engine wiring
@@ -109,6 +134,7 @@ async function syncNow(){
    await engine.sync();
    const s=engine.status();
    setStatus(s.pending?'pending':'synced');
+   await refreshChanges();
   }catch(e){
    if(e.code==='rejected'||e.code==='recovery')setStatus('blocked');
    else if(e.code==='storage')setStatus('storage');
@@ -116,6 +142,7 @@ async function syncNow(){
    else if(e.code==='auth'||e.status===401)setStatus('auth');
    else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
    else setStatus('error',e.message);
+   if(household&&session){const current=household.id+':'+session.user.id;if(changesFor!==current)changes=[];changesFor=current;historyState='error';paint()}
    root.console?.warn?.('あとこれ 家族共有の同期',e);
   }
   return status;
@@ -161,6 +188,7 @@ function paint(){
  if(chip){chip.hidden=!household;chip.textContent=status.state==='synced'?'共有済み':status.state==='pending'||status.state==='syncing'?'送信待ち':status.state==='offline'?'オフライン':status.state==='local'?'':'要確認';chip.dataset.state=status.state}
  const meta2=$('atkHouseholdCardMeta');if(meta2)meta2.textContent=household?statusLine():'招待した家族と在庫・買い物リストを共有（限定テスト）';
  const line=$('atkHouseholdStatus');if(line)line.textContent=statusLine();
+ doc.dispatchEvent(new root.CustomEvent('atokore-household-updated'));
 }
 function sheet(title,children){
  root.openM?.('');
@@ -418,7 +446,7 @@ async function leave(){
  await rpc('hh_leave',{});
  stop();household=null;saveMeta({household:null,engine:null});setStatus('local');root.closeM?.();notice('世帯から抜けました。この端末の在庫はそのまま残っています');
 }
-function stop(){clearInterval(timer);clearInterval(puller);timer=puller=null;engine=null}
+function stop(){clearInterval(timer);clearInterval(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
 function signOut(){
  const left=engine?engine.status().pending:0;
  if(!root.confirm?.((left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+(session?.user?.is_anonymous?'Googleなしの参加情報は失われます。戻るには作成者から再招待が必要です。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。'))return;
@@ -438,7 +466,7 @@ function installEntry(){
   if(anchor)anchor.after(card);else page.prepend(card);
  }
  const top=doc.querySelector('.top h1');
- if(top&&!$('atkHouseholdChip')){const chip=el('button',{type:'button',id:'atkHouseholdChip',class:'atk-household-chip',hidden:'',onclick:open});top.after(chip)}
+ if(top&&!$('atkHouseholdChip')){const chip=el('button',{type:'button',id:'atkHouseholdChip',class:'atk-household-chip',hidden:'',onclick:open});const slot=doc.querySelector('.atk-home-sharing');if(slot)slot.prepend(chip);else top.after(chip)}
  paint();
 }
 
@@ -452,5 +480,5 @@ if(googleAuth?.hasCallback()){
  googleAuth.finish().then(async s=>{if(s){keepSession(s);await afterSignIn()}}).catch(e=>{signIn();notice(friendly(e))});
 }else if(inviteCode&&!household){joinScreen()}
 else if(session&&household&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow();if(inviteCode)notice('すでに家族共有に参加しています。別の招待で自動的に切り替えることはありません')}
-root.AtokoreHousehold=Object.freeze({open,syncNow,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({open,syncNow,homeState,refreshChanges,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

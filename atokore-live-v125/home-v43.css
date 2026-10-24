@@ -1,0 +1,66 @@
+/* Approved home concept: warm, compact, readable at 320px, stable single-row navigation. */
+body.atk-home-v43 .top{padding:18px 16px 12px;background:#FAF6F3;gap:10px;align-items:flex-start}
+body.atk-home-v43 .atk-top-title h1{font-size:32px!important;line-height:1.25}
+body.atk-home-v43 .atk-top-title span{font-size:12px;margin-top:4px}
+.atk-home-sharing{display:flex;flex-direction:column;align-items:flex-end;gap:5px;min-width:0;max-width:48%;text-align:right}
+body.atk-home-v43 .atk-home-sharing button{min-height:44px;border-radius:24px;border:1px solid #C9DECB;background:#EEF6EF;color:#3F6B47;font-size:12px;font-weight:800;padding:7px 12px;margin:0}
+body.atk-home-v43 .atk-home-sharing button[hidden]{display:none}
+.atk-home-sharing small{font-size:10px;color:#736862;line-height:1.5;overflow-wrap:anywhere}
+body.atk-home-v43 .content{padding-top:10px!important}
+.atk-home-v43.atk-home{gap:22px}
+.atk-home-v43 .atk-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.atk-home-v43 .atk-action{min-height:84px;border-radius:17px;gap:8px;padding:12px 5px}
+.atk-home-v43 .atk-action svg{width:28px;height:28px}
+.atk-home-v43 .atk-action span{font-size:14px;line-height:1.4}
+.atk-home-v43 .atk-action-primary{background:#BD725D}
+.atk-home-v43 .atk-action-peach{background:#F8DED0;color:#56372D}
+.atk-home-v43 .atk-section-head{margin:0 0 10px;gap:6px}
+.atk-home-v43 .atk-section-head h2{margin:0;font-size:18px;line-height:1.5;color:#56372D;letter-spacing:-.035em}
+.atk-home-v43 .atk-section-head button{flex-shrink:0;min-height:44px;padding:0 2px;font-size:12px}
+.atk-home-stock-list,.atk-home-activity{margin:0;padding:0;border:1px solid #E9DAD3;border-radius:17px;background:#FFFEFC;list-style:none;overflow:hidden}
+.atk-home-stock-list .atk-home-stock{display:grid;grid-template-columns:48px minmax(0,1fr) auto 8px;gap:9px;border:0;border-radius:0;box-shadow:none;padding:13px 12px;min-height:86px;align-items:center}
+.atk-home-stock-list .atk-home-stock+.atk-home-stock{border-top:1px solid #EEDFD8}
+.atk-home-stock .atk-item-id{max-width:48px;width:48px;min-width:0}
+.atk-home-stock .atk-brand{padding:0;background:transparent;border-radius:10px;min-height:48px;width:48px;white-space:normal}
+.atk-home-stock .bf-baby-icon img,.atk-home-stock .bf-baby-icon{width:48px!important;height:48px!important;max-width:48px}
+.atk-home-stock .atk-brand svg{width:44px;height:44px}
+body.atk-home-v43 #pg-home .atk-home-stock .bf-baby-brand{display:none!important}
+.atk-home-stock .atk-item-copy{gap:4px}
+.atk-home-stock .atk-item-copy strong{font-size:14px;line-height:1.45;white-space:normal;overflow-wrap:anywhere}
+.atk-home-stock .atk-item-copy small{font-size:11px;line-height:1.5;white-space:normal;overflow-wrap:anywhere}
+.atk-home-flags{display:flex;flex-direction:column;align-items:flex-end;gap:5px;max-width:105px;font-size:12px;font-weight:800;text-align:center}
+.atk-home-flags>span{border-radius:10px;padding:7px 8px;line-height:1.4}
+.atk-home-low{background:#FBEAE6;color:#9A4836}
+.atk-home-expiry{background:#FFF0D7;color:#885615}
+.atk-home-expiry.is-overdue{background:#FBEAE6;color:#9A4836}
+.atk-home-more{display:block;min-height:44px;margin:6px auto 0;padding:5px 10px;background:none;border:0;font-size:12px;color:#8A5747;text-decoration:underline}
+.atk-home-more[hidden],.atk-home-v43 section[hidden]{display:none}
+.atk-home-activity[hidden]{display:none}
+.atk-home-change{display:grid;grid-template-columns:37px minmax(0,1fr) auto;align-items:start;gap:10px;padding:14px 12px;min-height:82px}
+.atk-home-change+.atk-home-change{border-top:1px solid #EEDFD8}
+.atk-home-avatar{display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border-radius:50%;background:#E4EDF5;color:#496C8A;font-size:16px;font-weight:800}
+.atk-home-avatar.is-buy{background:#F9E2DA;color:#99543F}.atk-home-avatar.is-purchase{background:#E7EFE3;color:#4A7045}
+.atk-home-change-copy{display:flex;flex-direction:column;gap:5px;min-width:0}
+.atk-home-change-copy strong{font-size:13px;color:#493933;font-weight:750;line-height:1.5;overflow-wrap:anywhere}
+.atk-home-change-copy small{font-size:11px;color:#736862;line-height:1.5;overflow-wrap:anywhere}
+.atk-home-change time{font-size:10px;color:#736862;white-space:nowrap;line-height:2}
+.atk-home-history-note{font-size:12px;line-height:1.7;margin:0 2px 10px;color:#736862}
+body.atk-home-v43 #historyHomeV10,body.atk-home-v43 #historyTopBtn{display:none!important}
+body.atk-home-v43 .tabs .tab{display:flex;position:relative;flex-direction:column;justify-content:center;align-items:center;gap:5px;font-size:11px!important;min-width:0;min-height:64px}
+body.atk-home-v43 .tabs .tab svg{width:25px;height:25px;flex-shrink:0}
+body.atk-home-v43 .tabs .tab.on{background:#FAEEEA!important;border-radius:13px}
+body.atk-home-v43 .tabs .tab.on::before{display:none}
+body.atk-home-v43 #bfNavAdd svg{background:#BD725D;color:#fff;border-radius:50%;width:34px;height:34px;padding:6px}
+body.atk-home-v43 .atk-home-buy-badge{position:absolute;top:2px;left:calc(50% + 5px);border-radius:20px;min-width:18px;height:18px;line-height:18px;font-size:10px;padding:0 4px;background:#B45F49;color:white;border:1px solid white}
+.atk-home-buy-badge[hidden]{display:none}
+body.atk-home-v43 .tabs [data-p="buy"] .navBadge{display:none!important}
+.atk-home-all .atk-home-change{padding:14px 10px}
+@media(max-width:350px){
+ .atk-home-v43 .atk-section-head h2{font-size:16px}.atk-home-v43 .atk-section-head button{font-size:11px}
+ .atk-home-stock-list .atk-home-stock{grid-template-columns:40px minmax(0,1fr) auto 6px;gap:6px;padding:12px 8px}
+ .atk-home-stock .atk-item-id,.atk-home-stock .atk-brand{width:40px;max-width:40px}
+ .atk-home-stock .bf-baby-icon img,.atk-home-stock .bf-baby-icon{width:40px!important;height:40px!important;max-width:40px}
+ .atk-home-flags{font-size:11px;max-width:86px}.atk-home-flags>span{padding:6px}
+ .atk-home-change{grid-template-columns:30px minmax(0,1fr) auto;gap:7px;padding:12px 9px}
+ .atk-home-avatar{width:30px;height:30px}.atk-home-change-copy strong{font-size:12px}.atk-home-change time{font-size:9px}
+}

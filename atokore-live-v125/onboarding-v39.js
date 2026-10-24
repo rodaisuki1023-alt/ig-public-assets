@@ -53,7 +53,7 @@ function tipHTML(){
  const share=!!root.AtokoreHousehold?.open;
  return '<section id="atkOnboardingTip" class="atk-ob atk-ob-tip" aria-label="使い方">'+
   '<h3>登録できました</h3>'+
-  '<p class="atk-ob-sub">使ったら「−」で減らすだけ。目安以下になると「要補充」に出て、買い物リストへすぐ入れられます。</p>'+
+  '<p class="atk-ob-sub">使ったら「−」で減らすだけ。目安以下になった商品はホームの「気になるストック」に出て、買い物リストへ追加できます。</p>'+
   (share?'<p class="atk-ob-sub">家族にも同じ在庫を見てもらうには、家族共有から招待できます（限定テスト）。</p>':'')+
   '<div class="atk-ob-actions">'+(share?'<button type="button" class="atk-ob-primary" data-ob-share>家族を招待する</button>':'')+
   '<button type="button" class="atk-ob-later" data-ob-tip-ok>OK</button></div></section>';

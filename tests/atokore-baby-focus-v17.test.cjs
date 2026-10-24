@@ -155,12 +155,12 @@ test('buy page picker opens baby-first selection and shopping-only destination',
 test('offline shell has complete v17 scripts and separate palette',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=36'));
+ assert.ok(html.indexOf('baby-kit-v17.js')<html.indexOf('quick-add.js?v=43'));
  assert.ok(html.indexOf('baby-flow-v17.js')>html.indexOf('edit-after-add.js'));
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v42/);
+ assert.match(worker,/atokore-pwa-v43/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{

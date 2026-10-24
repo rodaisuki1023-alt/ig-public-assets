@@ -9,11 +9,11 @@ test('mobile peach UI lets a user register a branded item, change quantity and b
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const dom=new JSDOM(html,{runScripts:'dangerously',url:'https://example.invalid/atokore/',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const f of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js']){
+ for(const f of ['ui.js','stability.js','baby-visuals.js','home-v43.js','atokore-redesign.js']){
   w.eval(fs.readFileSync(path.join(base,f),'utf8'));
  }
  const $=id=>w.document.getElementById(id);
- assert.ok($('atkLowCount'),'home summary has been rendered');
+ assert.ok($('atkHomeActivity'),'home change history has been rendered');
  assert.ok($('atkTasks'),'home task list has been rendered');
  assert.equal(w.document.querySelector('.tab[data-p="add"]').style.display,'none');
  w.atkOpenAdd();assert.equal($('addCat').value,'ベビー');
@@ -36,6 +36,6 @@ test('mobile peach UI lets a user register a branded item, change quantity and b
  assert.equal(next.items.find(x=>x.id===product.id).qty,1);
  w.addStockOneToBuyV125H(product.id);
  assert.ok(JSON.parse(w.localStorage.getItem('atokoreTrialV4')).buys.some(x=>x.name.includes('マミーポコ')));
- w.go('home');assert.ok(Number($('atkLowCount').textContent)>=1);
+ w.go('home');assert.ok($('atkTasks').querySelector('[data-atk-open="'+product.id+'"]'),'low stock appears in the actionable home list');
  dom.window.close();
 });
