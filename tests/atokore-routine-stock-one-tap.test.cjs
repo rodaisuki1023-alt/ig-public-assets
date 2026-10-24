@@ -10,7 +10,7 @@ function browser(){
  w.alert=msg=>alerts.push(msg);
  w.confirm=msg=>{confirms.push(msg);return true};
  w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
+ for(const file of ['common-v45.js','data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
   w.eval(fs.readFileSync(path.join(base,file),'utf8'));
  return {dom,w,alerts,confirms,$:id=>w.document.getElementById(id)};
 }

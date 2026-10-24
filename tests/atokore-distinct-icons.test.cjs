@@ -9,7 +9,7 @@ function browser(){
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const dom=new JSDOM(html,{runScripts:'dangerously',url:'https://example.invalid/atokore/',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const f of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','quick-add.js'])w.eval(fs.readFileSync(path.join(base,f),'utf8'));
+ for(const f of ['common-v45.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','quick-add.js'])w.eval(fs.readFileSync(path.join(base,f),'utf8'));
  return {dom,w,$:id=>w.document.getElementById(id)};
 }
 test('original identifiable silhouettes for individual food and household products',()=>{
@@ -70,5 +70,5 @@ test('offline app includes the new glyph library before the UI and cache is bump
  assert.ok(html.indexOf('product-icons.js')<html.indexOf('quick-add.js'));
  assert.match(sw,/'\.\/product-icons.js'/);
  assert.match(sw,/'\.\/compact-add.css'/);
- assert.match(sw,/atokore-pwa-v44/);
+ assert.match(sw,/atokore-pwa-v45/);
 });

@@ -31,6 +31,8 @@ test.describe('save failures never look like success', () => {
 
     // delete (confirm accepted) keeps the item
     await page.evaluate(() => window.delItem(3));
+    await page.getByRole('button',{name:'削除する',exact:true}).click();
+    await page.getByRole('button',{name:'キャンセル',exact:true}).click();
     expect(await page.evaluate(() => items.some(x => x.id === 3))).toBe(true);
 
     // quick add commit keeps the tray and does not touch storage

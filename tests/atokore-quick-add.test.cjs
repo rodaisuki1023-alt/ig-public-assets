@@ -25,7 +25,7 @@ function browser(){
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const dom=new JSDOM(html,{url:'https://example.invalid/atokore/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-food-catalog-v35.js','quick-add.js']){
+ for(const file of ['common-v45.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-food-catalog-v35.js','quick-add.js']){
   w.eval(fs.readFileSync(path.join(root,file),'utf8'));
  }
  const $=id=>w.document.getElementById(id);
@@ -99,7 +99,7 @@ test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
  assert.match(html,/quick-add\.js\?v=44/);assert.match(html,/quick-add\.css\?v=27/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v44/);
+ assert.match(sw,/atokore-pwa-v45/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 

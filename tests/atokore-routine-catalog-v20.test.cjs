@@ -7,7 +7,7 @@ function browser(){
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const dom=new JSDOM(html,{url:'https://example.invalid/preview-baby-v19/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
+ for(const file of ['common-v45.js','data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
   w.eval(fs.readFileSync(path.join(base,file),'utf8'));
  return {dom,w,$:id=>w.document.getElementById(id)};
 }
@@ -197,7 +197,7 @@ test('script and stylesheet cache versions updated',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8'),sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
  assert.match(html,/routine-catalog-v20\.js\?v=26/);
  assert.match(html,/routine-catalog-v20\.css\?v=24/);
- assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v44'/);
+ assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v45'/);
  const css=fs.readFileSync(path.join(base,'routine-catalog-v20.css'),'utf8');
  assert.match(css,/atk-routine-stock-mode/);
 });

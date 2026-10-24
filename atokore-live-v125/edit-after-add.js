@@ -56,7 +56,7 @@ function edit(id,options={}){
  '<label>単位<select name="unit">'+formOptions(UNITS,item.unit||'個')+'</select></label></div>'+
  '<label>在庫の数え方<select name="qtyBasis"><option value="total"'+(item.qtyBasis!=='unopened'?' selected':'')+'>使用中を含む個数</option><option value="unopened"'+(item.qtyBasis==='unopened'?' selected':'')+'>未開封の予備だけ</option></select><small>数え方を変更しても数量は自動で変わりません。上の数を合わせてください。</small></label>'+
  '<label class="atk-edit-inuse"><input name="inUse" type="checkbox"'+(item.inUse?' checked':'')+'>使用中の商品が別にある（任意）</label>'+
- '<label class="atk-edit-reorder">補充の目安（任意）<span class="atk-edit-inline"><span>残り</span><input name="minQty" type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" value="'+esc(item.minQty??'')+'"><span>以下で「要補充」に表示</span></span><small>空欄なら残り1以下で表示します</small></label>'+
+ '<label class="atk-edit-reorder">補充の目安（任意）<span class="atk-edit-inline"><span>残り</span><input name="minQty" type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" value="'+esc(item.minQty??'')+'"><span>以下でホームの「補充・期限の確認」に表示</span></span><small>空欄なら残り1以下で表示します</small></label>'+
  '<label>カテゴリー<select name="cat">'+formOptions(CATEGORIES,item.cat||'その他')+'</select></label>'+
  '<label>保管場所<select name="place"><option value="">未設定</option>'+formOptions(PLACES,item.place||'')+'</select></label>'+
  '<div class="atk-edit-pair"><label>期限の種類<select name="expType">'+formOptions(EXPIRY,item.expType||'期限なし')+'</select></label>'+
@@ -64,7 +64,7 @@ function edit(id,options={}){
  '<label>メモ<textarea name="memo" maxlength="500" rows="3" placeholder="例：いつものメーカー">'+esc(item.memo||'')+'</textarea></label>'+
  '<details class="atk-edit-extra"><summary>購入情報（必要な場合）</summary>'+
  '<label>購入日<input name="purchase" type="date" value="'+esc(item.purchase||'')+'"></label>'+
- '<label>購入価格<input name="price" type="number" min="0" max="10000000" step="1" inputmode="numeric" value="'+esc(item.price||0)+'"></label>'+
+ '<label>1個あたりの購入価格<input name="price" type="number" min="0" max="10000000" step="1" inputmode="numeric" value="'+esc(item.price||0)+'"></label>'+
  '<label>購入店舗<input name="store" maxlength="120" value="'+esc(item.store||'')+'"></label></details>'+
  '<p id="atkEditError" class="atk-edit-error" role="alert" hidden></p>'+
  '<button type="submit" class="atk-edit-save">'+(draft?'確認画面に反映する':'変更を保存する')+'</button>'+

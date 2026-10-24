@@ -15,7 +15,7 @@ let stockGroup='all',lastStockCategory,foodStockMonth='',foodStockSeries='';
 function stockCategory(){try{return filter}catch(e){return ''}}
 function stockGroups(category=stockCategory()){
  if(category==='ベビー')return STOCK_BABY_GROUPS;
- if(category==='離乳食'&&foodCatalog)return [['all','すべて'],...foodCatalog.makers.map(m=>[m.key,m.name]),['other','その他・手作り']];
+ if(category==='離乳食'&&foodCatalog)return [['all','すべて'],...foodCatalog.makers.map(m=>[m.key,m.name+(m.ended?'（生産終了）':'')]),['other','その他・手作り']];
  if(category==='食料品'||category==='日用品')return (root.AtokoreQuickAdd?.groupsFor(category)||[]).map(key=>[key==='すべて'?'all':key,root.AtokoreQuickAdd.groupLabel(key)]);
  return [];
 }
@@ -197,7 +197,7 @@ function showSets(){
  const el=$('routineList');if(!el)return;
  const all=sets();
  if(!all.length){
-  el.innerHTML='<div class="bf-empty">いつものセットはまだありません。<br>買い物リストから、よく使う組み合わせを保存できます。</div>';
+  el.innerHTML='<div class="bf-empty">いつものリストはまだありません。<br>買い物リストから、よく使う組み合わせを保存できます。</div>';
   return;
  }
  el.innerHTML=all.map(x=>{
@@ -264,14 +264,14 @@ function modifyBuy(){
  const list=$('routineList');if(!list)return;
  const section=list.previousElementSibling;
  const heading=Array.from(page.querySelectorAll('.section')).find(x=>x.textContent.includes('いつものリスト'));
- if(heading)heading.textContent='いつものセット';
+ if(heading)heading.textContent='いつものリスト';
  if(!page.querySelector('#bfBuyPick')){
   const actions=doc.createElement('div');actions.className='bf-shopping-start';
   actions.innerHTML='<button type="button" id="bfBuyPick">＋ 商品一覧から買い物に追加</button><p>食品やベビー用品をまとめて選べます。カテゴリを選び直す必要はありません。</p>';
   page.querySelector('.row')?.insertAdjacentElement('afterend',actions);
  }
  const note=list.previousElementSibling;
- if(note?.classList.contains('muted'))note.textContent='「ストックに追加」を押すと、そのまま在庫に反映してストック一覧を開きます。';
+ if(note?.classList.contains('muted'))note.textContent='「✓ 買った」を押すと、すぐにストックが増え、買い物リストから消えます。「元に戻す」で取り消せます。';
 }
 function activePage(){
  const page=doc?.querySelector('.page.on')?.id||'pg-home';

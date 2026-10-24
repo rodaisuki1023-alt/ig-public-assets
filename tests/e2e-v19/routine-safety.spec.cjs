@@ -147,7 +147,7 @@ test('shopping a diaper M then editing stock to L keeps both sizes separate afte
   expect((await stored(page)).buys.map(x => x.name)).toEqual([initial.items[1].name, sizeL]);
   const sizeMBuyId = (await stored(page)).buys.find(x => x.name === initial.items[1].name).id;
   await go(page, 'buy');
-  await page.locator(`#buyList [data-buy-id="${sizeMBuyId}"]`).getByRole('button', { name: '在庫へ反映', exact: true }).click();
+  await page.locator(`#buyList [data-buy-id="${sizeMBuyId}"]`).getByRole('button', { name: /を買った$/ }).click();
   const saved = await stored(page);
   expect(saved.items.find(x => x.id === 2)).toMatchObject({ name: sizeL, qty: 2 });
   expect(saved.items.find(x => x.name === initial.items[1].name)).toMatchObject({ qty: 1, unit: '袋', cat: 'ベビー' });

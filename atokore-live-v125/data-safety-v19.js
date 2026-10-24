@@ -155,7 +155,7 @@ function openBackup(){
   }).catch(e=>{status.textContent=e?.message||'読み込みに失敗しました'}).finally(()=>{file.value=''});
  });
  const children=[close,el('h2',{text:'データのバックアップ'}),
-  el('p',{class:'atk-backup-note',text:'在庫・買い物リスト・いつものセットは、この端末のブラウザ内だけに保存されています。機種変更やデータ消去に備えて、ときどきファイルに保存してください。'}),
+  el('p',{class:'atk-backup-note',text:'在庫・買い物リスト・いつものリストは、この端末のブラウザ内だけに保存されています。機種変更やデータ消去に備えて、ときどきファイルに保存してください。'}),
   el('p',{class:'atk-backup-count',text:'現在：在庫'+counts.items.length+'件・買い物'+counts.buys.length+'件・セット'+counts.routines.length+'件'}),
   exportBtn,pick,file,status];
  if(locked()){

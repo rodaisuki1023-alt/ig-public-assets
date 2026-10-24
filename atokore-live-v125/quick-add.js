@@ -252,7 +252,7 @@ function addLine(entry){
 }
 function renderNav(){
  const el=$('qaTabs');if(!el)return;
- const tabs=[['ベビー','ベビー'],['離乳食','離乳食'],['食料品','食品'],['日用品','日用品'],['衛生・薬','衛生・薬'],['その他','その他']];
+ const tabs=[['ベビー','ベビー'],['離乳食','離乳食'],['食料品','食品'],['日用品','日用品'],['衛生・薬','衛生・薬'],['その他','衣類・園用品ほか']];
  el.innerHTML=tabs.map(([cat,label])=>'<button type="button" class="'+(state.cat===cat?'selected':'')+'" data-qa-cat="'+safe(cat)+'">'+label+'</button>').join('');
 }
 function groupOptions(){
@@ -582,7 +582,7 @@ function setup(){
   if(btn.hasAttribute('data-qa-free')){addFree();return}
   if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(1,Math.min(999,v.qty+Number(btn.dataset.step)));renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
-  if(btn.hasAttribute('data-qa-clear')){if(root.confirm?.('追加予定をすべて取り消しますか？（保存済みの在庫は変わりません）')){state.tray=[];state.afterSave=null;renderTray();renderItems()}return}
+  if(btn.hasAttribute('data-qa-clear')){root.AtokoreConfirm.open('追加予定をすべて取り消しますか？','保存済みのストック・買い物リストは変わりません。','全部取り消す',()=>{state.tray=[];state.afterSave=null;closeReview();renderAll();notify('追加予定をすべて取り消しました');return true});return}
   if(btn.hasAttribute('data-qa-commit')){commit(e)}
  });
  function addFree(){
@@ -622,6 +622,7 @@ function decorateHome(){
  });
 }
 function renderDestination(){
+ const title=$('pg-add')?.querySelector('.atk-page-title h2');if(title)title.textContent=state.routineTarget?'いつものリストに追加':state.destination==='buy'?'買い物リストに追加':'ストック追加';
  const node=$('bfDestination');if(!node)return;
  const routine=!!state.routineTarget;
  const heading=$('qaRoutinePicker');

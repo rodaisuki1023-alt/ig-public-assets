@@ -19,7 +19,7 @@ function browser(){
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};w.scrollTo=()=>{};
  w.localStorage.setItem(KEY,JSON.stringify(seed));
  w.eval('items=JSON.parse(localStorage.getItem("'+KEY+'")).items;buys=JSON.parse(localStorage.getItem("'+KEY+'")).buys;routines=JSON.parse(localStorage.getItem("'+KEY+'")).routines;');
- for(const file of ['data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','baby-food-catalog-v35.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
+ for(const file of ['common-v45.js','data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','baby-food-catalog-v35.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
   w.eval(fs.readFileSync(path.join(base,file),'utf8'));
  const $=id=>w.document.getElementById(id);
  const click=selector=>{const el=w.document.querySelector(selector);assert.ok(el,selector+' must exist');el.click()};

@@ -302,7 +302,7 @@ test('the same purchase finished on both phones restocks once; delete beats a la
   await A.ctx.setOffline(true); await B.ctx.setOffline(true);
   for (const p of [A.page, B.page]) {
     await go(p, 'buy');
-    await p.locator('#buyList [data-buy-id]').filter({ hasText: 'おしりふき詰替' }).getByRole('button', { name: '在庫へ反映', exact: true }).click();
+    await p.locator('#buyList [data-buy-id]').filter({ hasText: 'おしりふき詰替' }).getByRole('button', { name: /を買った$/ }).click();
   }
   await A.ctx.setOffline(false); await B.ctx.setOffline(false);
   await sync(A.page); await sync(B.page); await sync(A.page);

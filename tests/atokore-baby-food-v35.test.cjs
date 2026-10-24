@@ -7,7 +7,7 @@ const KEY='atokoreTrialV4';
 function browser(){
  const dom=new JSDOM(fs.readFileSync(path.join(base,'index.html'),'utf8'),{url:'https://example.invalid/preview-baby-v19/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const name of ['data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','baby-food-catalog-v35.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])w.eval(fs.readFileSync(path.join(base,name),'utf8'));
+ for(const name of ['common-v45.js','data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','baby-food-catalog-v35.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])w.eval(fs.readFileSync(path.join(base,name),'utf8'));
  const $=id=>w.document.getElementById(id),click=s=>{const node=w.document.querySelector(s);assert.ok(node,s);node.click()};
  return {dom,w,$,click};
 }

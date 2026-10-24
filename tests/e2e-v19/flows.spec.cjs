@@ -39,6 +39,7 @@ test.describe('register, edit, delete', () => {
 
     // Delete
     await page.evaluate(() => window.delItem(1));
+    await page.getByRole('button',{name:'削除する',exact:true}).click();
     await page.reload();
     data = await stored(page);
     expect(data.items.some(x => x.id === 1)).toBe(false);

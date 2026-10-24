@@ -155,7 +155,7 @@
       return {font:fonts.includes(v?.font)?v.font:'standard',density:densities.includes(v?.density)?v.density:'standard'};
     }catch(e){return {...defaults}}
   }
-  function persist(){try{localStorage.setItem(KEY,JSON.stringify(prefs))}catch(e){}}
+  function persist(){try{localStorage.setItem(KEY,JSON.stringify({...JSON.parse(localStorage.getItem(KEY)||'{}'),...prefs}))}catch(e){}}
   function apply(){
     document.body.classList.remove('atk-fs-tiny','atk-fs-small','atk-fs-large','atk-density-ultra','atk-density-compact','atk-density-roomy');
     if(prefs.font==='tiny')document.body.classList.add('atk-fs-tiny');
@@ -188,7 +188,7 @@
         ${choice('density','standard','標準','バランス')}
         ${choice('density','roomy','ゆったり','押しやすい')}
       </div>
-      <div class="section">プレビュー</div>
+      <div class="section">プレビュー（サンプル）</div>
       <div class="displayPreview">
         <div class="displayPreviewRow"><div><div class="name">牛乳</div><div class="meta">食料品・冷蔵庫・消費期限 8/31</div></div><div class="displayPreviewQty">2本</div></div>
         <div class="displayPreviewRow"><div><div class="name">オムツ</div><div class="meta">ベビー・収納</div></div><div class="displayPreviewQty">1袋</div></div>

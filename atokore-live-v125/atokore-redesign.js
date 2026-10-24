@@ -35,7 +35,7 @@ function shopping(){try{return Array.isArray(buys)?buys:[]}catch(e){return []}}
 const reorderAt=x=>{const m=x?.minQty;return m===''||m==null||!Number.isSafeInteger(Number(m))?1:Number(m)};
 const low=x=>Number(x.qty)<=reorderAt(x);
 root.atokoreIsLow=low;root.atokoreReorderAt=reorderAt;
-function expSoon(x){if(!x.exp)return false;const date=new Date(x.exp+'T00:00:00');const now=new Date();now.setHours(0,0,0,0);return Math.round((date-now)/86400000)<=3}
+function expSoon(x){const n=root.AtokoreDates.remaining(x.exp);return n!==null&&n<=3}
 function brandHtml(b){return b?'<span class="atk-brand" style="--brand-bg:'+b.bg+';--brand-fg:'+b.fg+'">'+esc(b.en)+'</span>':'<span class="atk-brand atk-brand-generic">ストック</span>'}
 function itemCard(item,attention){
  const d=describe(item),id=Number(item.id),details=[d.type,d.size?d.size+(d.size.length===1?'サイズ':''):''].filter(Boolean).join('・');
@@ -167,10 +167,11 @@ function showDetail(id){
  if(!Number.isSafeInteger(safeId))return;
  const inner='<button class="close" onclick="closeM()">閉じる</button><div class="atk-detail-head" data-atk-detail-id="'+safeId+'">'+brandHtml(d.brand)+'<h2>'+esc(d.line)+'</h2><p>'+esc([d.type,d.size].filter(Boolean).join('・')||x.name)+'</p></div>'+
  '<div class="atk-detail-qty"><b>'+(x.qtyBasis==='unopened'?'未開封の予備':'現在の在庫')+'</b><span>'+esc(x.qty)+' '+esc(x.unit||'個')+(x.qtyBasis==='unopened'&&x.inUse?'・使用中あり':'')+'</span></div>'+
+ '<p class="atk-detail-expiry">'+esc(root.AtokoreDates.label(x.exp)||'期限なし')+'</p>'+
  '<div class="atk-detail-actions"><button onclick="adj('+safeId+',-1);atkShowDetail('+safeId+')">－ 減らす</button><button onclick="adj('+safeId+',1);atkShowDetail('+safeId+')">＋ 増やす</button></div>'+
  '<button type="button" class="atk-edit-open" onclick="atokoreEditStock('+safeId+')">✎ 商品情報を編集する</button>'+
  '<button class="btn atk-detail-cart" onclick="addStockOneToBuyV125H('+safeId+');closeM()">買い物リストへ追加</button>'+
- '<button class="atk-detail-delete" onclick="closeM();delItem('+safeId+')">この商品を削除</button>';
+ '<button class="atk-detail-delete" onclick="delItem('+safeId+')">この商品を削除</button>';
  root.openM?.(inner);
 }
 function events(){
@@ -187,8 +188,7 @@ function events(){
     return;
    }
   }
-  const row=e.target.closest?.('#stockList [data-stock-id]');
-  if(row&&!e.target.closest('button,input,a,select,textarea')&&!document.querySelector('#stockBulkActions:not(.hide)'))showDetail(row.dataset.stockId);
+
  });
 }
 function install(){

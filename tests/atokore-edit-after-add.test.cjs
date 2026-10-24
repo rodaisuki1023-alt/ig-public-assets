@@ -9,7 +9,7 @@ function browser(){
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const dom=new JSDOM(html,{url:'https://example.invalid/atokore/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const name of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','quick-add.js','edit-after-add.js']){
+ for(const name of ['common-v45.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','quick-add.js','edit-after-add.js']){
   w.eval(fs.readFileSync(path.join(base,name),'utf8'));
  }
  return {dom,w,$:id=>w.document.getElementById(id)};
@@ -109,5 +109,5 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.match(html,/edit-after-add\.js\?v=44/);
  assert.match(html,/edit-after-add\.css\?v=39/);
  assert.match(worker,/'\.\/edit-after-add.js'/);
- assert.match(worker,/atokore-pwa-v44/);
+ assert.match(worker,/atokore-pwa-v45/);
 });

@@ -6,12 +6,8 @@ const $=id=>doc?.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const paths={home:'M3 11 12 3l9 8v10h-6v-7H9v7H3Z',stock:'M4 5h16v16H4ZM3 2h18v5H3Zm6 9h6',add:'M12 4v16M4 12h16',buy:'m2 3 3 1 3 12h11l3-9H6M9 21h.01M19 21h.01',premium:'M20 21v-2a7 7 0 0 0-14 0v2M17 7a5 5 0 1 1-10 0 5 5 0 0 1 10 0',receipt:'M5 2h14v20l-3-2-4 2-4-2-3 2Zm3 5h8M8 11h8M8 15h5'};
 function icon(name){return '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+paths[name]+'"/></svg>'}
-function expiryDays(item,now=new Date()){
- if(!/^\d{4}-\d{2}-\d{2}$/.test(item?.exp||''))return null;
- const [y,m,d]=item.exp.split('-').map(Number),t=new Date(y,m-1,d);
- if(t.getFullYear()!==y||t.getMonth()!==m-1||t.getDate()!==d)return null;
- return Math.round((Date.UTC(y,m-1,d)-Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
-}
+const dates=root.AtokoreDates||(typeof require==='function'?require('./common-v45.js'):null);
+function expiryDays(item,now){return dates.remaining(item?.exp,now)}
 function attention(items,now){
  return items.map(item=>({item,days:expiryDays(item,now),low:root.atokoreIsLow?root.atokoreIsLow(item):Number(item.qty)<=1}))
   .filter(x=>x.low||(x.days!==null&&x.days<=3))
@@ -34,10 +30,10 @@ function sharedEntries(rows){
  return groups.map(g=>{
   const r=g.rows[0],who=String(r.who||'家族'),name=String(r.name||'削除済みの商品');
   const place=r.kind==='buy'?'買い物リスト':r.kind==='routine'?'いつものリスト':'ストック';
-  const what=r.type==='undo_purchase'?'の購入済みを取り消し':r.type==='complete_buy'?'を購入':r.type==='create'?'を追加':r.type==='delete'?'を削除':r.type==='add'?'の数量を変更':'を更新';
+  const what=r.type==='undo_purchase'?'の「買った」を取り消し':r.type==='complete_buy'?'を「買った」':r.type==='create'?'を追加':r.type==='delete'?'を削除':r.type==='add'?'の数量を変更':'を更新';
   const qty=Number(r.delta),unit=String(r.unit||'個'),delta=r.type==='add'&&r.beforeQty!=null&&r.afterQty!=null?r.beforeQty+unit+' → '+r.afterQty+unit:r.type==='add'&&r.delta!==null&&Number.isFinite(qty)?'数量 '+(qty>0?'＋':'')+qty+unit:r.type==='create'&&r.afterQty!=null?place+'に'+r.afterQty+unit+'追加':r.type==='set'?({name:'商品名',place:'保管場所',exp:'期限',memo:'メモ',qtyBasis:'在庫の数え方',inUse:'使用中の有無',photoPath:'共有写真'}[r.field]||'商品情報')+'を変更':place;
   return {at:r.at,who,title:who+'が'+(g.rows.length>1?place+'の'+g.rows.length+'商品':name)+what,
-   detail:g.rows.length>1?g.rows.slice(0,2).map(x=>String(x.name||'削除済みの商品')).join('、')+(g.rows.length>2?' ほか'+(g.rows.length-2)+'商品':''):r.type==='complete_buy'?(r.delta!=null?r.delta+unit+'購入してストックへ':'購入済みにしてストックへ'):delta,
+   detail:g.rows.length>1?g.rows.slice(0,2).map(x=>String(x.name||'削除済みの商品')).join('、')+(g.rows.length>2?' ほか'+(g.rows.length-2)+'商品':''):r.type==='complete_buy'?(r.delta!=null?r.delta+unit+'「買った」でストックに追加':'「買った」でストックに追加'):delta,
    type:r.type==='complete_buy'?'purchase':r.kind==='buy'?'buy':'stock'};
  }).sort((a,b)=>new Date(b.at)-new Date(a.at));
 }
@@ -58,7 +54,7 @@ function card(x){
   title=type==='diaper'?'オムツ'+(d?.size?' '+d.size+'サイズ':''):type==='wipes'?'おしりふき':(d?.line&&d.line!=='粉ミルク'?d.line+' ':'')+'粉ミルク';
   sub=[kit.brand(raw),d?.type,d?.line&&![title,'おむつ','おしりふき','粉ミルク'].includes(d.line)?d.line:''].filter(Boolean).join('・')||raw;
  }else art=(food?.isRecord(item)?food.icon(48):root.AtokoreIndividualIcons?.icon(raw))||icon('stock');
- const expiry=x.days===null||x.days>3?'':x.days<0?'期限を'+Math.abs(x.days)+'日過ぎています':x.days===0?'期限は今日':'期限まで'+x.days+'日';
+ const expiry=root.AtokoreDates?.label(item.exp)||'';
  const labels=(x.low?'<span class="atk-home-low">'+(Number(item.qty)<=0?(item.qtyBasis==='unopened'?'未開封の予備なし':'在庫なし'):esc(root.AtokorePolish?.stockLabel(item)||'残り'+item.qty+(item.unit||'個')))+'</span>':'')+(expiry?'<span class="atk-home-expiry '+(x.days<=0?'is-overdue':'')+'">'+esc(expiry)+'</span>':'');
  const already=(()=>{try{return buys.some(b=>root.__atokoreCoreV125H?.sameProduct(b,item))}catch(_){return false}})();
  const control=x.low&&Number.isSafeInteger(id)?'<button type="button" data-atk-replenish="'+id+'"'+(already?' disabled':'')+'>'+(already?'買い物に追加済み':'買い物に追加')+'</button>':'';
@@ -66,7 +62,7 @@ function card(x){
 }
 function html(){return '<div class="atk-home atk-home-v43">'+
  '<div class="atk-actions"><button type="button" data-atk-add class="atk-action atk-action-primary">'+icon('add')+'<span>ストック追加</span></button><button type="button" data-atk-receipt class="atk-action atk-action-peach">'+icon('receipt')+'<span>レシートで追加</span></button></div>'+
- '<section id="atkHomeAttention" aria-labelledby="atkHomeAttentionTitle"><div class="atk-section-head"><h2 id="atkHomeAttentionTitle">気になるストック</h2><button type="button" data-atk-nav="stock">ストックへ ›</button></div><div id="atkTasks" class="atk-home-stock-list"></div><button type="button" id="atkHomeMoreStock" class="atk-home-more" hidden></button></section>'+
+ '<section id="atkHomeAttention" aria-labelledby="atkHomeAttentionTitle"><div class="atk-section-head"><h2 id="atkHomeAttentionTitle">補充・期限の確認</h2><button type="button" data-atk-nav="stock">ストックへ ›</button></div><p class="atk-home-history-note">補充目安以下の商品と、期限まで3日以内の商品。補充目安は商品編集で変更できます（未設定は数量1以下）。</p><div id="atkTasks" class="atk-home-stock-list"></div><button type="button" id="atkHomeMoreStock" class="atk-home-more" hidden></button></section>'+
  '<section aria-labelledby="atkHomeHistoryTitle"><div class="atk-section-head"><h2 id="atkHomeHistoryTitle">最近の変更</h2><button type="button" id="atkHomeAllChanges">すべて見る ›</button></div><p id="atkHomeHistoryNote" class="atk-home-history-note" role="status"></p><ol id="atkHomeActivity" class="atk-home-activity"></ol><button type="button" id="atkHomeHistoryRefresh" class="atk-home-more" hidden>履歴を再読み込み</button></section></div>'}
 function state(){try{return root.AtokoreHousehold?.homeState?.()||{joined:false}}catch(_){return {joined:false}}}
 function entries(s){return s.joined?sharedEntries(s.changes):localEntries(root.AtokoreHistory?.recent?.()||[])}
@@ -108,7 +104,7 @@ function install(){
   if(e.target.closest('#atkHomeHistoryRefresh'))root.AtokoreHousehold?.refreshChanges?.();
   if(e.target.closest('#atkHomeMoreStock')){
    let a=[];try{a=items}catch(_){}
-   root.openM?.('<button class="close" onclick="closeM()">閉じる</button><h2>気になるストック</h2><div class="atk-home-stock-list">'+attention(a).map(card).join('')+'</div>');
+   root.openM?.('<button class="close" onclick="closeM()">閉じる</button><h2>補充・期限の確認</h2><div class="atk-home-stock-list">'+attention(a).map(card).join('')+'</div>');
   }
  });
  doc.addEventListener('atokore-household-updated',()=>{root.renderHome?.()});

@@ -119,6 +119,8 @@ context.globalThis = context;
 vm.createContext(context);
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'atokore-live-v125', 'stability.js'), 'utf8');
+context.AtokoreDates=require('../atokore-live-v125/common-v45.js');
+context.AtokoreConfirm={open:(_title,_note,_action,run)=>{if(context.confirm())run()}};
 vm.runInContext(source, context, { filename: 'stability.js' });
 
 assert.equal(context.__atokoreActionOwner, 'stability-v125h');

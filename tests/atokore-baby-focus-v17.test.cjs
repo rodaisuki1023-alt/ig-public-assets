@@ -7,7 +7,7 @@ const base=path.resolve(__dirname,'../atokore-live-v125');
 function browser(){
  const dom=new JSDOM(fs.readFileSync(path.join(base,'index.html'),'utf8'),{url:'https://example.invalid/preview-baby-v17/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','baby-food-catalog-v35.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
+ for(const file of ['common-v45.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','baby-food-catalog-v35.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
   w.eval(fs.readFileSync(path.join(base,file),'utf8'));
  return {dom,w,$:id=>w.document.getElementById(id)};
 }
@@ -160,7 +160,7 @@ test('offline shell has complete v17 scripts and separate palette',()=>{
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v44/);
+ assert.match(worker,/atokore-pwa-v45/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{

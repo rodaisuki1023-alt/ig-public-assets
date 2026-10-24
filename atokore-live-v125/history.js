@@ -26,6 +26,7 @@
   const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
 
   const updates=[
+    {v:'v45',title:'Muse実機レビューへの対応',detail:'ストック削除と追加予定の全取り消しをアプリ内確認に変更。期限の数え方を統一し、日付を併記。「買った」で即時追加、用語の整理、補充・価格記録の根拠表示を改善しました。'},
     {v:'v44',title:'家族で使う操作と表示を改善',detail:'数量変更と購入済みの取り消し、ホームから補充、家族だけの商品写真共有、未開封の予備の数え方、具体的な履歴を追加。追加予定の商品を直接編集でき、写真なしのカテゴリー別一覧も選べます。'},
     {v:'v12.5m',title:'全画面の情報量と操作を整理',detail:'ホームは在庫があるカテゴリーだけ表示し、追加候補を6件に圧縮。未選択操作の無効化、Premium説明、家族共有・レシート・履歴画面も見やすく整理しました。'},
     {v:'v12.5l',title:'レシート確認をコンパクト化',detail:'通常は商品名と数量だけを確認し、単位・カテゴリー・OCR元行は詳細内へ収納。要確認商品だけ詳細を自動表示し、全選択・全解除も追加しました。'},
@@ -106,7 +107,7 @@
       ['registerItem','在庫を追加','stock','＋'],['delItem','在庫を削除','stock','🗑'],['adj','在庫数を変更','stock','📦'],
       ['deleteSelectedStock','在庫を一括削除','stock','🗑'],['moveSelectedToBuy','買い物リストへ追加','buy','🛒'],
       ['addBuy','買い物を追加','buy','🛒'],['badj','買い物数量を変更','buy','🛒'],['bdel','買い物を削除','buy','🗑'],
-      ['deleteSelectedBuy','買い物を一括削除','buy','🗑'],['bought','購入済みにして在庫反映','buy','✓'],['premiumBuy','買い物リストへ追加','buy','🛒'],
+      ['deleteSelectedBuy','買い物を一括削除','buy','🗑'],['bought','「買った」でストックに追加','buy','✓'],['premiumBuy','買い物リストへ追加','buy','🛒'],
       ['createRoutine','いつものリストを作成','routine','↻'],['confirmSaveCurrentBuy','いつものリストを保存','routine','↻'],
       ['saveRoutineName','いつものリスト名を変更','routine','↻'],['routineAddItem','いつものリストに追加','routine','↻'],
       ['routineAdjust','いつものリスト数量を変更','routine','↻'],['routineRemoveItem','いつものリストから削除','routine','↻'],

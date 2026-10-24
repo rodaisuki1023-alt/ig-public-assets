@@ -67,12 +67,12 @@ for(const name of ['buyOneToStockV125H','bought']){
   if(!removed.length)return result;
   const changes=after.items.flatMap(b=>{const a=before.items.find(x=>String(x.id)===String(b.id));const delta=Number(b.qty)-(Number(a?.qty)||0);return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0}]:[]});
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined,ticket=shared?hh.capturePurchases?.(removed.map(x=>x.id)):null;
-  offerUndo(removed.length+'商品をストックへ反映しました',async()=>{
+  offerUndo(removed.length+'商品を「買った」にしました',async()=>{
    if(shared){if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');await hh.undoPurchases(ticket);return}
    if(root.AtokoreHousehold?.homeState?.().joined)throw Error('家族共有の開始後は、この端末だけの購入を戻せません。');
    const next=inverseCounters(snapshot(),changes);
    for(const b of removed){if(next.buys.some(x=>String(x.id)===String(b.id)))throw Error('買い物リストが変わったため戻せません。');next.buys.push(copy(b))}
-   persist(next);log('購入済みを取り消し',removed.map(x=>x.name).join('、'));
+   persist(next);log('「買った」を取り消し',removed.map(x=>x.name).join('、'));
   });
   return result;
  };

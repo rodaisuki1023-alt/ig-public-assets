@@ -118,7 +118,7 @@
     const count=buySelected.size;
     const label=document.getElementById('buyManageCountV125h');if(label)label.textContent=`${count}件選択中`;
     const del=document.getElementById('buyDeleteV125h');if(del){del.textContent=`🗑 選択${count?` ${count}件`:''}を削除`;del.disabled=!count}
-    const done=document.getElementById('buyDoneV125h');if(done){done.textContent=`📦 選択${count?` ${count}件`:''}を在庫へ反映`;done.disabled=!count}
+    const done=document.getElementById('buyDoneV125h');if(done){done.textContent=`📦 選択${count?` ${count}件`:''}を買った`;done.disabled=!count}
   }
 
   window.visibleStock=function(){
@@ -137,7 +137,7 @@
       const id=numberId(item.id),picked=stockSelected.has(id),left=days(item.exp),near=item.exp&&left<=3,c=color(item.cat);
       const check=stockSelectMode?`<input class="stableCheck stockPickV125h" type="checkbox" value="${id}" ${picked?'checked':''} onclick="event.stopPropagation()" onchange="setStockPickV125H(${id},this.checked)">`:'';
       const controls=stockSelectMode?`<div class="qty"><b>${esc(item.qty)}${esc(item.unit)}</b></div>`:`<div class="qty"><button class="icon" onclick="adj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="adj(${id},1)">＋</button></div><button class="icon stableStockBuy" onclick="addStockOneToBuyV125H(${id})" aria-label="買い物リストへ追加">🛒</button><button class="icon danger" onclick="delItem(${id})" aria-label="削除">🗑</button>`;
-      return `<div class="row stableStockRow ${picked?'stableSelected':''} ${near?'expiryNear':''}" data-stock-id="${id}" style="${vars(item.cat)}" onclick="toggleStockRowV125H(event,${id})"><div style="width:4px"></div>${check}<div class="grow"><div class="name">${esc(item.name)}</div><span class="stableCat" style="background:${c[1]};color:${c[0]};border:1px solid ${c[2]}">${c[3]} ${esc(item.cat||'その他')}</span><div class="meta">${esc(item.place||'未設定')}${item.exp?'・'+esc(item.expType)+' '+esc(item.exp):''}</div>${near?`<span class="expiryBadge ${left<0?'expiryExpired':''}">${left<0?'期限切れ':left===0?'今日まで':'あと'+left+'日'}</span>`:''}</div>${controls}</div>`;
+      return `<div class="row stableStockRow ${picked?'stableSelected':''} ${near?'expiryNear':''}" data-stock-id="${id}" style="${vars(item.cat)}" onclick="toggleStockRowV125H(event,${id})"><div style="width:4px"></div>${check}<div class="grow"><div class="name">${esc(item.name)}</div><span class="stableCat" style="background:${c[1]};color:${c[0]};border:1px solid ${c[2]}">${c[3]} ${esc(item.cat||'その他')}</span><div class="meta">${esc(item.place||'未設定')}${item.exp?'・'+esc(item.expType)+' '+esc(item.exp):''}</div>${item.exp?`<span class="expiryBadge ${left<0?'expiryExpired':''}">${esc(window.AtokoreDates.label(item.exp))}</span>`:''}</div>${controls}</div>`;
     }).join(''):'<div class="empty">該当なし</div>';
     updateStockBulkUI();
   };
@@ -147,7 +147,7 @@
     const checkbox=document.querySelector(`#stockList input.stockPickV125h[value="${id}"]`);if(checkbox)checkbox.checked=!!on;
     checkbox?.closest('.row')?.classList.toggle('stableSelected',!!on);updateStockBulkUI();
   };
-  window.toggleStockRowV125H=(event,id)=>{if(!stockSelectMode||event?.target?.closest('button,input,select,textarea,a'))return;window.setStockPickV125H(id,!stockSelected.has(numberId(id)))};
+  window.toggleStockRowV125H=(event,id)=>{if(event?.target?.closest('button,input,select,textarea,a'))return;if(stockSelectMode)window.setStockPickV125H(id,!stockSelected.has(numberId(id)));else window.atkShowDetail?.(id)};
   window.toggleStockPick=id=>window.setStockPickV125H(id,!stockSelected.has(numberId(id)));
   window.toggleStockSelect=()=>{stockSelectMode=!stockSelectMode;stockSelected.clear();window.renderStock()};
   window.selectAllVisible=()=>{window.visibleStock().forEach(x=>stockSelected.add(numberId(x.id)));window.renderStock()};
@@ -161,28 +161,33 @@
     const selected=new Set(ids),picked=items.filter(x=>selected.has(numberId(x.id)));if(!picked.length){alert('選択した商品を取得できませんでした');return}
     picked.forEach(item=>Core.addStockToBuy(buys,item,1));stockSelected.clear();stockSelectMode=false;saveState();logHistory('買い物リストへ追加',`${picked.length}件をまとめて追加`,'buy','🛒');finish({page:'buy',message:`${picked.length}件を買い物リストへ追加しました`});
   };
+  function deleteStock(ids){
+    const selected=new Set(ids.map(numberId)),picked=items.filter(x=>selected.has(numberId(x.id))),count=picked.length,names=picked.map(x=>x.name).join('、');
+    if(!count){toast('対象の商品はすでに削除されています');return}
+    window.AtokoreConfirm.open('ストックから'+count+'商品を削除しますか？',names+'を保存済みのストックから削除します。買い物リストは変わりません。','削除する',()=>{
+      items=Core.removeByIds(items,ids);
+      if(!saveState()){finish();return false}
+      stockSelected.clear();stockSelectMode=false;window.closeM?.();
+      logHistory('ストックを削除',names+'（'+count+'商品）を削除','stock','🗑');finish({page:'stock',message:count+'商品を削除しました'});
+      return true;
+    });
+  }
   window.deleteSelectedStock=()=>{
-    const ids=syncStockSelectionFromDom();if(!ids.length){alert('削除する商品を選んでください');return}
-    if(!confirm(`選択した${ids.length}件を在庫から削除しますか？`))return;
-    items=Core.removeByIds(items,ids);stockSelected.clear();stockSelectMode=false;saveState();logHistory('在庫を一括削除',`${ids.length}件を削除`,'stock','🗑');finish({page:'stock',message:`${ids.length}件を削除しました`});
+    const ids=syncStockSelectionFromDom();if(!ids.length){toast('削除する商品を選んでください');return}deleteStock(ids);
   };
   window.adj=(id,delta)=>{
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
     const before=Number(item.qty)||0;item.qty=Math.max(0,before+Number(delta||0));if(Number(delta)<0)item.usage=(item.usage||0)+1;
     saveState();logHistory('在庫数を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'stock','📦');finish();
   };
-  window.delItem=id=>{
-    const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
-    if(!confirm(`「${item.name}」を在庫から削除しますか？`))return;
-    items=items.filter(x=>numberId(x.id)!==numberId(id));stockSelected.delete(numberId(id));saveState();logHistory('在庫を削除',`${item.name}を削除`,'stock','🗑');finish({message:'削除しました'});
-  };
+  window.delItem=id=>{if(items.some(x=>numberId(x.id)===numberId(id)))deleteStock([numberId(id)])};
 
   function ensureBuyManage(){
     const list=document.getElementById('buyList');if(!list)return null;
     let panel=document.getElementById('buyManageV125h');
     if(!panel){
       panel=document.createElement('div');panel.id='buyManageV125h';panel.className='stableManage';
-      panel.innerHTML=`<div class="stableManageHead"><div><div class="stableManageTitle">買い物リストをまとめて操作</div><div class="meta">チェックした商品を削除・在庫へ反映できます</div></div><div id="buyManageCountV125h" class="meta">0件選択中</div></div><div class="stableManageBtns"><button class="btn ghost" onclick="selectAllBuy()">☑ 全選択</button><button class="btn ghost" onclick="clearBuySelection()">選択解除</button><button id="buyDeleteV125h" class="btn stableDanger" onclick="deleteSelectedBuy()">🗑 選択を削除</button><button id="buyDoneV125h" class="btn stableDone" onclick="bought()">📦 選択を在庫へ反映</button></div>`;
+      panel.innerHTML=`<div class="stableManageHead"><div><div class="stableManageTitle">買い物リストをまとめて操作</div><div class="meta">一括選択は削除やまとめて「買った」に使えます</div></div><div id="buyManageCountV125h" class="meta">0件選択中</div></div><div class="stableManageBtns"><button class="btn ghost" onclick="selectAllBuy()">☑ 全選択</button><button class="btn ghost" onclick="clearBuySelection()">選択解除</button><button id="buyDeleteV125h" class="btn stableDanger" onclick="deleteSelectedBuy()">🗑 選択を削除</button><button id="buyDoneV125h" class="btn stableDone" onclick="bought()">📦 選択を買った</button></div>`;
       list.before(panel);
     }
     return panel;
@@ -190,7 +195,7 @@
   window.renderBuy=function(){
     cleanSelections();const list=document.getElementById('buyList');if(!list)return;
     const panel=ensureBuyManage();if(panel)panel.classList.toggle('stableEmptyManage',!buys.length);
-    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><input class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><div class="grow"><div class="name">${esc(item.name)}</div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)">＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="在庫へ反映" title="在庫へ反映">在庫</button><button class="icon danger" onclick="bdel(${id})" aria-label="削除">🗑</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
+    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="name">${esc(item.name)}</div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)">＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button><button class="icon danger" onclick="bdel(${id})" aria-label="削除">🗑</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
     updateBuyUI();
   };
   window.setBuyPickV125H=(id,on)=>{id=numberId(id);if(!validId(id))return;if(on)buySelected.add(id);else buySelected.delete(id);updateBuyUI()};
@@ -211,8 +216,8 @@
   };
   window.buyOneToStockV125H=id=>{
     const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
-    const result=Core.purchase(items,buys,[id],inferCategory);if(!result.count){alert('在庫へ反映できませんでした');return}
-    buys=result.remaining;buySelected.delete(numberId(id));saveState();logHistory('買い物から在庫へ反映',`${item.name} ${item.qty}${item.unit}を在庫へ反映`,'stock','📦');finish({page:'buy',message:`${item.name}を在庫へ反映しました`});
+    const result=Core.purchase(items,buys,[id],inferCategory);if(!result.count){alert('「買った」を完了できませんでした');return}
+    buys=result.remaining;buySelected.delete(numberId(id));saveState();logHistory('「買った」でストックに追加',`${item.name} ${item.qty}${item.unit}を買った`,'stock','📦');finish({page:'buy',message:`${item.name}を「買った」にしました`});
   };
   window.bdel=id=>{
     const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
@@ -224,9 +229,9 @@
     buys=Core.removeByIds(buys,ids);buySelected.clear();saveState();logHistory('買い物を一括削除',`${ids.length}件を削除`,'buy','🗑');finish({page:'buy',message:`${ids.length}件を削除しました`});
   };
   window.bought=()=>{
-    const ids=syncBuySelectionFromDom();if(!ids.length){alert('在庫へ反映する商品を選んでください');return}
-    const result=Core.purchase(items,buys,ids,inferCategory);if(!result.count){alert('在庫へ反映できませんでした');return}
-    buys=result.remaining;buySelected.clear();saveState();logHistory('買い物から在庫へ反映',`${result.count}件を在庫へ反映`,'stock','📦');finish({page:'stock',message:`${result.count}件を在庫へ反映しました`});
+    const ids=syncBuySelectionFromDom();if(!ids.length){alert('「買った」にする商品を選んでください');return}
+    const result=Core.purchase(items,buys,ids,inferCategory);if(!result.count){alert('「買った」を完了できませんでした');return}
+    buys=result.remaining;buySelected.clear();saveState();logHistory('「買った」でストックに追加',`${result.count}件を買った`,'stock','📦');finish({page:'stock',message:`${result.count}件を「買った」にしました`});
   };
   window.premiumBuy=id=>{
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;

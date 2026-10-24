@@ -9,7 +9,7 @@ test('mobile peach UI lets a user register a branded item, change quantity and b
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const dom=new JSDOM(html,{runScripts:'dangerously',url:'https://example.invalid/atokore/',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const f of ['ui.js','stability.js','baby-visuals.js','home-v43.js','atokore-redesign.js']){
+ for(const f of ['common-v45.js','ui.js','stability.js','baby-visuals.js','home-v43.js','atokore-redesign.js']){
   w.eval(fs.readFileSync(path.join(base,f),'utf8'));
  }
  const $=id=>w.document.getElementById(id);

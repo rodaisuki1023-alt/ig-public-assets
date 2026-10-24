@@ -8,7 +8,7 @@ function browser(){
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const dom=new JSDOM(html,{url:'https://example.invalid/preview-baby-v17/',runScripts:'dangerously',pretendToBeVisual:true});
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
- for(const file of ['ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js'])
+ for(const file of ['common-v45.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js'])
   w.eval(fs.readFileSync(path.join(base,file),'utf8'));
  return {dom,w,$:id=>w.document.getElementById(id)};
 }
@@ -92,7 +92,7 @@ test('pwa includes v18 overrides in correct order and cache refresh',()=>{
  assert.match(html,/quick-add\.js\?v=44/);
  assert.match(html,/baby-flow-v17\.js\?v=39/);
  assert.ok(html.indexOf('baby-focus-v17.css')<html.indexOf('add-clarity-v18.css'));
- assert.match(sw,/atokore-pwa-v44/);
+ assert.match(sw,/atokore-pwa-v45/);
  assert.match(sw,/'\.\/add-clarity-v18.css'/);
  assert.match(sw,/'\.\/p0-fixes-v19.css'/);
  // v36 review screen styles load after every older layer and are cached for offline use.
