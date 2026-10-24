@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: 2066afd2e21c254a50e7d81279484a5b9437a9e7
+          ref: ba867982697099c7aaeccac3961b2c432b909047
           path: _preview_v19_source
           persist-credentials: false
 
@@ -405,7 +405,7 @@ jobs:
           assert 'google: true' in config and 'email: false' in config and 'guest: true' in config
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
-          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 44), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
+          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 45), ('household-sync-v37.css', 37), ('household-google-v40.js', 40)]:
               assert name + f'?v={version}' in html and f"'./{name}'" in worker, name
           assert 'atokorePreviewHouseholdInviteV19' in sync
           assert 'Googleなしで共有に参加する' in sync and 'recoveryHelp' in sync
