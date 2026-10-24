@@ -147,11 +147,10 @@ test.describe('batch review behaviour',()=>{
   await go(page,'home');await page.click('#bfNavAdd');await expect(page.locator('#qaBar')).toContainText('2商品');
   expect(await stored(page)).toEqual(initial);expect(await memory(page)).toEqual(initial);
   // Clearing everything still asks first.
-  await page.click('#qaBar');page.removeAllListeners('dialog');const asked=[];
-  page.on('dialog',d=>{asked.push(d.message());d.dismiss()});
-  await page.click('[data-qa-clear]');expect(asked[0]).toContain('すべて取り消しますか');
+  await page.click('#qaBar');
+  await page.click('[data-qa-clear]');await expect(page.locator('#atkConfirm')).toContainText('すべて取り消しますか');
+  await page.getByRole('button',{name:'キャンセル',exact:true}).click();
   await expect(page.locator('#qaTrayList .qa-review-item')).toHaveCount(2);
-  page.removeAllListeners('dialog');page.on('dialog',d=>d.accept());
   await page.click('#qaCommit');
   const saved=await stored(page);expect(saved.items.slice(4).map(x=>x.name)).toEqual([foodName,'バナナ']);
   expect(saved.items.slice(0,4)).toEqual(initial.items);
