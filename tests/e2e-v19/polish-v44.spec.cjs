@@ -53,6 +53,7 @@ test('v44 shared purchase undo preserves partner changes; private photos follow 
   await a.page.getByRole('button',{name:'元に戻す',exact:true}).click();await b.page.evaluate(()=>AtokoreHousehold.syncNow());
   await expect.poll(async()=>(await stored(a.page)).buys.length).toBe(1);await b.page.evaluate(()=>AtokoreHousehold.syncNow());expect((await stored(b.page)).buys).toHaveLength(1);expect((await stored(b.page)).items.find(x=>x.name==='牛乳').qty).toBe(3);
   await expect(a.page.locator('#atkHomeActivity')).toContainText('「買った」を取り消し');
+  await a.page.click('#atkHouseholdChip');await a.page.getByRole('button',{name:/変更履歴/}).click();await expect(a.page.locator('.atk-hh-history')).toContainText('「買った」を取り消し');await a.page.getByRole('button',{name:'閉じる',exact:true}).click();
   await a.page.evaluate(async()=>{const c=document.createElement('canvas');c.width=c.height=32;c.getContext('2d').fillRect(0,0,32,32);const blob=await new Promise(r=>c.toBlob(r,'image/jpeg'));await AtokoreHousehold.sharePhoto(1,blob)});
   await b.page.evaluate(()=>AtokoreHousehold.syncNow());await go(b.page,'stock');const milk=(await stored(b.page)).items.find(x=>x.name==='牛乳');
   await expect(b.page.locator(`[data-stock-id="${milk.id}"] .atk-user-photo`)).toBeVisible();

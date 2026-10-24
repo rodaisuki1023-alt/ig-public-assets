@@ -488,7 +488,7 @@ async function dashboard(){
 }
 function changeText(r){
  const when=new Date(r.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
- const what=r.type==='add'?(Number(r.delta)>0?'＋':'')+Number(r.delta):r.type==='set'?(r.field==='name'?'名前':r.field)+'を変更':r.type==='create'?'追加':r.type==='delete'?'削除':r.type==='complete_buy'?'買い物から在庫へ':'変更';
+ const what=r.type==='add'?(Number(r.delta)>0?'＋':'')+Number(r.delta):r.type==='set'?(r.field==='name'?'名前':r.field)+'を変更':r.type==='create'?'追加':r.type==='delete'?'削除':r.type==='complete_buy'?'「買った」でストックに追加':r.type==='undo_purchase'?'「買った」を取り消し':'変更';
  return when+' '+r.who+'：'+(r.name||'（削除済み）')+' '+what;
 }
 async function leave(){
