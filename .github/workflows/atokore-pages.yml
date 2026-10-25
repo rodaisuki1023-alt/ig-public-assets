@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: f99171e336686f62a14f62370bfa0585e74ebfc0
+          ref: 39fb342e8c3bd1ef1a6a12e4d5dbd1e52e0c723e
           path: _preview_v19_source
           persist-credentials: false
 
@@ -339,9 +339,9 @@ jobs:
           worker = (base / 'service-worker.js').read_text()
           bootstrap = (base / 'storage-bootstrap-v19.js').read_text()
           assert 'ベビー特化 試用版 v19' in html
-          assert 'polish-v44.js?v=46' in html and 'polish-v44.css?v=44' in html
+          assert 'polish-v44.js?v=47' in html and 'polish-v44.css?v=44' in html
           assert "'./polish-v44.js'" in worker and "'./polish-v44.css'" in worker
-          assert 'common-v45.js?v=46' in html and 'insights-v45.js?v=46' in html and 'muse-v45.css?v=45' in html
+          assert 'common-v45.js?v=46' in html and 'insights-v45.js?v=47' in html and 'muse-v45.css?v=45' in html
           for asset in ['common-v45.js','insights-v45.js','muse-v45.css']:
               assert f"'./{asset}'" in worker
           assert 'AtokoreConfirm.open' in (base / 'stability.js').read_text()
@@ -349,12 +349,14 @@ jobs:
           assert 'home-v43.js?v=45' in html and 'home-v43.css?v=43' in html
           assert "'./home-v43.js'" in worker and "'./home-v43.css'" in worker
           assert '家族の最近の変更' in (base / 'home-v43.js').read_text()
-          assert 'history.js?v=46' in html
+          assert 'history.js?v=47' in html
+          assert '機能更新 v47' in (base / 'insights-v45.js').read_text()
+          assert "{v:'v47'" in (base / 'history.js').read_text()
           assert 'storage-bootstrap-v19.js' in html and 'data-safety-v19.js' in html and 'p0-fixes-v19.css' in html
           assert 'atokorePreviewTrialV19' in bootstrap
           assert 'atokorePreviewTrialV17' in bootstrap  # one-time copy of the v17 trial only
           assert '__atokoreStorageLock' in bootstrap  # unreadable data that cannot be set aside locks saving
-          assert 'routine-catalog-v20.js?v=26' in html
+          assert 'routine-catalog-v20.js?v=47' in html
           assert 'routine-catalog-v20.css?v=24' in html
           assert 'routine-catalog-v20.js' in worker
           assert '商品を選ぶ' in (base / 'routine-catalog-v20.js').read_text()
@@ -366,7 +368,7 @@ jobs:
           assert 'batch-review-v36.css?v=36' in html and "'./batch-review-v36.css'" in worker
           assert 'atkRoutineBuyCommit' in (base / 'routine-catalog-v20.js').read_text()
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
-          assert 'baby-flow-v17.js?v=45' in html
+          assert 'baby-flow-v17.js?v=47' in html
           assert 'baby-kit-v17.js?v=33' in html
           assert 'baby-food-catalog-v35.js?v=35' in html
           assert 'baby-food-catalog-v35.js' in worker
@@ -396,7 +398,7 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v46'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v47'" in worker
           # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
           assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
