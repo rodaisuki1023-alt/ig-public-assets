@@ -311,15 +311,19 @@ async function undoReplace(){
  });
  for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear();
 }
+// A rename keeps the device photo. Only a product that has a photo here is reported: a product
+// without a photo is never told that "the photo" could not be carried over.
 async function moveIdentity(before,after){
  const previous=key(before),next=key(after);if(previous===next)return;
+ let record;
+ try{record=await readRecord(previous)}
+ catch(_){if(cache.get(previous))root.notifyAtokoreV125H?.('商品は保存しました。写真だけ引き継げませんでした。写真を設定し直してください。');return}
+ if(!record){cache.delete(previous);return}
  try{
-  await transaction('readwrite',store=>{
-   const req=store.get(previous);req.onsuccess=()=>{if(req.result){store.put(req.result,next);store.delete(previous)}};
-  });
+  await transaction('readwrite',store=>{store.put(record,next);store.delete(previous)});
   const old=cache.get(previous);if(old)root.URL.revokeObjectURL(old);cache.delete(previous);cache.delete(next);
   decorate();detailPhoto();
- }catch(_){root.notifyAtokoreV125H?.('商品情報は保存しましたが、写真を引き継げませんでした。写真を設定し直してください。')}
+ }catch(_){root.notifyAtokoreV125H?.('商品は保存しました。写真だけ引き継げませんでした。写真を設定し直してください。')}
 }
 function install(){
  // Never enable this UI in the normal app or another trial sharing this origin.

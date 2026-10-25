@@ -7,3 +7,18 @@ body.atk-v17 #stockList .expiryBadge{max-width:100%;white-space:normal!important
 /* W2: multi-line confirmation details (restore comparison etc.). */
 .atk-confirm #atkConfirmNote{white-space:pre-line}
 .atk-confirm section{max-height:calc(100dvh - 36px);overflow-y:auto}
+/* W2 item 3: shopping rows — ＋/− at least 44×44 with 8px gaps; delete only in the "…" menu, on the
+   name line, away from the main "✓ 買った" action. */
+body.atk-v17 #pg-buy .stableBuyActions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+body.atk-v17 #pg-buy .stableBuyRow .qty{gap:8px}
+body.atk-v17 #pg-buy .stableBuyRow .qty .icon{width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;font-size:20px}
+body.atk-v17 #pg-buy .stableBuyRow .qty b{min-width:3.2em;text-align:center}
+.stableBuyHead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.stableBuyHead .name{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;text-align:left}
+body.atk-v17 #pg-buy .stableBuyMore{flex:0 0 44px;width:44px!important;min-width:44px!important;height:44px!important;border-radius:12px;background:#FFF8F4;border:1px solid #E7D3C8;color:#7A5A4B;font-size:20px;line-height:1}
+.stableBuyRow{position:relative}
+.stableBuyMenu{position:absolute;right:8px;top:56px;z-index:30;background:#fff;border:1px solid #E2CFC4;border-radius:12px;box-shadow:0 8px 24px #4b322633;padding:6px;min-width:200px}
+.stableBuyMenu[hidden]{display:none}
+.stableBuyMenu button{display:block;width:100%;min-height:44px;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;font-size:14px;font-weight:700}
+.stableBuyMenu .danger{color:#A23A2C}
+.stableBuyMenu button:focus-visible{outline:3px solid #6F8FCF}
