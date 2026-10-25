@@ -320,7 +320,7 @@ function install(){
  const oldVisibleStock=root.visibleStock;
  if(typeof oldVisibleStock==='function')root.visibleStock=function(...args){
   let visible;
-  if(stockCategory()==='離乳食'&&foodCatalog){const q=foodCatalog.norm($('stockSearch')?.value).toLocaleLowerCase('ja');visible=records().filter(x=>foodCatalog.isRecord(x)&&(!q||foodCatalog.norm(x.name).toLocaleLowerCase('ja').includes(q)))}
+  if(stockCategory()==='離乳食'&&foodCatalog){const q=$('stockSearch')?.value||'',hit=root.AtokoreSearch?.matches;visible=records().filter(x=>foodCatalog.isRecord(x)&&(!q.trim()||(hit?hit(x.name,q):foodCatalog.norm(x.name).toLocaleLowerCase('ja').includes(foodCatalog.norm(q).toLocaleLowerCase('ja')))))}
   else{visible=oldVisibleStock.apply(this,args);if(foodCatalog&&['食料品','ベビー','子ども','その他'].includes(stockCategory()))visible=visible.filter(x=>!foodCatalog.isRecord(x))}
   if(stockCategory()==='離乳食'&&foodCatalog)return visible.filter(item=>{const d=foodCatalog.describe(item);return (stockGroup==='all'||d.makerKey===stockGroup)&&(!foodStockMonth||(foodStockMonth==='unknown'?!d.month:String(d.month)===foodStockMonth))&&(!foodStockSeries||d.series===foodStockSeries)});
   if(!stockGroups().length||stockGroup==='all')return visible;
@@ -387,7 +387,20 @@ function install(){
  syncFab();
  syncStockCategory();renderStockCategories();renderStockBabyFilters();showSets();decorateBabyRows('#stockList [data-stock-id]');decorateStockCards();decorateBabyRows('#buyList [data-buy-id]');decorateHome();decorateFoodRows();decorateFoodRows('#pg-home [data-atk-open]');
 }
-const api=Object.freeze({catFor,prepared,directRoutineToStock,revealStock});
+// The stock filters in effect, for the "条件" bar and the no-results guidance (W2 item 5).
+function stockFilters(){
+ const category=stockCategory(),g=stockGroups().find(([k])=>k===stockGroup);
+ return {category,group:stockGroup!=='all'&&g?{key:stockGroup,label:g[1]}:null,foodMonth:foodStockMonth,foodSeries:foodStockSeries};
+}
+function clearStockFilters(which){
+ if(which==='category'||which==='all'){stockGroup='all';foodStockMonth='';foodStockSeries='';root.setFilter?.('すべて');return}
+ if(which==='group'){stockGroup='all';foodStockMonth='';foodStockSeries=''}
+ if(which==='foodMonth')foodStockMonth='';
+ if(which==='foodSeries')foodStockSeries='';
+ try{stockSelected.clear()}catch(e){}
+ root.renderStock?.();
+}
+const api=Object.freeze({catFor,prepared,directRoutineToStock,revealStock,stockFilters,clearStockFilters});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreBabyFlow=Object.freeze({...api,addRoutineToStock:directRoutineToStock,addRoutineToBuy:directRoutineToBuy});
 if(doc&&typeof window!=='undefined')install();

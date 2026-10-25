@@ -1,0 +1,20 @@
+/* W2 items 5 and 9: filter bar, no-results guidance, "もしかして", free entry at the top of 追加. */
+.atk-conditions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 10px}
+.atk-conditions-title{font-size:12px;font-weight:800;color:#6E5E57}
+.atk-condition,.atk-condition-all{min-height:44px;padding:6px 12px;border-radius:22px;border:1px solid #DDC6B9;background:#FFF8F4;color:#5A463C;font-size:13px;font-weight:700}
+.atk-condition-all{background:#fff;text-decoration:underline}
+.atk-empty-guide{display:flex;flex-direction:column;align-items:stretch;gap:8px;text-align:left;padding:14px}
+.atk-empty-title,.qa-no-results-title{font-weight:800;margin:0;color:#4C3933}
+.atk-empty-why{margin:0;font-size:13px;color:#6E5E57}
+.atk-empty-action,.qa-zero-action{min-height:44px;border-radius:12px;border:1px solid #CFB3A5;background:#fff;color:#5A3E31;font-weight:800;font-size:14px;padding:8px 12px;text-align:left}
+.atk-empty-add,.qa-zero-add{background:#9e5b48;color:#fff;border-color:#9e5b48}
+.atk-maybe,.qa-maybe{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;color:#5A463C}
+.atk-maybe button,.qa-maybe button{min-height:44px;padding:6px 14px;border-radius:22px;border:1px solid #9FB8D6;background:#F1F6FC;color:#2E4E73;font-weight:800}
+.qa-no-results{display:flex;flex-direction:column;gap:8px;grid-column:1/-1;padding:10px 0}
+.qa-free-top{border:1px solid #EAD8CD;border-radius:14px;background:#FFFCFA;padding:10px 12px;margin:6px 0 12px}
+.qa-free-top h3{font-size:15px;margin:0}
+.qa-free-dest{margin:2px 0 6px;font-size:12px;font-weight:800;color:#7A4A39}
+.qa-free-note{margin:6px 0 0;font-size:11px;color:#7A6B64}
+.qa-free-top .qa-free{display:flex;gap:8px}
+.qa-free-top .qa-free input{flex:1 1 auto;min-width:0;min-height:44px;font-size:16px}
+.qa-free-top .qa-free button{min-height:44px;flex:0 0 auto}

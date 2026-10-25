@@ -35,7 +35,7 @@ const APP_SHELL = [
   './receipt-match-v38.js',
   './onboarding-v39.js',
   './onboarding-v39.css',
-  './polish-v44.js','./common-v45.js','./insights-v45.js','./muse-v45.css', './polish-v44.css', './home-v43.js',
+  './polish-v44.js','./common-v45.js','./search-v48.js','./search-v48.css','./search-ui-v48.js','./insights-v45.js','./muse-v45.css', './polish-v44.css', './home-v43.js',
   './home-v43.css',
   './baby-kit-v17.js',
   './baby-food-catalog-v35.js',
