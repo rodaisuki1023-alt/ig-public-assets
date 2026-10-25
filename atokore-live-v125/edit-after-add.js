@@ -13,13 +13,16 @@ function formOptions(values,selected){
 function read(id){
  try{return items.find(x=>Number(x.id)===Number(id))||null}catch(e){return null}
 }
-function validate(input,current){
+function validate(input,current,options={}){
  if(!current||!Number.isSafeInteger(Number(current.id)))throw Error('編集する商品が見つかりません');
  const name=String(input.name||'').trim();
  if(!name||name.length>120)throw Error('商品名は1〜120文字で入力してください');
  const qty=Number(input.qty);
- if(!Number.isSafeInteger(qty)||qty<0||qty>99999)throw Error('在庫数は0〜99999の整数を入力してください');
  const cat=String(input.cat||''),unit=String(input.unit||''),place=String(input.place||'');
+ // W2 item 8: limit by unit; a saved quantity already above it may stay as it is or be reduced.
+ const rules=root.AtokoreStockRules;
+ if(rules&&!options.skipQtyLimit){const problem=rules.checkEdit(qty,{unit,before:current.qty,beforeUnit:current.unit});if(problem)throw Error(problem)}
+ else if(!Number.isSafeInteger(qty)||qty<0||qty>99999)throw Error('在庫数は0〜99999の整数を入力してください');
  if(!CATEGORIES.includes(cat)||!unit||unit.length>24)throw Error('カテゴリー・単位を確認してください');
  const expType=String(input.expType||'期限なし');
  if(!EXPIRY.includes(expType))throw Error('期限の種類を確認してください');
@@ -52,7 +55,7 @@ function edit(id,options={}){
  '<form id="atkEditForm" class="atk-edit-form">'+
  '<h2>'+(draft?'追加予定の商品を編集':'商品情報を編集')+'</h2><p class="atk-edit-hint">'+(draft?'確認画面へ戻ってから、まとめて追加するまで保存されません。':'必要な情報だけ変更できます。')+'</p>'+
  '<label>商品名<input name="name" id="atkEditName" maxlength="120" required value="'+esc(item.name)+'"></label>'+
- '<div class="atk-edit-pair"><label>在庫数<input name="qty" type="number" required min="0" max="99999" step="1" inputmode="numeric" value="'+esc(item.qty)+'"></label>'+
+ '<div class="atk-edit-pair"><label>在庫数<input name="qty" type="number" required min="0" max="'+(root.AtokoreStockRules?root.AtokoreStockRules.inputMax(item.unit,item.qty):99999)+'" step="1" inputmode="numeric" value="'+esc(item.qty)+'"></label>'+
  '<label>単位<select name="unit">'+formOptions(UNITS,item.unit||'個')+'</select></label></div>'+
  '<label>在庫の数え方<select name="qtyBasis"><option value="total"'+(item.qtyBasis!=='unopened'?' selected':'')+'>使用中を含む個数</option><option value="unopened"'+(item.qtyBasis==='unopened'?' selected':'')+'>未開封の予備だけ</option></select><small>数え方を変更しても数量は自動で変わりません。上の数を合わせてください。</small></label>'+
  '<label class="atk-edit-inuse"><input name="inUse" type="checkbox"'+(item.inUse?' checked':'')+'>使用中の商品が別にある（任意）</label>'+
@@ -74,13 +77,16 @@ function edit(id,options={}){
  const expiry=form.elements.namedItem('expType'),expiryWrap=$('atkEditExpiryWrap');
  const toggle=()=>{expiryWrap.hidden=expiry.value==='期限なし';form.elements.namedItem('exp').required=expiry.value!=='期限なし'};
  expiry.addEventListener('change',toggle);toggle();
+ // The quantity field follows the selected unit's limit (a kept higher quantity stays allowed for its own unit).
+ const unitField=form.elements.namedItem('unit'),qtyField=form.elements.namedItem('qty'),rules=root.AtokoreStockRules;
+ if(rules&&unitField&&qtyField)unitField.addEventListener('change',()=>{qtyField.max=String(rules.inputMax(unitField.value,unitField.value===item.unit?item.qty:0,draft?999:99999))});
  form.addEventListener('submit',event=>{
   event.preventDefault();
  const curr=draft?options.item:read(id),error=$('atkEditError');
   try{
    root.AtokoreDataSafety?.assertWritable?.();
    const values=Object.fromEntries(new FormData(form).entries());
-   const next=validate(values,curr);
+   const next=validate(values,curr,draft?{skipQtyLimit:true}:{});
    if(draft){options.onSave(next);root.closeM?.();return}
    // Optimistic in-memory updates are avoided: write to localStorage before UI mutation.
    const records=items.map(x=>Number(x.id)===n?next:x);

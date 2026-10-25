@@ -1,0 +1,13 @@
+/* Atokore W2 item 8: sort control, per-row category label, quantities never clipped. */
+.atk-sort{position:relative;display:inline-flex;align-items:center;gap:6px;min-height:44px;margin:6px 0 2px;padding:0 34px 0 14px;border:1px solid #e6d8cf;border-radius:999px;background:#fffaf6;color:#5a4036;font-size:13px;font-weight:850;max-width:100%}
+.atk-sort::after{content:'▾';position:absolute;right:13px;top:50%;transform:translateY(-50%);font-size:11px;pointer-events:none}
+.atk-sort select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
+.atk-sort:focus-within{outline:3px solid #b8735a66;outline-offset:2px}
+.atk-row-cat{display:inline-flex;align-self:flex-start;width:max-content;max-width:100%;margin-top:3px;padding:1px 7px;border-radius:999px;background:var(--cbg,#f3eee9);color:var(--cc,#6b5d55);border:1px solid var(--cbd,#e6ddd5);font-size:10px;font-weight:850;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atk-row-brand.atk-row-generic:empty{min-width:0}
+/* Quantities are shown in full: the number never shrinks or hides behind −／＋. */
+#stockList .qty b,#buyList .qty b{flex:0 0 auto;min-width:max-content;white-space:nowrap;overflow:visible}
+#stockList .qty,#buyList .qty{flex-wrap:nowrap;min-width:max-content}
+#stockList .bf-stock-count{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+/* polish-v44.css (loaded later) caps the list-mode number at 65px; these selectors are more specific. */
+body.atk-v17 #pg-stock.atk-stock-list-mode #stockList .qty b,body.atk-v17 #pg-buy #buyList .stableBuyRow .qty b{max-width:none;min-width:max-content;overflow-wrap:normal}

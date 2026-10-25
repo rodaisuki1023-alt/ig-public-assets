@@ -109,7 +109,9 @@ function renderList(){
   if(meta)meta.textContent=[item.place||'保管場所未設定',item.exp?(item.expType||'期限')+' '+item.exp:'',item.qtyBasis==='unopened'?'未開封の予備'+(item.inUse?'・使用中あり':''):'使用中を含む個数'].filter(Boolean).join(' ／ ');
   const qty=row.querySelector('.qty b');if(qty)qty.textContent=item.qty+(item.unit||'個');
  }
- if(mode==='list'){
+ // W2 item 8: category headings only for the category order; priority orders run across categories.
+ for(const h of list.querySelectorAll('.atk-stock-category'))h.remove();
+ if(mode==='list'&&(root.AtokoreStockSort?.mode?.()||'category')==='category'){
   const groups=new Map();
   for(const row of rows){const item=data.find(x=>String(x.id)===row.dataset.stockId);const category=root.AtokoreBabyFood?.isRecord(item)?'離乳食':item?.cat||'その他';if(!groups.has(category))groups.set(category,[]);groups.get(category).push(row)}
   for(const h of list.querySelectorAll('.atk-stock-category'))h.remove();

@@ -142,7 +142,7 @@
     if(list)list.innerHTML=visible.length?visible.map(item=>{
       const id=numberId(item.id),picked=stockSelected.has(id),left=days(item.exp),near=item.exp&&left<=3,c=color(item.cat);
       const check=stockSelectMode?`<input class="stableCheck stockPickV125h" type="checkbox" value="${id}" ${picked?'checked':''} onclick="event.stopPropagation()" onchange="setStockPickV125H(${id},this.checked)">`:'';
-      const controls=stockSelectMode?`<div class="qty"><b>${esc(item.qty)}${esc(item.unit)}</b></div>`:`<div class="qty"><button class="icon" onclick="adj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="adj(${id},1)">＋</button></div><button class="icon stableStockBuy" onclick="addStockOneToBuyV125H(${id})" aria-label="買い物リストへ追加">🛒</button><button class="icon danger" onclick="delItem(${id})" aria-label="削除">🗑</button>`;
+      const controls=stockSelectMode?`<div class="qty"><b>${esc(item.qty)}${esc(item.unit)}</b></div>`:`<div class="qty"><button class="icon" onclick="adj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="adj(${id},1)"${plusAttrs(item,1)}>＋</button></div><button class="icon stableStockBuy" onclick="addStockOneToBuyV125H(${id})" aria-label="買い物リストへ追加">🛒</button><button class="icon danger" onclick="delItem(${id})" aria-label="削除">🗑</button>`;
       return `<div class="row stableStockRow ${picked?'stableSelected':''} ${near?'expiryNear':''}" data-stock-id="${id}" style="${vars(item.cat)}" onclick="toggleStockRowV125H(event,${id})"><div style="width:4px"></div>${check}<div class="grow"><div class="name">${esc(item.name)}</div><span class="stableCat" style="background:${c[1]};color:${c[0]};border:1px solid ${c[2]}">${c[3]} ${esc(item.cat||'その他')}</span><div class="meta">${esc(item.place||'未設定')}${item.exp?'・'+esc(item.expType)+' '+esc(item.exp):''}</div>${item.exp?`<span class="expiryBadge ${left<0?'expiryExpired':''}">${esc(window.AtokoreDates.label(item.exp))}</span>`:''}</div>${controls}</div>`;
     }).join(''):'<div class="empty">該当なし</div>';
     updateStockBulkUI();
@@ -181,8 +181,13 @@
   window.deleteSelectedStock=()=>{
     const ids=syncStockSelectionFromDom();if(!ids.length){toast('削除する商品を選んでください');return}deleteStock(ids);
   };
+  // W2 item 8: ＋ stops at the unit limit (999個 / 9,999枚 / 99,999g); a quantity already above it is kept and can be reduced.
+  const Rules=()=>window.AtokoreStockRules;
+  const atLimit=(item,step=1)=>!!Rules()&&!Rules().canIncrease(item.qty,item.unit,step);
+  const plusAttrs=(item,step)=>atLimit(item,step)?` disabled aria-disabled="true" title="${esc(Rules().limitMessage(item.unit))}"`:'';
   window.adj=(id,delta)=>{
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
+    if(Number(delta)>0&&atLimit(item,Number(delta))){toast(Rules().limitMessage(item.unit));return}
     const before=Number(item.qty)||0;item.qty=Math.max(0,before+Number(delta||0));if(Number(delta)<0)item.usage=(item.usage||0)+1;
     saveState();logHistory('在庫数を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'stock','📦',{refs:[ref(item)],change:`${before}${item.unit} → ${item.qty}${item.unit}`});finish();
   };
@@ -201,7 +206,7 @@
   window.renderBuy=function(){
     cleanSelections();const list=document.getElementById('buyList');if(!list)return;
     const panel=ensureBuyManage();if(panel)panel.classList.toggle('stableEmptyManage',!buys.length);
-    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="stableBuyHead"><div class="name">${esc(item.name)}</div><button class="icon stableBuyMore" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="buyMenu${id}" aria-label="${esc(item.name)}のその他の操作" onclick="toggleBuyMenuV48(${id},this)">…</button></div><div class="stableBuyMenu" id="buyMenu${id}" role="menu" hidden><button type="button" role="menuitem" class="danger" onclick="closeBuyMenusV48();bdel(${id})">買い物リストから削除</button></div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="meta">買う数量（ストックからは1点ずつ追加）</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)">＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
+    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="stableBuyHead"><div class="name">${esc(item.name)}</div><button class="icon stableBuyMore" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="buyMenu${id}" aria-label="${esc(item.name)}のその他の操作" onclick="toggleBuyMenuV48(${id},this)">…</button></div><div class="stableBuyMenu" id="buyMenu${id}" role="menu" hidden><button type="button" role="menuitem" class="danger" onclick="closeBuyMenusV48();bdel(${id})">買い物リストから削除</button></div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="meta">買う数量（ストックからは1点ずつ追加）</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)"${plusAttrs(item,(item.unit==='g'||item.unit==='ml')?100:1)}>＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
     updateBuyUI();
   };
   window.setBuyPickV125H=(id,on)=>{id=numberId(id);if(!validId(id))return;if(on)buySelected.add(id);else buySelected.delete(id);updateBuyUI()};
@@ -218,7 +223,9 @@
   };
   window.badj=(id,delta)=>{
     const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
-    const before=Number(item.qty)||1,step=(item.unit==='g'||item.unit==='ml')?100:1;item.qty=Math.max(step,before+Number(delta||0)*step);
+    const step=(item.unit==='g'||item.unit==='ml')?100:1;
+    if(Number(delta)>0&&atLimit(item,step*Number(delta))){toast(Rules().limitMessage(item.unit));return}
+    const before=Number(item.qty)||1;item.qty=Math.max(step,before+Number(delta||0)*step);
     saveState();logHistory('買い物数量を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'buy','🛒',{refs:[ref(item,'buy')],change:`買う数量 ${before}${item.unit} → ${item.qty}${item.unit}`});finish({page:'buy'});
   };
   window.buyOneToStockV125H=id=>{

@@ -2,7 +2,8 @@ const {test,expect}=require('@playwright/test');
 const {open,go,stored,baseState,KEY,shot,commitBatch}=require('./helpers.cjs');
 const catalog=require('../../atokore-live-v125/baby-food-catalog-v35.js');
 const category=(page,name)=>page.locator('#catChips').getByRole('button',{name,exact:true}).click();
-const ids=page=>page.locator('#stockList [data-stock-id]').evaluateAll(es=>es.map(e=>Number(e.dataset.stockId)));
+// Which products are shown (W2: the display order follows the stock sort, tested in w2-qty-sort.spec.cjs).
+const ids=page=>page.locator('#stockList [data-stock-id]').evaluateAll(es=>es.map(e=>Number(e.dataset.stockId)).sort((a,b)=>a-b));
 function fixture(){const s=baseState({buys:[]});s.items.push(
  {id:4,name:'和光堂 離乳食 おかゆ 7か月',cat:'食料品',qty:2,unit:'個',place:'収納'},
  {id:5,name:'手作り 離乳食 野菜ペースト',cat:'ベビー',qty:1,unit:'個',place:'冷凍庫'},
