@@ -1,6 +1,6 @@
 // Two isolated browsers; real household SQL, simulated Auth (no real account/phone claims).
 const {test,expect}=require('@playwright/test');
-const {open,go,stored,baseState,KEY,shot}=require('./helpers.cjs');
+const {open,go,stored,baseState,KEY,shot, appConfirm}=require('./helpers.cjs');
 const EMU='http://127.0.0.1:'+(process.env.E2E_HH_PORT||4720);
 const CFG={url:EMU,anonKey:'emu-anon-key',google:true,guest:true,email:false};
 const SESSION='atokorePreviewHouseholdSessionV19';
@@ -19,7 +19,7 @@ async function login(page){
 async function owner(browser,info){
  const d=await device(browser,info,baseState());await login(d.page);
  await expect(d.page.locator('#atkHhName')).toBeVisible();await d.page.fill('#atkHhName','作成者');
- await d.page.getByRole('button',{name:'世帯を作る',exact:true}).click();
+ await d.page.getByRole('button',{name:'世帯を作る',exact:true}).click();await appConfirm(d.page,true);
  await expect(d.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
  await d.page.getByRole('button',{name:/家族を招待する/}).click();
  return {...d,link:await d.page.locator('#atkHhInviteLink').inputValue(),code:await d.page.locator('#atkHhInviteCode').textContent()};
@@ -58,7 +58,7 @@ test('same Google identity on a fresh device restores shared data without a new 
  const before=await stored(b.page);await login(b.page);
  await expect(b.page.getByRole('button',{name:/共有のデータを使う/})).toBeVisible();
  expect(await stored(b.page)).toEqual(before);
- await b.page.getByRole('button',{name:/共有のデータを使う/}).click();
+ await b.page.getByRole('button',{name:/共有のデータを使う/}).click();await appConfirm(b.page,true);
  await expect(b.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
  expect((await user(b.page)).id).toBe((await user(a.page)).id);
  expect((await stored(b.page)).items.map(x=>[x.name,x.qty])).toEqual(baseState().items.map(x=>[x.name,x.qty]));
@@ -77,7 +77,7 @@ test('invalid code retry reuses guest; owner can replace a lost guest while reta
  expect(b.requests.filter(u=>u.includes('/signup'))).toHaveLength(1);
  await a.page.getByRole('button',{name:'閉じる',exact:true}).click();
  await go(a.page,'premium');await a.page.click('#atkHouseholdCard');
- await a.page.getByRole('button',{name:'外して再招待：旧端末',exact:true}).click();
+ await a.page.getByRole('button',{name:'外して再招待：旧端末',exact:true}).click();await appConfirm(a.page,true);
  await a.page.getByRole('button',{name:/家族を招待する/}).click();const link=await a.page.locator('#atkHhInviteLink').inputValue();
  const c=await device(browser,info);await c.page.goto(link);await c.page.fill('#atkHhGuestName','新端末');
  await c.page.getByRole('button',{name:'Googleなしで共有に参加する',exact:true}).click();

@@ -1,6 +1,6 @@
 const {test,expect}=require('@playwright/test');
 const zlib=require('node:zlib');
-const {open,go,stored,baseState,KEY,shot}=require('./helpers.cjs');
+const {open,go,stored,baseState,KEY,shot,appConfirm}=require('./helpers.cjs');
 const DB='atokorePreviewProductPhotosV19';
 // Synthetic PNG fixtures, including metadata that must not survive canvas conversion.
 function crc32(data){let crc=0xffffffff;for(const b of data){crc^=b;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0)}return (crc^0xffffffff)>>>0}
@@ -68,7 +68,7 @@ test('invalid files and failed photo transactions preserve saved photos and all 
  expect(await stored(page)).toEqual(initial);expect(await imageFacts(page)).toEqual(before);
  await page.click('#atkPhotoEditor .close');await expect(page.locator('.atk-detail-photo')).toBeVisible();
  await page.evaluate(()=>{IDBObjectStore.prototype.put=window.photoOriginalPut});
- await page.click('.atk-photo-open');await page.click('.atk-photo-reset');await expect(page.locator('.atk-detail-photo')).toHaveCount(0);
+ await page.click('.atk-photo-open');await page.click('.atk-photo-reset');expect(await appConfirm(page,true)).toContain('写真を外しますか');await expect(page.locator('.atk-detail-photo')).toHaveCount(0);
  await page.click('#sheet .close');await expect(row(page).locator('.atk-user-photo')).toHaveCount(0);await expect(row(page).locator('.bf-baby-art')).toBeVisible();
  expect(await stored(page)).toEqual(initial);expect(await imageFacts(page)).toEqual([]);
 });

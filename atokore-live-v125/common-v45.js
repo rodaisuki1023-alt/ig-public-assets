@@ -16,8 +16,11 @@ root.AtokoreNotices={
  hide(){document.querySelectorAll('#qaNotice,#stableToastV125h').forEach(n=>n.classList.remove('on'))},
  show(node,duration){this.hide();clearTimeout(node._atkNoticeTimer);const undo=document.getElementById('atkUndoBar');node.style.bottom=undo?(root.innerHeight-undo.getBoundingClientRect().top+8)+'px':'';node.classList.add('on');node._atkNoticeTimer=setTimeout(()=>node.classList.remove('on'),duration)}
 };
-root.AtokoreConfirm={open(title,description,action,onConfirm){
- document.getElementById('atkConfirm')?.remove();const previous=document.activeElement;
+// The app's own confirmation. Native confirm() is never used: some in-app browsers, embedded frames
+// and review tools suppress it without UI and it then returns false, so the action looks dead.
+root.AtokoreConfirm={open(title,description,action,onConfirm,onCancel){
+ const prior=document.getElementById('atkConfirm');if(prior){prior.remove();prior._atkCancel?.()}
+ const previous=document.activeElement;
  const overlay=document.createElement('div');overlay.id='atkConfirm';overlay.className='atk-confirm';
  const dialog=document.createElement('section');dialog.setAttribute('role','alertdialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-labelledby','atkConfirmTitle');dialog.setAttribute('aria-describedby','atkConfirmNote');
  const h=document.createElement('h2');h.id='atkConfirmTitle';h.textContent=title;
@@ -25,9 +28,15 @@ root.AtokoreConfirm={open(title,description,action,onConfirm){
  const status=document.createElement('p');status.setAttribute('role','status');
  const cancel=document.createElement('button');cancel.type='button';cancel.textContent='キャンセル';
  const ok=document.createElement('button');ok.type='button';ok.textContent=action;ok.className='atk-confirm-primary';
+ // Cancelled (button, Escape, or replaced by another confirmation) reports once to onCancel.
+ overlay._atkCancel=()=>{overlay._atkCancel=null;onCancel?.()};
  function close(){overlay.remove();previous?.isConnected&&previous.focus()}
- cancel.onclick=close;ok.onclick=async()=>{ok.disabled=true;try{if(await onConfirm()!==false)close();else{status.textContent='保存できませんでした。内容は変更していません。';ok.disabled=false}}catch(e){status.textContent=e.message||'操作を完了できませんでした';ok.disabled=false}};
- overlay.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();close()}if(e.key==='Tab'){e.preventDefault();(document.activeElement===cancel?ok:cancel).focus()}};
+ function dismiss(){close();overlay._atkCancel?.()}
+ cancel.onclick=dismiss;ok.onclick=async()=>{ok.disabled=true;try{if(await onConfirm()!==false){overlay._atkCancel=null;close()}else{status.textContent='保存できませんでした。内容は変更していません。';ok.disabled=false}}catch(e){status.textContent=e.message||'操作を完了できませんでした';ok.disabled=false}};
+ overlay.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();dismiss()}if(e.key==='Tab'){e.preventDefault();(document.activeElement===cancel?ok:cancel).focus()}};
  dialog.append(h,p,status,cancel,ok);overlay.append(dialog);document.body.append(overlay);cancel.focus();
- }};
+ },
+ // Resolves true when the person chose the action, false when they cancelled.
+ ask(title,description,action){return new Promise(resolve=>root.AtokoreConfirm.open(title,description,action,()=>{resolve(true)},()=>resolve(false)))}
+};
 })(typeof globalThis!=='undefined'?globalThis:this);

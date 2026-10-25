@@ -109,5 +109,5 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.match(html,/edit-after-add\.js\?v=45/);
  assert.match(html,/edit-after-add\.css\?v=39/);
  assert.match(worker,/'\.\/edit-after-add.js'/);
- assert.match(worker,/atokore-pwa-v47/);
+ assert.match(worker,/atokore-pwa-v48/);
 });

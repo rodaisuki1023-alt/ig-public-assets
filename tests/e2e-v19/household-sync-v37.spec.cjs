@@ -2,7 +2,7 @@
 // The backend is the local emulator (tests/household/emulator.cjs): real migration SQL in PGlite,
 // Supabase Auth/PostgREST wire format. Real Supabase and real phones are NOT exercised here.
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, baseState, KEY, shot } = require('./helpers.cjs');
+const { open, go, stored, baseState, KEY, shot, appConfirm } = require('./helpers.cjs');
 
 const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
 const CONFIG = { url: EMU, anonKey: 'emu-anon-key' };
@@ -82,11 +82,11 @@ test('editing after interrupted sync keeps the device copy and requires backup b
     const original=Storage.prototype.setItem;window.restoreRecoveryStorage=()=>{Storage.prototype.setItem=original};
     Storage.prototype.setItem=function(k,v){if(k===key+'SyncRecovery')throw new DOMException('quota','QuotaExceededError');return original.call(this,k,v)};
   },KEY);
-  await B.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();
+  await B.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();await appConfirm(B.page,true);
   expect(await qty(B.page,diaper)).toBe(4);
   expect((await B.page.evaluate(()=>window.AtokoreHousehold.status())).recovering).toBe(true);
   await B.page.evaluate(()=>window.restoreRecoveryStorage());
-  await B.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();
+  await B.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();await appConfirm(B.page,true);
   await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
   const backup=await B.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
   expect(backup.data.items.find(x=>x.name===diaper).qty).toBe(4);
@@ -98,7 +98,7 @@ test('interrupted first adoption reloads the original selection and sends the ch
   const mine={items:[{id:51,name:'Rico おしりふき',cat:'ベビー',qty:2,unit:'パック',place:'収納',expType:'期限なし',exp:'',usage:1}],buys:[],routines:[]};
   const A=await person(browser,info,baseState()),B=await person(browser,info,mine);
   await signIn(A.page,request,'mama@example.test');await A.page.fill('#atkHhName','ママ');
-  await A.page.getByRole('button',{name:'世帯を作る'}).click();
+  await A.page.getByRole('button',{name:'世帯を作る'}).click();await appConfirm(A.page,true);
   await A.page.getByRole('button',{name:/家族を招待する/}).click();
   const code=(await A.page.locator('#atkHhInviteCode').textContent()).trim();
   await signIn(B.page,request,'papa@example.test');await B.page.fill('#atkHhName','パパ');
@@ -124,7 +124,7 @@ test('retrying the placement button after a metadata failure sums the original a
   const mine={items:[{id:51,name:diaper,cat:'ベビー',qty:5,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1}],buys:[],routines:[]};
   const A=await person(browser,info,baseState()),B=await person(browser,info,mine);
   await signIn(A.page,request,'mama@example.test');await A.page.fill('#atkHhName','ママ');
-  await A.page.getByRole('button',{name:'世帯を作る'}).click();
+  await A.page.getByRole('button',{name:'世帯を作る'}).click();await appConfirm(A.page,true);
   await A.page.getByRole('button',{name:/家族を招待する/}).click();
   const code=(await A.page.locator('#atkHhInviteCode').textContent()).trim();
   await signIn(B.page,request,'papa@example.test');await B.page.fill('#atkHhName','パパ');
@@ -153,7 +153,7 @@ test('rejected local edits stay on device across reload; recovery saves a copy b
   expect((await stored(A.page)).items[0].name).toBe(bad);
   await go(A.page,'premium');await A.page.click('#atkHouseholdCard');
   await expect(A.page.locator('.atk-hh-rejected')).toContainText('端末の内容を残して同期を止めています');
-  await A.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();
+  await A.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();await appConfirm(A.page,true);
   await expect(A.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
   const copy=await A.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
   expect(copy.data.items[0].name).toBe(bad);expect(copy.engine.rejected).toHaveLength(1);
@@ -181,7 +181,7 @@ test('create, invite, join with own data (nothing replaced silently), share both
 
   await signIn(A.page, request, 'mama@example.test');
   await A.page.fill('#atkHhName', 'ママ');
-  await A.page.getByRole('button', { name: '世帯を作る' }).click();
+  await A.page.getByRole('button', { name: '世帯を作る' }).click();await appConfirm(A.page,true);
   await expect(A.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
   expect(await stored(A.page)).toEqual(beforeA); // the creator's data and ids are untouched
   expect(JSON.parse(await A.page.evaluate(k => localStorage.getItem(k + 'BeforeShare'), KEY)).data).toEqual(beforeA);
@@ -235,7 +235,7 @@ async function sharedPair(browser, request, info) {
   const B = await person(browser, info, { items: [], buys: [], routines: [] });
   await signIn(A.page, request, 'mama@example.test');
   await A.page.fill('#atkHhName', 'ママ');
-  await A.page.getByRole('button', { name: '世帯を作る' }).click();
+  await A.page.getByRole('button', { name: '世帯を作る' }).click();await appConfirm(A.page,true);
   await A.page.getByRole('button', { name: /家族を招待する/ }).click();
   const code = (await A.page.locator('#atkHhInviteCode').textContent()).trim();
   await signIn(B.page, request, 'papa@example.test');
@@ -329,7 +329,7 @@ test('leave keeps the device data, re-join asks again; the free plan stops at tw
   await expect(A.page.getByText('無料の家族共有は2人までです')).toBeVisible();
   const kept = await stored(B.page);
   await go(B.page, 'premium'); await B.page.click('#atkHouseholdCard');
-  await B.page.getByRole('button', { name: /この世帯から抜ける/ }).click();
+  await B.page.getByRole('button', { name: /この世帯から抜ける/ }).click();await appConfirm(B.page,true);
   await expect(B.page.locator('#atkHouseholdChip')).toBeHidden();
   expect(await stored(B.page)).toEqual(kept);
   await tapStock(B.page, diaper, '+'); // not shared any more
@@ -343,7 +343,7 @@ test('leave keeps the device data, re-join asks again; the free plan stops at tw
   await B.page.fill('#atkHhName', 'パパ');
   await B.page.fill('#atkHhJoinCode', code);
   await B.page.getByRole('button', { name: '参加する' }).click();
-  await B.page.getByRole('button', { name: /共有のデータを使う/ }).click();
+  await B.page.getByRole('button', { name: /共有のデータを使う/ }).click();await appConfirm(B.page,true);
   await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
   expect(await qty(B.page, diaper)).toBe(2);
   expect(await idOf(B.page, diaper)).toBe(kept.items.find(x => x.name === diaper).id);

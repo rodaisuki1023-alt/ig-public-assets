@@ -1,5 +1,5 @@
 const {test,expect}=require('@playwright/test');
-const {open,go,stored,baseState,KEY,HISTORY,shot}=require('./helpers.cjs');
+const {open,go,stored,baseState,KEY,HISTORY,shot, appConfirm}=require('./helpers.cjs');
 const EMU='http://127.0.0.1:'+(process.env.E2E_HH_PORT||4720);
 const CFG={url:EMU,anonKey:'emu-anon-key',google:true,guest:true,email:false};
 for(const width of [320,390,430])test(`home v43 has two safe actions, real local activity and a single navigation row at ${width}px`,async({page},info)=>{
@@ -58,7 +58,7 @@ test('two household members see confirmed family history, retries do not duplica
  const a=await device(baseState()),b=await device({items:[],buys:[],routines:[]});
  try{
   await go(a.page,'premium');await a.page.click('#atkHouseholdCard');await a.page.getByRole('button',{name:'Googleでログイン',exact:true}).click();
-  await a.page.fill('#atkHhName','共有テスト担当');await a.page.getByRole('button',{name:'世帯を作る',exact:true}).click();
+  await a.page.fill('#atkHhName','共有テスト担当');await a.page.getByRole('button',{name:'世帯を作る',exact:true}).click();await appConfirm(a.page,true);
   await expect(a.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');await a.page.getByRole('button',{name:/家族を招待する/}).click();
   const link=await a.page.locator('#atkHhInviteLink').inputValue();await b.page.goto(link);await b.page.fill('#atkHhGuestName','家族');
   await b.page.getByRole('button',{name:'Googleなしで共有に参加する',exact:true}).click();await expect(b.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
@@ -75,7 +75,7 @@ test('two household members see confirmed family history, retries do not duplica
   await expect(b.page.locator('#atkHomeHistoryNote')).toContainText('履歴を更新できませんでした');await expect(b.page.locator('#atkHouseholdChip')).toHaveText('オフライン');
   await b.page.evaluate(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true}));await b.page.evaluate(()=>AtokoreHousehold.syncNow());
   await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当が牛乳の数量を変更');
-  await b.page.locator('#atkHouseholdChip').click();await b.page.getByRole('button',{name:'ログアウト',exact:true}).click();
+  await b.page.locator('#atkHouseholdChip').click();await b.page.getByRole('button',{name:'ログアウト',exact:true}).click();await appConfirm(b.page,true);
   await expect(b.page.locator('#atkHomeHistoryTitle')).toHaveText('この端末の最近の変更');await expect(b.page.locator('#atkHomeActivity')).not.toContainText('共有テスト担当');
   expect(b.page.__errors).toEqual([]);
  }finally{await a.ctx.close();await b.ctx.close()}

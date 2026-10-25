@@ -179,7 +179,8 @@ function openEditor(id){
  });
  async function commit(remove){
   if(!active()||session.busy||(!remove&&!session.blob))return;
-  if(remove&&!root.confirm?.('写真を外して元のアイコンに戻しますか？'))return;
+  if(remove&&!await root.AtokoreConfirm.ask('写真を外しますか？','写真を外して元のアイコンに戻します。','写真を外す'))return;
+  if(remove&&(!active()||session.busy))return; // closed or busy while the question was open
   busy(true);message('保存しています…');
   try{
    root.AtokoreDataSafety?.assertWritable?.();

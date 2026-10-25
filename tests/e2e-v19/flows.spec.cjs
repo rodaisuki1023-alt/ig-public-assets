@@ -90,18 +90,19 @@ test.describe('いつものセット', () => {
   test('loading a shopping set over edited items asks first; cancel keeps them', async ({ page }) => {
     await open(page);
     await page.evaluate(() => { routines.push({ id: 5, name: 'セットA', items: [{ id: 1, name: '牛乳', qty: 2, unit: '本' }] }); save(); render(); });
-    page.removeAllListeners('dialog');
-    const answers = [false, true];
     const asked = [];
-    page.on('dialog', d => { asked.push(d.message()); answers.shift() ? d.accept() : d.dismiss(); });
     await page.click('#bfNavAdd');
     await chooseBaby(page, { kind: 'diaper', brand: 'グーン', type: 'パンツ', size: 'L' });
     await go(page, 'buy');
     await page.click('[data-bf-routine-buy="5"]');
-    expect(asked).toHaveLength(1);
+    asked.push(await appConfirm(page, false));
+    expect(asked[0]).toContain('入れ替えますか');
     expect(await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => x.name))).toEqual(['グーン おむつ パンツ L']);
     await go(page, 'buy');
     await page.click('[data-bf-routine-buy="5"]');
+    asked.push(await appConfirm(page, true));
+    expect(asked).toHaveLength(2);
+    expect(page.__dialogs).toEqual([]);
     expect(await page.evaluate(() => AtokoreQuickAdd.getTray().map(x => [x.name, x.qty]))).toEqual([['牛乳', 2]]);
   });
 

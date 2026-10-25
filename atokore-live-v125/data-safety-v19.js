@@ -117,7 +117,9 @@ function undoRestore(){
  const store=storage();let saved=null;
  try{saved=JSON.parse(store?.getItem(BEFORE_RESTORE)||'null')}catch(e){}
  if(!saved||!valid(saved.data)){banner('戻せる退避データがありません。','error');return}
- if(!root.confirm?.('復元する前の状態に戻しますか？'))return;
+ root.AtokoreConfirm.ask('復元する前の状態に戻しますか？','端末内に退避していた、復元前の内容に戻します。','元に戻す').then(ok=>{if(ok)undoRestoreConfirmed(saved)});
+}
+function undoRestoreConfirmed(saved){
  const before=JSON.parse(JSON.stringify(current()));
  assign(saved.data);
  if(!save()){assign(before);return}
@@ -150,8 +152,10 @@ function openBackup(){
   f.text().then(text=>{
    const parsed=parseBackup(text);
    const message='現在のデータ（在庫'+counts.items.length+'件・買い物'+counts.buys.length+'件）を、ファイルの内容（在庫'+parsed.state.items.length+'件・買い物'+parsed.state.buys.length+'件）に置き換えます。\n現在のデータは端末内に退避し、あとで戻せます。';
-   if(!root.confirm?.(message)){status.textContent='復元を中止しました';return}
-   if(applyRestore(parsed))root.closeM?.();
+   return root.AtokoreConfirm.ask('バックアップから復元しますか？',message,'復元する').then(ok=>{
+    if(!ok){status.textContent='復元を中止しました';return}
+    if(applyRestore(parsed))root.closeM?.();
+   });
   }).catch(e=>{status.textContent=e?.message||'読み込みに失敗しました'}).finally(()=>{file.value=''});
  });
  const children=[close,el('h2',{text:'データのバックアップ'}),

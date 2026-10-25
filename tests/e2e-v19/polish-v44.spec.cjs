@@ -1,5 +1,5 @@
 const {test,expect}=require('@playwright/test');
-const {open,go,stored,baseState,KEY,shot}=require('./helpers.cjs');
+const {open,go,stored,baseState,KEY,shot, appConfirm}=require('./helpers.cjs');
 const EMU='http://127.0.0.1:'+(process.env.E2E_HH_PORT||4720);
 const CFG={url:EMU,anonKey:'emu-anon-key',google:true,guest:true,email:false};
 for(const width of [320,390,430])test(`v44 text stock groups categories, hides pictures, remembers view and keeps quantity actions at ${width}px`,async({page},info)=>{
@@ -45,7 +45,7 @@ test('v44 shared purchase undo preserves partner changes; private photos follow 
  async function device(state){const ctx=await browser.newContext({...info.project.use,baseURL:info.project.use.baseURL});const page=await ctx.newPage();await page.addInitScript(c=>window.ATOKORE_HOUSEHOLD_CONFIG=c,CFG);await open(page,{[KEY]:state});return {ctx,page}}
  const a=await device(baseState()),b=await device({items:[],buys:[],routines:[]});
  try{
-  await go(a.page,'premium');await a.page.click('#atkHouseholdCard');await a.page.getByRole('button',{name:'Googleでログイン',exact:true}).click();await a.page.fill('#atkHhName','パパ');await a.page.getByRole('button',{name:'世帯を作る',exact:true}).click();await expect(a.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await go(a.page,'premium');await a.page.click('#atkHouseholdCard');await a.page.getByRole('button',{name:'Googleでログイン',exact:true}).click();await a.page.fill('#atkHhName','パパ');await a.page.getByRole('button',{name:'世帯を作る',exact:true}).click();await appConfirm(a.page,true);await expect(a.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
   await a.page.getByRole('button',{name:/家族を招待する/}).click();const link=await a.page.locator('#atkHhInviteLink').inputValue();await b.page.goto(link);await b.page.fill('#atkHhGuestName','ママ');await b.page.getByRole('button',{name:'Googleなしで共有に参加する',exact:true}).click();await expect(b.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
   await a.page.getByRole('button',{name:'閉じる',exact:true}).click();await b.page.getByRole('button',{name:'閉じる',exact:true}).click();
   await a.page.evaluate(()=>buyOneToStockV125H(buys[0].id));await a.page.evaluate(()=>AtokoreHousehold.syncNow());
@@ -58,7 +58,7 @@ test('v44 shared purchase undo preserves partner changes; private photos follow 
   await b.page.evaluate(()=>AtokoreHousehold.syncNow());await go(b.page,'stock');const milk=(await stored(b.page)).items.find(x=>x.name==='牛乳');
   await expect(b.page.locator(`[data-stock-id="${milk.id}"] .atk-user-photo`)).toBeVisible();
   await b.page.reload();await b.page.evaluate(()=>AtokoreHousehold.syncNow());await go(b.page,'stock');await expect(b.page.locator(`[data-stock-id="${milk.id}"] .atk-user-photo`)).toBeVisible();
-  await b.page.click('#atkHouseholdChip');await b.page.getByRole('button',{name:'ログアウト',exact:true}).click();await expect(b.page.locator('#stockList .atk-user-photo')).toHaveCount(0);
+  await b.page.click('#atkHouseholdChip');await b.page.getByRole('button',{name:'ログアウト',exact:true}).click();await appConfirm(b.page,true);await expect(b.page.locator('#stockList .atk-user-photo')).toHaveCount(0);
   expect(a.page.__errors).toEqual([]);expect(b.page.__errors).toEqual([]);
  }finally{await a.ctx.close();await b.ctx.close()}
 });

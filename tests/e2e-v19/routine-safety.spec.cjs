@@ -158,11 +158,9 @@ test('leaving a routine catalog can cancel or discard, then normal add saves onl
  const initial=baseState();await open(page,{[KEY]:initial});await go(page,'buy');
  await page.click('[data-bf-routine="901"]');await page.click('#atkRoutineCatalogOpen');
  await page.click('[data-qa-cat="食料品"]');await page.click('[data-qa-pick="バナナ"]');
- page.removeAllListeners('dialog');let approve=false;
- page.on('dialog',async d=>approve?d.accept():d.dismiss());
- await go(page,'home');await expect(page.locator('#pg-add')).toHaveClass(/on/);
+ await go(page,'home');expect(await appConfirm(page,false)).toContain('破棄して戻りますか');await expect(page.locator('#pg-add')).toHaveClass(/on/);
  expect(await stored(page)).toEqual(initial);
- approve=true;await go(page,'home');await expect(page.locator('#pg-home')).toHaveClass(/on/);
+ await go(page,'home');await appConfirm(page,true);await expect(page.locator('#pg-home')).toHaveClass(/on/);
  await page.click('#bfNavAdd');await expect(page.locator('#qaRoutinePicker')).toBeHidden();
  await page.click('[data-qa-cat="食料品"]');await page.click('[data-qa-pick="バナナ"]');
  await commitBatch(page);const saved=await stored(page);

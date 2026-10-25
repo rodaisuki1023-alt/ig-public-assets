@@ -590,7 +590,7 @@ function setup(){
   addLine({name:raw,cat,qty:1,unit:defaultUnit(raw,cat)});$('qaFree').value='';
  }
  const oldGo=root.go;
- if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
+ if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false,()=>root.go(page,...rest)))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
  if(typeof oldStock==='function')root.renderStock=function(...a){const v=oldStock.apply(this,a);decorateRows('#stockList [data-stock-id]');return v};
  if(typeof oldBuy==='function')root.renderBuy=function(...a){const v=oldBuy.apply(this,a);decorateRows('#buyList [data-buy-id]');return v};
@@ -638,18 +638,29 @@ function renderDestination(){
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
  const review=$('qaReviewNote');if(review)review.textContent='「'+commitLabel()+'」を押すまで保存されません。'+(routine?'ストック数・買い物リストは変わりません。':'');
 }
-function cancelRoutinePicker(returnToList=false){
+// Returns true when finished at once. When unsaved products need confirming it returns false and,
+// only if the person confirms in the app dialog, finishes and then calls onDone.
+function cancelRoutinePicker(returnToList=false,onDone){
  if(!state.routineTarget)return true;
- if(state.tray.length&&!root.confirm?.('まだ保存していない商品があります。選択を破棄して戻りますか？'))return false;
- const target=state.routineTarget;
- state.routineTarget=null;state.tray=[];state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;
- setReviewing(false);renderTray();renderDestination();
- if(returnToList){root.go?.('buy');root.openRoutine?.(target.id,true)}
- return true;
+ const finish=()=>{
+  const target=state.routineTarget;if(!target)return;
+  state.routineTarget=null;state.tray=[];state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;
+  setReviewing(false);renderTray();renderDestination();
+  if(returnToList){root.go?.('buy');root.openRoutine?.(target.id,true)}
+ };
+ if(state.tray.length){
+  root.AtokoreConfirm.ask('選んだ商品を破棄して戻りますか？','まだ保存していない商品が'+state.tray.length+'種類あります。戻ると選択は破棄されます。','破棄して戻る').then(ok=>{if(ok){finish();onDone?.()}});
+  return false;
+ }
+ finish();return true;
 }
-function openRoutinePicker(id,onCommit){
+// Same contract as cancelRoutinePicker: true when opened at once, otherwise onOpened after confirming.
+function openRoutinePicker(id,onCommit,onOpened){
  if(!Number.isSafeInteger(Number(id))||typeof onCommit!=='function')return false;
- if(state.tray.length&&!root.confirm?.('追加予定の商品があります。破棄して「いつものリスト」の商品を選びますか？'))return false;
+ if(state.tray.length){
+  root.AtokoreConfirm.ask('追加予定の商品を破棄しますか？','追加予定の商品が'+state.tray.length+'種類あります（まだ保存されていません）。破棄して「いつものリスト」の商品を選びます。','破棄して選ぶ').then(ok=>{if(ok){state.tray=[];openRoutinePicker(id,onCommit);onOpened?.()}});
+  return false;
+ }
  state.tray=[];state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;setReviewing(false);
  state.routineTarget={id:Number(id),onCommit};
  state.destination='stock';
@@ -666,8 +677,12 @@ function openWithEntries(entries,destination='stock',options={}){
   notify('このセットは読み込み済みです。数量を確認して「'+commitLabel()+'」を押してください');
   return;
  }
- if(state.tray.length&&!root.confirm?.('追加予定に'+state.tray.length+'種類の商品があります（まだ保存されていません）。\nセットの内容に入れ替えますか？\n「キャンセル」なら今の追加予定をそのまま残します。')){
-  changeDestination(state.destination);openQuick();return;
+ if(state.tray.length&&!options?.replaceConfirmed){
+  root.AtokoreConfirm.ask('追加予定をセットの内容に入れ替えますか？','追加予定に'+state.tray.length+'種類の商品があります（まだ保存されていません）。「キャンセル」なら今の追加予定をそのまま残します。','入れ替える').then(ok=>{
+   if(ok)openWithEntries(list,destination,{...options,replaceConfirmed:true});
+   else{changeDestination(state.destination);openQuick()}
+  });
+  return;
  }
  const next=[];let skipped=0;
  for(const x of list){
