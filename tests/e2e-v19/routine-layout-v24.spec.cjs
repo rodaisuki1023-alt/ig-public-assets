@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, baseState, KEY, shot } = require('./helpers.cjs');
+const { open, go, stored, baseState, KEY, shot, appConfirm } = require('./helpers.cjs');
 
 const fixture = () => baseState({ routines: [{ id: 901, name: 'いつものベビー用品', items: [
   { id: 1, name: 'パンパース さらさらケア おむつ テープ M', qty: 2, unit: '袋' },
@@ -59,38 +59,38 @@ for (const [width, height] of [[320, 568], [375, 667], [390, 844], [430, 932]]) 
       await open(page, { [KEY]: initial });
       await go(page, 'buy');
       await page.click('[data-bf-routine="901"]');
-      page.removeAllListeners('dialog');
-      let approve = false;
       const asked = [];
-      page.on('dialog', async dialog => {
-        if (dialog.type() === 'confirm') { asked.push(dialog.message()); approve ? await dialog.accept() : await dialog.dismiss(); }
-        else await dialog.dismiss();
-      });
       await page.click('#atkRoutineBuyCommit');
+      asked.push(await appConfirm(page, false));
       expect(await stored(page)).toEqual(initial);
       expect(asked[0]).toContain('買い物リストに追加してもいいですか');
       expect(asked[0]).toContain('2袋');
       expect(asked[0]).toContain('1パック');
-      approve = true;
       await page.evaluate(key => {
         const set = Storage.prototype.setItem;
         window.__v24Restore = () => { Storage.prototype.setItem = set; };
         Storage.prototype.setItem = function(k,v) { if(k === key) throw new DOMException('quota','QuotaExceededError'); return set.call(this,k,v); };
       }, KEY);
       await page.click('#atkRoutineBuyCommit');
+      asked.push(await appConfirm(page, true));
+      await expect(page.locator('#atkConfirm')).toContainText('保存できませんでした');
       expect(await stored(page)).toEqual(initial);
       await expect(page.locator('#modal')).toHaveClass(/on/);
       await page.evaluate(() => window.__v24Restore());
-      await page.click('#atkRoutineBuyCommit');
+      await page.locator('#atkConfirm .atk-confirm-primary').click(); // retry from the same confirmation
+      await expect(page.locator('#atkConfirm')).toHaveCount(0);
       const saved = await stored(page);
       expect(saved.items).toEqual(initial.items);
       expect(saved.routines).toEqual(initial.routines);
       expect(saved.buys.find(x => x.name === initial.routines[0].items[0].name).qty).toBe(2);
       expect(saved.buys.find(x => x.name === initial.routines[0].items[1].name).qty).toBe(1);
       expect(saved.buys.find(x => x.id === 10)).toEqual(initial.buys[0]);
+      await expect(page.locator('#stableToastV125h')).toContainText('買い物リストに追加しました');
       await page.evaluate(() => AtokoreBabyFlow.addRoutineToBuy(901));
+      await expect(page.locator('#atkConfirm')).toHaveCount(0); // an immediate repeat does not ask again
       expect(await stored(page)).toEqual(saved);
-      expect(asked).toHaveLength(3);
+      expect(asked).toHaveLength(2);
+      expect(page.__dialogs).toEqual([]);
       await page.reload();
       expect(await stored(page)).toEqual(saved);
     });

@@ -145,11 +145,14 @@ test('after saving, a leftover category, subgroup or search word no longer hides
  }
 });
 
-test('the same reveal applies after adding a recurring list straight to stock',()=>{
+test('the same reveal applies after adding a recurring list straight to stock',async()=>{
  const {dom,w,$}=browser();
  w.eval("routines[0].items=[{id:1,name:'Rico おしりふき',qty:2,unit:'パック'}];localStorage.setItem('"+KEY+"',JSON.stringify({items,buys,routines}))");
  w.go('stock');w.setFilter('食料品');
- assert.equal(w.AtokoreBabyFlow.addRoutineToStock(901),true);
+ w.AtokoreBabyFlow.addRoutineToStock(901);
+ // v47: confirmed in the app's own dialog; nothing is written before that.
+ assert.equal(stored(w).items.some(x=>x.name==='Rico おしりふき'),false);
+ w.document.querySelector('#atkConfirm .atk-confirm-primary').click();await new Promise(r=>setTimeout(r,0));
  const added=stored(w).items.find(x=>x.name==='Rico おしりふき');
  assert.ok(added);assert.ok(visible(w).includes(added.id));
  dom.window.close();

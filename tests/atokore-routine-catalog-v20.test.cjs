@@ -195,9 +195,9 @@ test('leaving the picker restores normal stock controls',()=>{
 });
 test('script and stylesheet cache versions updated',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8'),sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.match(html,/routine-catalog-v20\.js\?v=26/);
+ assert.match(html,/routine-catalog-v20\.js\?v=47/);
  assert.match(html,/routine-catalog-v20\.css\?v=24/);
- assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v46'/);
+ assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v47'/);
  const css=fs.readFileSync(path.join(base,'routine-catalog-v20.css'),'utf8');
  assert.match(css,/atk-routine-stock-mode/);
 });

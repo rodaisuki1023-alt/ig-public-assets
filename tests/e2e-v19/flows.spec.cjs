@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, chooseBaby, baseState, KEY, shot, commitBatch } = require('./helpers.cjs');
+const { open, go, stored, chooseBaby, baseState, KEY, shot, commitBatch, appConfirm } = require('./helpers.cjs');
 
 test.describe('register, edit, delete', () => {
   test('several items survive reload; edit and delete only touch their own record', async ({ page }) => {
@@ -67,18 +67,14 @@ test.describe('いつものセット', () => {
     await expect(page.locator('#atkRoutineStockCommit')).toBeVisible();
     expect(await stored(page)).toEqual(beforeStock);
     expect(page.__dialogs).toEqual([]);
-    page.removeAllListeners('dialog');
     const approvals = [];
-    const answers = [false, true];
-    page.on('dialog', async dialog => {
-      approvals.push(dialog.message());
-      if (answers.shift()) await dialog.accept();
-      else await dialog.dismiss();
-    });
     await page.click('#atkRoutineStockCommit');
+    approvals.push(await appConfirm(page, false));
+    await expect(page.locator('#atkConfirm')).toHaveCount(0);
     await expect(page.locator('#modal')).toHaveClass(/on/);
     expect(await stored(page)).toEqual(beforeStock); // rejected confirmation
     await page.click('#atkRoutineStockCommit');
+    approvals.push(await appConfirm(page, true));
     await expect(page.locator('#pg-stock')).toHaveClass(/on/);
     await expect(page.locator('#pg-add')).not.toHaveClass(/on/);
     const afterStock = await stored(page);
@@ -87,6 +83,7 @@ test.describe('いつものセット', () => {
     expect(afterStock.routines).toEqual(beforeStock.routines);
     expect(approvals).toHaveLength(2);
     expect(approvals[0]).toMatch(/追加してもいいですか/);
+    await expect(page.locator('#stableToastV125h')).toContainText('ストックに追加しました');
     await shot(page, testInfo, 'set-confirmed-stock');
   });
 

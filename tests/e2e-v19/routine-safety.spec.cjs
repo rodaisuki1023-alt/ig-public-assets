@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, baseState, chooseBaby, KEY, HISTORY, shot, commitBatch } = require('./helpers.cjs');
+const { open, go, stored, baseState, chooseBaby, KEY, HISTORY, shot, commitBatch, appConfirm } = require('./helpers.cjs');
 const raw = page => page.evaluate(k => localStorage.getItem(k), KEY);
 const memory = page => page.evaluate(() => JSON.parse(JSON.stringify({ items, buys, routines })));
 
@@ -29,30 +29,25 @@ for (const [width, height] of [[320, 568], [375, 667], [390, 844], [430, 932]]) 
       expect(await memory(page)).toEqual(initial);
       expect(page.__dialogs).toEqual([]);
 
-      page.removeAllListeners('dialog');
       const confirmations = [];
-      let approve = false;
-      page.on('dialog', async dialog => {
-        if (dialog.type() === 'confirm') {
-          confirmations.push(dialog.message());
-          approve ? await dialog.accept() : await dialog.dismiss();
-        } else await dialog.dismiss();
-      });
       await page.click('#atkRoutineStockCommit');
+      confirmations.push(await appConfirm(page, false));
       expect(await raw(page)).toBe(before);
       expect(await memory(page)).toEqual(initial);
       await expect(page.locator('#modal')).toHaveClass(/on/);
       expect(confirmations[0]).toContain('パンパース さらさらケア おむつ テープ M × 2袋');
       expect(confirmations[0]).toContain('牛乳 × 1本');
 
-      approve = true;
       await failWrites(page);
       await page.click('#atkRoutineStockCommit');
+      confirmations.push(await appConfirm(page, true));
+      await expect(page.locator('#atkConfirm')).toContainText('保存できませんでした');
       expect(await raw(page)).toBe(before);
       expect(await memory(page)).toEqual(initial);
       await expect(page.locator('#modal')).toHaveClass(/on/);
       await page.evaluate(() => window.__restoreRoutineStorage());
-      await page.click('#atkRoutineStockCommit');
+      await page.locator('#atkConfirm .atk-confirm-primary').click(); // retry from the same confirmation
+      await expect(page.locator('#atkConfirm')).toHaveCount(0);
       const saved = await stored(page);
       await expect(page.locator('#pg-stock')).toHaveClass(/on/);
       expect(saved.items.find(x => x.id === 2).qty).toBe(4);
@@ -64,8 +59,10 @@ for (const [width, height] of [[320, 568], [375, 667], [390, 844], [430, 932]]) 
 
       // The same handler used by both stock buttons must suppress an immediate repeat.
       await page.evaluate(() => AtokoreBabyFlow.addRoutineToStock(901));
+      await expect(page.locator('#atkConfirm')).toHaveCount(0);
       expect(await stored(page)).toEqual(saved);
-      expect(confirmations).toHaveLength(3); // cancelled, failed, successful; no fourth prompt
+      expect(confirmations).toHaveLength(2); // cancelled, then failed-and-retried; no further prompt
+      expect(page.__dialogs).toEqual([]); // no native dialog at any point
       expect(await page.evaluate(() => localStorage.getItem('atokoreTrialV4'))).toBe(production);
       expect(await page.evaluate(k => JSON.parse(localStorage.getItem(k)), HISTORY)).toEqual([]);
       await shot(page, info, `${width}-routine-confirmed`);
