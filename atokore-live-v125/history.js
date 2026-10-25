@@ -53,9 +53,11 @@
   function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
   function load(){try{const a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[]}catch(e){return []}}
   function store(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(0,MAX)))}catch(e){}}
-  function add(title,detail,type='other',icon='✎'){
-    const a=load();
-    a.unshift({id:Date.now()+Math.random(),ts:Date.now(),title,detail,type,icon});
+  // W2: entries name the products they touched (refs: {id, kind, name, unit}) and the change without
+  // repeating the name, so the history can open the product and read "who: product + verb / change".
+  function add(title,detail,type='other',icon='✎',extra){
+    const a=load(),refs=Array.isArray(extra?.refs)?extra.refs.slice(0,20).map(r=>({id:r.id,kind:r.kind==='buy'?'buy':'item',name:String(r.name||''),unit:String(r.unit||'')})):undefined;
+    a.unshift({id:Date.now()+Math.random(),ts:Date.now(),title,detail,type,icon,...(refs?{refs}:{}),...(extra?.change!=null?{change:String(extra.change)}:{})});
     store(a);renderHome();
   }
   function fmt(ts){
@@ -86,11 +88,21 @@
     return out;
   }
   function changed(b,a){return JSON.stringify(b)!==JSON.stringify(a)}
+  // The products a change touched, and for a single product what changed (before → after as recorded).
+  function diffRefs(before,after){
+    const refs=[],changes=[];
+    for(const [kind,key] of [['item','items'],['buy','buys']]){
+      const bm=new Map((before[key]||[]).map(x=>[String(x.id),x])),am=new Map((after[key]||[]).map(x=>[String(x.id),x]));
+      for(const [id,a] of am){const b=bm.get(id);if(!b){refs.push({id:a.id,kind,name:a.name,unit:a.unit});changes.push((a.qty??'')+(a.unit||'')+'追加')}else if(changed(b,a)){refs.push({id:a.id,kind,name:a.name,unit:a.unit});changes.push(Number(b.qty)!==Number(a.qty)?(b.qty??'')+(b.unit||'')+' → '+(a.qty??'')+(a.unit||''):'情報を更新')}}
+      for(const [id,b] of bm)if(!am.has(id)){refs.push({id:b.id,kind,name:b.name,unit:b.unit});changes.push('削除')}
+    }
+    return {refs,change:refs.length===1?changes[0]:undefined};
+  }
   function logDiff(label,type,icon,before,after){
     if(!changed(before,after))return;
     const parts=[...arrDiff(before.items,after.items,'在庫'),...arrDiff(before.buys,after.buys,'買い物'),...routineDiff(before.routines,after.routines)];
     const detail=parts.length?parts.slice(0,3).join(' / ')+(parts.length>3?` ほか${parts.length-3}件`:''):'内容を更新しました';
-    add(label,detail,type,icon);
+    add(label,detail,type,icon,diffRefs(before,after));
   }
   function wrap(name,label,type,icon){
     const orig=window[name];

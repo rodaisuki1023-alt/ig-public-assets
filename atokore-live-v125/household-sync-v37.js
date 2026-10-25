@@ -55,6 +55,15 @@ let household=meta.household||null,engine=null,syncing=null,lastRaw=null,status=
 let changes=[],historyState='loading',changesFor=null,changesRequest=null;
 // Who shares this household, with the names each member set. Cached so the status stays readable
 // offline; the same names are shown as the people in the change history.
+// When this device started sharing with this household: local history saved before it is shown as
+// "この端末・共有前の記録" (unknown for households joined before this was recorded).
+function since(h){return meta.sharedFor===h?.id&&meta.sharedSince?{}:{sharedFor:h?.id,sharedSince:Date.now()}}
+// Local product id for a shared record id (history rows name records by their shared id).
+function localIdFor(kind,sid){
+ const map=engine?.meta?.().map||meta.engine?.map||{};
+ for(const [k,v] of Object.entries(map))if(v===sid&&k.startsWith((kind==='buy'?'buy':'item')+':'))return k.slice(k.indexOf(':')+1);
+ return null;
+}
 function membersKey(){return household&&session?household.id+':'+session.user.id:null}
 function rememberMembers(my){
  if(!Array.isArray(my?.members)||!membersKey())return;
@@ -81,7 +90,7 @@ function shareSummary(){
 }
 function homeState(){
  const current=household&&session?household.id+':'+session.user.id:null;
- return {summary:shareSummary(),joined:!!current,state:status.state,lastSync:engine?.status().lastSync||0,historyState:current===changesFor?historyState:'loading',changes:current===changesFor?changes.map(r=>({...r})):[]};
+ return {summary:shareSummary(),sharedSince:current&&meta.sharedFor===household.id?meta.sharedSince||0:0,joined:!!current,state:status.state,lastSync:engine?.status().lastSync||0,historyState:current===changesFor?historyState:'loading',changes:current===changesFor?changes.map(r=>({...r})):[]};
 }
 function capturePurchases(ids){
  if(!engine||!household||!session)return [];
@@ -337,7 +346,7 @@ async function joinWithCode(name,value){
  }
  if(!my?.household?.id)throw '共有先を確認できませんでした';
  const next={id:my.household.id,name:my.household.name};
- if(!saveMeta({household:next,pendingJoin:null}))throw '参加情報を保存できませんでした。もう一度お試しください';
+ if(!saveMeta({household:next,pendingJoin:null,...since(next)}))throw '参加情報を保存できませんでした。もう一度お試しください';
  household=next;rememberInvite('');makeEngine();engine.startAsJoiner();
  await choosePlacement(my);
 }
@@ -397,7 +406,7 @@ async function afterSignIn(){
  if(my?.household){
   if(meta.household?.id===my.household.id&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();await syncNow();return dashboard()}
   // Same account on a new or reset device: receive the household, choosing what happens to local data.
-  household={id:my.household.id,name:my.household.name};saveMeta({household});
+  household={id:my.household.id,name:my.household.name};saveMeta({household,...since(household)});
   makeEngine();engine.startAsJoiner();
   return choosePlacement(my);
  }
@@ -418,7 +427,7 @@ function chooseHousehold(){
     if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'を共有の最初のデータにします。','共有を始める'))return;
     if(!backupDevice())throw '控えを保存できなかったため中止しました（何も変更していません）';
     const my=await rpc('hh_create',{p_name:'わが家',p_display_name:name.value.trim()});
-    household={id:my.household.id,name:my.household.name};saveMeta({household});rememberMembers(my);
+    household={id:my.household.id,name:my.household.name};saveMeta({household,...since(household)});rememberMembers(my);
     makeEngine();engine.startAsCreator();watch();await syncNow();dashboard();
    }))]),
   el('div',{class:'atk-hh-card'},[el('h3',{text:'招待コードで参加する'}),field('家族から届いた招待コード',code),
@@ -566,5 +575,5 @@ if(googleAuth?.hasCallback()){
  googleAuth.finish().then(async s=>{if(s){keepSession(s);await afterSignIn()}}).catch(e=>{signIn();notice(friendly(e))});
 }else if(inviteCode&&!household){joinScreen()}
 else if(session&&household&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow();if(inviteCode)notice('すでに家族共有に参加しています。別の招待で自動的に切り替えることはありません')}
-root.AtokoreHousehold=Object.freeze({open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -65,7 +65,7 @@ test('two household members see confirmed family history, retries do not duplica
   await a.page.getByRole('button',{name:'閉じる',exact:true}).click();await b.page.getByRole('button',{name:'閉じる',exact:true}).click();
   await a.page.evaluate(()=>{adj(1,1)});await a.page.evaluate(()=>AtokoreHousehold.syncNow());await b.page.evaluate(()=>AtokoreHousehold.syncNow());
   await go(b.page,'home');await expect(b.page.locator('#atkHomeHistoryTitle')).toHaveText('家族の最近の変更');
-  await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当が牛乳の数量を変更');
+  await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当：牛乳の数量を変更');
   const content=await b.page.locator('#atkHomeActivity').textContent();await b.page.evaluate(()=>AtokoreHousehold.syncNow());expect(await b.page.locator('#atkHomeActivity').textContent()).toBe(content);
   await request.post(EMU+'/__test/history-failure',{data:{enabled:true}});
   await b.page.evaluate(()=>AtokoreHousehold.syncNow());await expect(b.page.locator('#atkHomeHistoryNote')).toContainText('履歴を更新できませんでした');
@@ -74,7 +74,7 @@ test('two household members see confirmed family history, retries do not duplica
   await b.page.addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false}));await b.page.reload();
   await expect(b.page.locator('#atkHomeHistoryNote')).toContainText('履歴を更新できませんでした');await expect(b.page.locator('#atkHouseholdChip')).toHaveText('共有状態を確認できません');
   await b.page.evaluate(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true}));await b.page.evaluate(()=>AtokoreHousehold.syncNow());
-  await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当が牛乳の数量を変更');
+  await expect(b.page.locator('#atkHomeActivity')).toContainText('共有テスト担当：牛乳の数量を変更');
   await b.page.locator('#atkHouseholdChip').click();await b.page.getByRole('button',{name:'ログアウト',exact:true}).click();await appConfirm(b.page,true);
   await expect(b.page.locator('#atkHomeHistoryTitle')).toHaveText('この端末の最近の変更');await expect(b.page.locator('#atkHomeActivity')).not.toContainText('共有テスト担当');
   expect(b.page.__errors).toEqual([]);
