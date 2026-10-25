@@ -87,7 +87,7 @@ test('editing after interrupted sync keeps the device copy and requires backup b
   expect((await B.page.evaluate(()=>window.AtokoreHousehold.status())).recovering).toBe(true);
   await B.page.evaluate(()=>window.restoreRecoveryStorage());
   await B.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();await appConfirm(B.page,true);
-  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   const backup=await B.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
   expect(backup.data.items.find(x=>x.name===diaper).qty).toBe(4);
   await sync(A.page);expect(await qty(A.page,diaper)).toBe(3);expect(await qty(B.page,diaper)).toBe(3);
@@ -116,7 +116,7 @@ test('interrupted first adoption reloads the original selection and sends the ch
   expect((await stored(A.page)).items.filter(x=>x.name==='Rico おしりふき')).toHaveLength(1);
   expect((await B.page.evaluate(()=>window.AtokoreHousehold.status())).recovering).toBe(false);
   await go(B.page,'premium');await B.page.click('#atkHouseholdCard');
-  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   await A.ctx.close();await B.ctx.close();
 });
 
@@ -136,7 +136,7 @@ test('retrying the placement button after a metadata failure sums the original a
   await startSharing.click();await expect(startSharing).toBeEnabled();
   expect(await qty(B.page,diaper)).toBe(7);
   await B.page.evaluate(()=>window.restoreFinalMetadata());
-  await startSharing.click();await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await startSharing.click();await expect(B.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   await sync(A.page);await sync(B.page);
   expect(await qty(A.page,diaper)).toBe(7);expect(await qty(B.page,diaper)).toBe(7);
   await A.ctx.close();await B.ctx.close();
@@ -154,7 +154,7 @@ test('rejected local edits stay on device across reload; recovery saves a copy b
   await go(A.page,'premium');await A.page.click('#atkHouseholdCard');
   await expect(A.page.locator('.atk-hh-rejected')).toContainText('端末の内容を残して同期を止めています');
   await A.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();await appConfirm(A.page,true);
-  await expect(A.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await expect(A.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   const copy=await A.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
   expect(copy.data.items[0].name).toBe(bad);expect(copy.engine.rejected).toHaveLength(1);
   expect((await stored(A.page)).items[0].name).toBe('牛乳');
@@ -182,7 +182,7 @@ test('create, invite, join with own data (nothing replaced silently), share both
   await signIn(A.page, request, 'mama@example.test');
   await A.page.fill('#atkHhName', 'ママ');
   await A.page.getByRole('button', { name: '世帯を作る' }).click();await appConfirm(A.page,true);
-  await expect(A.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await expect(A.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   expect(await stored(A.page)).toEqual(beforeA); // the creator's data and ids are untouched
   expect(JSON.parse(await A.page.evaluate(k => localStorage.getItem(k + 'BeforeShare'), KEY)).data).toEqual(beforeA);
   await A.page.getByRole('button', { name: /家族を招待する/ }).click();
@@ -204,7 +204,7 @@ test('create, invite, join with own data (nothing replaced silently), share both
   await expect(offers.nth(1)).toContainText('この端末だけにある商品です');
   await shot(B.page, info, `${info.project.name}-v37-household-join-choice`);
   await B.page.getByRole('button', { name: '選んだ内容で共有を始める' }).click(); // defaults: shared qty for the twin, add Rico
-  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   expect(await qty(B.page, diaper)).toBe(2);
   expect(await idOf(B.page, diaper)).toBe(50); // B keeps its own id (and photo) for the same product
   expect(await qty(B.page, 'Rico おしりふき')).toBe(2);
@@ -242,7 +242,7 @@ async function sharedPair(browser, request, info) {
   await B.page.fill('#atkHhName', 'パパ');
   await B.page.fill('#atkHhJoinCode', code);
   await B.page.getByRole('button', { name: '参加する' }).click();
-  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   await A.page.click('#sheet .close'); await B.page.click('#sheet .close');
   return { A, B };
 }
@@ -253,7 +253,7 @@ test('both use stock offline; rapid taps and reload while the write endpoint is 
   await A.ctx.setOffline(true); await B.ctx.setOffline(true);
   await tapStock(A.page, diaper, '-');
   await tapStock(B.page, diaper, '-');
-  await expect(A.page.locator('#atkHouseholdChip')).toHaveText(/送信待ち|オフライン/);
+  await expect(A.page.locator('#atkHouseholdChip')).toHaveText(/未送信あり|確認できません/);
   // An immediate offline failure must release the in-flight guard; a resolved promise must
   // not stay assigned forever and prevent all later reconnect/retry requests.
   expect((await sync(A.page)).state).toBe('offline');
@@ -292,7 +292,7 @@ test('both use stock offline; rapid taps and reload while the write endpoint is 
   await sync(B.page); await sync(B.page); await sync(A.page);
   expect(await qty(A.page, '牛乳')).toBe(4);
   expect(await qty(B.page, '牛乳')).toBe(4);
-  await expect(A.page.locator('#atkHouseholdChip')).toHaveText('共有済み');
+  await expect(A.page.locator('#atkHouseholdChip')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   await A.ctx.close(); await B.ctx.close();
 });
 
@@ -344,7 +344,7 @@ test('leave keeps the device data, re-join asks again; the free plan stops at tw
   await B.page.fill('#atkHhJoinCode', code);
   await B.page.getByRole('button', { name: '参加する' }).click();
   await B.page.getByRole('button', { name: /共有のデータを使う/ }).click();await appConfirm(B.page,true);
-  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText('家族と共有済み');
+  await expect(B.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
   expect(await qty(B.page, diaper)).toBe(2);
   expect(await idOf(B.page, diaper)).toBe(kept.items.find(x => x.name === diaper).id);
   await A.ctx.close(); await B.ctx.close();

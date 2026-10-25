@@ -66,3 +66,8 @@ body .atk-edit-form{clear:both;padding-top:4px}
 .atk-backup-undo{border:1px solid #E3D4CC;background:#fff;color:#6E5E57}
 .atk-backup-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .atk-backup-status{min-height:1.4em;font-size:12px;color:#8A2F22;margin:8px 0 0}
+/* W2: restore replaces everything; while sharing it is not available. */
+.atk-backup-warning{font-size:13px;line-height:1.6;color:#7A3B2C;background:#FFF1EB;border:1px solid #F1CDBF;border-radius:12px;padding:10px 12px;margin:12px 0 6px}
+.atk-backup-blocked{border:1px solid #E5D3C8;background:#FFFAF6;border-radius:12px;padding:10px 12px;margin:8px 0;font-size:13px;line-height:1.6;color:#5A463C}
+.atk-backup-blocked[hidden]{display:none}
+.atk-backup-blocked p{margin:0 0 8px}
