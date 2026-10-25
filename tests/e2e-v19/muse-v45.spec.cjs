@@ -1,5 +1,6 @@
 const {test,expect}=require('@playwright/test');
 const {open,go,stored,baseState,KEY}=require('./helpers.cjs');
+test.use({timezoneId:'Asia/Tokyo'});
 test('P0-1 stock deletion works when native confirm is blocked',async({page})=>{
  await open(page,{[KEY]:baseState()});await page.evaluate(()=>window.confirm=()=>false);await go(page,'stock');
  await page.click('#stockSelectToggle');await page.check('.stockPickV125h[value="1"]');await page.click('#stockBulkDelete');
