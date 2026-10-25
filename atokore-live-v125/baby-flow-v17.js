@@ -114,12 +114,8 @@ function prepared(id){
 }
 // Confirmations use the app's own dialog: a native confirm() can be suppressed without any UI
 // (in-app browsers, embedded frames, some home-screen apps) and then returns false, so the button
-// would look dead. Native confirm stays only as a fallback where the app dialog is not loaded.
-function ask(title,detail,action,run){
- const dialog=root.AtokoreConfirm;
- if(dialog?.open){dialog.open(title,detail,action,run);return null}
- return root.confirm?.(title+'\n\n'+detail)?run():false;
-}
+// would look dead.
+function ask(title,detail,action,run){root.AtokoreConfirm.open(title,detail,action,run);return null}
 function tell(message){if(typeof root.notifyAtokoreV125H==='function')root.notifyAtokoreV125H(message);else root.alert?.(message)}
 let lastDirectStock={id:null,at:0};
 function directRoutineToStock(id){

@@ -107,35 +107,42 @@ function addStockItem(id){
   return true;
  }
  // A repeat-shopping entry defaults to 1 purchase unit, not the current stock quantity.
- const list=routine(pickerId);
- const prompt='「'+product.name+'」を「'+(list?.name||'いつものリスト')+'」に追加してもいいですか？\n\n※ ストック数は変わりません。';
- if(!root.confirm?.(prompt))return false;
- const succeeded=saveSelected(pickerId,[{name:product.name,qty:1,unit:product.unit||'個'}]);
- if(succeeded){
-  decorateStockRows();
-  notice('「'+product.name+'」をいつものリストに追加しました');
- }
- return succeeded;
+ const list=routine(pickerId),target=pickerId;
+ // Saved only after the answer in the app dialog; a failed save keeps the dialog for a retry.
+ root.AtokoreConfirm.open('「'+product.name+'」を「'+(list?.name||'いつものリスト')+'」に追加してもいいですか？','※ ストック数は変わりません。','リストに追加',()=>{
+  const succeeded=saveSelected(target,[{name:product.name,qty:1,unit:product.unit||'個'}]);
+  if(succeeded){
+   decorateStockRows();
+   notice('「'+product.name+'」をいつものリストに追加しました');
+  }
+  return succeeded;
+ });
+ return null;
+}
+// An edited but unsaved list name is confirmed before leaving the list (then run continues).
+function confirmUnsavedName(current,run){
+ // Only a name being edited in the open list dialog counts (the field stays in the DOM after closing).
+ const name=$('routineNameEdit');
+ if(!name||!$('modal')?.classList.contains('on')||name.value.trim()===current.name)return run();
+ root.AtokoreConfirm.ask('リスト名はまだ保存されていません','このまま商品を選ぶと、入力中の名前は保存されません。','このまま選ぶ').then(ok=>{if(ok)run()});
+ return false;
 }
 function start(id){
  id=toId(id);if(!id||!routine(id))return false;
- const current=routine(id),name=$('routineNameEdit');
- if(name&&name.value.trim()!==current.name&&
-    !root.confirm?.('リスト名はまだ保存されていません。このまま商品を選びますか？'))return false;
- // Avoid carrying an unfinished quick-add batch into an unrelated mode.
- if(root.AtokoreQuickAdd?.isRoutinePicker?.()&&!root.AtokoreQuickAdd.cancelRoutinePicker(false))return false;
- pickerId=id;
- root.closeM?.();root.go?.('stock');refresh();
- return true;
+ const begin=()=>{pickerId=id;root.closeM?.();root.go?.('stock');refresh();return true};
+ return confirmUnsavedName(routine(id),()=>{
+  // Avoid carrying an unfinished quick-add batch into an unrelated mode.
+  if(root.AtokoreQuickAdd?.isRoutinePicker?.()&&!root.AtokoreQuickAdd.cancelRoutinePicker(false,begin))return false;
+  return begin();
+ });
 }
 function startCatalog(id){
  id=toId(id);if(!id||!routine(id))return false;
- const current=routine(id),name=$('routineNameEdit');
- if(name&&name.value.trim()!==current.name&&
-    !root.confirm?.('リスト名はまだ保存されていません。このまま商品を選びますか？'))return false;
- if(!root.AtokoreQuickAdd?.openRoutinePicker?.(id,lines=>saveSelected(id,lines)))return false;
- pickerId=null;refresh();root.closeM?.();
- return true;
+ const opened=()=>{pickerId=null;refresh();root.closeM?.();return true};
+ return confirmUnsavedName(routine(id),()=>{
+  if(!root.AtokoreQuickAdd?.openRoutinePicker?.(id,lines=>saveSelected(id,lines),opened))return false;
+  return opened();
+ });
 }
 function decorateRoutineModal(id){
  const sheet=$('sheet'),r=routine(toId(id)),inline=sheet?.querySelector('.routineInline');
@@ -217,9 +224,10 @@ if(typeof oldGo==='function')root.go=function(page,...args){
 const legacyDelete=root.deleteRoutine;
 if(typeof legacyDelete==='function')root.deleteRoutine=function(id){
  const dialog=root.AtokoreConfirm,list=routine(toId(id));
- if(!dialog?.open||!list)return legacyDelete.call(this,id);
+ if(!list)return false;
  const count=Array.isArray(list.items)?list.items.length:0;
  dialog.open('「'+list.name+'」を削除しますか？','このいつものリスト（'+count+'商品）を削除します。ストックと買い物リストは変わりません。','削除する',()=>{
+  // The legacy function still asks confirm() itself; it is answered here (never shown natively).
   const before=routines,nativeConfirm=root.confirm;
   root.confirm=()=>true;
   try{legacyDelete.call(this,list.id)}finally{root.confirm=nativeConfirm}

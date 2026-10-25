@@ -144,7 +144,7 @@
   window.openAtokoreHistory=()=>{ensureUI();openM(modalHtml())};
   window.AtokoreHistory=Object.freeze({recent:()=>load().map(h=>({...h})),add});
   window.setAtokoreHistoryTab=t=>{tab=t==='app'?'app':'activity';openM(modalHtml())};
-  window.clearAtokoreHistory=()=>{if(!confirm('操作履歴をすべて消去しますか？'))return;store([]);renderHome();openM(modalHtml())};
+  window.clearAtokoreHistory=()=>{window.AtokoreConfirm.ask('操作履歴をすべて消去しますか？','この端末の更新履歴を消去します。在庫・買い物リストは変わりません。','消去する').then(ok=>{if(!ok)return;store([]);renderHome();openM(modalHtml())})};
 
   ensureUI();renderHome();wrapAll();
   const baseRender=window.render;

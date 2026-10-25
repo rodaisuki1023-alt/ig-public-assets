@@ -7,6 +7,8 @@
  */
 (function(root){
 'use strict';
+// Confirmations use the app's own dialog (native confirm() can be suppressed without UI).
+const ask=(title,detail,action)=>root.AtokoreConfirm.ask(title,detail,action);
 const doc=typeof document==='undefined'?null:document;
 const cfg=root.ATOKORE_HOUSEHOLD_CONFIG;
 const core=root.AtokoreHouseholdCore;
@@ -389,7 +391,7 @@ function chooseHousehold(){
    note('この端末の'+counts(local)+'が、共有の最初のデータになります。共有を始める前に、この端末内に控えを保存します。'),
    button('世帯を作る',e=>busy(e.target,async()=>{
     if(!name.value.trim())throw '名前を入れてください';
-    if(!root.confirm?.('この端末の'+counts(local)+'を共有の最初のデータにします。よろしいですか？'))return;
+    if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'を共有の最初のデータにします。','共有を始める'))return;
     if(!backupDevice())throw '控えを保存できなかったため中止しました（何も変更していません）';
     const my=await rpc('hh_create',{p_name:'わが家',p_display_name:name.value.trim()});
     household={id:my.household.id,name:my.household.name};saveMeta({household});
@@ -425,7 +427,7 @@ async function choosePlacement(my){
  sheet((my?.household?.name||'わが家')+'の共有データ',[
   note('この端末にも'+counts(local)+'があります。共有のデータと自動で混ぜたり、上書きしたりはしません。どちらかを選んでください。始める前に、この端末のデータを控えとして端末内に保存します。'),
   button('共有のデータを使う（この端末のデータは控えに保存）',e=>busy(e.target,async()=>{
-   if(!root.confirm?.('この端末の在庫などは共有のデータに置き換わります。控えは「共有前の控えをファイルに保存」で取り出せます。続けますか？'))return;
+   if(!await ask('共有のデータに切り替えますか？','この端末の在庫などは共有のデータに置き換わります。控えは「共有前の控えをファイルに保存」で取り出せます。','切り替える'))return;
    if(!backupDevice())throw '控えを保存できなかったため中止しました（何も変更していません）';
    await engine.adopt({useShared:true});watch();await syncNow();dashboard();notice('共有のデータに切り替えました');
   })),
@@ -452,7 +454,7 @@ async function dashboard(){
    note(checkpoint?'前回の同期が端末への保存の途中で止まりました。端末の内容を残しています。まず「今すぐ同期」をお試しください。': '送れなかった変更が'+rejected.length+'件あります。端末の内容を残して同期を止めています。'),
    button('今の端末データをファイルに保存',downloadRecovery,'atk-hh-secondary'),
    button('控えを残して共有データに合わせる',e=>busy(e.target,async()=>{
-    if(!root.confirm?.('端末の内容を共有の内容に合わせます。今の端末データを控えとして残してから再開します。よろしいですか？'))return;
+    if(!await ask('共有の内容に合わせますか？','端末の内容を共有の内容に合わせます。今の端末データを控えとして残してから再開します。','合わせる'))return;
     const data=readState();
     if(!data||!writeJSON(RECOVERY,{at:Date.now(),data,engine:engine.meta()}))throw '控えを保存できなかったため中止しました';
     engine.resolveRejected();await syncNow();dashboard();
@@ -469,7 +471,7 @@ async function dashboard(){
   members.replaceChildren(...my.members.map(m=>el('li',{},[
    el('span',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')}),
    my.me?.role==='owner'&&!m.is_me?button('外して再招待：'+m.display_name,e=>busy(e.target,async()=>{
-    if(!root.confirm?.(m.display_name+'さんの以前の参加情報を外します。以前の端末は今後共有できなくなります。共有済みの在庫は残ります。その後、新しい招待コードを作ってください。続けますか？'))return;
+    if(!await ask(m.display_name+'さんの参加情報を外しますか？',m.display_name+'さんの以前の参加情報を外します。以前の端末は今後共有できなくなります。共有済みの在庫は残ります。その後、新しい招待コードを作ってください。続けますか？','外す'))return;
     await rpc('hh_remove_member',{p_user:m.user_id});await dashboard();
    }),'atk-hh-link'):null
   ])));
@@ -496,14 +498,14 @@ async function leave(){
  const left=engine?engine.status().pending:0;
  if(left){try{await syncNow()}catch(e){}}
  const still=engine?engine.status().pending:0;
- if(!root.confirm?.((still?'まだ家族に送れていない変更が'+still+'件あります。抜けると家族には届きません。\n':'')+'この世帯から抜けますか？この端末の在庫はそのまま残ります。'))return;
+ if(!await ask('この世帯から抜けますか？',(still?'まだ家族に送れていない変更が'+still+'件あります。抜けると家族には届きません。':'')+'この端末の在庫はそのまま残ります。','抜ける'))return;
  await rpc('hh_leave',{});
  stop();household=null;saveMeta({household:null,engine:null});setStatus('local');root.closeM?.();notice('世帯から抜けました。この端末の在庫はそのまま残っています');
 }
 function stop(){clearInterval(timer);clearInterval(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
-function signOut(){
+async function signOut(){
  const left=engine?engine.status().pending:0;
- if(!root.confirm?.((left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+(session?.user?.is_anonymous?'Googleなしの参加情報は失われます。戻るには作成者から再招待が必要です。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。'))return;
+ if(!await ask('ログアウトしますか？',(left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+(session?.user?.is_anonymous?'Googleなしの参加情報は失われます。戻るには作成者から再招待が必要です。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。','ログアウト'))return;
  const token=session?.access_token;
  request('/auth/v1/logout?scope=local',{},token).catch(()=>{});
  stop();session=null;household=null;try{store().removeItem(SESSION_KEY)}catch(e){}

@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, chooseBaby, baseState, KEY, HISTORY, shot, commitBatch } = require('./helpers.cjs');
+const { open, go, stored, chooseBaby, baseState, KEY, HISTORY, shot, commitBatch, appConfirm } = require('./helpers.cjs');
 
 // Make every write of the trial's main record fail, as a full or locked storage would.
 const breakStorage = page => page.evaluate(k => {
@@ -149,13 +149,15 @@ test.describe('backup and restore', () => {
 
     await page.evaluate(() => window.atkOpenBackup());
     await page.setInputFiles('.atk-backup-file', file);
+    expect(await appConfirm(page, true)).toContain('置き換え');
     await expect(page.locator('#atkSafetyBanner')).toContainText('復元しました');
     expect((await stored(page)).items).toHaveLength(3);
-    expect(page.__dialogs.some(m => m.includes('置き換えます'))).toBe(true);
 
     await page.evaluate(() => window.atkOpenBackup());
     await page.click('.atk-backup-undo');
-    expect((await stored(page)).items).toHaveLength(2);
+    await appConfirm(page, true);
+    await expect.poll(async () => (await stored(page)).items.length).toBe(2);
+    expect(page.__dialogs).toEqual([]);
   });
 
   test('a file that is not an Atokore backup changes nothing', async ({ page }, testInfo) => {

@@ -19,6 +19,14 @@ function create(w,$){
  return id;
 }
 const stored=w=>JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
+// W2: every confirmation is the app's own dialog (#atkConfirm); native confirm() is never asked.
+const dialog=w=>w.document.getElementById('atkConfirm');
+const settle=()=>new Promise(r=>setTimeout(r,0));
+async function answer(w,accept){
+ const d=dialog(w);assert.ok(d,'the app shows its own confirmation');
+ d.querySelector(accept?'.atk-confirm-primary':'button:not(.atk-confirm-primary)').click();await settle();
+}
+function noNativeConfirm(w){w.confirm=()=>{throw new Error('native confirm() must not be used')}}
 function stockRow($,name){
  const row=Array.from($('stockList').querySelectorAll('[data-stock-id]')).find(el=>el.textContent.includes(name));
  assert.ok(row,'stock row exists: '+name);
@@ -78,13 +86,17 @@ test('catalog save failure retains selection and memory for a safe retry',()=>{
  assert.equal(stored(w).routines.find(x=>x.id===id).items.length,1);
  dom.window.close();
 });
-test('leaving catalog asks to discard selection and cannot hijack later stock additions',()=>{
- const {dom,w,$}=browser();create(w,$);const before=stored(w);
+test('leaving catalog asks to discard selection and cannot hijack later stock additions',async()=>{
+ const {dom,w,$}=browser();create(w,$);const before=stored(w);noNativeConfirm(w);
  $('atkRoutineCatalogOpen').click();pickBanana(w,$);
- w.confirm=()=>false;w.go('home');
+ w.go('home');
+ assert.match(dialog(w).textContent,/破棄して戻りますか/);
+ await answer(w,false);
  assert.equal($('pg-add').classList.contains('on'),true);
  assert.equal(w.AtokoreQuickAdd.getTray().length,1);
- w.confirm=()=>true;w.go('home');
+ w.go('home');
+ await answer(w,true);
+ assert.equal($('pg-home').classList.contains('on'),true,'the navigation continues after confirming');
  assert.equal(w.AtokoreQuickAdd.isRoutinePicker(),false);
  assert.equal(w.AtokoreQuickAdd.getTray().length,0);
  assert.deepEqual(stored(w),before);
@@ -108,16 +120,16 @@ test('compatibility stock picker still selects only saved list contents',()=>{
  assert.match(stockRow($,'牛乳').getAttribute('aria-label'),/いつものリストに追加/);
  dom.window.close();
 });
-test('stock milk and diaper taps persist two repeat items without changing inventory or shopping',()=>{
- const {dom,w,$}=browser(),id=create(w,$),before=stored(w);
+test('stock milk and diaper taps persist two repeat items without changing inventory or shopping',async()=>{
+ const {dom,w,$}=browser(),id=create(w,$),before=stored(w);noNativeConfirm(w);
  w.AtokoreRoutineCatalog.start(id);
- stockRow($,'牛乳').click();
+ stockRow($,'牛乳').click();await answer(w,true);
  let after=stored(w);
  assert.deepEqual(after.items,before.items);
  assert.deepEqual(after.buys,before.buys);
  assert.equal(after.routines.find(r=>r.id===id).items.length,1);
  assert.match(stockRow($,'牛乳').textContent,/追加済み/);
- stockRow($,'オムツ').click();
+ stockRow($,'オムツ').click();await answer(w,true);
  after=stored(w);
  assert.equal(after.routines.find(r=>r.id===id).items.length,2);
  assert.deepEqual(after.items,before.items);
@@ -131,55 +143,61 @@ test('stock milk and diaper taps persist two repeat items without changing inven
  assert.ok($('atkRoutineCatalogOpen'));
  dom.window.close();
 });
-test('cancel the stock-item confirmation to prevent accidental additions to the repeat list',()=>{
- const {dom,w,$}=browser(),id=create(w,$);
+test('cancel the stock-item confirmation to prevent accidental additions to the repeat list',async()=>{
+ const {dom,w,$}=browser(),id=create(w,$);noNativeConfirm(w);
  w.AtokoreRoutineCatalog.start(id);
  const before=w.localStorage.getItem('atokoreTrialV4');
- let prompts=0;
- w.confirm=msg=>{prompts++;assert.match(msg,/追加してもいいですか/);assert.match(msg,/ストック数は変わりません/);return false};
  stockRow($,'牛乳').click();
- assert.equal(prompts,1);
+ assert.match(dialog(w).textContent,/追加してもいいですか/);
+ assert.match(dialog(w).textContent,/ストック数は変わりません/);
+ assert.equal(w.localStorage.getItem('atokoreTrialV4'),before,'nothing is saved before the answer');
+ await answer(w,false);
+ assert.equal(dialog(w),null);
  assert.equal(w.localStorage.getItem('atokoreTrialV4'),before,'cancelled item is not saved');
  assert.equal(stored(w).routines.find(r=>r.id===id).items.length,0);
- w.confirm=()=>true;
- stockRow($,'牛乳').click();
+ stockRow($,'牛乳').click();await answer(w,true);
  assert.equal(stored(w).routines.find(r=>r.id===id).items.length,1);
  dom.window.close();
 });
-test('repeat tap does not increase item quantity',()=>{
- const {dom,w,$}=browser(),id=create(w,$);
+test('repeat tap does not increase item quantity',async()=>{
+ const {dom,w,$}=browser(),id=create(w,$);noNativeConfirm(w);
  w.AtokoreRoutineCatalog.start(id);
- const row=stockRow($,'牛乳');row.click();
+ const row=stockRow($,'牛乳');row.click();await answer(w,true);
  const snapshot=w.localStorage.getItem('atokoreTrialV4');
  row.click();
+ assert.equal(dialog(w),null,'an item already in the list is not asked again');
  assert.equal(w.localStorage.getItem('atokoreTrialV4'),snapshot);
  assert.equal(stored(w).routines.find(r=>r.id===id).items[0].qty,1);
  assert.match($('atkRoutineStockNotice').textContent,/追加済み/);
  dom.window.close();
 });
-test('stock quantity buttons cannot change inventory in select mode',()=>{
- const {dom,w,$}=browser(),id=create(w,$);
+test('stock quantity buttons cannot change inventory in select mode',async()=>{
+ const {dom,w,$}=browser(),id=create(w,$);noNativeConfirm(w);
  const before=stored(w);
  w.AtokoreRoutineCatalog.start(id);
  const row=stockRow($,'牛乳'),button=row.querySelector('button');
  assert.ok(button,'stock row adjustment control exists');
  button.click();
  assert.deepEqual(stored(w).items,before.items);
+ await answer(w,true);
+ assert.deepEqual(stored(w).items,before.items);
  assert.equal(stored(w).routines[0].items.length,1);
  dom.window.close();
 });
-test('storage failure keeps picker active and allows retry',()=>{
- const {dom,w,$}=browser(),id=create(w,$);
+test('storage failure keeps picker active and allows retry',async()=>{
+ const {dom,w,$}=browser(),id=create(w,$);noNativeConfirm(w);
  w.AtokoreRoutineCatalog.start(id);
  const before=w.localStorage.getItem('atokoreTrialV4'),original=w.Storage.prototype.setItem;
  w.Storage.prototype.setItem=function(){throw new Error('QuotaExceeded')};
  try{
-  stockRow($,'牛乳').click();
+  stockRow($,'牛乳').click();await answer(w,true);
   assert.equal(w.localStorage.getItem('atokoreTrialV4'),before);
   assert.equal(w.AtokoreRoutineCatalog.isActive(),true);
   assert.match($('atkRoutineStockNotice').textContent,/保存できませんでした/);
+  assert.match(dialog(w).textContent,/保存できませんでした/,'the confirmation stays open for a retry');
  }finally{w.Storage.prototype.setItem=original}
- stockRow($,'牛乳').click();
+ await answer(w,true);
+ assert.equal(dialog(w),null);
  assert.equal(stored(w).routines[0].items.length,1);
  dom.window.close();
 });
@@ -195,9 +213,9 @@ test('leaving the picker restores normal stock controls',()=>{
 });
 test('script and stylesheet cache versions updated',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8'),sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.match(html,/routine-catalog-v20\.js\?v=47/);
+ assert.match(html,/routine-catalog-v20\.js\?v=48/);
  assert.match(html,/routine-catalog-v20\.css\?v=24/);
- assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v47'/);
+ assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v48'/);
  const css=fs.readFileSync(path.join(base,'routine-catalog-v20.css'),'utf8');
  assert.match(css,/atk-routine-stock-mode/);
 });
