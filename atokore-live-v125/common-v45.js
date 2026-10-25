@@ -8,9 +8,14 @@ function remaining(value,now=new Date()){
  return Math.round((Date.UTC(y,m-1,d)-Date.UTC(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
 }
 function label(value,now){const n=remaining(value,now);if(n===null)return '';const [,m,d]=value.split('-').map(Number);return (n<0?'期限を'+Math.abs(n)+'日超過':n===0?'今日まで':'あと'+n+'日')+'（'+m+'/'+d+'まで）'}
-const dates=Object.freeze({remaining,label});root.AtokoreDates=dates;
+function localDate(now=new Date()){return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-')}
+const dates=Object.freeze({remaining,label,localDate});root.AtokoreDates=dates;
 if(typeof module!=='undefined'&&module.exports)module.exports=dates;
 if(typeof document==='undefined')return;
+root.AtokoreNotices={
+ hide(){document.querySelectorAll('#qaNotice,#stableToastV125h').forEach(n=>n.classList.remove('on'))},
+ show(node,duration){this.hide();clearTimeout(node._atkNoticeTimer);const undo=document.getElementById('atkUndoBar');node.style.bottom=undo?(root.innerHeight-undo.getBoundingClientRect().top+8)+'px':'';node.classList.add('on');node._atkNoticeTimer=setTimeout(()=>node.classList.remove('on'),duration)}
+};
 root.AtokoreConfirm={open(title,description,action,onConfirm){
  document.getElementById('atkConfirm')?.remove();const previous=document.activeElement;
  const overlay=document.createElement('div');overlay.id='atkConfirm';overlay.className='atk-confirm';

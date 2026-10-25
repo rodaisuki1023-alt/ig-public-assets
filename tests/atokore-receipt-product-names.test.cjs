@@ -39,6 +39,7 @@ const context = {
   openM() {},
   closeM() {},
 };
+context.AtokoreDates={localDate:context.today};
 context.window = context;
 
 vm.runInNewContext(source, context, { filename: 'receipt.js' });

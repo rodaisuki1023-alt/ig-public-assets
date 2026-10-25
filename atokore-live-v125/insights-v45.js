@@ -26,7 +26,7 @@ root.showPremium=function(k){
 for(const [key,title,note] of [['predict','消費予測（補充の目安）','残りの数量と補充目安から確認'],['qr','保管場所別ストック','冷蔵庫・収納など場所ごとに確認'],['money','価格記録レポート','保存した価格と計算の内訳を確認']]){
  const row=doc.querySelector('#pg-premium [onclick="showPremium(\''+key+'\')"]');if(row){row.querySelector('.name').textContent=title;row.querySelector('.meta').textContent=note}
 }
-const version=doc.createElement('p');version.id='atkVersionInfo';version.className='atk-insight-note';version.textContent='ベビー特化 試用版 v19 ／ 機能更新 v45（2026/10/24）。v19は試用版の公開先、v45は更新履歴の番号です。';doc.getElementById('pg-premium')?.append(version);doc.title='あとこれ｜ベビー特化 試用版v19・機能更新v45';
+const version=doc.createElement('p');version.id='atkVersionInfo';version.className='atk-insight-note';version.textContent='ベビー特化 試用版 v19 ／ 機能更新 v46（2026/10/25）。v19は試用版の公開先、v46は更新履歴の番号です。';doc.getElementById('pg-premium')?.append(version);doc.title='あとこれ｜ベビー特化 試用版v19・機能更新v46';
 const originalStock=root.renderStock;
 root.renderStock=function(...args){const result=originalStock.apply(this,args);const empty=doc.querySelector('#stockList .empty');if(empty){empty.textContent='条件に合う商品はありません。検索や絞り込みを変えるか、商品を追加してください。';const button=doc.createElement('button');button.type='button';button.className='atk-empty-add';button.textContent='商品を追加する';button.onclick=()=>{const category=typeof filter!=='undefined'&&filter==='離乳食'?'離乳食':null;root.atkOpenAdd();if(category)root.AtokoreQuickAdd.setCategory(category)};empty.append(doc.createElement('br'),button)}return result};
 root.renderStock();

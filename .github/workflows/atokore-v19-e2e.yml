@@ -2,7 +2,7 @@ name: Atokore v19 Trial Checks
 
 on:
   push:
-    branches: ['claude/atokore-v19-p0-source', 'codex/atokore-polish-v44', 'codex/atokore-muse-v45']
+    branches: ['claude/atokore-v19-p0-source', 'codex/atokore-polish-v44', 'codex/atokore-muse-v45', 'codex/atokore-followup-v46']
   pull_request:
     paths:
       - 'atokore-live-v125/**'

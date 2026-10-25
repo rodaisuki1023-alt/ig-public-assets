@@ -34,8 +34,9 @@ function persist(next){
 }
 function log(title,detail){root.AtokoreHistory?.add(title,detail,'stock','↶')}
 function clearUndo(){undo=null;clearTimeout(undoTimer);doc.getElementById('atkUndoBar')?.remove()}
+doc.addEventListener('atokore-page-changed',clearUndo);
 function offerUndo(label,run){
- clearUndo();undo=run;
+ clearUndo();root.AtokoreNotices.hide();undo=run;
  const node=doc.createElement('div');node.id='atkUndoBar';node.className='atk-undo-bar';
  const text=doc.createElement('span');text.setAttribute('role','status');text.textContent=label;
  const button=doc.createElement('button');button.type='button';button.textContent='元に戻す';

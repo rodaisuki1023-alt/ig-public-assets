@@ -114,6 +114,7 @@ context.registerItem = () => {
   context.go('stock');
 };
 context.createRoutine = () => context.alert('リスト名を入力してください');
+context.AtokoreNotices={show:(node)=>node.classList.add('on')};context.CustomEvent=class{constructor(type){this.type=type}};document.dispatchEvent=()=>{};
 context.window = context;
 context.globalThis = context;
 vm.createContext(context);

@@ -75,15 +75,17 @@
   function toast(message){
     let node=document.getElementById('stableToastV125h');
     if(!node){node=document.createElement('div');node.id='stableToastV125h';node.className='stableToast';document.body.appendChild(node)}
-    node.textContent=message;node.classList.add('on');clearTimeout(toast.timer);toast.timer=setTimeout(()=>node.classList.remove('on'),1600);
+    node.textContent=message;window.AtokoreNotices.show(node,1600);
   }
   function stateSignature(){
     try{return JSON.stringify({items,buys,routines})}catch(e){return ''}
   }
   function showPage(page){
+    const previous=document.querySelector('.page.on')?.id;
     document.querySelectorAll('.page').forEach(node=>node.classList.remove('on'));
     document.getElementById('pg-'+page)?.classList.add('on');
     document.querySelectorAll('.tab').forEach(node=>node.classList.toggle('on',node.dataset.p===page));
+    if(previous!=='pg-'+page)document.dispatchEvent(new CustomEvent('atokore-page-changed'));
   }
   function cleanSelections(){
     const stockIds=new Set(items.map(x=>numberId(x.id))),buyIds=new Set(buys.map(x=>numberId(x.id)));
@@ -195,7 +197,7 @@
   window.renderBuy=function(){
     cleanSelections();const list=document.getElementById('buyList');if(!list)return;
     const panel=ensureBuyManage();if(panel)panel.classList.toggle('stableEmptyManage',!buys.length);
-    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="name">${esc(item.name)}</div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)">＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button><button class="icon danger" onclick="bdel(${id})" aria-label="削除">🗑</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
+    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="name">${esc(item.name)}</div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="meta">買う数量（ストックからは1点ずつ追加）</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)">＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button><button class="icon danger" onclick="bdel(${id})" aria-label="削除">🗑</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
     updateBuyUI();
   };
   window.setBuyPickV125H=(id,on)=>{id=numberId(id);if(!validId(id))return;if(on)buySelected.add(id);else buySelected.delete(id);updateBuyUI()};
@@ -219,15 +221,15 @@
     const result=Core.purchase(items,buys,[id],inferCategory);if(!result.count){alert('「買った」を完了できませんでした');return}
     buys=result.remaining;buySelected.delete(numberId(id));saveState();logHistory('「買った」でストックに追加',`${item.name} ${item.qty}${item.unit}を買った`,'stock','📦');finish({page:'buy',message:`${item.name}を「買った」にしました`});
   };
-  window.bdel=id=>{
-    const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
-    buys=buys.filter(x=>numberId(x.id)!==numberId(id));buySelected.delete(numberId(id));saveState();logHistory('買い物を削除',`${item.name}を削除`,'buy','🗑');finish({page:'buy',message:'削除しました'});
-  };
-  window.deleteSelectedBuy=()=>{
-    const ids=syncBuySelectionFromDom();if(!ids.length){alert('削除する商品を選んでください');return}
-    if(!confirm(`選択した${ids.length}件を買い物リストから削除しますか？`))return;
-    buys=Core.removeByIds(buys,ids);buySelected.clear();saveState();logHistory('買い物を一括削除',`${ids.length}件を削除`,'buy','🗑');finish({page:'buy',message:`${ids.length}件を削除しました`});
-  };
+  function deleteBuy(ids){
+    const picked=buys.filter(x=>ids.includes(numberId(x.id)));if(!picked.length)return;
+    window.AtokoreConfirm.open('買い物リストから'+picked.length+'商品を削除しますか？',picked.map(x=>x.name).join('、')+'を削除します。ストックの数量は変わりません。','削除する',()=>{
+      buys=Core.removeByIds(buys,ids);if(!saveState()){finish();return false}
+      ids.forEach(id=>buySelected.delete(id));logHistory('買い物を削除',picked.map(x=>x.name).join('、')+'を削除','buy','🗑');finish({page:'buy',message:picked.length+'商品を削除しました'});return true;
+    });
+  }
+  window.bdel=id=>deleteBuy([numberId(id)]);
+  window.deleteSelectedBuy=()=>{const ids=syncBuySelectionFromDom();if(!ids.length){toast('削除する商品を選んでください');return}deleteBuy(ids)};
   window.bought=()=>{
     const ids=syncBuySelectionFromDom();if(!ids.length){alert('「買った」にする商品を選んでください');return}
     const result=Core.purchase(items,buys,ids,inferCategory);if(!result.count){alert('「買った」を完了できませんでした');return}

@@ -424,8 +424,7 @@ function closeReview(){
 function notify(msg){
  let x=$('qaNotice');
  if(!x){x=doc.createElement('div');x.id='qaNotice';x.className='qa-notice';x.setAttribute('role','status');doc.body.appendChild(x)}
- x.textContent=msg;x.classList.add('on');clearTimeout(notify.timer);
- notify.timer=setTimeout(()=>x.classList.remove('on'),2200);
+ x.textContent=msg;root.AtokoreNotices.show(x,2200);
 }
 // Writes the pending lines. Throws (and changes nothing) unless the new state is confirmed stored.
 function persist(tray){
