@@ -125,7 +125,9 @@
 
   window.visibleStock=function(){
     const query=(document.getElementById('stockSearch')?.value||'').trim();
-    return items.filter(x=>(filter==='すべて'||x.cat===filter)&&(!query||String(x.name).includes(query)));
+    // W2: forgiving search (kana/width/case, AND words, sizes kept apart) when search-v48.js is loaded.
+    const hit=window.AtokoreSearch?window.AtokoreSearch.matches:(name,q)=>String(name).includes(q);
+    return items.filter(x=>(filter==='すべて'||x.cat===filter)&&(!query||hit(String(x.name),query)));
   };
   window.setFilter=category=>{filter=category;window.renderStock()};
   window.renderStock=function(){
