@@ -155,9 +155,11 @@ test('rejected local edits stay on device across reload; recovery saves a copy b
   await expect(A.page.locator('.atk-hh-rejected')).toContainText('端末の内容を残して同期を止めています');
   await A.page.getByRole('button',{name:'控えを残して共有データに合わせる'}).click();await appConfirm(A.page,true);
   await expect(A.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
+  await expect.poll(()=>A.page.evaluate(key=>!!localStorage.getItem(key+'SyncRecovery'),KEY)).toBe(true);
   const copy=await A.page.evaluate(key=>JSON.parse(localStorage.getItem(key+'SyncRecovery')),KEY);
   expect(copy.data.items[0].name).toBe(bad);expect(copy.engine.rejected).toHaveLength(1);
-  expect((await stored(A.page)).items[0].name).toBe('牛乳');
+  // W2: the status keeps reading 「共有中」 while the realignment is still being written, so wait for the data itself.
+  await expect.poll(async()=>(await stored(A.page)).items[0].name).toBe('牛乳');
   await sync(B.page);expect((await stored(B.page)).items[0].name).toBe('牛乳');
   await A.ctx.close();await B.ctx.close();
 });
