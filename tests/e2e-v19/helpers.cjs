@@ -69,4 +69,14 @@ function baseState(extra = {}) {
   };
 }
 
-module.exports = { APP, KEY, HISTORY, seed, open, stored, go, chooseBaby, commitBatch, shot, baseState };
+// v47: answers the app's own confirmation (#atkConfirm) and returns its text. Native dialogs are
+// recorded in page.__dialogs by open(); callers can assert that none appeared.
+async function appConfirm(page, accept) {
+  const dialog = page.locator('#atkConfirm');
+  await dialog.waitFor({ state: 'visible' });
+  const text = await dialog.innerText();
+  await dialog.locator(accept ? '.atk-confirm-primary' : 'button:not(.atk-confirm-primary)').click();
+  return text;
+}
+
+module.exports = { APP, KEY, HISTORY, seed, open, stored, go, chooseBaby, commitBatch, shot, baseState, appConfirm };

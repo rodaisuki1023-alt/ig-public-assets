@@ -112,7 +112,7 @@ test('diaper and formula render individual original baby icons, full brand names
  assert.ok(!b.icon('diaper').includes('http://example'));
  dom.window.close();
 });
-test('routine card opens details, then confirmed stock button applies inventory, shopping stays separate',()=>{
+test('routine card opens details, then confirmed stock button applies inventory, shopping stays separate',async()=>{
  const {dom,w,$}=browser();
  w.eval("routines.push({id:901,name:'毎週の買い物',items:[{id:1,name:'卵',qty:1,unit:'パック'},{id:2,name:'牛乳',qty:2,unit:'本'}]});renderRoutines();");
  const card=$('routineList').querySelector('[data-bf-routine="901"]');
@@ -122,6 +122,8 @@ test('routine card opens details, then confirmed stock button applies inventory,
  assert.equal(w.document.querySelector('#stockList').textContent,previous);
  assert.ok($('atkRoutineStockCommit'));
  $('atkRoutineStockCommit').click();
+ // v47: confirmed in the app's own dialog.
+ w.document.querySelector('#atkConfirm .atk-confirm-primary').click();await new Promise(r=>setTimeout(r,0));
  assert.ok($('pg-stock').classList.contains('on'));
  assert.equal($('pg-add').classList.contains('on'),false,'do not open extra selection screen');
  assert.equal(w.AtokoreQuickAdd.getTray().length,0,'direct stock add must not stage items');
@@ -160,7 +162,7 @@ test('offline shell has complete v17 scripts and separate palette',()=>{
  for(const file of ['baby-kit-v17.js','baby-flow-v17.js','baby-focus-v17.css']){
   assert.match(worker,new RegExp(file.replace(/\./g,'\\.')));
  }
- assert.match(worker,/atokore-pwa-v46/);
+ assert.match(worker,/atokore-pwa-v47/);
 });
 
 test('milk product buttons select names directly and each follow-up has its own confirmed forms',()=>{

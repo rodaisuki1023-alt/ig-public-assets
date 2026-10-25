@@ -211,6 +211,28 @@ if(typeof oldGo==='function')root.go=function(page,...args){
  if(page==='stock')refresh();
  return result;
 };
+// Deleting a list asks in the app's own dialog (a native confirm() can be suppressed without UI and
+// then the button looks dead). The existing delete (history entry, save checks) runs unchanged once
+// the person has confirmed here; it is only told that the question was already answered.
+const legacyDelete=root.deleteRoutine;
+if(typeof legacyDelete==='function')root.deleteRoutine=function(id){
+ const dialog=root.AtokoreConfirm,list=routine(toId(id));
+ if(!dialog?.open||!list)return legacyDelete.call(this,id);
+ const count=Array.isArray(list.items)?list.items.length:0;
+ dialog.open('「'+list.name+'」を削除しますか？','このいつものリスト（'+count+'商品）を削除します。ストックと買い物リストは変わりません。','削除する',()=>{
+  const before=routines,nativeConfirm=root.confirm;
+  root.confirm=()=>true;
+  try{legacyDelete.call(this,list.id)}finally{root.confirm=nativeConfirm}
+  let stored=null;try{stored=JSON.parse(root.localStorage.getItem('atokoreTrialV4')||'null')}catch(e){}
+  if(!stored||!Array.isArray(stored.routines)||stored.routines.some(x=>x.id===list.id)){
+   // Not saved: keep showing the list exactly as it is stored.
+   if(!routines.some(x=>x.id===list.id))routines=before;
+   root.render?.();return false;
+  }
+  root.notifyAtokoreV125H?.('「'+list.name+'」を削除しました');
+  return true;
+ });
+};
 // Capture events before the stock-detail, bulk and inventory +/- event handlers.
 // In picker mode every click within a stock row is exclusively a repeat-list action.
 doc.addEventListener('click',ev=>{

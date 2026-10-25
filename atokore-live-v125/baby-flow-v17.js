@@ -112,18 +112,28 @@ function prepared(id){
  }));
  return {routine,entries};
 }
+// Confirmations use the app's own dialog: a native confirm() can be suppressed without any UI
+// (in-app browsers, embedded frames, some home-screen apps) and then returns false, so the button
+// would look dead. Native confirm stays only as a fallback where the app dialog is not loaded.
+function ask(title,detail,action,run){
+ const dialog=root.AtokoreConfirm;
+ if(dialog?.open){dialog.open(title,detail,action,run);return null}
+ return root.confirm?.(title+'\n\n'+detail)?run():false;
+}
+function tell(message){if(typeof root.notifyAtokoreV125H==='function')root.notifyAtokoreV125H(message);else root.alert?.(message)}
 let lastDirectStock={id:null,at:0};
 function directRoutineToStock(id){
  const idText=String(id);
  // Suppress an accidental second tap while the list is being redrawn.
  if(lastDirectStock.id===idText&&Date.now()-lastDirectStock.at<1300)return false;
  const r=prepared(id);
- if(!r){root.alert?.('いつものリストが見つかりません');return false}
- if(!r.entries.length){root.alert?.('リストに商品がありません。編集から商品を追加してください');return false}
+ if(!r){tell('いつものリストが見つかりません');return false}
+ if(!r.entries.length){tell('リストに商品がありません。編集から商品を追加してください');return false}
  const preview=r.entries.slice(0,5).map(x=>'・'+x.name+' × '+x.qty+x.unit).join('\n');
  const more=r.entries.length>5?'\nほか'+(r.entries.length-5)+'種類':'';
- const prompt='「'+r.routine.name+'」の'+r.entries.length+'種類をストックに追加してもいいですか？\n\n'+preview+more+'\n\n※ 登録済みの商品は在庫数が増えます。';
- if(!root.confirm?.(prompt))return false;
+ return ask('「'+r.routine.name+'」の'+r.entries.length+'種類をストックに追加してもいいですか？',preview+more+'\n\n※ 登録済みの商品は在庫数が増えます。','ストックに追加',()=>routineToStock(r,idText));
+}
+function routineToStock(r,idText){
  let oldItems,total,next,saved=false;
  try{
   root.AtokoreDataSafety?.assertWritable?.();
@@ -139,7 +149,7 @@ function directRoutineToStock(id){
   saved=true;
  }catch(err){
   root.console?.error?.('いつものリストからストックへの反映失敗',err);
-  root.alert?.('ストックを保存できませんでした。内容は変更していません。');
+  tell('ストックを保存できませんでした。内容は変更していません。');
   return false;
  }
  // Saved: a drawing problem from here on is not a failed save and must not invite a second add.
@@ -168,9 +178,11 @@ function directRoutineToBuy(id){
  const idText=String(id);
  if(lastDirectBuy.id===idText&&Date.now()-lastDirectBuy.at<1300)return false;
  const r=prepared(id);
- if(!r?.entries.length){root.alert?.('リストに商品がありません。商品を選んでください');return false}
+ if(!r?.entries.length){tell('リストに商品がありません。商品を選んでください');return false}
  const preview=r.entries.map(x=>'・'+x.name+' × '+x.qty+x.unit).join('\n');
- if(!root.confirm?.('「'+r.routine.name+'」の'+r.entries.length+'種類を買い物リストに追加してもいいですか？\n\n'+preview+'\n\n※ ストック数は変わりません。'))return false;
+ return ask('「'+r.routine.name+'」の'+r.entries.length+'種類を買い物リストに追加してもいいですか？',preview+'\n\n※ ストック数は変わりません。','買い物へ追加',()=>routineToBuy(r,idText));
+}
+function routineToBuy(r,idText){
  try{
   root.AtokoreDataSafety?.assertWritable?.();
   const next=buys.map(x=>({...x})),ids=new Set(next.map(x=>Number(x.id)));
@@ -189,7 +201,7 @@ function directRoutineToBuy(id){
   return true;
  }catch(error){
   root.console?.error?.('いつものリストから買い物への反映失敗',error);
-  root.alert?.('買い物リストを保存できませんでした。内容は変更していません。');
+  tell('買い物リストを保存できませんでした。内容は変更していません。');
   return false;
  }
 }

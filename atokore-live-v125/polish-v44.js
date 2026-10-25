@@ -13,6 +13,12 @@ function inverseCounters(current,changes){
  for(const c of changes){
   const row=next[c.key].find(x=>String(x.id)===String(c.id));
   if(!row||row.name!==c.name||row.unit!==c.unit||Number(row.qty)-c.delta<0||Number(row.qty)-c.delta>99999)throw Error('商品が変更されたため、その操作を戻せません。現在の内容をご確認ください。');
+  // A row the undone action created is removed whole (never left behind at 0), but only while it
+  // is exactly as that action left it; otherwise nothing is changed.
+  if(c.created){
+   if(Number(row.qty)!==c.delta)throw Error('商品が変更されたため、その操作を戻せません。現在の内容をご確認ください。');
+   next[c.key]=next[c.key].filter(x=>x!==row);continue;
+  }
   row.qty=Number(row.qty)-c.delta;
   if(c.usage)row.usage=Math.max(0,(Number(row.usage)||0)-c.usage);
  }
@@ -66,7 +72,8 @@ for(const name of ['buyOneToStockV125H','bought']){
   const before=snapshot(),result=original.apply(this,args),after=snapshot();
   const removed=before.buys.filter(x=>!after.buys.some(y=>String(y.id)===String(x.id)));
   if(!removed.length)return result;
-  const changes=after.items.flatMap(b=>{const a=before.items.find(x=>String(x.id)===String(b.id));const delta=Number(b.qty)-(Number(a?.qty)||0);return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0}]:[]});
+  // Rows that did not exist before were created by this purchase; undo removes them entirely.
+  const changes=after.items.flatMap(b=>{const a=before.items.find(x=>String(x.id)===String(b.id));const delta=Number(b.qty)-(Number(a?.qty)||0);return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0,...(a?{}:{created:true})}]:[]});
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined,ticket=shared?hh.capturePurchases?.(removed.map(x=>x.id)):null;
   offerUndo(removed.length+'商品を「買った」にしました',async()=>{
    if(shared){if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');await hh.undoPurchases(ticket);return}
