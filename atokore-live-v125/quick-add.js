@@ -171,11 +171,13 @@ function defaultUnit(name,cat){
  if(cat==='ベビー')return '袋';
  return '個';
 }
+// W2 item 8: how many can be added at once follows the unit (999個 / 9,999枚 / 99,999g); other units keep 999.
+const maxFor=unit=>root.AtokoreStockRules?.limit(unit,999)??999;
 function modelKey(x){return [x.cat,x.name,x.unit].join('\u0001')}
 function validateLine(entry){
  if(!entry||typeof entry.name!=='string'||!entry.name.trim()||entry.name.length>120)throw Error('商品名を確認してください');
  if(!entry.cat||!entry.unit)throw Error('カテゴリと単位を確認してください');
- if(!Number.isSafeInteger(entry.qty)||entry.qty<1||entry.qty>999)throw Error('数量は1〜999で指定してください');
+ if(!Number.isSafeInteger(entry.qty)||entry.qty<1||entry.qty>maxFor(entry.unit))throw Error('数量は1〜'+maxFor(entry.unit).toLocaleString('ja-JP')+'で指定してください');
  return {...entry,name:entry.name.trim()};
 }
 function buildBatch(existing,selected,time=Date.now()){
@@ -246,7 +248,7 @@ function changeDestination(dest){
 }
 function addLine(entry){
  const v=validateLine(entry),found=state.tray.find(x=>modelKey(x)===modelKey(v));
- if(found)found.qty=Math.min(999,found.qty+v.qty);
+ if(found)found.qty=Math.min(maxFor(found.unit),found.qty+v.qty);
  else state.tray.push(v);
  renderTray();renderItems();
 }
@@ -419,7 +421,7 @@ function renderTray(){
  box.hidden=!count||!state.reviewing;
  n.textContent=pendingSummary(lines);
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
- list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><button type="button" class="qa-tray-thumb" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+iconFor(v.name,v.cat)+'</button><div class="qa-review-copy"><button type="button" class="qa-review-name qa-review-edit" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+safe(v.name)+' <span aria-hidden="true">✎</span></button><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=999?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
+ list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><button type="button" class="qa-tray-thumb" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+iconFor(v.name,v.cat)+'</button><div class="qa-review-copy"><button type="button" class="qa-review-name qa-review-edit" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+safe(v.name)+' <span aria-hidden="true">✎</span></button><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=maxFor(v.unit)?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
  button.disabled=!count||state.committing;
  $('pg-add')?.classList.toggle('qa-has-pending',count>0);
 }
@@ -427,11 +429,11 @@ function editPending(index){
  const line=state.tray[index];if(!line||state.committing)return;
  const found=stockMatch(line),draft={place:line.cat==='食料品'?'冷蔵庫':'収納',expType:'期限なし',exp:'',...(found||{}),...line,id:index+1};
  root.atokoreEditStock?.(draft.id,{item:draft,onSave:next=>{
-  if(next.qty<1||next.qty>999)throw Error('追加する数量は1〜999で指定してください');
+  if(!Number.isSafeInteger(next.qty)||next.qty<1||next.qty>maxFor(next.unit))throw Error('追加する数量は1〜'+maxFor(next.unit).toLocaleString('ja-JP')+'で指定してください');
   state.tray[index]={...line,name:next.name,cat:next.cat,unit:next.unit,qty:next.qty,...draftFields(next),draftEdited:true};
   renderTray();renderItems();
  },onCancel:()=>renderTray()});
- const qty=doc.querySelector('#atkEditForm [name="qty"]');if(qty){qty.min='1';qty.max='999';qty.parentNode.firstChild.textContent='追加する数量'}
+ const qty=doc.querySelector('#atkEditForm [name="qty"]');if(qty){qty.min='1';qty.max=String(maxFor(line.unit));qty.parentNode.firstChild.textContent='追加する数量'}
 }
 function setReviewing(on){
  const page=$('pg-add');
@@ -617,7 +619,7 @@ function setup(){
   if(btn.dataset.qaZeroCat){state.cat=btn.dataset.qaZeroCat;state.group='すべて';state.showAll=false;renderAll();return}
   if(btn.hasAttribute('data-qa-maybe')){state.query=btn.dataset.qaMaybe;$('qaSearch').value=state.query;state.showAll=false;renderItems();return}
   if(btn.hasAttribute('data-qa-zero-add')){prefillFree(state.query);return}
-  if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(1,Math.min(999,v.qty+Number(btn.dataset.step)));renderTray();renderItems()}return}
+  if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(1,Math.min(maxFor(v.unit),v.qty+Number(btn.dataset.step)));renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
   if(btn.hasAttribute('data-qa-clear')){root.AtokoreConfirm.open('追加予定をすべて取り消しますか？','保存済みのストック・買い物リストは変わりません。','全部取り消す',()=>{state.tray=[];state.afterSave=null;closeReview();renderAll();notify('追加予定をすべて取り消しました');return true});return}
   if(btn.hasAttribute('data-qa-commit')){commit(e)}
@@ -727,7 +729,7 @@ function openWithEntries(entries,destination='stock',options={}){
  for(const x of list){
   let v;try{v=validateLine(x)}catch(e){skipped++;continue}
   const found=next.find(y=>modelKey(y)===modelKey(v));
-  if(found)found.qty=Math.min(999,found.qty+v.qty);else next.push(v);
+  if(found)found.qty=Math.min(maxFor(found.unit),found.qty+v.qty);else next.push(v);
  }
  state.tray=next;state.loadedSet=setId;state.loadedSnapshot=traySnapshot();
  state.afterSave=typeof options?.onSaved==='function'?options.onSaved:null;

@@ -11,7 +11,8 @@ function fixture(){
  state.items.push(...extra.map(([id,name,cat])=>({id,name,cat,qty:2,unit:'個',place:'収納',expType:'期限なし',exp:'',usage:1})));
  return state;
 }
-const ids=page=>page.locator('#stockList [data-stock-id]').evaluateAll(es=>es.map(e=>Number(e.dataset.stockId)));
+// Which products are shown (W2: the display order follows the stock sort, tested in w2-qty-sort.spec.cjs).
+const ids=page=>page.locator('#stockList [data-stock-id]').evaluateAll(es=>es.map(e=>Number(e.dataset.stockId)).sort((a,b)=>a-b));
 const category=(page,name)=>page.locator('#catChips').getByRole('button',{name,exact:true}).click();
 const group=(page,key)=>page.locator(`[data-bf-stock-kind="${key}"]`);
 for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
