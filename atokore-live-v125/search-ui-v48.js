@@ -37,7 +37,7 @@ function renderBar(){
   (list_.length>1?'<button type="button" class="atk-condition-all" data-atk-clear="all">すべて解除</button>':'');
 }
 function renderEmpty(){
- const list=$('stockList'),existing=list?.querySelector(':scope > .empty');if(!existing||existing.classList.contains('atk-empty-guide'))return;
+ const list=$('stockList'),existing=list?.querySelector(':scope > .empty');if(!existing||existing.classList.contains('atk-empty-guide')||list.querySelector(':scope > .atk-empty-guide'))return;
  const all=stockItems();if(!all.length)return;
  const q=query().trim(),conds=conditions(),filters=conds.filter(c=>c.kind!=='search'),parts=[];
  // A screen's own empty state with actions (e.g. baby food: 商品を追加する) is kept as it is.
@@ -54,7 +54,8 @@ function renderEmpty(){
   if(maybe.length)parts.push('<div class="atk-maybe"><span>もしかして：</span>'+maybe.map(w=>'<button type="button" data-atk-maybe="'+esc(w)+'">'+esc(w)+'</button>').join('')+'</div>');
   parts.push('<button type="button" class="atk-empty-action atk-empty-add" data-atk-add-query="'+esc(q)+'">「'+esc(q)+'」をストックに追加する</button>');
  }
- const guide='<div class="empty atk-empty-guide" role="status">'+parts.join('')+'</div>';
+ // Next to a screen's own empty state the guidance is an addition, not a second empty state.
+ const guide='<div class="'+(custom?'':'empty ')+'atk-empty-guide" role="status">'+parts.join('')+'</div>';
  if(custom)existing.insertAdjacentHTML('afterend',guide);else list.innerHTML=guide;
 }
 const prior=root.renderStock;
