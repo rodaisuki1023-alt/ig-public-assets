@@ -38,7 +38,7 @@ function persist(next){
  items=next.items;buys=next.buys;routines=next.routines;
  root.render?.();
 }
-function log(title,detail){root.AtokoreHistory?.add(title,detail,'stock','↶')}
+function log(title,detail,extra){root.AtokoreHistory?.add(title,detail,'stock','↶',extra)}
 function clearUndo(){undo=null;clearTimeout(undoTimer);doc.getElementById('atkUndoBar')?.remove()}
 doc.addEventListener('atokore-page-changed',clearUndo);
 function offerUndo(label,run){
@@ -59,7 +59,7 @@ function rememberCounter(before,after,key){
  for(const a of before[key]){const b=after[key].find(x=>String(x.id)===String(a.id));if(b&&a.qty!==b.qty)changes.push({key,id:a.id,name:a.name,unit:a.unit,delta:Number(b.qty)-Number(a.qty),usage:(Number(b.usage)||0)-(Number(a.usage)||0)})}
  if(!changes.length)return;
  offerUndo(changes.length===1?changes[0].name+'の数量を変更しました':'数量を変更しました',()=>{
-  persist(inverseCounters(snapshot(),changes));log('数量変更を取り消し',changes.map(c=>c.name).join('、'));
+  persist(inverseCounters(snapshot(),changes));log('数量変更を取り消し',changes.map(c=>c.name).join('、'),{refs:changes.map(c=>({id:c.id,kind:c.key==='buys'?'buy':'item',name:c.name,unit:c.unit})),change:changes.length===1?'数量を'+(changes[0].delta>0?'−':'＋')+Math.abs(changes[0].delta)+(changes[0].unit||'個')+'戻した':undefined});
  });
 }
 for(const [name,key] of [['adj','items'],['badj','buys']]){
@@ -80,7 +80,7 @@ for(const name of ['buyOneToStockV125H','bought']){
    if(root.AtokoreHousehold?.homeState?.().joined)throw Error('家族共有の開始後は、この端末だけの購入を戻せません。');
    const next=inverseCounters(snapshot(),changes);
    for(const b of removed){if(next.buys.some(x=>String(x.id)===String(b.id)))throw Error('買い物リストが変わったため戻せません。');next.buys.push(copy(b))}
-   persist(next);log('「買った」を取り消し',removed.map(x=>x.name).join('、'));
+   persist(next);log('「買った」を取り消し',removed.map(x=>x.name).join('、'),{refs:removed.map(x=>({id:x.id,kind:'buy',name:x.name,unit:x.unit})),change:'買い物リストに戻した'});
   });
   return result;
  };
@@ -134,7 +134,7 @@ doc.addEventListener('click',e=>{
 doc.addEventListener('atokore-stock-edited',e=>{
  const {before,after}=e.detail||{};if(!before||!after)return;
  const detail=before.qty!==after.qty?before.name+' '+before.qty+(before.unit||'個')+' → '+after.qty+(after.unit||'個'):after.name+'の商品情報を変更';
- root.AtokoreHistory?.add('商品情報を変更',detail,'stock','✎');
+ root.AtokoreHistory?.add('商品情報を変更',detail,'stock','✎',{refs:[{id:after.id,kind:'item',name:after.name,unit:after.unit}],change:before.qty!==after.qty?before.qty+(before.unit||'個')+' → '+after.qty+(after.unit||'個'):before.name!==after.name?'名前を「'+after.name+'」に変更':'商品情報を変更'});
  if(before.qty!==after.qty)rememberCounter({items:[before]},{items:[after]},'items');
 });
 doc.addEventListener('atokore-household-updated',()=>{if(undo&&root.AtokoreHousehold?.status?.().state==='removed')clearUndo()});

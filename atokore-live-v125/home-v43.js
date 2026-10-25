@@ -19,6 +19,10 @@ function relative(at,now=Date.now()){
  const d=new Date(t),today=new Date(now),time=d.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
  return (d.toDateString()===today.toDateString()?'今日 ':d.toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})+' ')+time;
 }
+// W2 item 6: every entry reads "who: product + verb" / "what changed" / "when", and knows the
+// products it touched (refs) so it can be opened. Who: the name the member set (shared), "この端末"
+// (not sharing), "この端末・共有前の記録" (saved on this device before sharing), "実行者不明" (unknown).
+// A change is only shown as "before → after" when both values were recorded at the time.
 function sharedEntries(rows){
  const groups=[];
  for(const row of rows||[]){
@@ -28,22 +32,82 @@ function sharedEntries(rows){
   if(prior)prior.rows.push(row);else groups.push({key,rows:[row]});
  }
  return groups.map(g=>{
-  const r=g.rows[0],who=String(r.who||'家族'),name=String(r.name||'削除済みの商品');
+  const r=g.rows[0],who=r.who?String(r.who):'実行者不明',name=String(r.name||'商品名の記録なし');
   const place=r.kind==='buy'?'買い物リスト':r.kind==='routine'?'いつものリスト':'ストック';
-  const what=r.type==='undo_purchase'?'の「買った」を取り消し':r.type==='complete_buy'?'を「買った」':r.type==='create'?'を追加':r.type==='delete'?'を削除':r.type==='add'?'の数量を変更':'を更新';
-  const qty=Number(r.delta),unit=String(r.unit||'個'),delta=r.type==='add'&&r.beforeQty!=null&&r.afterQty!=null?r.beforeQty+unit+' → '+r.afterQty+unit:r.type==='add'&&r.delta!==null&&Number.isFinite(qty)?'数量 '+(qty>0?'＋':'')+qty+unit:r.type==='create'&&r.afterQty!=null?place+'に'+r.afterQty+unit+'追加':r.type==='set'?({name:'商品名',place:'保管場所',exp:'期限',memo:'メモ',qtyBasis:'在庫の数え方',inUse:'使用中の有無',photoPath:'写真'}[r.field]||'商品情報')+'を変更':place;
-  return {at:r.at,who,title:who+'が'+(g.rows.length>1?place+'の'+g.rows.length+'商品':name)+what,
-   detail:g.rows.length>1?g.rows.slice(0,2).map(x=>String(x.name||'削除済みの商品')).join('、')+(g.rows.length>2?' ほか'+(g.rows.length-2)+'商品':''):r.type==='complete_buy'?(r.delta!=null?r.delta+unit+'「買った」でストックに追加':'「買った」でストックに追加'):delta,
+  const what=r.type==='undo_purchase'?'の「買った」を取り消し':r.type==='complete_buy'?'を「買った」':r.type==='create'?'を'+place+'に追加':r.type==='delete'?'を'+place+'から削除':r.type==='add'?'の数量を変更':'を変更';
+  const qty=Number(r.delta),unit=String(r.unit||'個');
+  const change=r.type==='add'&&r.beforeQty!=null&&r.afterQty!=null?r.beforeQty+unit+' → '+r.afterQty+unit
+   :r.type==='add'&&r.delta!=null&&Number.isFinite(qty)?'数量 '+(qty>0?'＋':'')+qty+unit
+   :r.type==='create'&&r.afterQty!=null?r.afterQty+unit+'追加'
+   :r.type==='set'?({name:'商品名',place:'保管場所',exp:'期限',memo:'メモ',qtyBasis:'在庫の数え方',inUse:'使用中の有無',photoPath:'写真'}[r.field]||'商品情報')+'を変更'
+   :r.type==='complete_buy'?(r.delta!=null?r.delta+unit+'をストックに追加':'ストックに追加')
+   :r.type==='undo_purchase'?'買い物リストに戻した':r.type==='delete'?'削除':'';
+  const refs=g.rows.map(x=>({sid:x.record_id||null,kind:x.kind==='buy'?'buy':'item',name:String(x.name||''),unit:String(x.unit||'')}));
+  return {at:r.at,who,refs,
+   title:who+'：'+(g.rows.length>1?g.rows.length+'商品':name)+what,
+   detail:g.rows.length>1?g.rows.slice(0,2).map(x=>String(x.name||'商品名の記録なし')).join('、')+(g.rows.length>2?' ほか'+(g.rows.length-2)+'商品':''):change,
    type:r.type==='complete_buy'?'purchase':r.kind==='buy'?'buy':'stock'};
  }).sort((a,b)=>new Date(b.at)-new Date(a.at));
 }
-function localEntries(rows){
+// Verbs for local entries that know their products (the stored title is the action).
+const VERBS={'在庫数を変更':'の在庫数を変更','買い物リストへ追加':'を買い物リストに追加','ストックを削除':'をストックから削除','在庫を削除':'をストックから削除','在庫を一括削除':'をストックから削除',
+ '買い物を追加':'を買い物リストに追加','買い物数量を変更':'の買う数量を変更','「買った」でストックに追加':'を「買った」','買い物を削除':'を買い物リストから削除','買い物を一括削除':'を買い物リストから削除',
+ 'ストックに商品を追加':'をストックに追加','在庫を追加':'をストックに追加','まとめて在庫へ追加':'をストックに追加','商品情報を変更':'の商品情報を変更','数量変更を取り消し':'の数量変更を取り消し','「買った」を取り消し':'の「買った」を取り消し',
+ 'レシートから在庫反映':'をレシートからストックに追加'};
+function localEntries(rows,opts={}){
+ const shareStart=Number(opts.sharedSince)||0;
  return (rows||[]).filter(r=>r&&Number.isFinite(Number(r.ts)))
-  .map(r=>({at:Number(r.ts),who:'自分',title:String(r.title||'内容を変更'),detail:String(r.detail||''),type:r.type==='buy'?'buy':'stock'}))
+  .map(r=>{
+   const who=opts.joined&&shareStart&&Number(r.ts)<shareStart?'この端末・共有前の記録':'この端末';
+   const refs=Array.isArray(r.refs)?r.refs.filter(x=>x&&x.name):null,title=String(r.title||'内容を変更');
+   if(refs&&refs.length&&VERBS[title]){
+    const names=refs[0].name+(refs.length>1?' ほか'+(refs.length-1)+'商品':'');
+    return {at:Number(r.ts),who,refs,title:who+'：'+names+VERBS[title],detail:refs.length===1?String(r.change||''):refs.slice(0,3).map(x=>x.name).join('、')+(refs.length>3?' ほか'+(refs.length-3)+'商品':'')+(r.change?'（'+r.change+'）':''),type:r.type==='buy'?'buy':'stock'};
+   }
+   // Older entries without product references are shown as they were recorded.
+   return {at:Number(r.ts),who,refs:null,title:who+'：'+title,detail:String(r.detail||''),type:r.type==='buy'?'buy':'stock'};
+  })
   .sort((a,b)=>b.at-a.at);
 }
+// Entries shown on screen, by a stable key (time + title), so a tap opens the right one and an
+// unchanged list renders the same markup.
+const opened=new Map();
 function activityHTML(entries,exact=false){
- return entries.map(r=>'<li class="atk-home-change"><span class="atk-home-avatar '+(r.type==='buy'?'is-buy':r.type==='purchase'?'is-purchase':'')+'" aria-hidden="true">'+esc(Array.from(r.who)[0]||'家')+'</span><span class="atk-home-change-copy"><strong>'+esc(r.title)+'</strong><small>'+esc(r.detail)+'</small></span><time datetime="'+esc(new Date(r.at).toISOString())+'">'+esc(exact?new Date(r.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):relative(r.at))+'</time></li>').join('');
+ return entries.map(r=>{
+  const key=new Date(r.at).getTime()+'|'+r.title;opened.set(key,r);if(opened.size>400)opened.delete(opened.keys().next().value);
+  return '<li class="atk-home-change"><button type="button" class="atk-home-change-open" data-atk-history="'+esc(key)+'"><span class="atk-home-avatar '+(r.type==='buy'?'is-buy':r.type==='purchase'?'is-purchase':'')+'" aria-hidden="true">'+esc(r.who==='実行者不明'?'?':Array.from(r.who)[0]||'?')+'</span><span class="atk-home-change-copy"><strong>'+esc(r.title)+'</strong>'+(r.detail?'<small>'+esc(r.detail)+'</small>':'')+'</span><time datetime="'+esc(new Date(r.at).toISOString())+'">'+esc(exact?new Date(r.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):relative(r.at))+'</time></button></li>';
+ }).join('');
+}
+// Where a history entry's product is now: an existing stock product (open it), a shopping-list row,
+// or gone (deleted). Names are only used when the record has no id (older records).
+function locate(ref){
+ let list=[],buyList=[];try{list=items;buyList=buys}catch(_){}
+ const id=ref.sid?root.AtokoreHousehold?.localIdFor?.(ref.kind,ref.sid):ref.id;
+ const same=x=>String(x.name)===ref.name&&(!ref.unit||String(x.unit||'')===ref.unit);
+ if(ref.kind==='item'){
+  const item=id!=null&&id!==''?list.find(x=>String(x.id)===String(id)):(ref.sid?null:list.find(same));
+  return item?{status:'item',item}:{status:'deleted'};
+ }
+ const buy=id!=null&&id!==''?buyList.find(x=>String(x.id)===String(id)):null;
+ const item=list.find(same);
+ if(item)return {status:'item',item,buy};
+ return buy?{status:'buy',buy}:{status:'deleted'};
+}
+function recordHTML(entry,note){
+ return '<div class="atk-history-record"><p class="atk-history-record-title">'+esc(entry.title)+'</p>'+(entry.detail?'<p>'+esc(entry.detail)+'</p>':'')+'<p class="atk-history-record-time">'+esc(new Date(entry.at).toLocaleString('ja-JP'))+'</p>'+(note?'<p class="atk-history-note">'+note+'</p>':'')+'</div>';
+}
+function openEntry(entry){
+ const close='<button class="close" onclick="closeM()">閉じる</button>';
+ const refs=entry.refs||[];
+ if(!refs.length){root.openM?.(close+'<h2>変更の記録</h2>'+recordHTML(entry,'この記録には商品の情報が含まれていません（以前の記録）。'));return}
+ if(refs.length===1){
+  const at=locate(refs[0]);
+  if(at.status==='item'){root.atkShowDetail?.(at.item.id);return}
+  root.openM?.(close+'<h2>変更の記録</h2>'+recordHTML(entry,at.status==='buy'?'この商品は今、買い物リストにあります（ストックには登録されていません）。':'<span class="atk-history-deleted">削除済み</span>この商品は現在ありません。当時の記録を表示しています。'));
+  return;
+ }
+ const rows=refs.map((ref,i)=>{const at=locate(ref);return '<li>'+(at.status==='item'?'<button type="button" data-atk-history-item="'+esc(at.item.id)+'">'+esc(at.item.name)+' ›</button>':'<span>'+esc(ref.name)+'</span> <span class="'+(at.status==='deleted'?'atk-history-deleted':'atk-history-inbuy')+'">'+(at.status==='deleted'?'削除済み':'買い物リストにあります')+'</span>')+'</li>'}).join('');
+ root.openM?.(close+'<h2>対象の商品（'+refs.length+'件）</h2>'+recordHTML(entry)+'<ul class="atk-history-targets">'+rows+'</ul>');
 }
 function card(x){
  const item=x.item,raw=String(item.name||'商品'),id=Number(item.id),kit=root.AtokoreBabyKit;
@@ -55,7 +119,11 @@ function card(x){
   sub=[kit.brand(raw),d?.type,d?.line&&![title,'おむつ','おしりふき','粉ミルク'].includes(d.line)?d.line:''].filter(Boolean).join('・')||raw;
  }else art=(food?.isRecord(item)?food.icon(48):root.AtokoreIndividualIcons?.icon(raw))||icon('stock');
  const expiry=root.AtokoreDates?.label(item.exp)||'';
- const labels=(x.low?'<span class="atk-home-low">'+(Number(item.qty)<=0?(item.qtyBasis==='unopened'?'未開封の予備なし':'在庫なし'):esc(root.AtokorePolish?.stockLabel(item)||'残り'+item.qty+(item.unit||'個')))+'</span>':'')+(expiry?'<span class="atk-home-expiry '+(x.days<=0?'is-overdue':'')+'">'+esc(expiry)+'</span>':'');
+ // W2 item 7: each reason is a text label (not only colour), and both show when both apply.
+ const unit=item.unit||'個',line=root.atokoreReorderAt?root.atokoreReorderAt(item):1;
+ const lowText='補充目安以下：'+(Number(item.qty)<=0?(item.qtyBasis==='unopened'?'未開封の予備なし':'在庫なし'):(item.qtyBasis==='unopened'?'未開封'+item.qty+unit+(item.inUse?'・使用中あり':''):'残り'+item.qty+unit))+'／目安'+line+unit;
+ const soon=x.days!==null&&x.days<=3;
+ const labels=(x.low?'<span class="atk-home-low">'+esc(lowText)+'</span>':'')+(soon&&expiry?'<span class="atk-home-expiry '+(x.days<=0?'is-overdue':'')+'">'+esc((item.expType&&item.expType!=='期限なし'?item.expType:'期限')+'：'+expiry)+'</span>':'');
  const already=(()=>{try{return buys.some(b=>root.__atokoreCoreV125H?.sameProduct(b,item))}catch(_){return false}})();
  const control=x.low&&Number.isSafeInteger(id)?'<button type="button" data-atk-replenish="'+id+'"'+(already?' disabled':'')+'>'+(already?'買い物に追加済み':'買い物に追加')+'</button>':'';
  return '<div class="atk-home-stock-wrap"><button type="button" class="atk-item-card atk-home-stock" '+(Number.isSafeInteger(id)?'data-atk-open="'+id+'"':'disabled')+'><span class="atk-item-id"><span class="atk-brand bf-home-product">'+art+'</span></span><span class="atk-item-copy"><strong>'+esc(title)+'</strong><small>'+esc(sub)+'</small></span><span class="atk-home-flags">'+labels+'</span><span class="atk-chevron" aria-hidden="true">›</span></button>'+control+'</div>';
@@ -65,7 +133,9 @@ function html(){return '<div class="atk-home atk-home-v43">'+
  '<section id="atkHomeAttention" aria-labelledby="atkHomeAttentionTitle"><div class="atk-section-head"><h2 id="atkHomeAttentionTitle">補充・期限の確認</h2><button type="button" data-atk-nav="stock">ストックへ ›</button></div><p class="atk-home-history-note">補充目安以下の商品と、期限まで3日以内の商品。補充目安は商品編集で変更できます（未設定は数量1以下）。</p><div id="atkTasks" class="atk-home-stock-list"></div><button type="button" id="atkHomeMoreStock" class="atk-home-more" hidden></button></section>'+
  '<section aria-labelledby="atkHomeHistoryTitle"><div class="atk-section-head"><h2 id="atkHomeHistoryTitle">最近の変更</h2><button type="button" id="atkHomeAllChanges">すべて見る ›</button></div><p id="atkHomeHistoryNote" class="atk-home-history-note" role="status"></p><ol id="atkHomeActivity" class="atk-home-activity"></ol><button type="button" id="atkHomeHistoryRefresh" class="atk-home-more" hidden>履歴を再読み込み</button></section></div>'}
 function state(){try{return root.AtokoreHousehold?.homeState?.()||{joined:false}}catch(_){return {joined:false}}}
-function entries(s){return s.joined?sharedEntries(s.changes):localEntries(root.AtokoreHistory?.recent?.()||[])}
+function entries(s){return s.joined?sharedEntries(s.changes):localEntries(root.AtokoreHistory?.recent?.()||[],{joined:false})}
+// While sharing, the full history also lists what this device recorded before sharing started.
+function allEntries(s){if(!s.joined)return entries(s);const before=s.sharedSince?localEntries(root.AtokoreHistory?.recent?.()||[],{joined:true,sharedSince:s.sharedSince}).filter(x=>x.at<s.sharedSince):[];return [...sharedEntries(s.changes),...before].sort((a,b)=>new Date(b.at)-new Date(a.at))}
 let lastCards='';
 function render(){
  if(!$('atkHomeActivity'))return;
@@ -90,7 +160,7 @@ function render(){
  const sync=$('atkHomeSyncNow');if(sync){sync.hidden=!(s.joined&&(sum.kind==='pending'||sum.kind==='unknown'));sync.textContent=sum.kind==='unknown'?'再確認':'今すぐ同期'}
 }
 function openAll(){
- const s=state(),list=entries(s),title=s.joined?'家族の変更履歴':'この端末の変更履歴';
+ const s=state(),list=allEntries(s),title=s.joined?'家族の変更履歴':'この端末の変更履歴';
  root.openM?.('<button class="close" onclick="closeM()">閉じる</button><h2>'+title+'</h2>'+(s.joined&&s.historyState==='error'?'<p>履歴を更新できませんでした。前回取得した履歴を表示しています。</p>':'')+'<ol class="atk-home-activity atk-home-all">'+activityHTML(list,true)+'</ol>'+(!list.length?'<p>まだ変更履歴はありません。</p>':''));
 }
 function install(){
@@ -104,6 +174,8 @@ function install(){
  doc.addEventListener('DOMContentLoaded',()=>{const add=$('bfNavAdd');if(add)add.innerHTML=icon('add')+'<span>追加</span>';root.renderHome?.()},{once:true});
  doc.addEventListener('click',e=>{
   if(e.target.closest('#atkHomeAllChanges'))openAll();
+  const h=e.target.closest('[data-atk-history]');if(h&&opened.has(h.dataset.atkHistory)){openEntry(opened.get(h.dataset.atkHistory));return}
+  const t=e.target.closest('[data-atk-history-item]');if(t){root.atkShowDetail?.(Number(t.dataset.atkHistoryItem));return}
   if(e.target.closest('#atkHomeShareStart'))root.AtokoreHousehold?.open?.();
   if(e.target.closest('#atkHomeSyncNow')){const b=e.target.closest('#atkHomeSyncNow');b.disabled=true;Promise.resolve(root.AtokoreHousehold?.syncNow?.()).finally(()=>{b.disabled=false;root.renderHome?.()})}
   if(e.target.closest('#atkHomeHistoryRefresh'))root.AtokoreHousehold?.refreshChanges?.();
@@ -115,6 +187,6 @@ function install(){
  doc.addEventListener('atokore-household-updated',()=>{root.renderHome?.()});
  doc.addEventListener('atokore-history-updated',()=>{root.renderHome?.()});
 }
-const api=Object.freeze({html,render,install,attention,expiryDays,relative,sharedEntries,localEntries});
+const api=Object.freeze({html,render,install,attention,expiryDays,relative,sharedEntries,localEntries,locate});
 root.AtokoreHome=api;if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

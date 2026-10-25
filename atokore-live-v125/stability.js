@@ -68,9 +68,11 @@
 
   let lastSaveOk=true;
   function saveState(){try{lastSaveOk=save()!==false}catch(e){lastSaveOk=false;console.error('あとこれ: 保存に失敗しました',e)}return lastSaveOk}
-  function logHistory(title,detail,type='other',icon='✎'){
+  // extra: {refs:[{id,kind,name,unit}], change} — see history.js add().
+  const ref=(x,kind='item')=>({id:x.id,kind,name:x.name,unit:x.unit});
+  function logHistory(title,detail,type='other',icon='✎',extra){
     if(!lastSaveOk)return;
-    try{const key='atokoreHistoryV1',history=JSON.parse(localStorage.getItem(key)||'[]');history.unshift({id:Core.uniqueId(),ts:Date.now(),title,detail,type,icon});localStorage.setItem(key,JSON.stringify(history.slice(0,200)))}catch(e){}
+    try{const key='atokoreHistoryV1',history=JSON.parse(localStorage.getItem(key)||'[]');history.unshift({id:Core.uniqueId(),ts:Date.now(),title,detail,type,icon,...(extra?.refs?{refs:extra.refs}:{}),...(extra?.change!=null?{change:String(extra.change)}:{})});localStorage.setItem(key,JSON.stringify(history.slice(0,200)))}catch(e){}
   }
   function toast(message){
     let node=document.getElementById('stableToastV125h');
@@ -158,12 +160,12 @@
   window.clearBulkSelection=()=>{stockSelected.clear();window.renderStock()};
   window.addStockOneToBuyV125H=id=>{
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
-    Core.addStockToBuy(buys,item,1);saveState();logHistory('買い物リストへ追加',`${item.name}を追加`,'buy','🛒');finish({message:`${item.name}を買い物へ追加しました`});
+    Core.addStockToBuy(buys,item,1);saveState();logHistory('買い物リストへ追加',`${item.name}を追加`,'buy','🛒',{refs:[ref(item)],change:'買い物リストに1'+(item.unit||'個')+'追加'});finish({message:`${item.name}を買い物へ追加しました`});
   };
   window.moveSelectedToBuy=()=>{
     const ids=syncStockSelectionFromDom();if(!ids.length){alert('買い物へ追加する商品を選んでください');return}
     const selected=new Set(ids),picked=items.filter(x=>selected.has(numberId(x.id)));if(!picked.length){alert('選択した商品を取得できませんでした');return}
-    picked.forEach(item=>Core.addStockToBuy(buys,item,1));stockSelected.clear();stockSelectMode=false;saveState();logHistory('買い物リストへ追加',`${picked.length}件をまとめて追加`,'buy','🛒');finish({page:'buy',message:`${picked.length}件を買い物リストへ追加しました`});
+    picked.forEach(item=>Core.addStockToBuy(buys,item,1));stockSelected.clear();stockSelectMode=false;saveState();logHistory('買い物リストへ追加',`${picked.length}件をまとめて追加`,'buy','🛒',{refs:picked.map(x=>ref(x)),change:'買い物リストに各1点追加'});finish({page:'buy',message:`${picked.length}件を買い物リストへ追加しました`});
   };
   function deleteStock(ids){
     const selected=new Set(ids.map(numberId)),picked=items.filter(x=>selected.has(numberId(x.id))),count=picked.length,names=picked.map(x=>x.name).join('、');
@@ -172,7 +174,7 @@
       items=Core.removeByIds(items,ids);
       if(!saveState()){finish();return false}
       stockSelected.clear();stockSelectMode=false;window.closeM?.();
-      logHistory('ストックを削除',names+'（'+count+'商品）を削除','stock','🗑');finish({page:'stock',message:count+'商品を削除しました'});
+      logHistory('ストックを削除',names+'（'+count+'商品）を削除','stock','🗑',{refs:picked.map(x=>ref(x)),change:'ストックから削除'});finish({page:'stock',message:count+'商品を削除しました'});
       return true;
     });
   }
@@ -182,7 +184,7 @@
   window.adj=(id,delta)=>{
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
     const before=Number(item.qty)||0;item.qty=Math.max(0,before+Number(delta||0));if(Number(delta)<0)item.usage=(item.usage||0)+1;
-    saveState();logHistory('在庫数を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'stock','📦');finish();
+    saveState();logHistory('在庫数を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'stock','📦',{refs:[ref(item)],change:`${before}${item.unit} → ${item.qty}${item.unit}`});finish();
   };
   window.delItem=id=>{if(items.some(x=>numberId(x.id)===numberId(id)))deleteStock([numberId(id)])};
 
@@ -211,23 +213,24 @@
     const input=document.getElementById('buyName'),name=(input?.value||'').trim();if(!name)return;
     const unit=unitOf(name),found=buys.find(x=>x.name===name&&x.unit===unit);
     if(found)found.qty=(Number(found.qty)||0)+1;else buys.push({id:Core.uniqueId(),name,qty:1,unit});
-    if(input)input.value='';saveState();logHistory('買い物を追加',`${name}を追加`,'buy','🛒');finish({page:'buy'});
+    const added=buys.find(x=>x.name===name&&x.unit===unit);
+    if(input)input.value='';saveState();logHistory('買い物を追加',`${name}を追加`,'buy','🛒',added?{refs:[ref(added,'buy')],change:'買い物リストに追加'}:undefined);finish({page:'buy'});
   };
   window.badj=(id,delta)=>{
     const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
     const before=Number(item.qty)||1,step=(item.unit==='g'||item.unit==='ml')?100:1;item.qty=Math.max(step,before+Number(delta||0)*step);
-    saveState();logHistory('買い物数量を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'buy','🛒');finish({page:'buy'});
+    saveState();logHistory('買い物数量を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'buy','🛒',{refs:[ref(item,'buy')],change:`買う数量 ${before}${item.unit} → ${item.qty}${item.unit}`});finish({page:'buy'});
   };
   window.buyOneToStockV125H=id=>{
     const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
     const result=Core.purchase(items,buys,[id],inferCategory);if(!result.count){alert('「買った」を完了できませんでした');return}
-    buys=result.remaining;buySelected.delete(numberId(id));saveState();logHistory('「買った」でストックに追加',`${item.name} ${item.qty}${item.unit}を買った`,'stock','📦');finish({page:'buy',message:`${item.name}を「買った」にしました`});
+    buys=result.remaining;buySelected.delete(numberId(id));saveState();logHistory('「買った」でストックに追加',`${item.name} ${item.qty}${item.unit}を買った`,'stock','📦',{refs:[ref(item,'buy')],change:`${item.qty}${item.unit}をストックに追加`});finish({page:'buy',message:`${item.name}を「買った」にしました`});
   };
   function deleteBuy(ids){
     const picked=buys.filter(x=>ids.includes(numberId(x.id)));if(!picked.length)return;
     window.AtokoreConfirm.open('買い物リストから'+picked.length+'商品を削除しますか？',picked.map(x=>x.name).join('、')+'を削除します。ストックの数量は変わりません。','削除する',()=>{
       buys=Core.removeByIds(buys,ids);if(!saveState()){finish();return false}
-      ids.forEach(id=>buySelected.delete(id));logHistory('買い物を削除',picked.map(x=>x.name).join('、')+'を削除','buy','🗑');finish({page:'buy',message:picked.length+'商品を削除しました'});return true;
+      ids.forEach(id=>buySelected.delete(id));logHistory('買い物を削除',picked.map(x=>x.name).join('、')+'を削除','buy','🗑',{refs:picked.map(x=>ref(x,'buy')),change:'買い物リストから削除'});finish({page:'buy',message:picked.length+'商品を削除しました'});return true;
     });
   }
   window.bdel=id=>deleteBuy([numberId(id)]);
@@ -243,12 +246,13 @@
   window.deleteSelectedBuy=()=>{const ids=syncBuySelectionFromDom();if(!ids.length){toast('削除する商品を選んでください');return}deleteBuy(ids)};
   window.bought=()=>{
     const ids=syncBuySelectionFromDom();if(!ids.length){alert('「買った」にする商品を選んでください');return}
+    const boughtRows=buys.filter(x=>ids.includes(numberId(x.id)));
     const result=Core.purchase(items,buys,ids,inferCategory);if(!result.count){alert('「買った」を完了できませんでした');return}
-    buys=result.remaining;buySelected.clear();saveState();logHistory('「買った」でストックに追加',`${result.count}件を買った`,'stock','📦');finish({page:'stock',message:`${result.count}件を「買った」にしました`});
+    buys=result.remaining;buySelected.clear();saveState();logHistory('「買った」でストックに追加',`${result.count}件を買った`,'stock','📦',{refs:boughtRows.map(x=>ref(x,'buy')),change:'ストックに追加'});finish({page:'stock',message:`${result.count}件を「買った」にしました`});
   };
   window.premiumBuy=id=>{
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
-    Core.addStockToBuy(buys,item,1);saveState();logHistory('買い物リストへ追加',`${item.name}を追加`,'buy','🛒');finish({message:`${item.name}を買い物へ追加しました`});
+    Core.addStockToBuy(buys,item,1);saveState();logHistory('買い物リストへ追加',`${item.name}を追加`,'buy','🛒',{refs:[ref(item)],change:'買い物リストに1'+(item.unit||'個')+'追加'});finish({message:`${item.name}を買い物へ追加しました`});
   };
 
   window.goCatV11=category=>{filter=category;showPage('stock');window.renderStock()};

@@ -513,7 +513,8 @@ function commit(origin){
  }
  // Saved. From here on a drawing problem must never be reported as a failed save (that would invite a second add).
  const afterSave=state.afterSave;
- try{root.AtokoreHistory?.add(target?'いつものリストに商品を追加':dest==='buy'?'買い物リストへ追加':'ストックに商品を追加',tray.slice(0,2).map(x=>x.name).join('、')+(tray.length>2?' ほか'+(tray.length-2)+'商品':''),target?'routine':dest==='buy'?'buy':'stock','＋')}catch(e){root.console?.warn?.('あとこれ: 操作履歴を表示できませんでした',e)}
+ try{root.AtokoreHistory?.add(target?'いつものリストに商品を追加':dest==='buy'?'買い物リストへ追加':'ストックに商品を追加',tray.slice(0,2).map(x=>x.name).join('、')+(tray.length>2?' ほか'+(tray.length-2)+'商品':''),target?'routine':dest==='buy'?'buy':'stock','＋',
+  target?undefined:{refs:tray.map((x,i)=>({id:result?.byLine?.[i]??null,kind:dest==='buy'?'buy':'item',name:x.name,unit:x.unit})),change:tray.length===1?(dest==='buy'?'買い物リストに':'ストックに')+tray[0].qty+(tray[0].unit||'個')+'追加':undefined})}catch(e){root.console?.warn?.('あとこれ: 操作履歴を表示できませんでした',e)}
  state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;
  if(target)state.routineTarget=null;
  let displayFailed=false;
