@@ -238,8 +238,11 @@
     const open=menu.hidden;window.closeBuyMenusV48();
     if(open){menu.hidden=false;button?.setAttribute('aria-expanded','true');menu.querySelector('button')?.focus()}
   };
+  // Outside click and Escape close the menu (skipped where the page offers no event listeners).
+  if(typeof document.addEventListener==='function'){
   document.addEventListener('click',e=>{if(!e.target.closest?.('.stableBuyMore,.stableBuyMenu'))window.closeBuyMenusV48()});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.querySelector('.stableBuyMenu:not([hidden])')){const b=document.querySelector('.stableBuyMore[aria-expanded="true"]');window.closeBuyMenusV48();b?.focus()}});
+  }
   window.deleteSelectedBuy=()=>{const ids=syncBuySelectionFromDom();if(!ids.length){toast('削除する商品を選んでください');return}deleteBuy(ids)};
   window.bought=()=>{
     const ids=syncBuySelectionFromDom();if(!ids.length){alert('「買った」にする商品を選んでください');return}
