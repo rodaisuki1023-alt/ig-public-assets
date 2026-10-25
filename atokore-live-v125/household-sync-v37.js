@@ -3,7 +3,7 @@
  * project (household-config-v37.js). Without it nothing is shown and nothing is sent anywhere.
  * Only the public anon key lives in the browser; every server rule is in the database functions.
  * The app keeps saving locally as before; household-core-v37.js turns saved changes into operations.
- * Product photos are shared only after an explicit save/share choice, in a private bucket.
+ * Product photos are shared with the family automatically, like the products (private bucket).
  */
 (function(root){
 'use strict';
@@ -53,9 +53,35 @@ function captureInvite(initial=false){
 captureInvite(true);
 let household=meta.household||null,engine=null,syncing=null,lastRaw=null,status={state:'local'},timer=null,pending=null,puller=null;
 let changes=[],historyState='loading',changesFor=null,changesRequest=null;
+// Who shares this household, with the names each member set. Cached so the status stays readable
+// offline; the same names are shown as the people in the change history.
+function membersKey(){return household&&session?household.id+':'+session.user.id:null}
+function rememberMembers(my){
+ if(!Array.isArray(my?.members)||!membersKey())return;
+ saveMeta({members:my.members.map(m=>({name:String(m.display_name||''),me:!!m.is_me})),membersFor:membersKey(),membersAt:Date.now()});
+}
+async function refreshMembers(force){
+ if(!membersKey()||(!force&&meta.membersFor===membersKey()&&Date.now()-(meta.membersAt||0)<20000))return;
+ try{const my=await rpc('hh_my',{});if(my?.household)rememberMembers(my)}catch(_){}
+}
+const when=t=>new Date(t).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+// One summary for every place that shows the sharing state (home and the share dialog), so they
+// never disagree. "Who shares" (members) and "did my changes reach them" (kind) are separate.
+function shareSummary(){
+ if(!household||!session)return {kind:'local',headline:'この端末だけで利用中',detail:'',members:[],me:'',pending:0,lastSync:0};
+ const s=engine?engine.status():{pending:0,lastSync:0};
+ const list=meta.membersFor===membersKey()&&Array.isArray(meta.members)?meta.members:[];
+ const members=list.map(m=>m.name),me=list.find(m=>m.me)?.name||'',lastSync=s.lastSync||0;
+ const base={members,me,pending:s.pending||0,lastSync};
+ const who=members.length?'参加中：'+members.join('、')+(me?'／この端末で利用中：'+me:''):'';
+ if(base.pending)return {...base,kind:'pending',headline:'家族と共有中・未送信あり',detail:'未送信の変更 '+base.pending+'件'+(who?'／'+who:'')};
+ if(status.state==='synced'||(status.state==='syncing'&&lastSync))return {...base,kind:'shared',headline:members.length?members.length+'人で共有中':'家族と共有中',detail:who};
+ if((status.state==='local'||status.state==='syncing')&&!lastSync)return {...base,kind:'checking',headline:'共有状態を確認しています',detail:who};
+ return {...base,kind:'unknown',headline:'共有状態を確認できません',detail:(lastSync?'最後に確認した状態：'+when(lastSync)+(members.length?'・'+members.length+'人で共有中':''):'まだ共有先を確認できていません')+(STATUS_TEXT[status.state]&&status.state!=='synced'?'（'+STATUS_TEXT[status.state]+'）':'')};
+}
 function homeState(){
  const current=household&&session?household.id+':'+session.user.id:null;
- return {joined:!!current,state:status.state,lastSync:engine?.status().lastSync||0,historyState:current===changesFor?historyState:'loading',changes:current===changesFor?changes.map(r=>({...r})):[]};
+ return {summary:shareSummary(),joined:!!current,state:status.state,lastSync:engine?.status().lastSync||0,historyState:current===changesFor?historyState:'loading',changes:current===changesFor?changes.map(r=>({...r})):[]};
 }
 function capturePurchases(ids){
  if(!engine||!household||!session)return [];
@@ -191,6 +217,7 @@ async function syncNow(){
    const s=engine.status();
    setStatus(s.pending?'pending':'synced');
    await refreshChanges();
+   if(!s.pending){await refreshMembers();paint()}
   }catch(e){
    if(e.code==='rejected'||e.code==='recovery')setStatus('blocked');
    else if(e.code==='storage')setStatus('storage');
@@ -233,17 +260,14 @@ function el(tag,props,children){
 const STATUS_TEXT={local:'共有していません',syncing:'同期しています…',synced:'家族と共有済み',pending:'送信待ちがあります',offline:'オフライン：この端末に保存済み。つながったら送ります',auth:'ログインし直してください',error:'送信に失敗しました。自動でやり直します',removed:'この世帯から外れました（端末の在庫は残っています）'};
 STATUS_TEXT.blocked='共有できない変更があります。端末のデータを残して同期を止めています';
 STATUS_TEXT.storage='変更を端末に保存できませんでした。在庫は残っています。空き容量とブラウザの保存設定を確認してください';
-function statusLine(){
- const s=engine?engine.status():{pending:0,rejected:0};
- let t=STATUS_TEXT[status.state]||'';
- if(s.pending&&status.state!=='synced')t+='（送信待ち '+s.pending+'件）';
- return t;
-}
 function paint(){
+ const sum=shareSummary();
  const chip=$('atkHouseholdChip');
- if(chip){chip.hidden=!household;chip.textContent=status.state==='synced'?'共有済み':status.state==='pending'||status.state==='syncing'?'送信待ち':status.state==='offline'?'オフライン':status.state==='local'?'':'要確認';chip.dataset.state=status.state}
- const meta2=$('atkHouseholdCardMeta');if(meta2)meta2.textContent=household?statusLine():'招待した家族と在庫・買い物リストを共有（限定テスト）';
- const line=$('atkHouseholdStatus');if(line)line.textContent=statusLine();
+ if(chip){chip.hidden=!household;chip.textContent=household?sum.headline:'';chip.dataset.state=sum.kind}
+ const meta2=$('atkHouseholdCardMeta');if(meta2)meta2.textContent=household?sum.headline:'招待した家族と在庫・買い物リストを共有（限定テスト）';
+ const line=$('atkHouseholdStatus');if(line)line.textContent=sum.headline;
+ const detail=$('atkHouseholdDetail');if(detail){detail.textContent=sum.detail;detail.hidden=!sum.detail}
+ const act=$('atkHouseholdSyncNow');if(act){act.textContent=sum.kind==='unknown'||sum.kind==='checking'?'再確認する':'今すぐ同期';act.classList.toggle('atk-hh-primary-action',sum.kind!=='shared')}
  doc.dispatchEvent(new root.CustomEvent('atokore-household-updated'));
 }
 function sheet(title,children){
@@ -281,11 +305,11 @@ function recoveryHelp(){
  sheet('機種変更・データの復旧',[
   el('h3',{text:'Googleで参加した方'}),
   note('新しい端末で同じ試用版を開き、マイページ → 家族共有 → 同じGoogleアカウントでログインします。「共有のデータを使う」を選び、内容を確認してください。新しい世帯を作る必要はありません。'),
-  note('復旧できるのは、共有先へ送信済みの在庫・買い物リスト・いつものリスト・共有写真です。Googleログインだけではバックアップになりません。家族共有を開始し「家族と共有済み」になっていることを旧端末で確認してください。'),
-  note('端末だけの写真・未送信の変更・端末内だけの控え・表示設定は、Googleログインだけでは戻りません。Googleは本人確認に使い、共有データはあとこれ側に保存します。'),
+  note('復旧できるのは、共有先へ送信済みの在庫・買い物リスト・いつものリスト・写真です。Googleログインだけではバックアップになりません。家族共有を開始し、旧端末で「未送信あり」が出ていないことを確認してください。'),
+  note('未送信の変更（写真を含む）・端末内だけの控え・表示設定は、Googleログインだけでは戻りません。Googleは本人確認に使い、共有データはあとこれ側に保存します。'),
   el('h3',{text:'Googleなしで参加した方'}),
   note('同じ端末・同じブラウザなら次回も自動接続します。機種変更、ブラウザのデータ削除、ログアウト後は同じ参加者として戻れません。作成者の家族共有画面で以前の参加者を「外して再招待」し、新しい招待リンクから参加してください。'),
-  note('再招待しても、共有済みの在庫は残ります。旧端末だけの写真や未送信の変更は戻りません。Safariとホーム画面アプリなど、保存領域が分かれる場合も再参加が必要です。'),
+  note('再招待しても、共有済みの在庫と写真は残ります。旧端末で未送信だった変更は戻りません。Safariとホーム画面アプリなど、保存領域が分かれる場合も再参加が必要です。'),
   button('家族共有へ戻る',()=>open(),'atk-hh-secondary')]);
 }
 function invitationURL(code){
@@ -356,7 +380,7 @@ function signIn(){
   await afterSignIn();
  }))]);
  sheet('家族共有（限定テスト）',[
-  note((cfg.guest===true?'作成者はGoogleでログイン。招待された方はGoogleなしでも参加できます。':'家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインします。')+'同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。端末だけの写真はこの端末だけに保存され、共有されません。'),
+  note((cfg.guest===true?'作成者はGoogleでログイン。招待された方はGoogleなしでも参加できます。':'家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインします。')+'同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。商品の写真も家族と自動で共有されます。'),
   button('招待コードを入力して参加する',joinScreen),
   google,
   note('作成者はGoogleでログインして世帯を作ります。Googleで参加した方は、端末変更後も同じアカウントから共有済みデータを引き継げます。'),
@@ -394,7 +418,7 @@ function chooseHousehold(){
     if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'を共有の最初のデータにします。','共有を始める'))return;
     if(!backupDevice())throw '控えを保存できなかったため中止しました（何も変更していません）';
     const my=await rpc('hh_create',{p_name:'わが家',p_display_name:name.value.trim()});
-    household={id:my.household.id,name:my.household.name};saveMeta({household});
+    household={id:my.household.id,name:my.household.name};saveMeta({household});rememberMembers(my);
     makeEngine();engine.startAsCreator();watch();await syncNow();dashboard();
    }))]),
   el('div',{class:'atk-hh-card'},[el('h3',{text:'招待コードで参加する'}),field('家族から届いた招待コード',code),
@@ -436,7 +460,13 @@ async function choosePlacement(my){
   list]);
 }
 async function dashboard(){
- const statusEl=el('p',{id:'atkHouseholdStatus',class:'atk-hh-status',text:statusLine()});
+ const sum=shareSummary();
+ const statusEl=el('div',{class:'atk-hh-summary',role:'status'},[
+  el('p',{id:'atkHouseholdStatus',class:'atk-hh-status',text:sum.headline}),
+  el('p',{id:'atkHouseholdDetail',class:'atk-hh-detail',text:sum.detail,...(sum.detail?{}:{hidden:''})}),
+  button(sum.kind==='unknown'||sum.kind==='checking'?'再確認する':'今すぐ同期',e=>busy(e.target,async()=>{await syncNow();await refreshMembers(true);paint()}),'atk-hh-secondary')]);
+ statusEl.lastChild.id='atkHouseholdSyncNow';
+ const loadError=el('p',{class:'atk-hh-detail atk-hh-load-error',role:'alert',hidden:''});statusEl.append(loadError);
  const members=el('ul',{class:'atk-hh-members'});
  const inviteBox=el('div',{class:'atk-hh-invite'});
  const history=el('ol',{class:'atk-hh-history',hidden:''});
@@ -446,7 +476,6 @@ async function dashboard(){
   statusEl,members,inviteBox,
   note(session?.user?.is_anonymous?'Googleなしで参加中。このブラウザに参加情報を保存しています。機種変更やデータ削除後は、作成者から再招待してもらってください。': 'ログイン中：'+(session?.user?.email||'登録済みアカウント')+'。機種変更後も同じアカウントでログインすると、共有先へ送信済みのデータを引き継げます。'),
   button('機種変更・復旧の手順を見る',recoveryHelp,'atk-hh-link'),
-  button('今すぐ同期',e=>busy(e.target,async()=>{await syncNow();statusEl.textContent=statusLine()}),'atk-hh-secondary'),
   button('変更履歴（だれが何を変えたか）',e=>busy(e.target,async()=>{
    const rows=await rpc('hh_changes',{p_limit:50});history.replaceChildren(...(rows||[]).map(r=>el('li',{text:changeText(r)})));history.hidden=false;
   }),'atk-hh-secondary'),history,
@@ -460,7 +489,7 @@ async function dashboard(){
     engine.resolveRejected();await syncNow();dashboard();
    }),'atk-hh-link')]):null,
   readJSON(RECOVERY)?button('同期を再開する前の控えをファイルに保存',()=>downloadRecovery(true),'atk-hh-link'):null,
-  note('端末だけの写真は自動では共有されません。商品詳細の「写真を設定」から、家族と共有する写真を選べます。'),
+  note('商品の写真も、在庫と同じように家族と自動で共有されます。共有を始める前に入れた写真も共有されます。'),
   readJSON(BEFORE_SHARE)?button('共有前の控えをファイルに保存',downloadBackup,'atk-hh-link'):null,
   button('この世帯から抜ける（端末の在庫は残ります）',e=>busy(e.target,leave),'atk-hh-link'),
   button('ログアウト',()=>signOut(),'atk-hh-link')]);
@@ -468,6 +497,7 @@ async function dashboard(){
  try{
   const my=await rpc('hh_my',{});
   if(!my?.household){household=null;saveMeta({household:null});setStatus('removed');return chooseHousehold()}
+  rememberMembers(my);paint();
   members.replaceChildren(...my.members.map(m=>el('li',{},[
    el('span',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')}),
    my.me?.role==='owner'&&!m.is_me?button('外して再招待：'+m.display_name,e=>busy(e.target,async()=>{
@@ -486,7 +516,7 @@ async function dashboard(){
     root.navigator?.share?button('招待リンクを送る',()=>root.navigator.share({title:'あとこれの家族共有',text:'あとこれで在庫を共有しましょう。下のリンクをSafariなどで開き、名前を入れて参加してください。招待コード：'+inv.code+'（24時間・1回限り）',url:link}).catch(()=>{}),'atk-hh-secondary'):null,
     button('このコードを無効にする',e2=>busy(e2.target,async()=>{await rpc('hh_invite_revoke',{});inviteBox.replaceChildren(note('招待コードを無効にしました'))}),'atk-hh-link')].filter(Boolean));
   }),'atk-hh-secondary'):note('無料の家族共有は2人までです（同じ人の別の端末は人数に数えません）。'));
- }catch(e){statusEl.textContent=friendly(e)}
+ }catch(e){loadError.textContent='参加者を読み込めませんでした：'+friendly(e);loadError.hidden=false}
 }
 function changeText(r){
  const when=new Date(r.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});

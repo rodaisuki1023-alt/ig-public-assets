@@ -31,7 +31,7 @@ function sharedEntries(rows){
   const r=g.rows[0],who=String(r.who||'家族'),name=String(r.name||'削除済みの商品');
   const place=r.kind==='buy'?'買い物リスト':r.kind==='routine'?'いつものリスト':'ストック';
   const what=r.type==='undo_purchase'?'の「買った」を取り消し':r.type==='complete_buy'?'を「買った」':r.type==='create'?'を追加':r.type==='delete'?'を削除':r.type==='add'?'の数量を変更':'を更新';
-  const qty=Number(r.delta),unit=String(r.unit||'個'),delta=r.type==='add'&&r.beforeQty!=null&&r.afterQty!=null?r.beforeQty+unit+' → '+r.afterQty+unit:r.type==='add'&&r.delta!==null&&Number.isFinite(qty)?'数量 '+(qty>0?'＋':'')+qty+unit:r.type==='create'&&r.afterQty!=null?place+'に'+r.afterQty+unit+'追加':r.type==='set'?({name:'商品名',place:'保管場所',exp:'期限',memo:'メモ',qtyBasis:'在庫の数え方',inUse:'使用中の有無',photoPath:'共有写真'}[r.field]||'商品情報')+'を変更':place;
+  const qty=Number(r.delta),unit=String(r.unit||'個'),delta=r.type==='add'&&r.beforeQty!=null&&r.afterQty!=null?r.beforeQty+unit+' → '+r.afterQty+unit:r.type==='add'&&r.delta!==null&&Number.isFinite(qty)?'数量 '+(qty>0?'＋':'')+qty+unit:r.type==='create'&&r.afterQty!=null?place+'に'+r.afterQty+unit+'追加':r.type==='set'?({name:'商品名',place:'保管場所',exp:'期限',memo:'メモ',qtyBasis:'在庫の数え方',inUse:'使用中の有無',photoPath:'写真'}[r.field]||'商品情報')+'を変更':place;
   return {at:r.at,who,title:who+'が'+(g.rows.length>1?place+'の'+g.rows.length+'商品':name)+what,
    detail:g.rows.length>1?g.rows.slice(0,2).map(x=>String(x.name||'削除済みの商品')).join('、')+(g.rows.length>2?' ほか'+(g.rows.length-2)+'商品':''):r.type==='complete_buy'?(r.delta!=null?r.delta+unit+'「買った」でストックに追加':'「買った」でストックに追加'):delta,
    type:r.type==='complete_buy'?'purchase':r.kind==='buy'?'buy':'stock'};
@@ -83,7 +83,11 @@ function render(){
  const content=activityHTML(list.slice(0,3));if($('atkHomeActivity').innerHTML!==content)$('atkHomeActivity').innerHTML=content;
  $('atkHomeActivity').hidden=!list.length;
  const start=$('atkHomeShareStart');if(start){start.hidden=!!s.joined;start.disabled=!root.AtokoreHousehold?.open}
- const time=$('atkHomeLastSync');if(time){time.textContent=s.joined?(s.lastSync?'最終同期 '+relative(s.lastSync):'共有先を確認しています'):'この端末に保存';time.hidden=false}
+ // Same summary as the share dialog (household-sync shareSummary); the chip next to this shows its headline.
+ const sum=s.summary||{kind:'local',headline:'この端末だけで利用中'};
+ const time=$('atkHomeLastSync');
+ if(time){time.textContent=!s.joined?sum.headline:sum.kind==='shared'?(s.lastSync?'最終同期 '+relative(s.lastSync):''):sum.kind==='pending'?'未送信 '+sum.pending+'件':sum.kind==='unknown'?(s.lastSync?'最後に確認 '+relative(s.lastSync):'未確認'):'';time.hidden=!time.textContent}
+ const sync=$('atkHomeSyncNow');if(sync){sync.hidden=!(s.joined&&(sum.kind==='pending'||sum.kind==='unknown'));sync.textContent=sum.kind==='unknown'?'再確認':'今すぐ同期'}
 }
 function openAll(){
  const s=state(),list=entries(s),title=s.joined?'家族の変更履歴':'この端末の変更履歴';
@@ -92,7 +96,7 @@ function openAll(){
 function install(){
  doc.body.classList.add('atk-home-v43');
  const top=doc.querySelector('.top');
- if(top)top.innerHTML='<div class="atk-top-title"><h1>あとこれ</h1><span>わが家のストック</span></div><div class="atk-home-sharing"><button type="button" id="atkHomeShareStart">家族と共有する</button><small id="atkHomeLastSync"></small></div>';
+ if(top)top.innerHTML='<div class="atk-top-title"><h1>あとこれ</h1><span>わが家のストック</span></div><div class="atk-home-sharing"><button type="button" id="atkHomeShareStart">家族と共有する</button><small id="atkHomeLastSync"></small><button type="button" id="atkHomeSyncNow" hidden>今すぐ同期</button></div>';
  for(const [page,label] of [['home','ホーム'],['stock','ストック'],['buy','買い物'],['premium','マイページ']]){
   const tab=doc.querySelector('.tabs [data-p="'+page+'"]');if(tab)tab.innerHTML=icon(page)+'<span>'+label+'</span>'+(page==='buy'?'<span id="atkHomeBuyBadge" class="atk-home-buy-badge" hidden></span>':'');
  }
@@ -101,6 +105,7 @@ function install(){
  doc.addEventListener('click',e=>{
   if(e.target.closest('#atkHomeAllChanges'))openAll();
   if(e.target.closest('#atkHomeShareStart'))root.AtokoreHousehold?.open?.();
+  if(e.target.closest('#atkHomeSyncNow')){const b=e.target.closest('#atkHomeSyncNow');b.disabled=true;Promise.resolve(root.AtokoreHousehold?.syncNow?.()).finally(()=>{b.disabled=false;root.renderHome?.()})}
   if(e.target.closest('#atkHomeHistoryRefresh'))root.AtokoreHousehold?.refreshChanges?.();
   if(e.target.closest('#atkHomeMoreStock')){
    let a=[];try{a=items}catch(_){}

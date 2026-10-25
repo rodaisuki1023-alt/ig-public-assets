@@ -78,16 +78,23 @@ function parseBackup(text){
  if(!valid(state))throw Error('あとこれのバックアップファイルではありません');
  const a=cleanList(state.items,okRecord),b=cleanList(state.buys,okRecord),c=cleanList(state.routines,okRoutine);
  const history=Array.isArray(data?.history)?data.history.filter(h=>h&&typeof h==='object'&&typeof h.title==='string').slice(0,200):null;
- return {state:{items:a.out,buys:b.out,routines:c.out},history,dropped:a.dropped+b.dropped+c.dropped};
+ const createdAt=typeof data?.exportedAt==='string'&&!Number.isNaN(Date.parse(data.exportedAt))?data.exportedAt:null;
+ return {state:{items:a.out,buys:b.out,routines:c.out},history,dropped:a.dropped+b.dropped+c.dropped,createdAt,photos:Array.isArray(data?.photos)?data.photos:[]};
 }
 
-function exportBackup(){
+const photosApi=()=>root.AtokoreProductPhotos;
+// Product photos are part of the backup (format 2). Saving a backup is always possible, also while
+// sharing with the family.
+async function exportBackup(){
  const store=storage();let history=[];
  try{history=JSON.parse(store?.getItem(HISTORY)||'[]')}catch(e){}
- const body=JSON.stringify({app:'atokore',format:1,exportedAt:new Date().toISOString(),data:current(),history},null,1);
+ const data=JSON.parse(JSON.stringify(current()));
+ let photos=[],missing=0;
+ try{if(photosApi()?.exportPhotos)({photos,missing}=await photosApi().exportPhotos(data.items))}catch(e){missing=-1}
+ const body=JSON.stringify({app:'atokore',format:2,exportedAt:new Date().toISOString(),data,history,photos},null,1);
  const stamp=new Date().toISOString().slice(0,10).replace(/-/g,'');
  download(body,'atokore-backup-'+stamp+'.json','application/json');
- banner('バックアップファイルを作成しました。「ファイル」アプリなど安全な場所に保存してください。','info');
+ banner('バックアップファイルを作成しました（写真'+photos.length+'枚を含みます）。'+(missing?'写真'+(missing>0?missing+'枚':'の一部')+'は読み込めなかったため含めていません（通信を確認してもう一度保存してください）。':'')+'「ファイル」アプリなど安全な場所に保存してください。',missing?'error':'info');
 }
 
 function download(body,name,type){
@@ -100,6 +107,7 @@ function download(body,name,type){
 function applyRestore(parsed){
  const store=storage();
  if(locked()){banner(LOCK_MESSAGE,'error');return false}
+ if(root.AtokoreHousehold?.homeState?.().joined){banner('家族共有に参加している間は、ファイルから復元できません。','error');return false}
  if(!store){banner('この端末では保存領域を使えないため復元できません。','error');return false}
  const previous=JSON.stringify(current());
  try{store.setItem(BEFORE_RESTORE,JSON.stringify({at:Date.now(),data:JSON.parse(previous)}))}
@@ -109,7 +117,12 @@ function applyRestore(parsed){
  if(!save()){assign(before);return false}
  if(parsed.history){try{store.setItem(HISTORY,JSON.stringify(parsed.history))}catch(e){}}
  try{root.render?.()}catch(e){}
- banner('復元しました（在庫'+parsed.state.items.length+'件・買い物'+parsed.state.buys.length+'件）。'+(parsed.dropped?'形式が正しくない'+parsed.dropped+'件は読み込みませんでした。':''),'info');
+ const done='復元しました（ストック'+parsed.state.items.length+'件・買い物'+parsed.state.buys.length+'件・いつものリスト'+parsed.state.routines.length+'件）。'+(parsed.dropped?'形式が正しくない'+parsed.dropped+'件は読み込みませんでした。':'');
+ banner(done,'info');
+ // Photos follow the restored products; the current photos are set aside for "復元前に戻す".
+ const photos=photosApi()?.parsePhotos?.(parsed.photos,parsed.state.items)||[];
+ Promise.resolve(photosApi()?.replaceAll?.(photos)).then(()=>{try{root.render?.()}catch(e){}})
+  .catch(()=>banner(done+'写真だけ復元できませんでした。端末の空き容量を確認してください。','error'));
  return true;
 }
 
@@ -126,6 +139,7 @@ function undoRestoreConfirmed(saved){
  try{root.render?.()}catch(e){}
  root.closeM?.();
  banner('復元前の状態に戻しました。','info');
+ Promise.resolve(photosApi()?.undoReplace?.()).then(()=>{try{root.render?.()}catch(e){}}).catch(()=>banner('復元前の状態に戻しました。写真だけ戻せませんでした。','error'));
 }
 
 function el(tag,props,children){
@@ -144,24 +158,46 @@ function openBackup(){
  exportBtn.addEventListener('click',exportBackup);
  const file=el('input',{type:'file',accept:'application/json,.json',class:'atk-backup-file','aria-label':'バックアップファイルを選択'});
  const pick=el('button',{type:'button',class:'atk-backup-secondary',text:'バックアップから復元'});
- pick.addEventListener('click',()=>file.click());
  const status=el('p',{class:'atk-backup-status',role:'status'});
+ // While sharing, restoring a file on one device would overwrite what the family shares.
+ const shared=!!root.AtokoreHousehold?.homeState?.().joined;
+ const blocked=el('div',{class:'atk-backup-blocked',hidden:''},[
+  el('p',{text:'家族共有に参加している間は、この端末のファイルから復元できません。共有している在庫や写真が、家族の端末でも置き換わってしまうためです。'}),
+  el('p',{text:'共有の内容を取り戻したいときは「共有に再接続する」、ファイルの内容に戻したいときは、共有を抜けてから復元してください。バックアップの保存はいつでもできます。'})]);
+ const reconnect=el('button',{type:'button',class:'atk-backup-secondary',text:'共有に再接続する'});
+ reconnect.addEventListener('click',()=>{root.closeM?.();root.AtokoreHousehold?.syncNow?.();root.AtokoreHousehold?.open?.()});
+ const leaveFirst=el('button',{type:'button',class:'atk-backup-secondary',text:'共有を抜けてから復元する'});
+ leaveFirst.addEventListener('click',()=>{root.closeM?.();root.AtokoreHousehold?.open?.()});
+ blocked.append(reconnect,leaveFirst);
+ pick.addEventListener('click',()=>{if(shared){blocked.hidden=false;status.textContent='';return}file.click()});
  file.addEventListener('change',()=>{
   const f=file.files&&file.files[0];if(!f)return;
-  if(f.size>5*1024*1024){status.textContent='ファイルが大きすぎます（5MBまで）';return}
-  f.text().then(text=>{
+  if(root.AtokoreHousehold?.homeState?.().joined){blocked.hidden=false;file.value='';return}
+  if(f.size>20*1024*1024){status.textContent='ファイルが大きすぎます（20MBまで）';return}
+  f.text().then(async text=>{
    const parsed=parseBackup(text);
-   const message='現在のデータ（在庫'+counts.items.length+'件・買い物'+counts.buys.length+'件）を、ファイルの内容（在庫'+parsed.state.items.length+'件・買い物'+parsed.state.buys.length+'件）に置き換えます。\n現在のデータは端末内に退避し、あとで戻せます。';
-   return root.AtokoreConfirm.ask('バックアップから復元しますか？',message,'復元する').then(ok=>{
-    if(!ok){status.textContent='復元を中止しました';return}
-    if(applyRestore(parsed))root.closeM?.();
-   });
+   const photos=photosApi()?.parsePhotos?.(parsed.photos,parsed.state.items)||[];
+   let nowPhotos=null;try{nowPhotos=await photosApi()?.countPhotos?.(counts.items)}catch(e){}
+   const line=(label,a,b,u)=>label+'：現在 '+a+u+' → 復元後 '+b+u;
+   const message=[
+    'バックアップの作成日時：'+(parsed.createdAt?new Date(parsed.createdAt).toLocaleString('ja-JP'):'記録なし'),
+    line('ストック',counts.items.length,parsed.state.items.length,'件'),
+    line('買い物リスト',counts.buys.length,parsed.state.buys.length,'件'),
+    line('いつものリスト',counts.routines.length,parsed.state.routines.length,'件'),
+    line('写真',nowPhotos==null?'?':nowPhotos,photos.length,'枚')+'（写真もバックアップの内容に置き換わります）',
+    '件数が同じでも中身が異なる場合があります。',
+    '今の内容は端末内に控えとして残し、「復元する前の状態に戻す」で戻せます。'].join('\n');
+   const ok=await root.AtokoreConfirm.ask('バックアップの内容に置き換えますか？',message,'置き換えて復元する');
+   if(!ok){status.textContent='復元を中止しました';return}
+   if(applyRestore(parsed))root.closeM?.();
   }).catch(e=>{status.textContent=e?.message||'読み込みに失敗しました'}).finally(()=>{file.value=''});
  });
  const children=[close,el('h2',{text:'データのバックアップ'}),
-  el('p',{class:'atk-backup-note',text:'在庫・買い物リスト・いつものリストは、この端末のブラウザ内だけに保存されています。機種変更やデータ消去に備えて、ときどきファイルに保存してください。'}),
+  el('p',{class:'atk-backup-note',text:'在庫・買い物リスト・いつものリスト・商品の写真を、ひとつのファイルに保存します。機種変更やデータ消去に備えて、ときどきファイルに保存してください。'}),
   el('p',{class:'atk-backup-count',text:'現在：在庫'+counts.items.length+'件・買い物'+counts.buys.length+'件・セット'+counts.routines.length+'件'}),
-  exportBtn,pick,file,status];
+  exportBtn,
+  el('p',{class:'atk-backup-warning',text:'復元すると、今の内容がバックアップの内容に置き換わります。バックアップに入っていない商品やリストは残りません。'}),
+  pick,blocked,file,status];
  if(locked()){
   // The unreadable original is still in place: let the user take it out as a file.
   const raw=el('button',{type:'button',class:'atk-backup-secondary',text:'読み込めなかった元のデータをファイルに保存'});

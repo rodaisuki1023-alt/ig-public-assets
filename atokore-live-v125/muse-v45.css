@@ -4,3 +4,6 @@ body.atk-v17 #stockList .bf-stock-card>.qty>.icon{min-width:44px!important;width
 body.atk-v17 #stockList .expiryBadge{max-width:100%;white-space:normal!important;overflow-wrap:anywhere;font-size:10px;line-height:1.5}
 
 .atk-bulk-pick{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 38px;align-self:flex-start;font-size:9px;color:#78695f;line-height:1.4;text-align:center;padding:6px 0}.atk-bulk-pick input{margin:0!important}.atk-bulk-pick span{white-space:normal}
+/* W2: multi-line confirmation details (restore comparison etc.). */
+.atk-confirm #atkConfirmNote{white-space:pre-line}
+.atk-confirm section{max-height:calc(100dvh - 36px);overflow-y:auto}
