@@ -32,3 +32,5 @@ body .atk-sort{min-height:46px}
 body #pg-add .atk-page-title button{min-width:44px;min-height:44px}
 body #pg-add .qa-option-chips button{min-width:44px}
 body.atk-v14 #pg-add.qa-quick-mode .qa-step button,body.atk-v14 #pg-add.qa-quick-mode .qa-tray-item .qa-step button{min-width:44px;min-height:44px}
+/* Text buttons on the stock and shopping screens keep 44px whatever the font metrics (CI fonts rendered 43px). */
+body #pg-stock .btn,body #pg-buy .btn{min-height:44px}
