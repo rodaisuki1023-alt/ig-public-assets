@@ -1,3 +1,6 @@
+-- !! 2026-10-31: the trial DB's hh_changes was found (read-only check) to already have the W2 body, while
+-- !! schema_migrations has no 20261025090000 entry. Running this file would REVERT that live definition to v44.
+-- !! On hold: do not apply to the current DB without a separate decision (docs/atokore-history-w2-migration-plan.md §4).
 -- ROLLBACK for 20261025090000_atokore_history_w2.sql (NOT a migration: kept outside supabase/migrations so it
 -- is never applied automatically). Apply only if the new history function has to be withdrawn, as a new,
 -- separately approved change. It restores public.hh_changes(int) exactly as defined in
