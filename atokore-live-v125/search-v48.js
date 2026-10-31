@@ -3,6 +3,7 @@
  * - Spaces (full or half width) separate words; every word must be found (AND).
  * - Confirmed spellings of the same brand are the same (キユーピー/キューピー, Pampers/パンパース …).
  * - Sizes (S, M, L, XL, NB, ビッグ …) match only as a whole size, so "M" never finds L, ML or "mamy".
+ * - Month ages (7ヶ月・7ケ月・7ヵ月・７カ月・7か月・7箇月) are one spelling, and "7ヶ月" does not find 17ヶ月/27ヶ月.
  * - Long vowels, small kana and っ are NOT folded here; "もしかして" suggestions handle those.
  * Pure functions; no DOM.
  */
@@ -15,11 +16,15 @@ function hira(s){return s.replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCode
 function norm(text){
  let t=hira(String(text??'').normalize('NFKC').toLowerCase());
  for(const [re,to] of BRANDS)t=t.replace(re,to);
- return t.replace(/\s+/g,' ').trim();
+ // Month ages: ヶ月・ケ月・ヵ月・カ月・か月・箇月 are one spelling (after folding to hiragana).
+ return t.replace(/(\d+)(?:ゖ|ゕ|か|け|箇)月/g,'$1ゖ月').replace(/\s+/g,' ').trim();
 }
-function words(query){return norm(query).split(' ').filter(Boolean)}
+// A query word cut off while typing ("7ヶ", "7か") already means a month age.
+function words(query){return norm(query).split(' ').filter(Boolean).map(w=>w.replace(/^(\d+)(?:ゖ|ゕ|か|け|箇)$/,'$1ゖ'))}
 const escapeRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 function hasWord(hay,word){
+ // "7ヶ月" never matches the 7 inside "17ヶ月" or "27ヶ月".
+ if(/^\d+ゖ/.test(word))return new RegExp('(^|[^0-9])'+escapeRe(word)).test(hay);
  if(!SIZE.test(word))return hay.includes(word);
  return new RegExp('(^|[^a-z])'+escapeRe(word)+'(?![a-z])').test(hay);
 }
