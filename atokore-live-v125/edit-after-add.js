@@ -82,16 +82,18 @@ function edit(id,options={}){
  if(rules&&unitField&&qtyField)unitField.addEventListener('change',()=>{qtyField.max=String(rules.inputMax(unitField.value,unitField.value===item.unit?item.qty:0,draft?999:99999))});
  form.addEventListener('submit',event=>{
   event.preventDefault();
+  // A second tap while the first save is finishing must not save (and record) the change twice.
+  if(form.dataset.saved)return;
  const curr=draft?options.item:read(id),error=$('atkEditError');
   try{
    root.AtokoreDataSafety?.assertWritable?.();
    const values=Object.fromEntries(new FormData(form).entries());
    const next=validate(values,curr,draft?{skipQtyLimit:true}:{});
-   if(draft){options.onSave(next);root.closeM?.();return}
+   if(draft){options.onSave(next);form.dataset.saved='1';root.closeM?.();return}
    // Optimistic in-memory updates are avoided: write to localStorage before UI mutation.
    const records=items.map(x=>Number(x.id)===n?next:x);
    localStorage.setItem('atokoreTrialV4',JSON.stringify({items:records,buys,routines}));
-   items=records;
+   items=records;form.dataset.saved='1';
    document.dispatchEvent(new CustomEvent('atokore-stock-edited',{detail:{before:curr,after:next}}));
    // Notify any existing local-first family/sync adapters, then redraw.
    if(typeof root.save==='function')root.save();
