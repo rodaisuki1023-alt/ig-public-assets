@@ -34,10 +34,11 @@ const SIGNATURES = {
   hh_undo_purchases: [['p_ops','jsonb']],
 };
 
-async function createDb() {
+// skip: migration file names left out, to check a database as it is before a migration is applied.
+async function createDb({ skip = [] } = {}) {
   const db = new PGlite();
   await db.exec(PRELUDE);
-  for (const file of fs.readdirSync(MIGRATIONS).filter(f => f.endsWith('.sql')).sort()) {
+  for (const file of fs.readdirSync(MIGRATIONS).filter(f => f.endsWith('.sql') && !skip.includes(f)).sort()) {
     await db.exec(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'));
   }
   return db;
