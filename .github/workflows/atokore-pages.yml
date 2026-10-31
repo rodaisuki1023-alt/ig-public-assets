@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: e56edbca2456d30a8b8cc1c772517cac62a8d3fa
+          ref: b7983849dfe0de330222189fcd5361a586af7b02
           path: _preview_v19_source
           persist-credentials: false
 
@@ -401,7 +401,10 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v48'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v48.1'" in worker
+          # v48.1: month ages keep the digit boundary (7ヶ月 never finds 17ヶ月) and ヶ/ケ/ヵ/カ/か/箇月 are one spelling.
+          search_js = (base / 'search-v48.js').read_text()
+          assert 'search-v48.js?v=48.1' in html and '(?:ゖ|ゕ|か|け|箇)月' in search_js and "'(^|[^0-9])'" in search_js
           # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
           assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
@@ -456,6 +459,7 @@ jobs:
           node --test _preview_v19_source/tests/atokore-receipt-match-v38.test.cjs
           node _preview_v19_source/tests/atokore-receipt-product-names.test.cjs
           node --test _preview_v19_source/tests/atokore-peach-ui.test.cjs
+          node --test _preview_v19_source/tests/atokore-search-v48.test.cjs
           # Server rules (PGlite), two-account sharing and Chromium + WebKit checks run on the source branch.
           # Chromium + WebKit smoke and confirmation E2E checks run on source branch: atokore-v19-e2e.yml.
 
