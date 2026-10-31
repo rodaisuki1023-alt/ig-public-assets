@@ -15,11 +15,12 @@ function hira(s){return s.replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCode
 function norm(text){
  let t=hira(String(text??'').normalize('NFKC').toLowerCase());
  for(const [re,to] of BRANDS)t=t.replace(re,to);
- return t.replace(/\s+/g,' ').trim();
+ return t.replace(/(\d+)(?:ゖ|ゕ|か|箇)月/g,'$1ゖ月').replace(/\s+/g,' ').trim();
 }
 function words(query){return norm(query).split(' ').filter(Boolean)}
 const escapeRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 function hasWord(hay,word){
+ if(/^\d+ゖ月/.test(word))return new RegExp('(^|[^0-9])'+escapeRe(word)).test(hay);
  if(!SIZE.test(word))return hay.includes(word);
  return new RegExp('(^|[^a-z])'+escapeRe(word)+'(?![a-z])').test(hay);
 }
