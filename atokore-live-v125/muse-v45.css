@@ -22,3 +22,15 @@ body.atk-v17 #pg-buy .stableBuyMore{flex:0 0 44px;width:44px!important;min-width
 .stableBuyMenu button{display:block;width:100%;min-height:44px;text-align:left;padding:10px 12px;border:0;border-radius:8px;background:transparent;font-size:14px;font-weight:700}
 .stableBuyMenu .danger{color:#A23A2C}
 .stableBuyMenu button:focus-visible{outline:3px solid #6F8FCF}
+.atk-confirm-notice .atk-confirm-primary{display:block;width:calc(100% - 10px)}
+.atk-confirm-notice #atkConfirmNote:empty{display:none}
+/* v48.2: every control on the main screens is at least 44×44 CSS px (iPhone). */
+body #pg-buy .stableManageBtns .btn{min-height:44px!important}
+body #pg-buy .atk-bulk-pick{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:44px;min-height:44px}
+body #pg-stock #catChips .chip{min-height:44px}
+body .atk-sort{min-height:46px}
+body #pg-add .atk-page-title button{min-width:44px;min-height:44px}
+body #pg-add .qa-option-chips button{min-width:44px}
+body.atk-v14 #pg-add.qa-quick-mode .qa-step button,body.atk-v14 #pg-add.qa-quick-mode .qa-tray-item .qa-step button{min-width:44px;min-height:44px}
+/* Text buttons on the stock and shopping screens keep 44px whatever the font metrics (CI fonts rendered 43px). */
+body #pg-stock .btn,body #pg-buy .btn{min-height:44px}

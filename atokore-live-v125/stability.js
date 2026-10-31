@@ -270,6 +270,8 @@
   window.go=page=>{showPage(page);renderAllViews();if(page==='add'&&typeof window.renderCatalog==='function')window.renderCatalog()};
   window.refreshAtokoreUiV125H=page=>{renderAllViews();if(page)showPage(page)};
   window.notifyAtokoreV125H=toast;
+  // The category a shopping item gets in stock when it is bought (used to label shopping rows saved without one).
+  window.atokoreInferCategory=inferCategory;
   window.__atokoreActionOwner=ACTION_OWNER;
 
   /*
