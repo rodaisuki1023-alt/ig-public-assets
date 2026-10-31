@@ -37,3 +37,12 @@ test('long vowels and small kana are not folded by search, but are offered as su
  assert.deepEqual(S.suggestions('zzzz',names),[]);
  assert.deepEqual(S.suggestions('ぱ',names),[],'one character is too short to guess');
 });
+
+test('month searches do not match longer numbers and accept common month spellings',()=>{
+ for(const q of ['7ヶ月','7か月','７カ月','7ヵ月','7箇月']) {
+  assert.equal(S.matches('離乳食 7ヶ月頃から',q),true,q);
+  for(const n of ['17ヶ月','27ヶ月','107ヶ月'])assert.equal(S.matches('離乳食 '+n,q),false,q+' vs '+n);
+ }
+ assert.equal(S.matches('離乳食 17か月','17ヶ月'),true);
+ assert.equal(S.matches('離乳食 17か月','7ヶ月'),false);
+});
