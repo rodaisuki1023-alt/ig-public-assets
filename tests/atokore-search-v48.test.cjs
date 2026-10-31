@@ -44,5 +44,19 @@ test('month searches do not match longer numbers and accept common month spellin
   for(const n of ['17ヶ月','27ヶ月','107ヶ月'])assert.equal(S.matches('離乳食 '+n,q),false,q+' vs '+n);
  }
  assert.equal(S.matches('離乳食 17か月','17ヶ月'),true);
- assert.equal(S.matches('離乳食 17か月','7ヶ月'),false);
+ assert.equal(S.matches('離乳食 17か月','7ヶ月'),false); // Full-size ケ (common on packaging) is the same spelling.
+ assert.equal(S.matches('キユーピー にんじん 7ケ月頃から','7ヶ月'),true);
+ assert.equal(S.matches('キユーピー 7ヶ月','7ケ月'),true);
+ assert.equal(S.matches('キユーピー 17ケ月','7ケ月'),false);
+ // Half-typed month ages already keep the digit boundary.
+ for(const q of ['7ヶ','7か','7ケ','7ヵ']){assert.equal(S.matches('離乳食 7ヵ月',q),true,q);assert.equal(S.matches('離乳食 17ヵ月',q),false,q)}
+ // Ranges and ages written with years still match the month itself.
+ assert.equal(S.matches('5〜7ヶ月頃','7ヶ月'),true);
+ assert.equal(S.matches('1歳4ヶ月','4ヶ月'),true);
+ // Plain numbers, sizes, brands and several words are unchanged.
+ assert.equal(S.matches('離乳食 17ヶ月','7'),true);
+ assert.equal(S.matches('パンパース テープ M','ぱんぱーす m'),true);
+ assert.equal(S.matches('キユーピー 7ヶ月 にんじん','キューピー 7か月 にんじん'),true);
+ assert.equal(S.matches('キユーピー 17ヶ月 にんじん','キューピー 7か月 にんじん'),false);
+ assert.equal(S.norm('７カ月 7ケ月 7ヵ月 7箇月 7か月'),'7ゖ月 7ゖ月 7ゖ月 7ゖ月 7ゖ月');
 });

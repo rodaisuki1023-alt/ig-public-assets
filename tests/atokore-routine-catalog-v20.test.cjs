@@ -215,7 +215,7 @@ test('script and stylesheet cache versions updated',()=>{
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8'),sw=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
  assert.match(html,/routine-catalog-v20\.js\?v=48/);
  assert.match(html,/routine-catalog-v20\.css\?v=24/);
- assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v48'/);
+ assert.match(sw,/CACHE_VERSION = 'atokore-pwa-v48\.1'/);
  const css=fs.readFileSync(path.join(base,'routine-catalog-v20.css'),'utf8');
  assert.match(css,/atk-routine-stock-mode/);
 });
