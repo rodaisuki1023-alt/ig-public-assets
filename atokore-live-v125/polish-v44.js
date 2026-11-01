@@ -24,7 +24,16 @@ function inverseCounters(current,changes){
  }
  return next;
 }
-const api={stockLabel,inverseCounters};
+// Presentation-only age parsing: ambiguous labels are never guessed.
+function foodMonth(name){
+ const n=String(name??'').normalize('NFKC');
+ const pattern=/(\d+)\s*歳(?:\s*(\d+)\s*[かカケヶヵ箇]月|\s*(半))?|(\d+)(?:\s*[〜~、-]\s*(\d+))?\s*[かカケヶヵ箇]月/g;
+ const hits=[...n.matchAll(pattern)]; if(hits.length!==1)return null;
+ const m=hits[0],value=m[1]?Number(m[1])*12+(m[2]?Number(m[2]):m[3]?6:0):Number(m[4]);
+ return Number.isInteger(value)&&value>0&&value<=48?value:null;
+}
+function foodMonthLabel(month){if(month==null)return '月齢未設定';if(month<12)return month+'か月頃から';const y=Math.floor(month/12),m=month%12;return y+'歳'+(m?m+'か月':'')+'頃から'}
+const api={stockLabel,inverseCounters,foodMonth,foodMonthLabel};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokorePolish=api;
 if(!doc)return;
@@ -105,8 +114,8 @@ function renderList(){
   const count=row.querySelector('.bf-stock-count');if(count)count.textContent=stockLabel(item);
   if(mode!=='list')continue;
   const title=row.querySelector('.name'),meta=row.querySelector('.meta');
-  if(title)title.textContent=item.name;
-  if(meta)meta.textContent=[item.place||'保管場所未設定',item.exp?(item.expType||'期限')+' '+item.exp:'',item.qtyBasis==='unopened'?'未開封の予備'+(item.inUse?'・使用中あり':''):'使用中を含む個数'].filter(Boolean).join(' ／ ');
+  if(title){const food=root.AtokoreBabyFood?.isRecord(item);const d=food?root.AtokoreBabyFood.describe(item):null;title.textContent=d?.id?[d.maker,d.name,d.amount,d.format].filter(Boolean).join(' '):item.name;title.title=item.name}
+  if(meta){meta.textContent=item.qtyBasis==='unopened'?'未開封の予備'+(item.inUse?'・使用中あり':''):'';meta.hidden=!meta.textContent}
   const qty=row.querySelector('.qty b');if(qty)qty.textContent=item.qty+(item.unit||'個');
  }
  // W2 item 8: category headings only for the category order; priority orders run across categories.
@@ -117,7 +126,11 @@ function renderList(){
   for(const h of list.querySelectorAll('.atk-stock-category'))h.remove();
   for(const cat of [...CATS,...groups.keys()].filter((c,i,a)=>a.indexOf(c)===i)){
    if(!groups.has(cat))continue;
-   const heading=doc.createElement('h3');heading.className='atk-stock-category';heading.textContent=cat+'（'+groups.get(cat).length+'商品）';list.append(heading,...groups.get(cat));
+   const heading=doc.createElement('h3');heading.className='atk-stock-category';heading.textContent=cat+'（'+groups.get(cat).length+'商品）';list.append(heading);
+   if(cat!=='離乳食'){list.append(...groups.get(cat));continue}
+   const ageGroups=new Map();
+   for(const row of groups.get(cat)){const item=data.find(x=>String(x.id)===row.dataset.stockId);const d=root.AtokoreBabyFood?.describe(item);const month=d?.id&&Number.isInteger(d.month)?d.month:foodMonth(item?.name);if(!ageGroups.has(month))ageGroups.set(month,[]);ageGroups.get(month).push(row)}
+   for(const month of [...ageGroups.keys()].sort((a,b)=>a==null?1:b==null?-1:a-b)){const h=doc.createElement('h4');h.className='atk-food-month';h.textContent=foodMonthLabel(month);list.append(h,...ageGroups.get(month))}
   }
  }
 }
