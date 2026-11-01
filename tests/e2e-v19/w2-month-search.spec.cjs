@@ -97,3 +97,20 @@ test('manual baby food age can be selected and survives reload', async ({page})=
  await expect(page.locator('#stockList .atk-food-month')).toContainText(['1歳4か月頃から']);
  await expect(page.locator('#stockList [data-stock-id="81"] .name')).toHaveText('手作りスープ');
 });
+
+test('baby food is ordered by age in card and list views, including manually entered age',async({page})=>{
+ const food=[
+  {id:91,name:'おかゆ 12か月頃から',cat:'離乳食',qty:1,unit:'個'},
+  {id:92,name:'手作りスープ',cat:'離乳食',babyFoodMonth:6,qty:1,unit:'個'},
+  {id:93,name:'月齢が不明な離乳食',cat:'離乳食',qty:1,unit:'個'},
+  {id:94,name:'野菜 7ヶ月頃から',cat:'離乳食',qty:1,unit:'個'}
+ ];
+ await open(page,{[KEY]:baseState({items:food,buys:[],routines:[]})});
+ await go(page,'stock');
+ const order=()=>page.locator('#stockList [data-stock-id]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.stockId)));
+ await expect.poll(order).toEqual([92,94,91,93]);
+ await page.click('[data-atk-view="list"]');
+ await expect.poll(order).toEqual([92,94,91,93]);
+ await expect(page.locator('#stockList .atk-food-month')).toHaveText(['6か月頃から','7か月頃から','1歳から','月齢未設定'].map(x=>x==='1歳から'?'1歳頃から':x));
+ expect(page.__errors).toEqual([]);
+});
