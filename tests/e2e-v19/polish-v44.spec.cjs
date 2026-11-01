@@ -7,7 +7,7 @@ for(const width of [320,390,430])test(`v44 text stock groups categories, hides p
  await page.click('[data-atk-view="list"]');
  await expect(page.locator('#pg-stock')).toHaveClass(/atk-stock-list-mode/);await expect(page.locator('.atk-stock-category')).not.toHaveCount(0);
  const row=page.locator('#stockList [data-stock-id="1"]');await expect(row.locator('.name')).toHaveText('牛乳');
- await expect(row.locator('.atk-row-brand')).toBeHidden();await expect(row.locator('.meta')).toContainText('冷蔵庫');await expect(row.locator('.qty b')).toBeVisible();
+ await expect(row.locator('.atk-row-brand')).toBeHidden();await expect(row.locator('.atk-storage-place')).toContainText('冷蔵庫');await expect(row.locator('.qty b')).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await shot(page,info,`v44-stock-list-${width}`);
  await page.reload();await go(page,'stock');await expect(page.locator('[data-atk-view="list"]')).toHaveAttribute('aria-pressed','true');
