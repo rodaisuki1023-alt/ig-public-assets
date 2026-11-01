@@ -52,5 +52,5 @@ test('shared-sheet history shows 実行者不明 for who=null and keeps names an
   await expect(page.locator('.atk-hh-history')).not.toContainText('null');
   await expect(page.locator('.atk-hh-history')).not.toContainText('NaN');
   await expect(page.locator('.atk-hh-history')).not.toContainText('Invalid Date');
-  await shot(page, info, `${info.project.name}-w2-history-who`);
+  await shot(page, info, `w2-history-who`);
 });
