@@ -320,7 +320,7 @@ jobs:
       - name: Checkout reviewed v19 P0 safety trial source
         uses: actions/checkout@v4
         with:
-          ref: e56edbca2456d30a8b8cc1c772517cac62a8d3fa
+          ref: 808461dc8401a81beaa20296b33b5d8d3ed56bf0
           path: _preview_v19_source
           persist-credentials: false
 
@@ -373,7 +373,7 @@ jobs:
           assert 'atk-routine-stock-mode' in (base / 'routine-catalog-v20.css').read_text()
           assert 'baby-flow-v17.js?v=48' in html
           assert 'baby-kit-v17.js?v=33' in html
-          assert 'baby-food-catalog-v35.js?v=35' in html
+          assert 'baby-food-catalog-v35.js?v=48.2' in html
           assert 'baby-food-catalog-v35.js' in worker
           assert '離乳食' in (base / 'baby-food-catalog-v35.js').read_text()
           assert 'baby-focus-v17.css?v=35' in html
@@ -401,7 +401,20 @@ jobs:
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v48'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v48.2'" in worker
+          # v48.1: month ages keep the digit boundary (7ヶ月 never finds 17ヶ月) and ヶ/ケ/ヵ/カ/か/箇月 are one spelling.
+          search_js = (base / 'search-v48.js').read_text()
+          assert 'search-v48.js?v=48.1' in html and '(?:ゖ|ゕ|か|け|箇)月' in search_js and "'(^|[^0-9])'" in search_js
+          # v48.2: the add screen's 離乳食 search uses the same month-age search (search-v48.js).
+          assert 'AtokoreSearch' in (base / 'baby-food-catalog-v35.js').read_text()
+          # v48.2: the shared sheet's history reads who=null as 実行者不明 (the trial DB's hh_changes can return null).
+          assert '実行者不明' in (base / 'household-sync-v37.js').read_text()
+          # v48.2: shopping rows that may be the same product get a notice only (nothing merged or removed).
+          assert 'buy-duplicates-v48.js?v=48.2' in html and "'./buy-duplicates-v48.js'" in worker
+          assert '数量や行は自動で変更しません' in (base / 'buy-duplicates-v48.js').read_text()
+          # v48.2: in-app notices instead of alert(), 44px controls (cache keys bumped with the fixes).
+          for asset in ['common-v45.js', 'edit-after-add.js', 'stability.js', 'stock-order-v48.js', 'muse-v45.css']:
+              assert asset + '?v=48.2' in html, asset
           # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
           assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
@@ -410,7 +423,7 @@ jobs:
           assert 'google: true' in config and 'email: false' in config and 'guest: true' in config
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
-          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', 48), ('household-sync-v37.css', 48), ('household-google-v40.js', 40)]:
+          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', '48.2'), ('household-sync-v37.css', 48), ('household-google-v40.js', 40)]:
               assert name + f'?v={version}' in html and f"'./{name}'" in worker, name
           assert 'atokorePreviewHouseholdInviteV19' in sync
           assert 'Googleなしで共有に参加する' in sync and 'recoveryHelp' in sync
@@ -456,6 +469,9 @@ jobs:
           node --test _preview_v19_source/tests/atokore-receipt-match-v38.test.cjs
           node _preview_v19_source/tests/atokore-receipt-product-names.test.cjs
           node --test _preview_v19_source/tests/atokore-peach-ui.test.cjs
+          node --test _preview_v19_source/tests/atokore-search-v48.test.cjs
+          node --test _preview_v19_source/tests/atokore-buy-duplicates-v48.test.cjs
+          node --test _preview_v19_source/tests/atokore-baby-food-search-v48.test.cjs
           # Server rules (PGlite), two-account sharing and Chromium + WebKit checks run on the source branch.
           # Chromium + WebKit smoke and confirmation E2E checks run on source branch: atokore-v19-e2e.yml.
 
