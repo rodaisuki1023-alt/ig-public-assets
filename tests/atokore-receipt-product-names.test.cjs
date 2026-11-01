@@ -243,3 +243,8 @@ const duplicateWithDetail = parser.parseReceipt('商品A 198\n商品A 198\n2コ 
 assert.equal(duplicateWithDetail.items[0].qty,3);
 const unrelatedDetail = parser.parseReceipt('商品A 198\n値引 -50\n2コ X 単198 ¥396\n小計 ¥346');
 assert.equal(unrelatedDetail.items[0].qty,1);
+
+const parenthesizedCount = parser.parseReceipt('商品A ¥398※\n(2個 x @199)\n小計 2点 ¥398');
+assert.equal(parenthesizedCount.items[0].qty,2);
+const reversedCount = parser.parseReceipt('食品A ¥296\n(@148 x 2個)\n小計 2点 ¥296');
+assert.equal(reversedCount.items[0].qty,2);
