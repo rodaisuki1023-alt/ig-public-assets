@@ -19,7 +19,9 @@ const RECEIPT = `テストマート
 test('a receipt registered on one device and a partner change on another both count once', async ({ browser, request }, info) => {
   test.setTimeout(120000);
   await request.post(EMU + '/__test/reset');
-  async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
+  // No service worker: WebKit does not route requests of pages with a worker, and the offline test cuts the
+  // shared server with page.route. The worker itself is checked in receipt-sw-v49.spec.cjs.
+  async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, serviceWorkers: 'block' }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
   const a = await device(baseState()), b = await device({ items: [], buys: [], routines: [] });
   try {
     await go(a.page, 'premium'); await a.page.click('#atkHouseholdCard'); await a.page.getByRole('button', { name: 'Googleでログイン', exact: true }).click();
@@ -76,7 +78,9 @@ const FACT_RECEIPT = (time = '12:54', day = '27') => `テストストア
 合計 ¥213`;
 async function pair(browser, request, info) {
   await request.post(EMU + '/__test/reset');
-  async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
+  // No service worker: WebKit does not route requests of pages with a worker, and the offline test cuts the
+  // shared server with page.route. The worker itself is checked in receipt-sw-v49.spec.cjs.
+  async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, serviceWorkers: 'block' }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
   const a = await device(baseState()), b = await device({ items: [], buys: [], routines: [] });
   await go(a.page, 'premium'); await a.page.click('#atkHouseholdCard'); await a.page.getByRole('button', { name: 'Googleでログイン', exact: true }).click();
   await a.page.fill('#atkHhName', 'パパ'); await a.page.getByRole('button', { name: '世帯を作る', exact: true }).click(); await appConfirm(a.page, true);
