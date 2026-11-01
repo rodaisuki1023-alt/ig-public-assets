@@ -122,6 +122,8 @@ function renderList(){
   const title=row.querySelector('.name'),meta=row.querySelector('.meta');
   if(title){const food=root.AtokoreBabyFood?.isRecord(item);const d=food?root.AtokoreBabyFood.describe(item):null;title.textContent=d?.id?[d.maker,d.name,(root.AtokoreStockSort?.mode?.()||'category')==='category'?'':d.age,d.amount,d.format].filter(Boolean).join(' '):item.name;title.title=item.name}
   if(meta){meta.textContent=item.qtyBasis==='unopened'?'未開封の予備'+(item.inUse?'・使用中あり':''):'';meta.hidden=!meta.textContent}
+  const expiry=row.querySelector('.expiryBadge'),type=item.expType;
+  if(expiry&&type&&type!=='期限なし'&&!expiry.textContent.startsWith(type+'：'))expiry.textContent=type+'：'+expiry.textContent;
   const qty=row.querySelector('.qty b');if(qty)qty.textContent=item.qty+(item.unit||'個');
  }
  // W2 item 8: category headings only for the category order; priority orders run across categories.
