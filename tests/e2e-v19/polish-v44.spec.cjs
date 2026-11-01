@@ -73,7 +73,7 @@ test('text size changes across all main screens and the settings dialog without 
  const sizes=async(font)=>{
   await page.evaluate(value=>setAtokoreDisplay('font',value),font);
   return page.evaluate(()=>{
-   const selectors=['.top h1','#pg-home .section','#pg-stock .name','#pg-add .section','#pg-buy .section','#pg-premium .section','.displayNote'];
+   const selectors=['.top h1','#atkHomeAttentionTitle','#pg-stock .name','#pg-add .qa-heading strong','#pg-buy .section','#pg-premium .section','.displayNote'];
    return selectors.map(selector=>{
     const el=document.querySelector(selector);
     if(!el)throw Error('Missing font sample: '+selector);
