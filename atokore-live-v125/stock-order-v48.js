@@ -51,7 +51,8 @@ function labelRow(row,item){
   const anchor=row.querySelector('.grow > .stableBuyHead')||row.querySelector('.grow > .name');
   if(anchor)anchor.insertAdjacentElement('afterend',label);else return;
  }
- const place=row.closest('.atk-stock-list-mode')&&item.place?String(item.place).trim():'';label.textContent=place?cat+' ・ '+place:cat;label.setAttribute('aria-label','カテゴリー：'+cat+(place?'、収納先：'+place:''));
+ label.textContent=cat;label.setAttribute('aria-label','カテゴリー：'+cat);
+ const place=row.closest('.atk-stock-list-mode')&&item.place?String(item.place).trim():'';let loc=row.querySelector('.atk-storage-place');if(place){if(!loc){loc=doc.createElement('span');loc.className='atk-storage-place';label.insertAdjacentElement('afterend',loc)}loc.textContent=' '+place;loc.setAttribute('aria-label','収納先：'+place)}else loc?.remove();
 }
 function labelStock(){const all=stockItems();doc.querySelectorAll('#stockList [data-stock-id]').forEach(r=>labelRow(r,all.find(x=>String(x.id)===r.dataset.stockId)))}
 // A shopping item saved without a category shows the one it will get in stock when bought:
