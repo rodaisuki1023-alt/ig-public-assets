@@ -37,6 +37,18 @@ root.AtokoreConfirm={open(title,description,action,onConfirm,onCancel){
  dialog.append(h,p,status,cancel,ok);overlay.append(dialog);document.body.append(overlay);cancel.focus();
  },
  // Resolves true when the person chose the action, false when they cancelled.
- ask(title,description,action){return new Promise(resolve=>root.AtokoreConfirm.open(title,description,action,()=>{resolve(true)},()=>resolve(false)))}
+ ask(title,description,action){return new Promise(resolve=>root.AtokoreConfirm.open(title,description,action,()=>{resolve(true)},()=>resolve(false)))},
+ // A notice with a single button, for messages that need no choice.
+ tell(title,description='',action='OK'){
+  root.AtokoreConfirm.open(title,description,action,()=>true);
+  const overlay=document.getElementById('atkConfirm'),ok=overlay?.querySelector('.atk-confirm-primary');if(!overlay||!ok)return;
+  overlay.querySelector('button:not(.atk-confirm-primary)')?.remove();
+  overlay.classList.add('atk-confirm-notice');
+  overlay.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();ok.click()}if(e.key==='Tab'){e.preventDefault();ok.focus()}};
+  ok.focus();
+ }
 };
+// Messages that still call alert() (validation, "could not complete", older screens) are shown in the
+// app too: where the native dialog is suppressed the person would otherwise get no answer at all.
+root.alert=message=>root.AtokoreConfirm.tell(String(message??''));
 })(typeof globalThis!=='undefined'?globalThis:this);

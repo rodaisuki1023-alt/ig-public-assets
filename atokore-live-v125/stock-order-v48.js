@@ -54,7 +54,15 @@ function labelRow(row,item){
  label.textContent=cat;label.setAttribute('aria-label','カテゴリー：'+cat);
 }
 function labelStock(){const all=stockItems();doc.querySelectorAll('#stockList [data-stock-id]').forEach(r=>labelRow(r,all.find(x=>String(x.id)===r.dataset.stockId)))}
-function labelBuy(){const all=buyItems();doc.querySelectorAll('#buyList [data-buy-id]').forEach(r=>labelRow(r,all.find(x=>String(x.id)===r.dataset.buyId)))}
+// A shopping item saved without a category shows the one it will get in stock when bought:
+// its stock row's category, or the same guess 「買った」 uses.
+function buyCategory(item){
+ if(item.cat)return item;
+ const linked=item.stockId!=null?stockItems().find(x=>String(x.id)===String(item.stockId)):null;
+ const cat=linked?.cat||root.atokoreInferCategory?.(String(item.name||''))||'';
+ return cat?{...item,cat}:item;
+}
+function labelBuy(){const all=buyItems();doc.querySelectorAll('#buyList [data-buy-id]').forEach(r=>{const item=all.find(x=>String(x.id)===r.dataset.buyId);labelRow(r,item&&buyCategory(item))})}
 
 const priorVisible=root.visibleStock;
 if(typeof priorVisible==='function')root.visibleStock=function(...args){

@@ -486,7 +486,7 @@ async function dashboard(){
   note(session?.user?.is_anonymous?'Googleなしで参加中。このブラウザに参加情報を保存しています。機種変更やデータ削除後は、作成者から再招待してもらってください。': 'ログイン中：'+(session?.user?.email||'登録済みアカウント')+'。機種変更後も同じアカウントでログインすると、共有先へ送信済みのデータを引き継げます。'),
   button('機種変更・復旧の手順を見る',recoveryHelp,'atk-hh-link'),
   button('変更履歴（だれが何を変えたか）',e=>busy(e.target,async()=>{
-   const rows=await rpc('hh_changes',{p_limit:50});history.replaceChildren(...(rows||[]).map(r=>el('li',{text:changeText(r)})));history.hidden=false;
+   const rows=await rpc('hh_changes',{p_limit:50});history.replaceChildren(...(Array.isArray(rows)?rows:[]).map(r=>el('li',{text:changeText(r)})));history.hidden=false;
   }),'atk-hh-secondary'),history,
   rejected.length||checkpoint?el('div',{class:'atk-hh-rejected'},[
    note(checkpoint?'前回の同期が端末への保存の途中で止まりました。端末の内容を残しています。まず「今すぐ同期」をお試しください。': '送れなかった変更が'+rejected.length+'件あります。端末の内容を残して同期を止めています。'),
@@ -527,10 +527,15 @@ async function dashboard(){
   }),'atk-hh-secondary'):note('無料の家族共有は2人までです（同じ人の別の端末は人数に数えません）。'));
  }catch(e){loadError.textContent='参加者を読み込めませんでした：'+friendly(e);loadError.hidden=false}
 }
+// hh_changes returns who=null when no membership covers the time of the operation (the current server
+// definition); older definitions always sent a name. Both read the same way here as on the home screen.
 function changeText(r){
- const when=new Date(r.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
- const what=r.type==='add'?(Number(r.delta)>0?'＋':'')+Number(r.delta):r.type==='set'?(r.field==='name'?'名前':r.field)+'を変更':r.type==='create'?'追加':r.type==='delete'?'削除':r.type==='complete_buy'?'「買った」でストックに追加':r.type==='undo_purchase'?'「買った」を取り消し':'変更';
- return when+' '+r.who+'：'+(r.name||'（削除済み）')+' '+what;
+ const at=new Date(r?.at);
+ const when=Number.isFinite(at.getTime())?at.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'日時不明';
+ const delta=Number(r?.delta);
+ const what=r?.type==='add'?(Number.isFinite(delta)?(delta>0?'＋':'')+delta:'数量を変更'):r?.type==='set'?(r.field==='name'?'名前':r.field||'商品情報')+'を変更':r?.type==='create'?'追加':r?.type==='delete'?'削除':r?.type==='complete_buy'?'「買った」でストックに追加':r?.type==='undo_purchase'?'「買った」を取り消し':'変更';
+ const who=r?.who==null||String(r.who).trim()===''?'実行者不明':String(r.who);
+ return when+' '+who+'：'+(r?.name||'（削除済み）')+' '+what;
 }
 async function leave(){
  if(engine)try{engine.flush()}catch(e){}

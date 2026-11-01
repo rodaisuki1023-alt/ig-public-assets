@@ -53,3 +53,32 @@ test('baby-food filter: the month search is the same inside the 離乳食 catego
   await expect.poll(() => shown(page)).toEqual([2]);
   expect(page.__errors).toEqual([]);
 });
+
+// v48.2: the add screen's 離乳食 search uses the same month-age search (it was a plain substring search).
+test('add screen (離乳食): month ages keep the digit boundary and accept every spelling', async ({ page }, info) => {
+  await open(page, { [KEY]: baseState({ items: [], buys: [], routines: [] }) });
+  await go(page, 'add');
+  await page.click('[data-qa-cat="離乳食"]');
+  const ages = () => page.locator('.qa-food-products [data-qa-food-product] small').evaluateAll(xs => [...new Set(xs.map(x => x.textContent.split('・')[0]))].sort());
+  const count = async () => Number((await page.locator('.qa-food-result').textContent()).match(/（(\d+)件）/)[1]);
+  // 和光堂 writes か月; ピジョン writes ヵ月.
+  await page.click('[data-qa-food-maker="wakodo"]');
+  await page.fill('#qaFoodSearch', '7か月');
+  await expect.poll(ages).toEqual(['7か月頃から']);
+  const wakodo7 = await count();
+  for (const q of ['7ヶ月', '７カ月', '7ケ月', '7ヶ']) {
+    await page.fill('#qaFoodSearch', q);
+    await expect.poll(count, { message: q }).toBe(wakodo7);
+    await expect.poll(ages, { message: q }).toEqual(['7か月頃から']);
+  }
+  await page.fill('#qaFoodSearch', '2か月');
+  await expect.poll(count).toBe(0); // not the 2 in 12か月
+  await page.fill('#qaFoodSearch', '12ヶ月');
+  await expect.poll(ages).toEqual(['12か月頃から']);
+  await page.click('[data-qa-food-maker="pigeon"]');
+  await page.fill('#qaFoodSearch', '7か月');
+  await expect.poll(ages).toEqual(['7ヵ月頃~']);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await shot(page, info, 'v48-2-add-babyfood-month-search-390');
+  expect(page.__errors).toEqual([]);
+});
