@@ -303,9 +303,16 @@ function describe(item){
  const series=[...new Set(products.filter(p=>makerOf(p.maker)===makerKey).map(p=>p.series))].sort((a,b)=>b.length-a.length).find(s=>n.includes(s))||'';
  return {makerKey,series,month:monthOf(n)};
 }
+// The name search uses the same forgiving search as the stock and add screens (search-v48.js) when it is
+// loaded: か月・ヶ月・ヵ月・カ月 are one spelling and "2か月" does not find 12か月. Plain substring otherwise.
+function nameMatches(p,query){
+ const text=norm(fullName(p)),search=(typeof globalThis!=='undefined'&&globalThis.AtokoreSearch)||null;
+ if(search)return search.matches(text,query);
+ return text.toLocaleLowerCase('ja').includes(norm(query).toLocaleLowerCase('ja'));
+}
 function find(query={}){
- const q=norm(query.query).toLocaleLowerCase('ja');
- return products.filter(p=>(query.ended||p.status!=='production-ended')&&(!query.maker||makerOf(p.maker)===query.maker)&&(!query.series||p.series===query.series)&&(!query.month||String(p.month)===String(query.month))&&(!q||norm(fullName(p)).toLocaleLowerCase('ja').includes(q)));
+ const q=norm(query.query);
+ return products.filter(p=>(query.ended||p.status!=='production-ended')&&(!query.maker||makerOf(p.maker)===query.maker)&&(!query.series||p.series===query.series)&&(!query.month||String(p.month)===String(query.month))&&(!q||nameMatches(p,q)));
 }
 function line(id,qty=1){
  const p=byId.get(id);if(!p)throw Error('商品を選んでください');
