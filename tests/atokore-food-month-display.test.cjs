@@ -5,6 +5,9 @@ test('month parsing accepts common spellings, years and ranges',()=>{
  for(const x of ['5ヶ月頃から','５か月','5カ月','5箇月'])assert.equal(foodMonth(x),5,x);
  assert.equal(foodMonth('1歳4か月頃から'),16);
  assert.equal(foodMonth('1歳半'),18);
+ assert.equal(foodMonth('1才'),12);
+ assert.equal(foodMonth('１才６ヶ月頃から'),18);
+ assert.equal(foodMonth('1才半'),18);
  assert.equal(foodMonth('5〜7ヶ月'),5);
 });
 test('unlabelled or ambiguous ages remain unknown',()=>{

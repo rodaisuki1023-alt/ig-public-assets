@@ -84,6 +84,7 @@ jobs:
           node --test tests/atokore-routine-catalog-v20.test.cjs
           node --test tests/atokore-routine-stock-one-tap.test.cjs
           node --test tests/atokore-no-native-confirm.test.cjs
+          node --test tests/atokore-food-month-display.test.cjs
           node --test tests/atokore-search-v48.test.cjs
           node --test tests/atokore-stock-rules-v48.test.cjs
           node --test tests/atokore-buy-duplicates-v48.test.cjs

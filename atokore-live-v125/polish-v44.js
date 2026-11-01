@@ -27,7 +27,7 @@ function inverseCounters(current,changes){
 // Presentation-only age parsing: ambiguous labels are never guessed.
 function foodMonth(name){
  const n=String(name??'').normalize('NFKC');
- const pattern=/(\d+)\s*歳(?:\s*(\d+)\s*[かカケヶヵ箇]月|\s*(半))?|(\d+)(?:\s*[〜~、-]\s*(\d+))?\s*[かカケヶヵ箇]月/g;
+ const pattern=/(\d+)\s*[歳才](?:\s*(\d+)\s*[かカケヶヵ箇]月|\s*(半))?|(\d+)(?:\s*[〜~、-]\s*(\d+))?\s*[かカケヶヵ箇]月/g;
  const hits=[...n.matchAll(pattern)]; if(hits.length!==1)return null;
  const m=hits[0],value=m[1]?Number(m[1])*12+(m[2]?Number(m[2]):m[3]?6:0):Number(m[4]);
  return Number.isInteger(value)&&value>0&&value<=48?value:null;
