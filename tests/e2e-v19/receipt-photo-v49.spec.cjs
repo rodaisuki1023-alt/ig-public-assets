@@ -56,10 +56,12 @@ async function openReceipt(page, png) {
   await expect(page.locator('#receiptAnalyzeBtn')).toBeEnabled();
 }
 
+// The app's service worker fetches ./ocr/ itself (cache first), and page.route() does not see those
+// requests (WebKit also skips page.route() for pages with a worker): the worker is off in this file.
+test.use({ serviceWorkers: 'block' });
+
 test.describe('receipt photo, on-device OCR', () => {
   test.skip(!ORT_DIST, 'onnxruntime-web is not installed (npm install --no-save onnxruntime-web@1.30.0)');
-  // WebKit does not apply page.route() to requests from a page with a service worker (see w2-history-who).
-  test.use({ serviceWorkers: 'block' });
   test.setTimeout(240000);
 
   test('a sideways photo is turned, read, checked against the item count and saved once', async ({ page, browser }, info) => {
