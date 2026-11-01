@@ -90,3 +90,14 @@ test('text size changes across all main screens and the settings dialog without 
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  expect(page.__errors).toEqual([]);
 });
+
+test('expiry warning in list keeps the expiry type',async({page})=>{
+ const items=[{id:70,name:'牛乳',cat:'食料品',qty:1,unit:'本',expType:'消費期限',exp:'2020-01-01'}];
+ await open(page,{[KEY]:baseState({items,buys:[],routines:[]})});await go(page,'stock');
+ await page.click('[data-atk-view="list"]');
+ const badge=page.locator('#stockList [data-stock-id="70"] .expiryBadge');
+ await expect(badge).toContainText('消費期限');
+ await page.evaluate(()=>window.renderStock());
+ await expect(badge).toContainText('消費期限');
+ expect((await badge.textContent()).match(/消費期限/g)).toHaveLength(1);
+});
