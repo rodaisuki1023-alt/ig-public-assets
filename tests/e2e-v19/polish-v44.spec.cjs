@@ -82,6 +82,13 @@ test('text size changes across all main screens and the settings dialog without 
   });
  };
  const normal=await sizes('standard'),small=await sizes('tiny'),large=await sizes('large');
+ console.log('font diagnostics',JSON.stringify(await page.evaluate(()=>{
+  const nodes=['#atkHomeAttentionTitle','#pg-buy .section'].map(s=>document.querySelector(s));
+  const out=nodes.map(()=>[]);
+  const walk=rules=>Array.from(rules||[]).forEach(r=>{if(r.cssRules)walk(r.cssRules);if(!r.selectorText||!r.style?.fontSize)return;nodes.forEach((el,i)=>{try{if(el.matches(r.selectorText))out[i].push([r.selectorText,r.style.fontSize,r.style.getPropertyPriority('font-size')])}catch(e){}})});
+  Array.from(document.styleSheets).forEach(s=>{try{walk(s.cssRules)}catch(e){}});
+  return out;
+ })));
  normal.forEach((size,i)=>{expect(small[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeLessThan(size);expect(large[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeGreaterThan(size)});
  const inputSize=await page.evaluate(()=>parseFloat(getComputedStyle(document.querySelector('#addName')).fontSize));
  expect(inputSize).toBeGreaterThanOrEqual(16);
