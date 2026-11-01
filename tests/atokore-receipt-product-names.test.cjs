@@ -257,3 +257,8 @@ assert.equal(codePrice.items[1].qty,2);
 assert.ok(codePrice.items.every(x=>x.low&&!x.selected), 'unverified candidates always require explicit selection');
 const missingDetail = parser.parseReceipt('PRODUCT TEA\n何か違う行\n小計 100');
 assert.equal(missingDetail.items.length,0);
+
+const noSubtotal = parser.parseReceipt('PRODUCT TEA\n123456 1● 1,398 1,398 E\n**** 合計 1,398\n商品みたいな決済名 999');
+assert.equal(noSubtotal.stoppedAtSubtotal,false, 'total is not mislabeled as a subtotal');
+assert.equal(noSubtotal.items.length,1, 'never evaluate lines after a total');
+assert.equal(noSubtotal.items[0].selected,false);
