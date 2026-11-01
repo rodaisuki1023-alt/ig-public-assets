@@ -248,3 +248,12 @@ const parenthesizedCount = parser.parseReceipt('商品A ¥398※\n(2個 x @199)\
 assert.equal(parenthesizedCount.items[0].qty,2);
 const reversedCount = parser.parseReceipt('食品A ¥296\n(@148 x 2個)\n小計 2点 ¥296');
 assert.equal(reversedCount.items[0].qty,2);
+
+const codePrice = parser.parseReceipt('PRODUCT TEA 10PKS\n123456 1● 1,398 1,398 E\nCPN\nPRODUCT TEA CPN\n456789 1● 280 280-E\nお菓子セット\n789012 2● 900 1,800 E\n合計 2,918');
+assert.equal(codePrice.items.length,2, 'coupon lines are not product candidates');
+assert.equal(codePrice.items[0].name,'PRODUCT TEA 10PKS');
+assert.equal(codePrice.items[0].qty,1);
+assert.equal(codePrice.items[1].qty,2);
+assert.ok(codePrice.items.every(x=>x.low&&!x.selected), 'unverified candidates always require explicit selection');
+const missingDetail = parser.parseReceipt('PRODUCT TEA\n何か違う行\n小計 100');
+assert.equal(missingDetail.items.length,0);
