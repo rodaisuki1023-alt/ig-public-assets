@@ -7,7 +7,7 @@ for(const width of [320,390,430])test(`v44 text stock groups categories, hides p
  await page.click('[data-atk-view="list"]');
  await expect(page.locator('#pg-stock')).toHaveClass(/atk-stock-list-mode/);await expect(page.locator('.atk-stock-category')).not.toHaveCount(0);
  const row=page.locator('#stockList [data-stock-id="1"]');await expect(row.locator('.name')).toHaveText('牛乳');
- await expect(row.locator('.atk-row-brand')).toBeHidden();await expect(row.locator('.meta')).toContainText('冷蔵庫');await expect(row.locator('.qty b')).toBeVisible();
+ await expect(row.locator('.atk-row-brand')).toBeHidden();await expect(row.locator('.atk-storage-place')).toContainText('冷蔵庫');await expect(row.locator('.qty b')).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await shot(page,info,`v44-stock-list-${width}`);
  await page.reload();await go(page,'stock');await expect(page.locator('[data-atk-view="list"]')).toHaveAttribute('aria-pressed','true');
@@ -61,4 +61,43 @@ test('v44 shared purchase undo preserves partner changes; private photos follow 
   await b.page.click('#atkHouseholdChip');await b.page.getByRole('button',{name:'ログアウト',exact:true}).click();await appConfirm(b.page,true);await expect(b.page.locator('#stockList .atk-user-photo')).toHaveCount(0);
   expect(a.page.__errors).toEqual([]);expect(b.page.__errors).toEqual([]);
  }finally{await a.ctx.close();await b.ctx.close()}
+});
+
+test('text size changes across all main screens and the settings dialog without shrinking input text',async({page})=>{
+ await page.setViewportSize({width:320,height:844});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ await go(page,'buy');
+ await go(page,'add');
+ await go(page,'premium');
+ const sizes=async(font)=>{
+  await page.evaluate(value=>{setAtokoreDisplay('font',value);closeM()},font);
+  const samples=[];
+  for(const [view,selector] of [['home','.top h1'],['home','#atkHomeAttentionTitle'],['stock','#pg-stock .name'],['add','#pg-add .qa-heading strong'],['buy','#pg-buy .section'],['premium','#pg-premium .section']]){
+   await go(page,view);
+   samples.push(await page.locator(selector).first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)));
+  }
+  await page.evaluate(()=>openAtokoreDisplaySettings());
+  samples.push(await page.locator('.displayNote').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)));
+  return samples;
+ };
+ const normal=await sizes('standard'),small=await sizes('tiny'),large=await sizes('large');
+ normal.forEach((size,i)=>{expect(small[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeLessThan(size);expect(large[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeGreaterThan(size)});
+ const inputSize=await page.evaluate(()=>parseFloat(getComputedStyle(document.querySelector('#addName')).fontSize));
+ expect(inputSize).toBeGreaterThanOrEqual(16);
+ await page.reload();
+ await expect(page.locator('html')).toHaveAttribute('data-atokore-font','large');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
+
+test('expiry warning in list keeps the expiry type',async({page})=>{
+ const items=[{id:70,name:'牛乳',cat:'食料品',qty:1,unit:'本',expType:'消費期限',exp:'2020-01-01'}];
+ await open(page,{[KEY]:baseState({items,buys:[],routines:[]})});await go(page,'stock');
+ await page.click('[data-atk-view="list"]');
+ const badge=page.locator('#stockList [data-stock-id="70"] .expiryBadge');
+ await expect(badge).toContainText('消費期限');
+ await page.evaluate(()=>window.renderStock());
+ await expect(badge).toContainText('消費期限');
+ expect((await badge.textContent()).match(/消費期限/g)).toHaveLength(1);
 });

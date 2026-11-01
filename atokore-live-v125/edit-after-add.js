@@ -45,6 +45,8 @@ function validate(input,current,options={}){
   next.qtyBasis=input.qtyBasis;next.inUse=input.inUse==='on'||input.inUse===true;
  }
  if(minQty===null)delete next.minQty;else next.minQty=minQty;
+ if(input.babyFoodMonth!==undefined){const raw=String(input.babyFoodMonth).trim();if(raw==='')delete next.babyFoodMonth;else{const month=Number(raw);if(!Number.isInteger(month)||month<1||month>48)throw Error('月齢は1〜48か月で選んでください');next.babyFoodMonth=month}}
+
  return next;
 }
 function edit(id,options={}){
@@ -61,6 +63,7 @@ function edit(id,options={}){
  '<label class="atk-edit-inuse"><input name="inUse" type="checkbox"'+(item.inUse?' checked':'')+'>使用中の商品が別にある（任意）</label>'+
  '<label class="atk-edit-reorder">補充の目安（任意）<span class="atk-edit-inline"><span>残り</span><input name="minQty" type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" value="'+esc(item.minQty??'')+'"><span>以下でホームの「補充・期限の確認」に表示</span></span><small>空欄なら残り1以下で表示します</small></label>'+
  '<label>カテゴリー<select name="cat">'+formOptions(CATEGORIES,item.cat||'その他')+'</select></label>'+
+ '<label>離乳食の月齢（任意）<select name="babyFoodMonth"><option value="">商品名から自動判定</option>'+Array.from({length:48},(_,i)=>{const m=i+1;return '<option value="'+m+'"'+(Number(item.babyFoodMonth)===m?' selected':'')+'>'+(m<12?m+'か月':Math.floor(m/12)+'歳'+(m%12?m%12+'か月':''))+'頃から</option>'}).join('')+'</select><small>離乳食のカテゴリーで使用します。分からない場合は自動判定のままで大丈夫です。</small></label>'+
  '<label>保管場所<select name="place"><option value="">未設定</option>'+formOptions(PLACES,item.place||'')+'</select></label>'+
  '<div class="atk-edit-pair"><label>期限の種類<select name="expType">'+formOptions(EXPIRY,item.expType||'期限なし')+'</select></label>'+
  '<label id="atkEditExpiryWrap">期限日<input name="exp" type="date" value="'+esc(item.exp||'')+'"></label></div>'+

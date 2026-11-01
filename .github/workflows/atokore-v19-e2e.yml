@@ -60,6 +60,10 @@ jobs:
       - name: Install test tools
         run: |
           npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
+      - name: Text size across app screens
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs polish-v44.spec.cjs --grep 'text size changes'
+      - name: Baby food age order in both views
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs w2-month-search.spec.cjs --grep 'baby food is ordered'
       - name: Syntax and unit regressions
         run: |
           for f in atokore-live-v125/*.js; do node --check "$f"; done
@@ -80,6 +84,7 @@ jobs:
           node --test tests/atokore-routine-catalog-v20.test.cjs
           node --test tests/atokore-routine-stock-one-tap.test.cjs
           node --test tests/atokore-no-native-confirm.test.cjs
+          node --test tests/atokore-food-month-display.test.cjs
           node --test tests/atokore-search-v48.test.cjs
           node --test tests/atokore-stock-rules-v48.test.cjs
           node --test tests/atokore-buy-duplicates-v48.test.cjs

@@ -52,6 +52,7 @@ function labelRow(row,item){
   if(anchor)anchor.insertAdjacentElement('afterend',label);else return;
  }
  label.textContent=cat;label.setAttribute('aria-label','カテゴリー：'+cat);
+ const place=row.closest('.atk-stock-list-mode')&&item.place?String(item.place).trim():'';let loc=row.querySelector('.atk-storage-place');if(place){if(!loc){loc=doc.createElement('span');loc.className='atk-storage-place';label.insertAdjacentElement('afterend',loc)}loc.textContent=' '+place;loc.setAttribute('aria-label','収納先：'+place)}else loc?.remove();
 }
 function labelStock(){const all=stockItems();doc.querySelectorAll('#stockList [data-stock-id]').forEach(r=>labelRow(r,all.find(x=>String(x.id)===r.dataset.stockId)))}
 // A shopping item saved without a category shows the one it will get in stock when bought:
@@ -67,7 +68,14 @@ function labelBuy(){const all=buyItems();doc.querySelectorAll('#buyList [data-bu
 const priorVisible=root.visibleStock;
 if(typeof priorVisible==='function')root.visibleStock=function(...args){
  const shown=priorVisible.apply(this,args);
- return Rules.sortItems(shown,mode,{registered:stockItems(),isBabyFood,reorderAt:root.atokoreReorderAt});
+ const sorted=Rules.sortItems(shown,mode,{registered:stockItems(),isBabyFood,reorderAt:root.atokoreReorderAt});
+ // In category order, arrange baby food by age in both card and list views.
+ // Other categories and user-selected priority orders retain their existing order.
+ if(mode!=='category'||!root.AtokorePolish?.foodMonthFor)return sorted;
+ const food=sorted.filter(isBabyFood).map((item,index)=>({item,index,month:root.AtokorePolish.foodMonthFor(item)}));
+ food.sort((a,b)=>(a.month??Infinity)-(b.month??Infinity)||a.index-b.index);
+ let next=0;
+ return sorted.map(item=>isBabyFood(item)?food[next++].item:item);
 };
 const priorStock=root.renderStock;
 if(typeof priorStock==='function')root.renderStock=function(...args){const r=priorStock.apply(this,args);try{renderControl();labelStock()}catch(e){root.console?.error?.('あとこれ: 並び順の表示',e)}return r};
