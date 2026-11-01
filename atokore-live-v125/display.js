@@ -171,8 +171,6 @@
   }
   function persist(){try{localStorage.setItem(KEY,JSON.stringify({...JSON.parse(localStorage.getItem(KEY)||'{}'),...prefs}))}catch(e){}}
   function apply(){
-    // Some browsers finish attaching later styles after the initial pass.
-    scaleSheets();scaleInlineTree(document.body);
     document.body.classList.remove('atk-fs-tiny','atk-fs-small','atk-fs-large','atk-density-ultra','atk-density-compact','atk-density-roomy');
     if(prefs.font==='tiny')document.body.classList.add('atk-fs-tiny');
     if(prefs.font==='small')document.body.classList.add('atk-fs-small');

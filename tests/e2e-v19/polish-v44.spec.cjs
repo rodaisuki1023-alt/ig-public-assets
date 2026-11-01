@@ -71,24 +71,17 @@ test('text size changes across all main screens and the settings dialog without 
  await go(page,'add');
  await go(page,'premium');
  const sizes=async(font)=>{
-  await page.evaluate(value=>setAtokoreDisplay('font',value),font);
-  return page.evaluate(()=>{
-   const selectors=['.top h1','#atkHomeAttentionTitle','#pg-stock .name','#pg-add .qa-heading strong','#pg-buy .section','#pg-premium .section','.displayNote'];
-   return selectors.map(selector=>{
-    const el=document.querySelector(selector);
-    if(!el)throw Error('Missing font sample: '+selector);
-    return parseFloat(getComputedStyle(el).fontSize);
-   });
-  });
+  await page.evaluate(value=>{setAtokoreDisplay('font',value);closeM()},font);
+  const samples=[];
+  for(const [view,selector] of [['home','.top h1'],['home','#atkHomeAttentionTitle'],['stock','#pg-stock .name'],['add','#pg-add .qa-heading strong'],['buy','#pg-buy .section'],['premium','#pg-premium .section']]){
+   await go(page,view);
+   samples.push(await page.locator(selector).first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize)));
+  }
+  await page.evaluate(()=>openAtokoreDisplaySettings());
+  samples.push(await page.locator('.displayNote').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)));
+  return samples;
  };
  const normal=await sizes('standard'),small=await sizes('tiny'),large=await sizes('large');
- console.log('font diagnostics',JSON.stringify(await page.evaluate(()=>{
-  const nodes=['#atkHomeAttentionTitle','#pg-buy .section'].map(s=>document.querySelector(s));
-  const out=nodes.map(()=>[]);
-  const walk=rules=>Array.from(rules||[]).forEach(r=>{if(r.cssRules)walk(r.cssRules);if(!r.selectorText||!r.style?.fontSize)return;nodes.forEach((el,i)=>{try{if(el.matches(r.selectorText))out[i].push([r.selectorText,r.style.fontSize,r.style.getPropertyPriority('font-size')])}catch(e){}})});
-  Array.from(document.styleSheets).forEach(s=>{try{walk(s.cssRules)}catch(e){}});
-  return out;
- })));
  normal.forEach((size,i)=>{expect(small[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeLessThan(size);expect(large[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeGreaterThan(size)});
  const inputSize=await page.evaluate(()=>parseFloat(getComputedStyle(document.querySelector('#addName')).fontSize));
  expect(inputSize).toBeGreaterThanOrEqual(16);
