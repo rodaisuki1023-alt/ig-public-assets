@@ -115,18 +115,18 @@ test('a generic name replaces the printed one only when the word is most of the 
   assert.deepEqual(rows('テスト玉子 Mサイズ ¥238\n小計 ¥238').map(r => r[0]), ['テスト玉子 Mサイズ']);
   // v49 audit: a printed size stays in the name (M and L eggs are different products); the generic name is
   // only used to look for the registered product.
-  assert.deepEqual(rows('玉子 Mサイズ ¥238\n玉子 ¥228\n厚焼き玉子&かつサン ¥358\nまるごとバナナミニ ¥128\nやかんの麦茶2L ¥118\nバナナ ¥198\n小計 ¥1,268').map(r => r[0]),
-    ['玉子 Mサイズ', '卵', '厚焼き玉子&かつサン', 'まるごとバナナミニ', 'やかんの麦茶2L', 'バナナ']);
+  assert.deepEqual(rows('玉子 Mサイズ ¥238\n玉子 ¥228\nテスト玉子とハムのサンド ¥358\nテストバナナケーキミニ ¥128\nテスト麦茶2L ¥118\nバナナ ¥198\n小計 ¥1,268').map(r => r[0]),
+    ['玉子 Mサイズ', '卵', 'テスト玉子とハムのサンド', 'テストバナナケーキミニ', 'テスト麦茶2L', 'バナナ']);
 });
 
 test('suggestions: the printed text, then the generic name; never a different size or amount', () => {
-  const stock = [{ id: 1, name: '卵' }, { id: 2, name: '豚こま肉' }, { id: 3, name: 'やかんの麦茶 2L' }];
+  const stock = [{ id: 1, name: '卵' }, { id: 2, name: '豚こま肉' }, { id: 3, name: 'テスト麦茶 2L' }];
   const pick = raw => { const it = R.parseReceipt(raw + ' ¥100\n小計 ¥100').items[0]; return Array.from(R.candidatesFor(it, stock, M), c => c.item.id); };
   assert.deepEqual(pick('玉子 Mサイズ'), [1]);
-  assert.deepEqual(pick('やかんの麦茶 650ml'), []);
-  assert.deepEqual(pick('やかんの麦茶650m|'), []); // OCR read the l of ml as |
-  assert.deepEqual(pick('やかんの麦茶2L'), [3]);
-  assert.deepEqual(pick('厚焼き玉子&かつサン'), []);
+  assert.deepEqual(pick('テスト麦茶 650ml'), []);
+  assert.deepEqual(pick('テスト麦茶650m|'), []); // OCR read the l of ml as |
+  assert.deepEqual(pick('テスト麦茶2L'), [3]);
+  assert.deepEqual(pick('テスト玉子とハムのサンド'), []);
 });
 
 test('OCR boxes on one printed line are joined left to right', () => {

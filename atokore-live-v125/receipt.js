@@ -61,7 +61,7 @@ function aliases(){try{return JSON.parse(localStorage.getItem('atokoreReceiptAli
 function learn(raw,name){const k=key(raw);if(!k||!name)return;const a=aliases();a[k]=name;try{localStorage.setItem('atokoreReceiptAliases',JSON.stringify(a))}catch(e){}}
 const rules=[[/玉子|たまご|タマゴ|卵/,'卵'],[/豚(?:ばら|バラ)(?:うす切り|薄切り)?/,'豚バラ肉'],[/豚(?:こま|コマ)(?:切れ)?/,'豚こま肉'],[/鶏もも/,'鶏もも肉'],[/鶏むね/,'鶏むね肉'],[/牛乳|おいしいミルク|メグミルク|乳飲料/,'牛乳'],[/豆乳/,'豆乳'],[/食パン|超熟|本仕込/,'食パン'],[/ヨーグルト|ヨーグル/,'ヨーグルト'],[/納豆/,'納豆'],[/豆腐/,'豆腐'],[/バナナ/,'バナナ'],[/りんご|リンゴ/,'りんご'],[/みかん|ミカン/,'みかん'],[/トイレット.*ペーパー|トイレ.*ロール/,'トイレットペーパー'],[/箱?ティッシュ|ティシュ/,'ティッシュ'],[/キッチン.*ペーパー/,'キッチンペーパー'],[/おしり.*ふき/,'おしりふき'],[/おむつ|オムツ|紙パンツ/,'オムツ'],[/柔軟剤/,'柔軟剤'],[/食器.*洗剤/,'食器用洗剤'],[/洗濯.*洗剤|衣料.*洗剤/,'洗濯洗剤'],[/シャンプー/,'シャンプー'],[/コンディショナー|リンス/,'コンディショナー'],[/ボディ.*ソープ/,'ボディソープ'],[/ハンド.*ソープ/,'ハンドソープ'],[/マスク/,'マスク'],[/歯ブラシ/,'歯ブラシ'],[/歯磨|ハミガキ/,'歯磨き粉'],[/ミネラル.*ウォーター|天然水/,'ミネラルウォーター'],[/麦茶/,'麦茶'],[/コーヒー|珈琲/,'コーヒー'],[/冷凍.*餃子/,'冷凍餃子'],[/冷凍.*からあげ|冷凍.*唐揚/,'冷凍からあげ']];
 // v49: a generic name replaces the printed one only when the matched word is most (70%) of the name.
-// "厚焼き玉子&かつサン" is not 卵, "まるごとバナナミニ" is not バナナ and "やかんの麦茶2L" keeps its size.
+// "テスト玉子とハムのサンド" is not 卵, "テストバナナケーキミニ" is not バナナ and "テスト麦茶2L" keeps its size.
 function coreText(c,keepSize){const t=hw(c).replace(/\d+(?:\.\d+)?\s*(?:ml|l|g|kg|個入り?|個|枚入り?|枚|本入り?|本|コ|袋|パック|p|入り?)(?![a-z])/gi,'');return (keepSize?t:t.replace(/[SMLＳＭＬ]?サイズ/g,'')).replace(/[\s　*＊※#()（）☆★]/g,'').replace(/(?:^|(?<=[^一-龠]))[大小特]$/,'')}
 // Generic name used only to look for a registered product ("玉子 Mサイズ" can be the registered 卵); the
 // name shown keeps the printed size, so M and L eggs are never shown as the same product.
