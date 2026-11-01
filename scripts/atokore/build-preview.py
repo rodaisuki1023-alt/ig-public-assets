@@ -26,6 +26,7 @@ PRODUCTION_KEYS = {
     'atokoreHouseholdInviteV1': 'atokorePreviewHouseholdInviteV{v}',
     'atokoreReceiptHistoryV1': 'atokorePreviewReceiptHistoryV{v}',
     'atokoreOnboardingV1': 'atokorePreviewOnboardingV{v}',
+    'atokoreReceiptOcrV49Ready': 'atokorePreviewReceiptOcrReadyV{v}',
 }
 
 
