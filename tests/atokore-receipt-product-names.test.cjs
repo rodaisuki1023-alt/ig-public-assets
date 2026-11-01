@@ -232,3 +232,33 @@ assert.match(source, /tessedit_pageseg_mode:'6'/);
 assert.match(source, /tsv:true/);
 
 console.log('Atokore receipt structure parser: all tests passed');
+
+
+const slashSubtotal = parser.parseReceipt('商品A ¥128\n2コ X 単128 ¥256\n値引 -128\n小計/ 2点 ¥128\n支払情報 ¥128');
+assert.equal(slashSubtotal.stoppedAtSubtotal,true);
+assert.equal(slashSubtotal.items[0].qty,2);
+const markedPrices = parser.parseReceipt('食品A ¥100外\n日用品B ¥200外\n小計 2点 ¥300');
+assert.deepEqual(Array.from(markedPrices.items,x=>x.name),['食品A','日用品B']);
+const duplicateWithDetail = parser.parseReceipt('商品A 198\n商品A 198\n2コ X 単198 ¥396\n小計 ¥792');
+assert.equal(duplicateWithDetail.items[0].qty,3);
+const unrelatedDetail = parser.parseReceipt('商品A 198\n値引 -50\n2コ X 単198 ¥396\n小計 ¥346');
+assert.equal(unrelatedDetail.items[0].qty,1);
+
+const parenthesizedCount = parser.parseReceipt('商品A ¥398※\n(2個 x @199)\n小計 2点 ¥398');
+assert.equal(parenthesizedCount.items[0].qty,2);
+const reversedCount = parser.parseReceipt('食品A ¥296\n(@148 x 2個)\n小計 2点 ¥296');
+assert.equal(reversedCount.items[0].qty,2);
+
+const codePrice = parser.parseReceipt('PRODUCT TEA 10PKS\n123456 1● 1,398 1,398 E\nCPN\nPRODUCT TEA CPN\n456789 1● 280 280-E\nお菓子セット\n789012 2● 900 1,800 E\n合計 2,918');
+assert.equal(codePrice.items.length,2, 'coupon lines are not product candidates');
+assert.equal(codePrice.items[0].name,'PRODUCT TEA 10PKS');
+assert.equal(codePrice.items[0].qty,1);
+assert.equal(codePrice.items[1].qty,2);
+assert.ok(codePrice.items.every(x=>x.low&&!x.selected), 'unverified candidates always require explicit selection');
+const missingDetail = parser.parseReceipt('PRODUCT TEA\n何か違う行\n小計 100');
+assert.equal(missingDetail.items.length,0);
+
+const noSubtotal = parser.parseReceipt('PRODUCT TEA\n123456 1● 1,398 1,398 E\n**** 合計 1,398\n商品みたいな決済名 999');
+assert.equal(noSubtotal.stoppedAtSubtotal,false, 'total is not mislabeled as a subtotal');
+assert.equal(noSubtotal.items.length,1, 'never evaluate lines after a total');
+assert.equal(noSubtotal.items[0].selected,false);
