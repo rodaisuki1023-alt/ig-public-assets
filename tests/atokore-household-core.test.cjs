@@ -74,3 +74,12 @@ test('same product offers after joining require exact name, unit and category', 
   const offers = core.matchLocal({ items: [it(1, 'パンパース テープ M', 2), it(2, 'パンパース テープ L', 1), { ...it(3, 'パンパース テープ M', 1), cat: 'その他' }], buys: [], routines: [] }, view);
   assert.deepEqual(offers.map(o => [o.name, o.sharedId, o.sharedQty]), [['パンパース テープ M', 'item-aaaaaaaa', 3], ['パンパース テープ L', null, null], ['パンパース テープ M', null, null]]);
 });
+
+test('manual baby food month syncs as an ordinary field and clearing it removes only that field',()=>{
+ const original={id:1,name:'手作りスープ',cat:'離乳食',unit:'個',qty:2};
+ const before={items:[original],buys:[],routines:[]},after={items:[{...original,babyFoodMonth:16}],buys:[],routines:[]};
+ const map={'item:1':'item-aaaaaaaa'};
+ const ops=strip(core.diff(before,after,map).ops);
+ assert.deepEqual(ops,[{type:'set',kind:'item',id:'item-aaaaaaaa',field:'babyFoodMonth',value:16}]);
+ assert.deepEqual(strip(core.diff(after,before,map).ops),[{type:'set',kind:'item',id:'item-aaaaaaaa',field:'babyFoodMonth',value:null}]);
+});
