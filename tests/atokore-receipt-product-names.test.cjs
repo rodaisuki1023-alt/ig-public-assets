@@ -232,3 +232,14 @@ assert.match(source, /tessedit_pageseg_mode:'6'/);
 assert.match(source, /tsv:true/);
 
 console.log('Atokore receipt structure parser: all tests passed');
+
+
+const slashSubtotal = parser.parseReceipt('商品A ¥128\n2コ X 単128 ¥256\n値引 -128\n小計/ 2点 ¥128\n支払情報 ¥128');
+assert.equal(slashSubtotal.stoppedAtSubtotal,true);
+assert.equal(slashSubtotal.items[0].qty,2);
+const markedPrices = parser.parseReceipt('食品A ¥100外\n日用品B ¥200外\n小計 2点 ¥300');
+assert.deepEqual(Array.from(markedPrices.items,x=>x.name),['食品A','日用品B']);
+const duplicateWithDetail = parser.parseReceipt('商品A 198\n商品A 198\n2コ X 単198 ¥396\n小計 ¥792');
+assert.equal(duplicateWithDetail.items[0].qty,3);
+const unrelatedDetail = parser.parseReceipt('商品A 198\n値引 -50\n2コ X 単198 ¥396\n小計 ¥346');
+assert.equal(unrelatedDetail.items[0].qty,1);
