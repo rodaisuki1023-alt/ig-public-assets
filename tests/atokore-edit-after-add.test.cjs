@@ -111,3 +111,12 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.match(worker,/'\.\/edit-after-add.js'/);
  assert.match(worker,/atokore-pwa-v48/);
 });
+
+test('baby food month is optional, validated, and retains unrelated fields',()=>{
+ const item={id:8,name:'手作りスープ',cat:'離乳食',qty:1,unit:'個',babyFoodMonth:7,photo:'keep'};
+ const form={...item,expType:'期限なし',minQty:''};
+ assert.equal(editor.validate({...form,babyFoodMonth:'16'},item).babyFoodMonth,16);
+ assert.equal(editor.validate({...form,babyFoodMonth:'16'},item).photo,'keep');
+ assert.equal(editor.validate({...form,babyFoodMonth:''},item).babyFoodMonth,undefined);
+ assert.throws(()=>editor.validate({...form,babyFoodMonth:'49'},item),/月齢/);
+});

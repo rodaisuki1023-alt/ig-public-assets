@@ -83,3 +83,17 @@ test('add screen (離乳食): month ages keep the digit boundary and accept ever
   await shot(page, info, 'v48-2-add-babyfood-month-search-390');
   expect(page.__errors).toEqual([]);
 });
+
+test('manual baby food age can be selected and survives reload', async ({page})=>{
+ const stock=[{id:81,name:'手作りスープ',cat:'その他',qty:1,unit:'個',expType:'期限なし',exp:''}];
+ await open(page,{[KEY]:baseState({items:stock,buys:[],routines:[]})});
+ await go(page,'stock');await page.evaluate(()=>window.atokoreEditStock(81));
+ await page.locator('#atkEditForm select[name="cat"]').selectOption('離乳食');
+ await page.locator('#atkEditForm select[name="babyFoodMonth"]').selectOption('16');
+ await page.locator('#atkEditForm button[type="submit"]').click();
+ await page.click('[data-atk-view="list"]');
+ await expect(page.locator('#stockList .atk-food-month')).toContainText(['1歳4か月頃から']);
+ await page.reload();await go(page,'stock');
+ await expect(page.locator('#stockList .atk-food-month')).toContainText(['1歳4か月頃から']);
+ await expect(page.locator('#stockList [data-stock-id="81"] .name')).toHaveText('手作りスープ');
+});
