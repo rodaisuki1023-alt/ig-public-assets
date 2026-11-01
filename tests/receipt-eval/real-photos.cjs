@@ -39,20 +39,16 @@ const RECEIPT_JS = path.resolve(process.env.RECEIPT_JS || path.join(__dirname, '
 const MATCH_JS = path.resolve(process.env.MATCH_JS || path.join(__dirname, '../../atokore-live-v125/receipt-match-v38.js'));
 const truth = JSON.parse(fs.readFileSync(path.join(DIR, 'truth.json'), 'utf8')).receipts
   .filter(r => (SPLIT === 'all' || r.split === SPLIT) && (!ONLY || ONLY.includes(r.id)));
-const STOCK = JSON.parse(fs.readFileSync(path.join(DIR, 'stock.json'), 'utf8'));
+const STOCK_RAW = JSON.parse(fs.readFileSync(path.join(DIR, 'stock.json'), 'utf8'));
+const STOCK = Array.isArray(STOCK_RAW) ? STOCK_RAW : STOCK_RAW.items;
+const LEARNED = !!opt('--learned');
+const truthAll = JSON.parse(fs.readFileSync(path.join(DIR, 'truth.json'), 'utf8')).receipts;
 const source = fs.readFileSync(RECEIPT_JS, 'utf8');
 delete require.cache[MATCH_JS];
 const match = require(MATCH_JS);
 
-function parser() {
-  const ctx = { console, C: { 食料品: ['牛乳', '卵', '食パン', 'バナナ', 'ヨーグルト', '納豆'], 日用品: ['ティッシュ', '洗濯洗剤'] },
-    document: { createElement: () => ({ textContent: '', style: {}, appendChild() {} }), head: { appendChild() {} }, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] },
-    localStorage: { getItem: () => null, setItem() {} }, URL: { createObjectURL: () => '', revokeObjectURL() {} }, Image: function Image() {},
-    today: () => '2026-11-01', AtokoreDates: { localDate: () => '2026-11-01' }, AtokoreReceiptStructure: require('../../atokore-live-v125/receipt-structure-v49.js'), showPremium() {}, openM() {}, closeM() {}, alert() {}, items: [], buys: [], save() {}, render() {}, go() {} };
-  ctx.window = ctx; vm.createContext(ctx);
-  vm.runInContext(source, ctx);
-  return ctx.__atokoreReceiptV125M;
-}
+// The app's parser, loaded the same way as the other evaluation tools (load-receipt.cjs).
+const parser = () => require('./load-receipt.cjs').loadReceipt({ receiptJs: RECEIPT_JS });
 // The app's image preparation, taken from receipt.js so the evaluation follows the shipped code.
 function prepSource() {
   const start = source.indexOf('async function prep(f){');
@@ -90,66 +86,111 @@ function align(T, P, score) {
   }
   return { pair, S };
 }
-// Several printed lines of the same product (e.g. two identical Costco lines) are one truth row with
-// "lines": n; parsed rows are compared after the parser has merged or kept them.
+// Row correspondence: a parsed row is paired with a truth row when their names are at least 0.34 alike
+// (dynamic programming over the receipt order). 0.34 only decides WHICH row to compare; whether the name
+// and quantity are right is judged separately below (exact name, product identity, quantity).
+// Several printed lines of one product (two identical Costco lines) are one truth row with "lines": n.
 let parseApi = null;
-function evaluate(r, parsed, ocr) {
+const digits = s => (String(s).normalize('NFKC').match(/\d+/g) || []).join(',');
+function identity(parsedName, truthName) {
+  // exact: same text after width/space normalisation ('?' in the truth matches any character).
+  const a = norm(truthName), b = norm(parsedName);
+  if (a.length === b.length && [...a].every((c, i) => c === '?' || c === b[i])) return 'exact';
+  // same product: very close text, same numbers (size, amount, count) and no size/form/brand/amount conflict.
+  const f = match.features(parsedName), g = match.features(truthName.replace(/\?/g, ''));
+  if (sim(parsedName, truthName) >= 0.85 && digits(parsedName) === digits(truthName.replace(/\?/g, '')) && !match.conflict(f, g)) return 'same';
+  // different: the name points to something else (wrong numbers, attributes or largely different text).
+  return 'different';
+}
+function evaluate(r, parsed, ocr, stock) {
   const T = r.lines, P = parsed.items;
   const { pair, S } = align(T, P, (p, t) => sim(p.raw || p.name, t.name));
-  // A truth row with several printed lines may legitimately get several parsed rows: sum their quantity.
   const extraRows = new Set();
   const used = new Set(pair.values());
   T.forEach((t, ti) => { if ((t.lines || 1) > 1 && pair.has(ti)) P.forEach((p, pj) => { if (!used.has(pj) && S[ti][pj] >= 0.8) { extraRows.add(pj); used.add(pj); } }); });
   const ocrLines = ocr ? String(ocr.text || '').split(/\n/).filter(Boolean) : [];
+  const rejectedTexts = (parsed.rejected || []).map(x => String(x.text || ''));
   const lines = T.map((t, ti) => {
     const j = pair.has(ti) ? pair.get(ti) : null, item = j === null ? null : P[j];
     const sameRows = item ? [j, ...[...extraRows].filter(k => S[ti][k] >= 0.8)] : [];
+    // qtyRow: the paired row only. qtyTotal: all rows of this product (a product printed on two lines).
+    const qtyRow = item ? Number(item.qty) || 0 : null;
     const qty = item ? sameRows.reduce((s, k) => s + (Number(P[k].qty) || 0), 0) : null;
-    // Older receipt.js (before v49) has no candidatesFor: it asked the matcher with the printed text only.
-    const cands = !item ? [] : parseApi.candidatesFor ? parseApi.candidatesFor(item, STOCK, match) : match.candidates(item.raw || item.name, STOCK);
+    const cands = !item ? [] : parseApi.candidatesFor ? parseApi.candidatesFor(item, stock, match) : match.candidates(item.raw || item.name, stock);
+    // Pre-selection exactly as the review screen decides it (receipt.js prepareRows): v49 only an exact
+    // learned text on a row that is not in doubt; before v49 any "learned" candidate (incl. near matches).
+    const auto = !!(cands[0] && cands[0].learned && (parseApi.candidatesFor ? !item.low : true));
+    const id = item ? identity(item.name, t.name) : null;
     return {
-      name: t.name, truthQty: t.qty, truthStock: t.stock,
+      name: t.name, truthQty: t.qty, truthStock: t.stock, printedLines: t.lines || 1,
       ocrRead: ocr ? Math.max(0, ...ocrLines.map(l => spanSim(l, t.name))) : null,
-      found: !!item, rawSim: item ? Math.round(S[ti][j] * 100) / 100 : 0, parsedRaw: item?.raw ?? null, parsedName: item?.name ?? null,
-      qty, selected: item ? !!item.selected : false, low: item ? !!item.low : false,
-      top: cands[0]?.item.id ?? null, candidateIds: cands.map(c => c.item.id), autoLinked: false,
+      found: !!item, alignSim: item ? Math.round(S[ti][j] * 100) / 100 : 0, rawSim: item ? Math.round(S[ti][j] * 100) / 100 : 0,
+      parsedRaw: item?.raw ?? null, parsedName: item?.name ?? null, identity: id,
+      qty, qtyRow, selected: item ? !!item.selected : false, low: item ? !!item.low : false, reasons: item?.reasons || [],
+      top: cands[0]?.item.id ?? null, candidateIds: cands.map(c => c.item.id), autoLinked: auto, autoLinkedTo: auto ? cands[0].item.id : null,
+      // A missed product that still appears in the "読み取れなかった行" list can be noticed by the person.
+      missedButListed: !item && rejectedTexts.some(x => spanSim(x, t.name) >= 0.6),
     };
   });
   const extras = P.filter((_, k) => !used.has(k)).map(x => ({ raw: x.raw || x.name, qty: x.qty, selected: !!x.selected }));
-  return { lines, extras, rejected: parsed.rejected.length, stoppedAtSubtotal: parsed.stoppedAtSubtotal };
+  return { lines, extras, rejected: parsed.rejected.length, printedCount: parsed.printedCount ?? null, countedQty: parsed.countedQty ?? null, stoppedAtSubtotal: parsed.stoppedAtSubtotal };
 }
-const pct = (a, b) => b ? `${(100 * a / b).toFixed(1)}% (${a}/${b})` : '—';
-function summary(rows) {
+const pct = (a, b) => b ? `${(100 * a / b).toFixed(1)}% (${a}/${b})` : '未測定（分母0）';
+function summary(rows, learnedMode) {
   const L = rows.flatMap(r => r.lines), F = L.filter(l => l.found);
   const known = F.filter(l => typeof l.truthStock === 'string' && l.truthStock !== 'any'), fresh = F.filter(l => l.truthStock === null);
   const ocr = L.filter(l => l.ocrRead !== null);
+  const wrong = F.filter(l => l.identity === 'different' || l.qty !== l.truthQty);
+  const auto = L.filter(l => l.autoLinked);
+  // Estimated places to correct (not measured with people): missing rows, pre-selected extra rows, wrong
+  // quantities, and names/candidates that need changing.
   const edits = rows.map(r => r.lines.filter(l => !l.found).length + r.extras.filter(x => x.selected).length
     + r.lines.filter(l => l.found && (l.qty !== l.truthQty)).length
-    + r.lines.filter(l => l.found && (typeof l.truthStock === 'string' && l.truthStock !== 'any' ? l.top !== l.truthStock : l.rawSim < 0.8)).length);
+    + r.lines.filter(l => l.found && (typeof l.truthStock === 'string' && l.truthStock !== 'any' ? l.top !== l.truthStock : l.identity === 'different')).length);
+  const med = a => a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : '未測定';
   return {
-    receipts: rows.length, truthLines: L.length,
-    A_ocrReadable80: ocr.length ? pct(ocr.filter(l => l.ocrRead >= 0.8).length, ocr.length) : 'not OCR (text mode)',
-    A_ocrReadable50: ocr.length ? pct(ocr.filter(l => l.ocrRead >= 0.5).length, ocr.length) : 'not OCR (text mode)',
+    receipts: rows.length, truthLines: L.length, printedProductLines: L.reduce((s, l) => s + l.printedLines, 0),
+    A_ocrReadable80: ocr.length ? pct(ocr.filter(l => l.ocrRead >= 0.8).length, ocr.length) : '未測定（文字列モード）',
     B_lineDetected: pct(F.length, L.length),
+    B_missedButListed: `${L.filter(l => l.missedButListed).length} of ${L.length - F.length} missed rows appear in 読み取れなかった行`,
     B_nonProductRows: `${rows.reduce((s, r) => s + r.extras.length, 0)} rows (${rows.reduce((s, r) => s + r.extras.filter(x => x.selected).length, 0)} pre-selected)`,
-    B_nonProductShare: pct(rows.reduce((s, r) => s + r.extras.length, 0), rows.reduce((s, r) => s + r.extras.length, 0) + F.length),
-    name_raw80: pct(F.filter(l => l.rawSim >= 0.8).length, L.length),
-    name_rawExact: pct(F.filter(l => l.rawSim >= 0.999).length, L.length),
+    B_unreadListPerReceipt: { median: med(rows.map(r => r.rejected)), max: Math.max(...rows.map(r => r.rejected)), total: rows.reduce((s, r) => s + r.rejected, 0) },
+    countCheck: `${rows.filter(r => r.printedCount !== null).length}/${rows.length} receipts with a printed count; mismatch shown on ${rows.filter(r => r.printedCount !== null && r.printedCount !== r.countedQty).length}`,
+    name_exact_ofAll: pct(F.filter(l => l.identity === 'exact').length, L.length),
+    name_sameProduct_ofAll: pct(F.filter(l => l.identity !== 'different').length, L.length),
+    name_different_ofDetected: pct(F.filter(l => l.identity === 'different').length, F.length),
     C_qtyCorrect_ofDetected: pct(F.filter(l => l.qty === l.truthQty).length, F.length),
+    C_qtyCorrect_ofAll: pct(F.filter(l => l.qty === l.truthQty).length, L.length),
+    C_qtyRowCorrect_ofDetected: pct(F.filter(l => l.qtyRow === l.truthQty).length, F.length),
     C_qtyOverCount: F.filter(l => l.qty > l.truthQty).length,
     C_qtyUnderCount: F.filter(l => l.qty < l.truthQty).length,
+    E_wrongRowsFlagged: pct(wrong.filter(l => l.low || l.reasons.length).length, wrong.length),
     D_knownTopCorrect: pct(known.filter(l => l.top === l.truthStock).length, known.length),
     D_wrongTopForKnown: known.filter(l => l.top && l.top !== l.truthStock).length,
     D_newWithStockSuggested: `${fresh.filter(l => l.top).length} of ${fresh.length}`,
-    D_autoLinked: L.filter(l => l.autoLinked).length,
-    editsPerReceipt: { median: [...edits].sort((a, b) => a - b)[Math.floor(edits.length / 2)], max: Math.max(...edits), total: edits.reduce((a, b) => a + b, 0) },
-    ms: TEXT ? 'n/a (text)' : { median: rows.map(r => r.ms).sort((a, b) => a - b)[Math.floor(rows.length / 2)], max: Math.max(...rows.map(r => r.ms)) },
+    D_autoLinked: `${auto.length} (${learnedMode ? 'learned aliases present' : 'no learned aliases: pre-selection cannot happen'})`,
+    D_autoLinkedWrong: auto.filter(l => l.truthStock === null || (typeof l.truthStock === 'string' && l.truthStock !== 'any' && l.autoLinkedTo !== l.truthStock)).length,
+    D_autoLinkedUnknown: auto.filter(l => l.truthStock === 'any').length,
+    estimatedCorrections: { median: med(edits), max: Math.max(...edits), total: edits.reduce((a, b) => a + b, 0) },
+    ms: TEXT ? '未測定（文字列モード）' : { median: med(rows.map(r => r.ms)), max: Math.max(...rows.map(r => r.ms)) },
     stoppedAtSubtotal: `${rows.filter(r => r.stoppedAtSubtotal).length}/${rows.length}`,
   };
+}
+// --learned: the registered products carry the receipt text confirmed for them before (the printed name of
+// every truth row linked to a product, as if the family had confirmed it once), plus aliases of OTHER
+// products that look alike (same name with another size/flavour) to measure wrong pre-selection.
+function learnedStock(stock) {
+  const out = stock.map(x => ({ ...x, receiptAliases: [] }));
+  for (const r of truthAll) for (const t of r.lines) {
+    const it = out.find(x => x.id === t.stock); if (it) match.remember(it, t.name);
+  }
+  for (const [id, alias] of (Array.isArray(STOCK_RAW) ? [] : STOCK_RAW.nearAliases || [])) { const it = out.find(x => x.id === id); if (it) match.remember(it, alias); }
+  return out;
 }
 
 (async () => {
   const parse = parser(); parseApi = parse;
+  const EVAL_STOCK = LEARNED ? learnedStock(STOCK) : STOCK;
   const rows = [];
   let browser, page, worker;
   if (!TEXT && !CACHE && ENGINE === 'ppocr') {
@@ -185,7 +226,9 @@ function summary(rows) {
     if (CACHE) {
       // Parser-only iteration on OCR output saved by an earlier run (EVAL_SAVE_OCR); OCR is not re-run.
       const z = JSON.parse(fs.readFileSync(path.join(CACHE, r.id + '.ocr.json'), 'utf8'));
-      ocr = { text: z.text, confidence: z.confidence }; input = z.lines ? z.lines : { text: z.text, tsv: z.tsv }; ms = z.ms;
+      // Raw OCR boxes are regrouped with the current receipt-ocr-lines-v49.js, so line-grouping changes are measured too.
+      const regrouped = z.items ? require(process.env.LINES_JS || path.join(APP_DIR, 'receipt-ocr-lines-v49.js')).groupBoxes(z.items) : null;
+      ocr = { text: regrouped ? regrouped.map(l => l.text).join('\n') : z.text, confidence: z.confidence }; input = regrouped || (z.lines ? z.lines : { text: z.text, tsv: z.tsv }); ms = z.ms;
     } else if (TEXT) {
       const f = path.join(DIR, 'text', r.id + '.txt');
       if (!fs.existsSync(f)) { console.error(`${r.id}: no transcription, skipped`); continue; }
@@ -208,7 +251,7 @@ function summary(rows) {
       input = lines;
       if (process.env.EVAL_SAVE_OCR) {
         fs.writeFileSync(path.join(process.env.EVAL_SAVE_OCR, r.id + '.ocr.txt'), ocr.text);
-        fs.writeFileSync(path.join(process.env.EVAL_SAVE_OCR, r.id + '.ocr.json'), JSON.stringify({ text: ocr.text, lines, confidence: null, ms, turn: res.turn, stats: res.stats }));
+        fs.writeFileSync(path.join(process.env.EVAL_SAVE_OCR, r.id + '.ocr.json'), JSON.stringify({ text: ocr.text, lines, items: res.items, confidence: null, ms, turn: res.turn, stats: res.stats }));
       }
     } else {
       const bytes = fs.readFileSync(path.join(DIR, 'img', r.id + '.jpg')).toString('base64');
@@ -239,14 +282,14 @@ function summary(rows) {
       }
     }
     const parsed = parse.parseReceipt(input);
-    const row = { id: r.id, split: r.split, ms, ocrConfidence: ocr ? Math.round(ocr.confidence) : null, ...evaluate(r, parsed, ocr) };
+    const row = { id: r.id, split: r.split, ms, ocrConfidence: ocr ? Math.round(ocr.confidence) : null, ...evaluate(r, parsed, ocr, EVAL_STOCK) };
     rows.push(row);
     const L = row.lines;
     console.log(`${r.id} ${TEXT ? 'text' : ms + 'ms'} found ${L.filter(l => l.found).length}/${L.length} qtyOK ${L.filter(l => l.found && l.qty === l.truthQty).length} extras ${row.extras.length}${ocr ? ' ocrRead80 ' + L.filter(l => l.ocrRead >= 0.8).length : ''}`);
   }
   if (worker) await worker.terminate();
   if (browser) await browser.close();
-  const out = { mode: TEXT ? 'text (transcription, not OCR)' : CACHE ? 'cached OCR ' + CACHE : ENGINE === 'ppocr' ? 'photo OCR (PP-OCRv6 in Chromium, receipt-ppocr-v49.js)' : 'photo OCR (tesseract.js 5.1.1, prep ' + PREP + ')', split: SPLIT, receiptJs: path.relative(process.cwd(), RECEIPT_JS), summary: summary(rows), rows };
+  const out = { mode: TEXT ? 'text (transcription, not OCR)' : CACHE ? 'cached OCR ' + CACHE : ENGINE === 'ppocr' ? 'photo OCR (PP-OCRv6 in Chromium, receipt-ppocr-v49.js)' : 'photo OCR (tesseract.js 5.1.1, prep ' + PREP + ')', split: SPLIT, receiptJs: path.relative(process.cwd(), RECEIPT_JS), summary: summary(rows, LEARNED), learned: LEARNED, rows };
   console.log(JSON.stringify(out.summary, null, 1));
   if (opt('--json')) fs.writeFileSync(String(opt('--json')), JSON.stringify(out, null, 1));
 })().catch(e => { console.error(e); process.exit(1); });

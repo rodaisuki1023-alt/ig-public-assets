@@ -113,8 +113,10 @@ test('OCR quirks are tidied in names: Chinese forms of receipt words, voicing ma
 
 test('a generic name replaces the printed one only when the word is most of the name', () => {
   assert.deepEqual(rows('テスト玉子 Mサイズ ¥238\n小計 ¥238').map(r => r[0]), ['テスト玉子 Mサイズ']);
-  assert.deepEqual(rows('玉子 Mサイズ ¥238\n厚焼き玉子&かつサン ¥358\nまるごとバナナミニ ¥128\nやかんの麦茶2L ¥118\nバナナ ¥198\n小計 ¥1,040').map(r => r[0]),
-    ['卵', '厚焼き玉子&かつサン', 'まるごとバナナミニ', 'やかんの麦茶2L', 'バナナ']);
+  // v49 audit: a printed size stays in the name (M and L eggs are different products); the generic name is
+  // only used to look for the registered product.
+  assert.deepEqual(rows('玉子 Mサイズ ¥238\n玉子 ¥228\n厚焼き玉子&かつサン ¥358\nまるごとバナナミニ ¥128\nやかんの麦茶2L ¥118\nバナナ ¥198\n小計 ¥1,268').map(r => r[0]),
+    ['玉子 Mサイズ', '卵', '厚焼き玉子&かつサン', 'まるごとバナナミニ', 'やかんの麦茶2L', 'バナナ']);
 });
 
 test('suggestions: the printed text, then the generic name; never a different size or amount', () => {
@@ -137,4 +139,43 @@ test('OCR boxes on one printed line are joined left to right', () => {
   ]);
   assert.deepEqual(lines.map(l => l.text), ['テスト白桃烏龍茶 600ml *108', 'テストポッキー *233']);
   assert.ok(lines.every(l => l.confidence >= 90));
+});
+
+test('v49 audit: general OCR repairs are flagged, never silent; separators and real words are kept', () => {
+  const one = text => parse(text + '\n小計 ¥100').items[0];
+  // A half-width voicing mark read as "・" between kana; a real separator after ル stays.
+  let it = one('ハリホ・ーコ・ールト・ベア ¥100');
+  assert.equal(it.name, 'ハリボーゴールドベア');
+  assert.ok(it.reasons.includes('濁点か半濁点か不確か') && !it.selected);
+  assert.equal(one('イル・チッチョ 生ハム ¥100').name, 'イル・チッチョ生ハム');
+  // One hiragana letter inside a katakana word is flagged, not changed; particles are real words.
+  it = one('オーがニックバナナ ¥100');
+  assert.equal(it.name, 'オーがニックバナナ');
+  assert.ok(it.reasons.includes('読み違いの可能性がある文字'));
+  it = one('ヤッポーのチキンナゲット ¥100');
+  assert.equal(it.name, 'ヤッポーのチキンナゲット');
+  assert.equal(it.reasons.length, 0);
+  // Katakana ニ between kanji; traditional 產; a code with ☆ before the name.
+  assert.equal(one('不ニ家 アンパンマン ¥100').name, '不二家アンパンマン');
+  assert.equal(one('エクアドル產バナナ ¥100').name, 'エクアドル産バナナ');
+  assert.equal(one('0008☆ブロッコリー ¥100').raw, 'ブロッコリー');
+  // "7" before katakana may be a misread ア: flagged, not changed ("7P" brand names stay as printed).
+  it = one('7イリス強炭酸水 ¥100');
+  assert.equal(it.raw, '7イリス強炭酸水');
+  assert.ok(it.reasons.includes('読み違いの可能性がある文字'));
+  assert.equal(one('7P白桃烏龍茶 600ml *108').reasons.length, 0);
+});
+
+test('v49 audit: a misread voicing mark still finds the registered product, sizes still block', () => {
+  assert.deepEqual(M.candidates('プロッコリー', [{ id: 1, name: 'ブロッコリー' }]).map(c => c.item.id), [1]);
+  assert.deepEqual(M.candidates('ハナナ', [{ id: 1, name: 'バナナ' }]).map(c => c.item.id), [1]);
+  assert.deepEqual(M.candidates('テスト麦茶 650ml', [{ id: 1, name: 'テスト麦茶 2L' }]), []);
+});
+
+test('v49 audit: learned texts pre-select only when exactly the same; near texts are offered', () => {
+  const stock = [{ id: 1, name: 'テスト炭酸水 1L', receiptAliases: [M.lineKey('テスト炭酸水1L')] }];
+  assert.equal(M.candidates('テスト炭酸水1L', stock)[0].learned, true);
+  const near = M.candidates('テスト炭酸水レ', stock)[0];
+  assert.equal(near.learned, false);
+  assert.equal(near.near, true);
 });

@@ -149,7 +149,7 @@ async function readReceipt(prep,opt={}){
  // An explicit turn (the person chose "向きを変えて読み直す") is read as it is.
  let items=await recognize(pick.canvas,{...opt,rejectVertical:prep.candidates.length===1&&!prep.fixedTurn});
  if(items.vertical){const base=pick;pick=await bestTurn([90,-90].map(t=>({turn:(base.turn||0)+t,canvas:turned(base.canvas,t)})));items=await recognize(pick.canvas,opt)}
- items.turn=pick.turn;return items;
+ items.turn=pick.turn;items.canvas=pick.canvas;return items;
 }
 function ready(){return !!state}
 root.AtokoreReceiptOcr=Object.freeze({load,recognize,readReceipt,ready,DOWNLOAD_MB,ORT_VERSION,FILES});

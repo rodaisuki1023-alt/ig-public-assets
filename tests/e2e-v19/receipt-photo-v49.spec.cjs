@@ -94,6 +94,9 @@ test.describe('receipt photo, on-device OCR', () => {
     const oil = rows.filter({ hasText: 'ごま油' });
     await expect(oil.locator('select[aria-label$="に対応する商品"]')).toHaveValue('');
     await oil.locator('select[aria-label$="に対応する商品"]').selectOption({ label: '登録済み：ごま油' });
+    // v49 audit: every row shows the printed line cut from the photo, so a misread name can be compared.
+    await expect(rows.first().locator('img.receiptLineImg')).toBeVisible();
+    expect(await rows.locator('img.receiptLineImg').count()).toBe(4);
     await shot(page, info, 'v49-receipt-photo-review');
     expect(await stored(page)).toEqual(initial); // nothing saved before the final button
 

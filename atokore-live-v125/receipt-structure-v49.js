@@ -16,8 +16,8 @@
 'use strict';
 // The OCR model is shared with Chinese: map the simplified forms it sometimes prints for receipt
 // vocabulary back to Japanese. Only words that appear on receipts; product names are left alone.
-const CJK={'单':'単','现':'現','对':'対','拔':'抜','费':'費','计':'計','额':'額','价':'価','买':'買','录':'録','錄':'録','时':'時','间':'間','产':'産','点':'点','张':'張','币':'幣','东':'東','红':'紅','马':'馬','鸡':'鶏','鱼':'魚','盐':'塩','烧':'焼','酱':'醤','发':'発','记':'記','税込':'税込'};
-function fixCjk(s){return String(s).replace(/[单现对拔费计额价买录錄时间产张币东红马鸡鱼盐烧酱发记]/g,c=>CJK[c]||c)}
+const CJK={'单':'単','现':'現','对':'対','拔':'抜','费':'費','计':'計','额':'額','价':'価','买':'買','录':'録','錄':'録','时':'時','间':'間','产':'産','点':'点','张':'張','币':'幣','东':'東','红':'紅','马':'馬','鸡':'鶏','鱼':'魚','盐':'塩','烧':'焼','酱':'醤','发':'発','记':'記','產':'産','國':'国','會':'会','價':'価','雞':'鶏','税込':'税込'};
+function fixCjk(s){return String(s).replace(/[单现对拔费计额价买录錄时间产张币东红马鸡鱼盐烧酱发记產國會價雞]/g,c=>CJK[c]||c)}
 function hw(s){return fixCjk(String(s??'').normalize('NFKC')).replace(/，/g,',').replace(/￥/g,'¥').replace(/[×✕✖]/g,'x').replace(/[‐‑–—―]/g,'-')}
 
 // Stage 3a: tidy one line. Table texture and paper edges come back as | 」 [ _ and similar marks at
@@ -60,15 +60,20 @@ function quantityLine(raw){
 function clubLine(raw){
  const s=hw(raw).replace(/\s+/g,' ').trim();
  // Thousands are printed or read with "," or "." ("1.398"); the circle after the quantity is often read as 0.
- const m=s.match(/^\d{3,8}\s+(\d{1,2})\s*[●•oOe@°]?\s+(\d{1,3}(?:[,.]\d{3})*)\s+(\d{1,3}(?:[,.]\d{3})*)\s*(-)?\s*-?\s*[ET]?$/i);
+ // Amounts may also be printed without separators ("1000", "12800").
+ const AMT='(\\d{1,3}(?:[,.]\\d{3})+|\\d{1,7})';
+ const m=s.match(new RegExp('^\\d{3,8}\\s+(\\d{1,2})\\s*[●•oOe@°]?\\s+'+AMT+'\\s+'+AMT+'\\s*(-)?\\s*-?\\s*[ET]?$','i'));
  if(!m)return null;
  const unit=+m[2].replace(/[,.]/g,''),total=+m[3].replace(/[,.]/g,'');let qty=+m[1];
  if(unit&&total){const r=total/unit;if(Number.isInteger(r)&&r>=1&&r<=30)qty=r}
  if(!(qty>=1&&qty<=30))qty=1;
  return {qty,unitPrice:unit,total,coupon:!!m[4],checked:unit*qty===total};
 }
-function isSubtotal(raw){const s=hw(raw).replace(/[\s　]+/g,'').replace(/^[|｜!！*＊※#＃:：【\[(（]+/,'');return /^(?:(?:お?買(?:い?上げ|上)|商品|課税対象|税抜|税込|軽減税率対象|8%対象|10%対象))?小計(?=$|[/:：¥Y\d(（】\]]|\d*点)/i.test(s)}
-function isTotal(raw){const s=hw(raw).replace(/[\s　]+/g,'');return /^(?:[*＊※#＃【\[]+)?合計(?=$|[:：¥Y\d】\]])/i.test(s)||/^\*{2,}合計/.test(s)}
+// Large-print 計 is often read as two characters (言十, 叶十, 計十) or a lookalike: read back only right
+// after 小 or 合, never inside product names.
+function fixKei(s){return s.replace(/^([*＊※#＃【\[(（]*)(小|合)(?:言十|叶十|計十|叶|吋|言卜|計)/,'$1$2計')}
+function isSubtotal(raw){const s=fixKei(hw(raw).replace(/[\s　]+/g,'').replace(/^[|｜!！*＊※#＃:：【\[(（]+/,''));return /^(?:(?:お?買(?:い?上げ|上)|商品|課税対象|税抜|税込|軽減税率対象|8%対象|10%対象))?小計(?=$|[/:：¥Y\d(（】\]]|\d*点)/i.test(s)}
+function isTotal(raw){const s=fixKei(hw(raw).replace(/[\s　]+/g,''));return /^(?:[*＊※#＃【\[]+)?合計(?=$|[:：¥Y\d】\]])/i.test(s)||/^\*{2,}合計/.test(s)}
 // Tax summary and payment lines also close the item list (some receipts print no subtotal, and a
 // large-print 合計 is easily misread).
 function isTaxSummary(raw){const s=hw(raw).replace(/[\s　]+/g,'');return /^\(?(?:外税|内税|消費税|税率|課税|非課税|本体|税抜|税込)\S{0,6}\d{1,2}%/.test(s)||/^\(?\d{1,2}%(?:外税|内税|対象|税)/.test(s)||/^(?:お預り|お預かり|お釣り?|釣銭|クレジット|現金)(?:合計)?[¥Y\d]/.test(s)}
@@ -88,8 +93,8 @@ const JAN=/^\d{8,14}(?:\s|$)/;
 
 // Stage 3c: classify every line, then assemble products with their quantities.
 function structure(lines){
- const L=(lines||[]).map(l=>({text:clean(typeof l==='string'?l:l.text),confidence:typeof l==='object'&&Number.isFinite(l?.confidence)?l.confidence:null})).filter(l=>l.text);
- const products=[],rejected=[];let boundary=null,count=null,afterCpn=false;
+ const L=(lines||[]).map(l=>({text:clean(typeof l==='string'?l:l.text),confidence:typeof l==='object'&&Number.isFinite(l?.confidence)?l.confidence:null,minScore:typeof l==='object'&&Number.isFinite(l?.minScore)?l.minScore:null,area:typeof l==='object'&&Number.isFinite(l?.top)?{top:l.top,bottom:l.bottom,left:l.left,right:l.right}:null})).filter(l=>l.text);
+ const products=[],rejected=[];let boundary=null,count=null,afterCpn=false,sum=0;
  for(let i=0;i<L.length;i++){
   const line=L[i],s=line.text;
   if(isSubtotal(s)||isTotal(s)||isTaxSummary(s)){
@@ -104,28 +109,34 @@ function structure(lines){
   if(/^CPN$/i.test(s)){afterCpn=true;continue}
   // A quantity line belongs to the line right above it; after a discount or another line it is not attached.
   const q=quantityLine(s);
-  if(q){const p=products[products.length-1];if(p&&!p.qtyLine&&i-p.line===1&&!p.coupon){p.qty=q.qty;p.qtyLine=s;p.qtyChecked=q.checked;p.structured=true}else rejected.push({text:s,reason:'数量の行（対応する商品が不明）'});continue}
+  if(q){const p=products[products.length-1];if(p&&!p.qtyLine&&i-p.line===1&&!p.coupon){p.qty=q.qty;p.qtyLine=s;p.qtyChecked=q.checked;p.structured=true;if(!p.priced&&q.total)sum+=q.total}else rejected.push({text:s,reason:'数量の行（対応する商品が不明）',area:line.area});continue}
   const club=clubLine(s);
-  if(club){const p=products[products.length-1];if(p&&p.line===i-1&&!p.qtyLine){p.qty=club.qty;p.qtyLine=s;p.qtyChecked=club.checked;p.structured=true;p.club=true;if(club.coupon||p.coupon){products.pop()}}
+  if(club){const p=products[products.length-1];if(p&&p.line===i-1&&!p.qtyLine){p.qty=club.qty;p.qtyLine=s;p.qtyChecked=club.checked;p.structured=true;p.club=true;if(club.coupon||p.coupon){products.pop();sum-=club.total||0}else sum+=club.total||0}
    // An item line whose name could not be read is still a purchase: shown so it is not silently lost.
-   else if(!club.coupon&&!afterCpn&&!(i>0&&/^CPN$/i.test(L[i-2]?.text||'')))rejected.push({text:s,reason:'商品名を読めない行（'+club.qty+'点）',qty:club.qty});
+   else if(!club.coupon&&!afterCpn&&!(i>0&&/^CPN$/i.test(L[i-2]?.text||'')))rejected.push({text:s,reason:'商品名を読めない行（'+club.qty+'点）',qty:club.qty,area:line.area});
    afterCpn=false;continue}
   if(JAN.test(s)){continue}
   const price=priceTail(s);
-  if(price&&price.negative){afterCpn=false;continue}
+  if(price&&price.negative){sum-=price.value;afterCpn=false;continue}
   if(DISCOUNT.test(s)){if(afterCpn)afterCpn=false;continue}
   if(isMeta(s)){continue}
   const name=(price?s.slice(0,price.index):s).trim();
-  if(!nameLike(name)){if(price||letters(name))rejected.push({text:s,reason:'商品名として判定できない文字'});continue}
+  // A line whose amount is the sum of the items so far (with or without tax) is the subtotal or total even
+  // when its label is misread ("小叶十", "十"): a short label is never taken as a product then.
+  if(price&&sum>0&&products.length>=2&&jpLetters(name)<=3&&letters(name)<=4&&price.value>=Math.round(sum*0.98)&&price.value<=Math.round(sum*1.11)){
+   boundary={text:s,kind:'sum'};for(let k=i;k<Math.min(L.length,i+12);k++){const c=printedCount(L[k].text);if(c!==null){count=c;break}}break;
+  }
+  if(!nameLike(name)){if(price||letters(name))rejected.push({text:s,reason:'商品名として判定できない文字',area:line.area});continue}
   const coupon=afterCpn;afterCpn=false;
-  products.push({line:i,text:name,source:s,qty:1,qtyLine:'',qtyChecked:false,priced:!!price,price:price?price.value:null,structured:!!price,coupon,confidence:line.confidence});
+  products.push({line:i,text:name,source:s,qty:1,qtyLine:'',qtyChecked:false,priced:!!price,price:price?price.value:null,structured:!!price,coupon,confidence:line.confidence,minScore:line.minScore,area:line.area});
+  if(price&&!coupon)sum+=price.value;
  }
  // A name without price that got no quantity line is uncertain (the price may have been lost): it is
  // listed for review. Before the first real product it is the store header and is skipped.
  const out=[],first=products.findIndex(p=>p.structured);
  products.forEach((p,k)=>{
   if(p.coupon)return;
-  if(!p.structured){if(first>=0&&k>first)rejected.push({text:p.source,reason:'価格も数量も読めない行'});return}
+  if(!p.structured){if(first>=0&&k>first)rejected.push({text:p.source,reason:'価格も数量も読めない行',area:p.area});return}
   out.push(p);
  });
  const counted=out.reduce((s,p)=>s+p.qty,0);

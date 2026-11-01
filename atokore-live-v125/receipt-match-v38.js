@@ -18,7 +18,10 @@ const SMALL={'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'
 // Receipts print kana for words a product name may hold in kanji or Latin letters (ﾒｲｼﾞ = 明治).
 const READINGS=[['明治','めいじ'],['森永','もりなが'],['和光堂','わこうどう'],['雪印','ゆきじるし'],['rico','りこ'],['粉ミルク','こなみるく'],['牛乳','ぎゅうにゅう'],['食パン','しょくぱん'],['卵','たまご'],['納豆','なっとう'],['洗剤','せんざい'],['柔軟剤','じゅうなんざい'],['缶','かん'],['小間','こま']];
 function readings(s){let t=s;for(const [k,v] of READINGS)t=t.split(k).join(v);return t}
-function compact(s){return hira(readings(nfkc(s).toLowerCase())).replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\ー~〜]/g,'').replace(/[ぁぃぅぇぉっゃゅょゎ]/g,c=>SMALL[c]).replace(/(.)\1+/g,'$1')}
+// Voicing marks are ignored when comparing (OCR often reads ブ as プ or バ as パ): "プロッコリー" still finds
+// ブロッコリー. Sizes, amounts and brands are compared separately and still block a suggestion.
+function unvoice(s){return s.normalize('NFD').replace(/[\u3099\u309a]/g,'').normalize('NFC')}
+function compact(s){return unvoice(hira(readings(nfkc(s).toLowerCase()))).replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\ー~〜]/g,'').replace(/[ぁぃぅぇぉっゃゅょゎ]/g,c=>SMALL[c]).replace(/(.)\1+/g,'$1')}
 const SIZE=/(新生児|nb|ss|s|m|l|xl|ビッグより大きい|ビッグ|big|スーパービッグ)(?=$|[^a-z])/i;
 // Content amount of one sold unit: "60枚", "800g", "200ml", "3個入", "2本入". Never the purchase quantity.
 function amounts(s){
@@ -60,7 +63,8 @@ function conflict(a,b){
  if(a.amounts.length&&b.amounts.length&&a.amounts.join()!==b.amounts.join())return 'amount';
  return '';
 }
-/* candidates(raw, items) → [{item, score, learned}] best first, at most 3. */
+/* candidates(raw, items) → [{item, score, learned, near}] best first, at most 3.
+ * learned: the exact printed text was confirmed for this product before. near: close to a confirmed text. */
 function candidates(raw,items,{limit=3,min=0.5}={}){
  const key=lineKey(raw),f=features(raw),out=[];
  for(const item of Array.isArray(items)?items:[]){
@@ -69,7 +73,9 @@ function candidates(raw,items,{limit=3,min=0.5}={}){
   const g=features(item.name);if(conflict(f,g))continue;
   // The same printed name is rarely read identically twice: a close match to a confirmed name counts too.
   const near=Array.isArray(item.receiptAliases)?Math.max(0,...item.receiptAliases.map(a=>dice(a,key))):0;
-  if(near>=0.75){out.push({item,score:0.9+near/20,learned:true});continue}
+  // Only offered (never pre-selected): a near match to a confirmed name may be a different flavour or size
+  // that OCR read alike. Only the exact confirmed text is "learned" and may be pre-selected.
+  if(near>=0.75){out.push({item,score:0.9+near/20,learned:false,near:true});continue}
   let s=Math.max(dice(raw,item.name),coverage(raw,item.name)*0.92);
   if(f.brand&&f.brand===g.brand)s+=0.1;
   if(f.size&&f.size===g.size)s+=0.05;
