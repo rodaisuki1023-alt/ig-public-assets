@@ -114,7 +114,7 @@ function renderList(){
   const count=row.querySelector('.bf-stock-count');if(count)count.textContent=stockLabel(item);
   if(mode!=='list')continue;
   const title=row.querySelector('.name'),meta=row.querySelector('.meta');
-  if(title){const food=root.AtokoreBabyFood?.isRecord(item);const d=food?root.AtokoreBabyFood.describe(item):null;title.textContent=d?.id?[d.maker,d.name,d.amount,d.format].filter(Boolean).join(' '):item.name;title.title=item.name}
+  if(title){const food=root.AtokoreBabyFood?.isRecord(item);const d=food?root.AtokoreBabyFood.describe(item):null;title.textContent=d?.id?[d.maker,d.name,(root.AtokoreStockSort?.mode?.()||'category')==='category'?'':d.age,d.amount,d.format].filter(Boolean).join(' '):item.name;title.title=item.name}
   if(meta){meta.textContent=item.qtyBasis==='unopened'?'未開封の予備'+(item.inUse?'・使用中あり':''):'';meta.hidden=!meta.textContent}
   const qty=row.querySelector('.qty b');if(qty)qty.textContent=item.qty+(item.unit||'個');
  }
