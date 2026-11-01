@@ -11,35 +11,66 @@
  */
 (function(root){
 'use strict';
-const ORT_VERSION='1.30.0',ORT_BASE='https://cdn.jsdelivr.net/npm/onnxruntime-web@'+ORT_VERSION+'/dist/';
-const MODEL_DIR='./ocr/',FILES={det:'ppocrv6-det-small-int8.onnx',rec:'ppocrv6-rec-small.onnx',dict:'ppocrv6-dict.txt'};
-// Approximate first download, shown to the user before it starts (models + runtime, compressed).
-const DOWNLOAD_MB=27;
+// v49 audit: everything is served from this site (./ocr/), checked against its SHA-256 after download, and
+// kept by the service worker; a damaged cached copy is fetched again once. onnxruntime-web 1.30.0 files are
+// byte-identical to the npm package (hashes checked against jsDelivr when vendored).
+const ORT_VERSION='1.30.0',BASE='./ocr/';
+const FILES={
+ runtime:{name:'ort.wasm.min.js',sha256:'faece07e84faa9001f5104bbe4e5c70861d06cb2376a0dea1fa0ad33a67adc81',bytes:50196},
+ loader:{name:'ort-wasm-simd-threaded.mjs',sha256:'e13f7f94fc51b4ca72b12faeb1ee95f4ace6dfbc8939bc718aabdc0a27c4299b',bytes:24381},
+ wasm:{name:'ort-wasm-simd-threaded.wasm',sha256:'3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2',bytes:14239897},
+ det:{name:'ppocrv6-det-small-int8.onnx',sha256:'d1de8192b9c8c0e68a4c341605604b76b7c18d15b0e6167624f49e1e484f7cdb',bytes:2674015},
+ rec:{name:'ppocrv6-rec-small.onnx',sha256:'6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884',bytes:21234383},
+ dict:{name:'ppocrv6-dict.txt',sha256:'f7aa897ca828a4c7c9e2739c30f9161a33306d532f020bcdb91dcfb664a5507e',bytes:74946}
+};
+const RUNTIME_SRI='sha256-+uzgfoT6qQAfUQS75OXHCGHQbLI3ag3qH6CtM6Z63IE=';
+// Largest first download: models and runtime, uncompressed (the server may send less when it compresses).
+const DOWNLOAD_MB=Math.round(Object.values(FILES).reduce((s,f)=>s+f.bytes,0)/1e6);
 const MAX_SIDE=2000,DET_MIN_SIDE=736,DET_THRESH=0.3,BOX_THRESH=0.5,UNCLIP=1.6,REC_H=48,BATCH=6,BAND=24;
 // Short runs (prices, codes) are padded only to their own width instead of RapidOCR's 320 px minimum: on the
 // measured receipts one name in 69 read slightly worse and reading took about a fifth less time.
 const MIN_RATIO=Number(root.ATOKORE_OCR_MIN_RATIO)||2;
 let state=null,loading=null;
 
-function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.async=true;s.crossOrigin='anonymous';s.onload=res;s.onerror=()=>rej(new Error('OCRの部品を読み込めません'));document.head.appendChild(s)})}
-async function fetchBytes(url,onBytes){
- const res=await fetch(url);if(!res.ok)throw new Error('OCRの部品を読み込めません（'+res.status+'）');
+const url=f=>new URL(BASE+f.name,document.baseURI).href;
+async function hex(buf){const d=await crypto.subtle.digest('SHA-256',buf);return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function loadScript(f){return new Promise((res,rej)=>{const s=document.createElement('script');s.src=url(f);s.async=true;s.integrity=RUNTIME_SRI;s.crossOrigin='anonymous';s.onload=res;s.onerror=()=>rej(new Error('読み取りの部品を読み込めません'));document.head.appendChild(s)})}
+async function readBody(res,onBytes){
  if(!res.body||!res.body.getReader){const b=new Uint8Array(await res.arrayBuffer());onBytes&&onBytes(b.length);return b}
  const reader=res.body.getReader(),parts=[];let n=0;
  for(;;){const {done,value}=await reader.read();if(done)break;parts.push(value);n+=value.length;onBytes&&onBytes(value.length)}
  const out=new Uint8Array(n);let o=0;for(const p of parts){out.set(p,o);o+=p.length}return out;
 }
+// Fetch and verify one file. A copy that does not match (damaged cache, interrupted download, tampering)
+// is removed from every cache and fetched once more from the network; a second mismatch stops reading.
+async function fetchVerified(f,onBytes){
+ for(let attempt=0;attempt<2;attempt++){
+  const res=await fetch(url(f),attempt?{cache:'reload'}:{});
+  if(!res.ok)throw new Error('読み取りの部品を読み込めません（'+res.status+'）');
+  const bytes=await readBody(res,onBytes);
+  if(await hex(bytes)===f.sha256)return bytes;
+  try{for(const k of await caches.keys())await (await caches.open(k)).delete(url(f))}catch(e){console.warn(e)}
+ }
+ throw new Error('読み取りの部品が壊れています。通信の良い場所でもう一度お試しください。');
+}
+// True when every part is already in this browser's cache (no download needed): the data-use notice is
+// shown again whenever it is not (for example after the site data was cleared).
+async function cached(){try{for(const f of Object.values(FILES))if(!(await caches.match(url(f))))return false;return true}catch(e){return false}}
 // Loads the runtime and the models once. onProgress(share 0..1) during the first download.
 function load(onProgress){
  if(state)return Promise.resolve(state);
  if(loading)return loading;
  loading=(async()=>{
-  if(!root.ort)await loadScript(ORT_BASE+'ort.wasm.min.js');
-  const ort=root.ort;if(!ort)throw new Error('OCRの部品を読み込めません');
-  ort.env.wasm.wasmPaths=ORT_BASE;ort.env.wasm.numThreads=1;
-  const expect=(FILES_BYTES.det+FILES_BYTES.rec+FILES_BYTES.dict);let got=0;
-  const tick=k=>{got+=k;onProgress&&onProgress(Math.min(1,got/expect))};
-  const [det,rec,dict]=await Promise.all([fetchBytes(MODEL_DIR+FILES.det,tick),fetchBytes(MODEL_DIR+FILES.rec,tick),fetchBytes(MODEL_DIR+FILES.dict,tick)]);
+  const total=Object.values(FILES).reduce((s,f)=>s+f.bytes,0);let got=0;
+  const tick=k=>{got+=k;onProgress&&onProgress(Math.min(1,got/total))};
+  // The script itself is checked by the browser (subresource integrity); it is also kept for offline use.
+  await fetchVerified(FILES.runtime,tick);
+  if(!root.ort)await loadScript(FILES.runtime);
+  const ort=root.ort;if(!ort)throw new Error('読み取りの部品を読み込めません');
+  const [loader,wasm,det,rec,dict]=await Promise.all([fetchVerified(FILES.loader,tick),fetchVerified(FILES.wasm,tick),fetchVerified(FILES.det,tick),fetchVerified(FILES.rec,tick),fetchVerified(FILES.dict,tick)]);
+  // The runtime gets the verified bytes, not a second download.
+  ort.env.wasm.numThreads=1;ort.env.wasm.wasmBinary=wasm;
+  ort.env.wasm.wasmPaths={mjs:URL.createObjectURL(new Blob([loader],{type:'text/javascript'}))};
   const opt={executionProviders:['wasm'],graphOptimizationLevel:'all'};
   const sDet=await ort.InferenceSession.create(det,opt),sRec=await ort.InferenceSession.create(rec,opt);
   // CTC classes: blank, the dictionary, then a space.
@@ -49,7 +80,6 @@ function load(onProgress){
  loading.catch(()=>{loading=null});
  return loading;
 }
-const FILES_BYTES={det:2674015,rec:21234383,dict:74946};
 
 function canvas(w,h){const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w));c.height=Math.max(1,Math.round(h));return c}
 function ctx(c){return c.getContext('2d',{willReadFrequently:true})}
@@ -145,12 +175,16 @@ function topOf(c){const h=Math.min(c.height,Math.round(c.width*0.8)),t=canvas(c.
 function turned(c,turn){const t=canvas(c.height,c.width),x=ctx(t);x.translate(t.width/2,t.height/2);x.rotate(turn*Math.PI/180);x.drawImage(c,-c.width/2,-c.height/2);return t}
 async function bestTurn(cands){let pick=cands[0],best=-1;for(const c of cands){const items=await recognize(topOf(c.canvas),{stopAfter:()=>true});const v=items.reduce((s,x)=>s+x.score*x.text.length,0);if(v>best){best=v;pick=c}}return pick}
 async function readReceipt(prep,opt={}){
- let pick=prep.candidates.length>1?await bestTurn(prep.candidates):prep.candidates[0];
+ let cands=prep.candidates;
+ // Paper wider than tall was turned by a quarter; if the text then runs top-to-bottom, the picture was in fact
+ // upright (a short receipt): read it as it is.
+ if(cands.length>1&&prep.render){const probe=await recognize(topOf(cands[0].canvas),{rejectVertical:true,stopAfter:()=>true});if(probe.vertical)cands=[prep.render(0)]}
+ let pick=cands.length>1?await bestTurn(cands):cands[0];
  // An explicit turn (the person chose "向きを変えて読み直す") is read as it is.
- let items=await recognize(pick.canvas,{...opt,rejectVertical:prep.candidates.length===1&&!prep.fixedTurn});
+ let items=await recognize(pick.canvas,{...opt,rejectVertical:cands.length===1&&pick.turn===0&&!prep.fixedTurn});
  if(items.vertical){const base=pick;pick=await bestTurn([90,-90].map(t=>({turn:(base.turn||0)+t,canvas:turned(base.canvas,t)})));items=await recognize(pick.canvas,opt)}
  items.turn=pick.turn;items.canvas=pick.canvas;return items;
 }
 function ready(){return !!state}
-root.AtokoreReceiptOcr=Object.freeze({load,recognize,readReceipt,ready,DOWNLOAD_MB,ORT_VERSION,FILES});
+root.AtokoreReceiptOcr=Object.freeze({load,cached,recognize,readReceipt,ready,DOWNLOAD_MB,ORT_VERSION,FILES});
 })(typeof window!=='undefined'?window:globalThis);

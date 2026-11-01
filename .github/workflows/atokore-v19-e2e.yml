@@ -59,8 +59,7 @@ jobs:
           python-version: '3.12'
       - name: Install test tools
         run: |
-          # onnxruntime-web: the receipt photo test serves the on-device OCR runtime from the package (not the CDN).
-          npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8 onnxruntime-web@1.30.0
+          npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
       - name: Syntax and unit regressions
         run: |
           for f in atokore-live-v125/*.js; do node --check "$f"; done

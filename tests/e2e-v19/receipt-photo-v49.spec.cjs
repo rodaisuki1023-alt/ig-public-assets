@@ -3,15 +3,14 @@
 // wooden-looking table, photographed sideways. It checks the whole chain — finding and turning the paper,
 // reading, line structure, quantities, the item-count check, review and a single save — not accuracy
 // on real receipts (see docs/atokore-receipt-quality-v49.md for that, measured on private photos).
-// The OCR runtime is served from the installed onnxruntime-web package instead of the CDN.
+// v49 audit: the OCR runtime is served from the app itself (./ocr/, vendored onnxruntime-web 1.30.0).
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { open, go, stored, KEY, shot } = require('./helpers.cjs');
 
-let ORT_DIST = null;
-// The package's exports hide dist/: locate it from the package entry point.
-try { const entry = require.resolve('onnxruntime-web'); const dist = entry.slice(0, entry.lastIndexOf(path.sep + 'dist' + path.sep) + 6); if (fs.existsSync(path.join(dist, 'ort.wasm.min.js'))) ORT_DIST = dist; } catch (e) { /* not installed */ }
+// Kept for older call sites: the runtime no longer comes from a CDN, so nothing has to be routed.
+const ORT_DIST = 'vendored';
 
 const LINES = [
   'テストマート 本町店', 'TEL 000-000-0000', '2026年10月27日(火) 12:54', '領収書',
@@ -43,11 +42,10 @@ async function receiptPhoto(browser) {
   await p.close();
   return png;
 }
+// No request may leave the app's own site while reading (the photo stays on the phone, parts are local).
 async function serveOcr(page) {
-  await page.route('https://cdn.jsdelivr.net/npm/onnxruntime-web@*/dist/**', route => {
-    const f = path.join(ORT_DIST, path.basename(new URL(route.request().url()).pathname));
-    route.fulfill({ body: fs.readFileSync(f), contentType: f.endsWith('.wasm') ? 'application/wasm' : 'text/javascript', headers: { 'access-control-allow-origin': '*' } });
-  });
+  page.__external = [];
+  page.on('request', r => { const u = new URL(r.url()); if (!['127.0.0.1', 'localhost'].includes(u.hostname) && u.protocol.startsWith('http')) page.__external.push(r.url()); });
 }
 async function openReceipt(page, png) {
   await go(page, 'premium');
@@ -74,6 +72,7 @@ test.describe('receipt photo, on-device OCR', () => {
     // First use asks before downloading the reading parts; the photo stays on the device.
     await expect(page.locator('#atkConfirmTitle')).toHaveText('読み取りの準備（初回のみ）');
     await expect(page.locator('#atkConfirmNote')).toContainText('外部には送りません');
+    await expect(page.locator('#atkConfirmNote')).toContainText(/最大約\d+MB/);
     await page.locator('#atkConfirm .atk-confirm-primary').click();
     await expect(page.getByRole('heading', { name: '🧾 読み取り結果の確認' })).toBeVisible({ timeout: 200000 });
 
@@ -111,6 +110,7 @@ test.describe('receipt photo, on-device OCR', () => {
     expect(added.length).toBe(3);
     expect(added.reduce((s, x) => s + x.qty, 0)).toBe(4);
     expect(page.__errors).toEqual([]);
+    expect(page.__external).toEqual([]);
   });
 });
 

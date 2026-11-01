@@ -93,7 +93,8 @@ async function prepare(file,opt={}){
  const turn=Number(opt.turn)||0;
  const sideways=!opt.turn&&box.w>box.h*1.15;
  const turns=opt.turn!==undefined&&opt.turn!==null?[turn]:sideways?[90,-90]:[0];
- return {found:!!found,box,sideways,fixedTurn:opt.turn!==undefined&&opt.turn!==null,candidates:turns.map(t=>({turn:t,canvas:render(im,box,t)}))};
+ // render(turn): another orientation on demand (the shape is only a hint: a short receipt can be wider than tall).
+ return {found:!!found,box,sideways,fixedTurn:opt.turn!==undefined&&opt.turn!==null,candidates:turns.map(t=>({turn:t,canvas:render(im,box,t)})),render:t=>({turn:t,canvas:render(im,box,t)})};
 }
 // A small strip from the top of a candidate, used to compare the two turns cheaply.
 function strip(c,share=0.35){const h=Math.max(1,Math.round(c.height*share)),s=canvas(c.width,h);ctx(s).drawImage(c,0,0,c.width,h,0,0,c.width,h);return s}

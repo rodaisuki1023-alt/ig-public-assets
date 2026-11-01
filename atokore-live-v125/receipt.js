@@ -21,9 +21,11 @@ function progress(label,p){const w=$r('receiptProgressWrap');if(w)w.classList.re
 const OCR_READY='atokoreReceiptOcrV49Ready';
 function ocrReady(){try{return localStorage.getItem(OCR_READY)==='1'}catch(e){return false}}
 async function askDownload(){
- const O=window.AtokoreReceiptOcr;if(!O)return false;if(O.ready()||ocrReady())return true;
+ const O=window.AtokoreReceiptOcr;if(!O)return false;
+ // Asked whenever the parts are not in this browser's cache (also after the site data was cleared).
+ if(O.ready()||await O.cached())return true;
  const ask=window.AtokoreConfirm?.ask;if(!ask)return true;
- return ask('読み取りの準備（初回のみ）',`レシートを読み取る部品（約${O.DOWNLOAD_MB}MB）を一度だけダウンロードします。写真はこの端末の中で読み取り、外部には送りません。Wi-Fiでの利用をおすすめします。`,'ダウンロードして読み取る');
+ return ask('読み取りの準備（初回のみ）',`レシートを読み取る部品（最大約${O.DOWNLOAD_MB}MB：文字認識のモデルと実行部品）をダウンロードします。保存されたあとは通信しません。写真はこの端末の中で読み取り、外部には送りません。Wi-Fiでの利用をおすすめします。`,'ダウンロードして読み取る');
 }
 let reading=false;
 window.analyzeReceiptV7=async(turn)=>{
