@@ -33,7 +33,8 @@ test('stock search: month ages keep the digit boundary and accept every common s
   await search(page, '７カ月');
   await page.click('[data-atk-view="list"]');
   await expect(page.locator('#stockList [data-stock-id="4"]')).toContainText('7ケ月頃から');
-  await expect(page.locator('#stockList [data-stock-id="1"]')).toContainText('7か月頃から');
+  await expect(page.locator('#stockList .atk-food-month')).toContainText(['7か月頃から']);
+  await expect(page.locator('#stockList [data-stock-id="1"] .name')).toContainText('裏ごし鶏レバーと野菜');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await shot(page, info, 'pr81-month-search-390');
   expect(page.__errors).toEqual([]);
