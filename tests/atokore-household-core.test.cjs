@@ -83,3 +83,18 @@ test('manual baby food month syncs as an ordinary field and clearing it removes 
  assert.deepEqual(ops,[{type:'set',kind:'item',id:'item-aaaaaaaa',field:'babyFoodMonth',value:16}]);
  assert.deepEqual(strip(core.diff(after,before,map).ops),[{type:'set',kind:'item',id:'item-aaaaaaaa',field:'babyFoodMonth',value:null}]);
 });
+
+test('recreated stock from a purchased baby food row carries the manual age into the shared operation',()=>{
+ const Action=require('../atokore-live-v125/stability.js'); // initializes the action core
+ const action=global.__atokoreCoreV125H;
+ const item={id:81,name:'手作りスープ',cat:'離乳食',unit:'個',qty:1,babyFoodMonth:16};
+ const buys=[];action.addStockToBuy(buys,item);
+ const prev={items:[],buys:structuredClone(buys),routines:[]};
+ const items=[];action.purchase(items,buys,[buys[0].id]);
+ const next={items,buys:[],routines:[]};
+ const diff=core.diff(prev,next,{['buy:'+buys[0].id]:'buy-11111111'});
+ const purchase=diff.ops.find(x=>x.type==='complete_buy');
+ assert.ok(purchase);assert.equal(purchase.item_fields.babyFoodMonth,16);
+ const view=core.rebase({'buy:buy-11111111':{kind:'buy',id:'buy-11111111',fields:{name:item.name,unit:item.unit,babyFoodMonth:16},qty:1,deleted:false}},[purchase]);
+ assert.equal(view['item:'+purchase.item].fields.babyFoodMonth,16);
+});
