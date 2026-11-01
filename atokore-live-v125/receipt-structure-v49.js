@@ -149,6 +149,22 @@ function itemListEnded(lines){
  const b=L.findIndex(s=>isSubtotal(s)||isTotal(s)||isTaxSummary(s));if(b<0)return false;
  const after=L.slice(b);return after.some(s=>printedCount(s)!==null)&&after.length>=3||after.length>=12;
 }
-root.AtokoreReceiptStructure=Object.freeze({itemListEnded,structure,clean,priceTail,quantityLine,clubLine,isSubtotal,isTotal,isTaxSummary,printedCount,hw});
+// What identifies one receipt (v49 audit, family duplicate check): the store (invoice registration number
+// or phone), the printed date and time, the total and the receipt number. Member and card numbers are never
+// read. strong=false when these cannot all be read; then only an on-phone warning is possible.
+function receiptFacts(lines){
+ const L=(lines||[]).map(l=>clean(typeof l==='string'?l:l.text)).filter(Boolean),all=L.join('\n');
+ const reg=(all.match(/(?:^|[^0-9A-Za-z])T\s?(\d{13})(?!\d)/m)||[])[1]||'';
+ const tel=((all.match(/(?:TEL|電話)\s*[:：]?\s*(0\d{1,4}[-ー]?\d{1,4}[-ー]?\d{3,4})/i)||[])[1]||'').replace(/\D/g,'');
+ let date='',m;
+ if((m=all.match(/(20\d{2})\s*[年\/.-]\s*(\d{1,2})\s*[月\/.-]\s*(\d{1,2})/)))date=m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+ else if((m=all.match(/(\d{1,2})\/(\d{1,2})\/(20\d{2})/)))date=m[3]+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0');
+ const tm=all.match(/(?:^|[^\d])(\d{1,2})\s*[:時]\s*(\d{2})(?:\s*分)?/m),time=tm?tm[1].padStart(2,'0')+':'+tm[2]:'';
+ let total='';for(const s of L){if(isTotal(s)){const p=priceTail(s);if(p&&!p.negative){total=String(p.value);break}}}
+ const no=(all.match(/(?:レシート|ﾚｼｰﾄ)\s*No\.?\s*[:：]?\s*(\d{3,})|伝票番号\s*[:：]?\s*([\d-]{4,})|取引(?:No|番号)\.?\s*[:：]?\s*(\d{4,})/i)||[]).slice(1).find(Boolean)||'';
+ const store=reg||tel,strong=!!(store&&date&&time&&(total||no));
+ return {store,date,time,total,receiptNo:no,strong,key:strong?['r1',store,date,time,total,no].join('|'):''};
+}
+root.AtokoreReceiptStructure=Object.freeze({receiptFacts,itemListEnded,structure,clean,priceTail,quantityLine,clubLine,isSubtotal,isTotal,isTaxSummary,printedCount,hw});
 if(typeof module!=='undefined'&&module.exports)module.exports=root.AtokoreReceiptStructure;
 })(typeof window!=='undefined'?window:globalThis);

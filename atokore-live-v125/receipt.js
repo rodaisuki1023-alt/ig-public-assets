@@ -9,7 +9,7 @@ function fixedUnitBase(n){return /牛乳|低脂肪乳|豆乳|ミネラルウォ�
 function babyKind(n){try{return window.AtokoreBabyKit?.kind(n)||''}catch(e){return ''}}
 function fixedUnit(n){const k=babyKind(n);if(k==='diaper')return '袋';if(k==='wipes')return 'パック';if(k==='milk')return /缶/.test(n)?'缶':/液体/.test(n)?'本':'箱';try{if(window.AtokoreBabyFood?.isFood(n))return '個'}catch(e){}return fixedUnitBase(n)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function openReceipt(){R={file:null,previewUrl:'',text:'',store:'',date:'',confidence:0,parsed:[],rejected:[],stoppedAtSubtotal:false,subtotalLine:''};openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 レシート一括補充</h2><div class="receiptStatus">商品名と数量だけを読み取り、小計で終了します。写真はこの端末の中で読み取り、外部には送りません。</div><details class="detail"><summary>読み取りルール</summary><div class="muted" style="margin:8px 0">価格・税・支払い情報・読めない文字は登録しません。解析後に商品名と数量を確認してから在庫へ反映できます。</div></details><div class="receiptPick"><div class="name">レシート画像を選ぶ</div><div class="muted" style="margin-top:5px">レシート全体を真上から、文字が大きく写るように撮ってください。横向きのままでも読み取れます。</div><div class="receiptSourceGrid"><label class="receiptSourceBtn">📷 カメラで撮る<input id="receiptCamera" type="file" accept="image/*" capture="environment" onchange="receiptPickedV7(this)"></label><label class="receiptSourceBtn">🖼 写真・ファイルから選ぶ<input id="receiptFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="receiptPickedV7(this)"></label></div><div id="receiptFileName" class="receiptFileName">まだ画像は選択されていません</div><img id="receiptPreview" class="receiptPreview hide" alt="選択したレシート画像"></div><div id="receiptProgressWrap" class="hide"><div id="receiptProgressText" class="muted" style="margin-top:10px">準備中…</div><div class="receiptProgress"><i id="receiptProgressBar"></i></div></div><button id="receiptAnalyzeBtn" class="btn" style="width:100%;margin-top:12px" onclick="analyzeReceiptV7()" disabled>画像を選ぶと解析できます</button><details class="detail" style="margin-top:12px"><summary>レシートの文字を貼って読み取る</summary><div class="muted" style="margin:8px 0">読み取りにくい場合の予備機能です。貼り付けた文字も同じルールで解析します。</div><p class="muted">1行に1商品で入力してください。例：</p><pre class="receipt-example">牛乳 198円
+function openReceipt(){flushClaims().catch(e=>console.warn(e));R={file:null,previewUrl:'',text:'',store:'',date:'',confidence:0,parsed:[],rejected:[],stoppedAtSubtotal:false,subtotalLine:''};openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 レシート一括補充</h2><div class="receiptStatus">商品名と数量だけを読み取り、小計で終了します。写真はこの端末の中で読み取り、外部には送りません。</div><details class="detail"><summary>読み取りルール</summary><div class="muted" style="margin:8px 0">価格・税・支払い情報・読めない文字は登録しません。解析後に商品名と数量を確認してから在庫へ反映できます。</div></details><div class="receiptPick"><div class="name">レシート画像を選ぶ</div><div class="muted" style="margin-top:5px">レシート全体を真上から、文字が大きく写るように撮ってください。横向きのままでも読み取れます。</div><div class="receiptSourceGrid"><label class="receiptSourceBtn">📷 カメラで撮る<input id="receiptCamera" type="file" accept="image/*" capture="environment" onchange="receiptPickedV7(this)"></label><label class="receiptSourceBtn">🖼 写真・ファイルから選ぶ<input id="receiptFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="receiptPickedV7(this)"></label></div><div id="receiptFileName" class="receiptFileName">まだ画像は選択されていません</div><img id="receiptPreview" class="receiptPreview hide" alt="選択したレシート画像"></div><div id="receiptProgressWrap" class="hide"><div id="receiptProgressText" class="muted" style="margin-top:10px">準備中…</div><div class="receiptProgress"><i id="receiptProgressBar"></i></div></div><button id="receiptAnalyzeBtn" class="btn" style="width:100%;margin-top:12px" onclick="analyzeReceiptV7()" disabled>画像を選ぶと解析できます</button><details class="detail" style="margin-top:12px"><summary>レシートの文字を貼って読み取る</summary><div class="muted" style="margin:8px 0">読み取りにくい場合の予備機能です。貼り付けた文字も同じルールで解析します。</div><p class="muted">1行に1商品で入力してください。例：</p><pre class="receipt-example">牛乳 198円
 卵 258円
 小計 456円</pre><p class="muted">改行が消えて1行になった場合は、商品ごとに改行し直してください。</p><textarea id="receiptManualText" class="receiptRaw" placeholder="レシートの文字を貼り付け"></textarea><button class="btn ghost" style="width:100%;margin-top:8px" onclick="analyzeReceiptTextV7()">商品名を解析</button></details>`)}
 window.closeReceiptV7=()=>{if(R.previewUrl)URL.revokeObjectURL(R.previewUrl);closeM()};
@@ -42,7 +42,7 @@ window.analyzeReceiptV7=async(turn)=>{
   const got=await O.readReceipt(prepared,{onProgress:x=>progress(`文字を読み取っています… ${Math.round(x*100)}%`,.35+x*.6),stopAfter:items=>S.itemListEnded(Lines.groupBoxes(items))});
   const lines=Lines.groupBoxes(got),scores=got.map(x=>x.score);
   R.turn=got.turn;R.sourceCanvas=got.canvas||null;crops.clear();R.paperFound=prepared.found;R.text=lines.map(l=>l.text).join('\n');R.confidence=scores.length?Math.round(100*scores.reduce((s,n)=>s+n,0)/scores.length):0;
-  const p=parse(lines);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;
+  const p=parse(lines);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;R.facts=p.facts;
   progress('読み取りが終わりました',1);setTimeout(review,150);
  }catch(e){console.error(e);progress('読み取りに失敗しました',1);failed();if(b)b.disabled=false}
  finally{reading=false}
@@ -52,7 +52,7 @@ window.receiptRotateV49=()=>{if(!R.file||reading)return;const next=R.turn===90?-
 function openReceiptReading(){const keep=R;openReceipt();R=keep;const n=$r('receiptFileName');if(n&&R.file)n.textContent=R.file.name||'選んだ画像';const pv=$r('receiptPreview');if(pv&&R.previewUrl){pv.src=R.previewUrl;pv.classList.remove('hide')}}
 // Reading failed (no network for the OCR files, unsupported image…): offer the next steps in place.
 function failed(){const w=$r('receiptProgressWrap');if(!w)return;let box=$r('receiptFailed');if(!box){box=document.createElement('div');box.id='receiptFailed';box.className='receiptStatus receiptWarn';w.after(box)}box.innerHTML='読み取れませんでした。何も登録していません。<div class="receiptSourceGrid"><button class="btn ghost" onclick="document.getElementById(\'receiptCamera\').click()">撮り直す</button><button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button></div><div class="muted" style="margin-top:6px">文字をコピーできる場合は、下の「レシートの文字を貼って読み取る」も使えます。</div>'}
-window.analyzeReceiptTextV7=()=>{const t=($r('receiptManualText')?.value||'').trim();if(!t){alert('文字を貼り付けてください');return}R.text=t;R.confidence=0;const p=parse(t);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;review()};
+window.analyzeReceiptTextV7=()=>{const t=($r('receiptManualText')?.value||'').trim();if(!t){alert('文字を貼り付けてください');return}R.text=t;R.confidence=0;const p=parse(t);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;R.facts=p.facts;review()};
 function hw(s){return String(s||'').normalize('NFKC').replace(/，/g,',').replace(/￥/g,'¥').replace(/×/g,'x')}
 function key(s){return hw(s).toLowerCase().replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\]/g,'')}
 function aliases(){try{return JSON.parse(localStorage.getItem('atokoreReceiptAliases')||'{}')||{}}catch(e){return {}}}
@@ -140,7 +140,7 @@ function parse(source){
  }
  const counted=out.reduce((s,x)=>s+(+x.qty||0),0),b=st.boundary;
  return {store:'',date:receiptDate(lines)||window.AtokoreDates.localDate(),items:out.slice(0,60),rejected:rejected.slice(0,40),lineCount:lines.length,
-  stoppedAtSubtotal:!!b&&b.kind==='subtotal',subtotalLine:b&&b.kind==='subtotal'?b.text:'',boundary:b,printedCount:st.printedCount,countedQty:counted,countMatches:st.printedCount===null?null:st.printedCount===counted}}
+  stoppedAtSubtotal:!!b&&b.kind==='subtotal',subtotalLine:b&&b.kind==='subtotal'?b.text:'',boundary:b,facts:S.receiptFacts?S.receiptFacts(lines):null,printedCount:st.printedCount,countedQty:counted,countMatches:st.printedCount===null?null:st.printedCount===counted}}
 function opts(cur,a){return a.map(v=>`<option ${v===cur?'selected':''}>${v}</option>`).join('')}
 window.receiptUpdateV7=(i,k,v)=>{const x=R.parsed[i];if(!x)return;if(k==='qty')v=Math.max(1,+v||1);x[k]=v;if(k==='name'){x.cat=cat(v,x.raw);x.unit=fixedUnit(v);x.place=place(v,x.cat);x.low=false}count()};window.receiptToggleV7=(i,on)=>{if(R.parsed[i])R.parsed[i].selected=on;count()};window.receiptStepV7=(i,d)=>{const x=R.parsed[i];if(!x)return;x.qty=Math.max(1,(+x.qty||1)+d);const q=$r(`receiptQty-${i}`);if(q)q.value=x.qty;count()};window.receiptSelectAllV7=on=>{R.parsed.forEach(x=>{if(String(x.name||'').trim()&&+x.qty>0)x.selected=!!on});review()};window.receiptDeleteV7=i=>{R.parsed.splice(i,1);review()};window.receiptAddV7=()=>{R.parsed.push({selected:true,raw:'',source:'',name:'',qty:1,unit:'個',cat:'食料品',price:0,total:0,place:'パントリー',low:false});review()};
 // ---- v38 review: each row says which registered product it is (or that it is new); nothing is
@@ -190,11 +190,51 @@ function review(){prepareRows();const low=R.parsed.filter(x=>x.low).length,rejec
  openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 読み取り結果の確認</h2>${dup?`<div class="receiptStatus receiptWarn" id="receiptDuplicate">${new Date(dup.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}に登録したレシートと同じ可能性があります。二重に追加しないよう確認してください（別の買い物ならそのまま進めます）。</div>`:''}<div class="receiptStatus ${warn?'receiptWarn':''}">${R.parsed.length}行を商品として読み取りました。${low?`読み取りが不確かな${low}行は選択していません。`:''}${boundary}${R.date?` 購入日：${esc(R.date)}`:''}</div>${countNote()}${hard?`<div class="receiptStatus receiptWarn">文字がうまく読めていません。明るい場所で真上から撮り直すか、<button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button>のほうが早いかもしれません。${R.file?'<button class="btn ghost" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`:''}${R.parsed.length?`<div class="receiptSelectionBar"><span id="receiptSelectionCount" class="receiptSelectionCount">${selected}/${R.parsed.length}件を選択</span><button class="btn ghost" onclick="receiptSelectAllV7(true)">全選択</button><button class="btn ghost" onclick="receiptSelectAllV7(false)">全解除</button></div>`:''}${R.parsed.length?R.parsed.map(row).join(''):`<div class="empty">商品名を読み取れませんでした。下の「商品を追加」か「読み取れなかった行」から追加できます。${R.file?'<br><button class="btn ghost" style="margin-top:8px" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`}<button class="btn ghost" style="width:100%;margin-top:8px" onclick="receiptAddV7()">＋ 商品を追加</button>${rejected.length?`<details class="detail receiptRejected" style="margin-top:12px" open><summary>読み取れなかった行（${rejected.length}行）</summary><div class="muted" style="margin:8px 0">商品名と判断できなかった行です。商品なら追加してください。</div>${rejected.map((x,k)=>`<div class="receiptExcluded"><span>${esc(x.text)}${x.reason?`<small class="receiptExcludedWhy">${esc(x.reason)}</small>`:''}${lineImage(x.area,'読み取れなかった行')}</span><button class="btn ghost" onclick="receiptPromoteV38(${k})">商品として追加</button></div>`).join('')}</details>`:''}<details class="detail" style="margin-top:12px"><summary>読み取った文字をすべて見る</summary><textarea class="receiptRaw" readonly>${esc(R.text)}</textarea></details><div class="receiptFoot"><label class="row"><input id="receiptRemoveBuy" type="checkbox" checked style="width:22px;height:22px"><div class="grow"><div class="name">買い物リストからも消す</div><div class="meta">追加した商品を買い物リストから消します</div></div></label><button id="receiptApplyBtn" class="btn" style="width:100%" onclick="receiptApplyV7()">確認画面へ進む</button></div>`);count()}
 function count(){const n=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0).length,b=$r('receiptApplyBtn'),c=$r('receiptSelectionCount');if(b)b.textContent=`選んだ${n}件を確認画面へ`;if(c)c.textContent=`${n}/${R.parsed.length}件を選択`}
 window.receiptManualPickV38=()=>{closeReceiptV7();try{window.atkOpenAdd?.('stock')}catch(e){}};
-window.receiptApplyV7=()=>{
+// ---- v49 audit: the same receipt imported twice in the family. Before the confirmation screen the
+// receipt is reserved on the shared server (hh_receipt_claim) by a fingerprint of the store, date, time,
+// total and receipt number, and of the photo bytes. Another member's import is shown with their name;
+// the person decides. Offline, the check runs when the connection is back and only warns: stock that was
+// already saved is never removed or merged automatically.
+const CLAIM_QUEUE='atokoreReceiptClaimQueueV1';
+async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function receiptKeys(r){const out=[];try{if(r.facts&&r.facts.strong)out.push({fp:await sha256(r.facts.key),kind:'receipt'});if(r.imageHash)out.push({fp:await sha256('img|'+r.imageHash),kind:'photo'})}catch(e){console.warn(e)}return out}
+function family(){const h=window.AtokoreHousehold;try{return h&&h.receiptClaim&&h.homeState&&h.homeState().joined?h:null}catch(e){return null}}
+function claimQueue(){try{const v=JSON.parse(localStorage.getItem(CLAIM_QUEUE)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
+function setClaimQueue(v){try{localStorage.setItem(CLAIM_QUEUE,JSON.stringify(v.slice(-50)))}catch(e){}}
+const whenText=at=>{const d=new Date(at);return Number.isFinite(d.getTime())?d.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'日時不明'};
+// Receipts saved while the family could not be asked: asked now; a family import found afterwards is
+// reported, nothing is changed in stock.
+async function flushClaims(){
+ const fam=family(),q=claimQueue();if(!fam||!q.length)return;
+ const rest=[],found=[];
+ for(const k of q){try{const r=await fam.receiptClaim(k.fp);if(r&&!r.claimed&&!r.mine)found.push(r);else await fam.receiptFinish(k.fp,true)}catch(e){rest.push(k)}}
+ setClaimQueue(rest);
+ if(found.length){const f=found[0];window.AtokoreConfirm?.tell?.('同じレシートを家族が取り込んでいました',`通信が戻ってから確認したところ、${f.who||'家族'}さんが${whenText(f.at)}に同じレシートを取り込んでいました。二重に追加されていないか在庫を確認してください（自動では変更していません）。`)}
+}
+window.receiptFlushClaimsV49=flushClaims;
+async function familyCheck(r){
+ const fam=family();if(!fam)return {go:true,keys:[],checked:false,shared:false};
+ const keys=await receiptKeys(r);if(!keys.length)return {go:true,keys:[],checked:false,shared:true};
+ const mine=[];
+ try{
+  for(const k of keys){const res=await fam.receiptClaim(k.fp);if(res&&!res.claimed){
+   const ok=await window.AtokoreConfirm.ask(res.state==='done'?'同じレシートを家族が取り込み済みです':'同じレシートを家族が取り込み中です',
+    `${res.who||'家族'}さんが${whenText(res.at)}に、${k.kind==='photo'?'同じ写真':'店・日時・合計が同じレシート'}を${res.state==='done'?'取り込みました':'取り込んでいる途中です'}。同じ買い物なら取り込まないでください。別の買い物のときだけ進めてください。`,'別の買い物として取り込む');
+   if(!ok){for(const fp of mine)fam.receiptFinish(fp,false).catch(()=>{});return {go:false}}
+   continue}
+   mine.push(k.fp)}
+  return {go:true,keys:mine,checked:true,shared:true};
+ }catch(e){console.warn(e);return {go:true,keys,checked:false,shared:true,offline:true}}
+}
+window.receiptApplyV7=async()=>{
+ if(R.applying)return;
  const rows=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0);if(!rows.length){alert('登録する商品を選んでください');return}
  const entries=rows.map(r=>{const hit=linked(r);return hit?{name:hit.name,cat:hit.cat||r.cat||cat(hit.name,r.raw),unit:hit.unit||r.unit||fixedUnit(hit.name),qty:Math.max(1,Math.round(+r.qty)||1)}:{name:String(r.name).trim().slice(0,120),cat:r.cat||cat(r.name,r.raw),unit:r.unit||fixedUnit(r.name),qty:Math.max(1,Math.round(+r.qty)||1)}});
  const removeBuy=!!$r('receiptRemoveBuy')?.checked,date=R.date,snapshot=rows.map((r,k)=>({raw:r.raw,entry:entries[k]})),qa=window.AtokoreQuickAdd;
  if(!qa?.openWithEntries){alert('この版では確認画面を開けません');return}
+ R.applying=true;let fc;try{fc=await familyCheck(R)}finally{R.applying=false}
+ if(!fc.go)return;
+ if(fc.offline)window.AtokoreConfirm?.tell?.('家族の取り込み状況を確認できませんでした','通信が戻ったら、同じレシートを家族が取り込んでいないか確認します。在庫は自動では変更しません。');
  const done=R;closeReceiptV7();
  // Saved only by the review screen's final button; afterwards remember which product each printed
  // name was (on the product itself, so the family sees it too) and record this receipt.
@@ -206,6 +246,9 @@ window.receiptApplyV7=()=>{
   R=done;remember();
   if(save()===false)throw Error('receipt follow-up not saved');
   try{render()}catch(e){}
+  // Mark the reservation done; when the family could not be asked, queue the check for later.
+  const fam=family();if(fc.offline)setClaimQueue([...claimQueue(),...fc.keys.map(k=>({fp:k.fp,at:Date.now()}))]);
+  else if(fam)for(const fp of fc.keys)fam.receiptFinish(fp,true).catch(()=>setClaimQueue([...claimQueue(),{fp,at:Date.now()}]));
  }});
 };
 window.__atokoreReceiptV125M={candidatesFor,parseReceipt:parse,parseProductNames:parse,cleanProductName:productText,parseTsvLines:tsvLines,isSubtotalBoundary:subtotalBoundary};
