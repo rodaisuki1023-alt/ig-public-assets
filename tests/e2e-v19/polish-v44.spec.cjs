@@ -62,3 +62,31 @@ test('v44 shared purchase undo preserves partner changes; private photos follow 
   expect(a.page.__errors).toEqual([]);expect(b.page.__errors).toEqual([]);
  }finally{await a.ctx.close();await b.ctx.close()}
 });
+
+test('text size changes across all main screens and the settings dialog without shrinking input text',async({page})=>{
+ await page.setViewportSize({width:320,height:844});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ await go(page,'buy');
+ await go(page,'add');
+ await go(page,'premium');
+ const sizes=async(font)=>{
+  await page.evaluate(value=>setAtokoreDisplay('font',value),font);
+  return page.evaluate(()=>{
+   const selectors=['.top h1','#pg-home .section','#pg-stock .name','#pg-add .section','#pg-buy .section','#pg-premium .section','.displayNote'];
+   return selectors.map(selector=>{
+    const el=document.querySelector(selector);
+    if(!el)throw Error('Missing font sample: '+selector);
+    return parseFloat(getComputedStyle(el).fontSize);
+   });
+  });
+ };
+ const normal=await sizes('standard'),small=await sizes('tiny'),large=await sizes('large');
+ normal.forEach((size,i)=>{expect(small[i]).toBeLessThan(size);expect(large[i]).toBeGreaterThan(size)});
+ const inputSize=await page.evaluate(()=>parseFloat(getComputedStyle(document.querySelector('#addName')).fontSize));
+ expect(inputSize).toBeGreaterThanOrEqual(16);
+ await page.reload();
+ await expect(page.locator('html')).toHaveAttribute('data-atokore-font','large');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
