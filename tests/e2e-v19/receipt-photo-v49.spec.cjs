@@ -38,6 +38,10 @@ async function receiptPhoto(browser) {
     body{margin:0;width:1400px;height:900px;background:repeating-linear-gradient(90deg,#b98a5a 0 38px,#c79a68 38px 80px);display:flex;align-items:center;justify-content:center}
     .r{transform:rotate(-89deg);background:#fbfaf6;padding:26px 30px;width:420px;font:22px/1.5 'IPAGothic','Noto Sans CJK JP',monospace;color:#1d1d1d;white-space:pre;box-shadow:0 3px 10px #0005}
   </style><div class="r">${LINES.map(l => l.replace(/&/g, '&amp;').replace(/</g, '&lt;')).join('\n')}</div>`);
+  // Fixed conditions (v49 audit): the receipt text needs a Japanese font; without it the picture is empty
+  // boxes and the OCR result means nothing, so say so instead of failing somewhere later.
+  const font = await p.evaluate(async () => { await document.fonts.ready; return ['IPAGothic', 'Noto Sans CJK JP'].find(f => document.fonts.check(`22px "${f}"`, 'テスト')) || null; });
+  if (!font) throw new Error('No Japanese font (IPAGothic or Noto Sans CJK JP) is installed: the synthetic receipt cannot be drawn.');
   const png = await p.screenshot({ type: 'png' });
   await p.close();
   return png;
