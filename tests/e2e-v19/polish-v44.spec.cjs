@@ -82,7 +82,7 @@ test('text size changes across all main screens and the settings dialog without 
   });
  };
  const normal=await sizes('standard'),small=await sizes('tiny'),large=await sizes('large');
- normal.forEach((size,i)=>{expect(small[i]).toBeLessThan(size);expect(large[i]).toBeGreaterThan(size)});
+ normal.forEach((size,i)=>{expect(small[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeLessThan(size);expect(large[i],`sample ${i}: standard=${normal}, tiny=${small}, large=${large}`).toBeGreaterThan(size)});
  const inputSize=await page.evaluate(()=>parseFloat(getComputedStyle(document.querySelector('#addName')).fontSize));
  expect(inputSize).toBeGreaterThanOrEqual(16);
  await page.reload();
