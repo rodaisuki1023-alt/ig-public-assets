@@ -113,7 +113,7 @@
   // Scale those declarations at their original specificity so fonts retain their
   // relative hierarchy and button dimensions are not scaled.
   function scaledSize(value, isField){
-    const match=/^(\\d+(?:\\.\\d+)?)px$/.exec(value.trim());
+    const match=/^(\d+(?:\.\d+)?)px$/.exec(value.trim());
     if(!match)return null;
     const scaled='calc('+match[1]+'px * var(--atk-font-scale, 1))';
     return isField?'max(16px, '+scaled+')':scaled;
@@ -123,12 +123,12 @@
       if(rule.cssRules)scaleRules(rule.cssRules);
       const style=rule.style;if(!style)return;
       // The old list-only overrides would hide the globally scaled sizes.
-      if(/\\.atk-fs-(?:tiny|small|large)/.test(rule.selectorText||'')){
+      if(/\.atk-fs-(?:tiny|small|large)/.test(rule.selectorText||'')){
         style.removeProperty('font-size');continue;
       }
       const value=style.getPropertyValue('font-size');
       const selector=rule.selectorText||'';
-      const isField=/(?:^|[\\s>+~,])(?:input|select|textarea)(?:[\\s.#[(:>+~,]|$)/.test(selector);
+      const isField=/(?:^|[\s>+~,])(?:input|select|textarea)(?:[\s.#[(:>+~,]|$)/.test(selector);
       const size=scaledSize(value,isField);
       if(size)style.setProperty('font-size',size,style.getPropertyPriority('font-size'));
     }
