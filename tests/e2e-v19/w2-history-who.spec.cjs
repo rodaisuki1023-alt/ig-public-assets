@@ -9,6 +9,10 @@ const { open, go, baseState, KEY, shot, appConfirm } = require('./helpers.cjs');
 const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
 const CONFIG = { url: EMU, anonKey: 'emu-anon-key' };
 
+// page.route() replaces hh_changes below. WebKit does not apply page.route() to requests made from a page
+// with a registered service worker (Playwright limitation; Chromium does), so the real emulator answered there
+// with the household's 5 adopted products. The app's service worker plays no part in this check.
+test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ request }) => { await request.post(EMU + '/__test/reset'); });
 
 test('shared-sheet history shows 実行者不明 for who=null and keeps names and old-format rows readable', async ({ page, request }, info) => {
