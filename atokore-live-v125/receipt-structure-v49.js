@@ -105,10 +105,12 @@ function structure(lines){
   const line=L[i],s=line.text;
   if(isSubtotal(s)||isTotal(s)||isTaxSummary(s)){
    boundary={text:s,kind:isSubtotal(s)?'subtotal':isTotal(s)?'total':'tax',area:line.area};
-   // A printed subtotal equal to the items read (or a total within tax of it) shows that every line kept
-   // so far was a purchase: the doubts about the amount are cleared.
-   const bp=priceTail(s),covers=bp&&!bp.negative&&(boundary.kind==='subtotal'?bp.value===sum:boundary.kind==='total'&&nearSum(bp.value,sum));
-   if(covers)products.forEach(p=>{p.doubt=(p.doubt||[]).filter(d=>!SUM_DOUBTS.includes(d))});
+   // A printed SUBTOTAL exactly equal to the items read shows that a short product priced near the running
+   // total was a purchase: that doubt is cleared. A total within tax of the sum is not enough (v49 3rd audit).
+   // Lines read after a subtotal-like line keep their doubt whatever the amounts: a non-product line can
+   // make the amounts agree by chance, so the person decides (they stay listed, unselected).
+   const bp=priceTail(s);
+   if(bp&&!bp.negative&&boundary.kind==='subtotal'&&bp.value===sum)products.forEach(p=>{p.doubt=(p.doubt||[]).filter(d=>d!==SUM_DOUBTS[0])});
    // The item count is printed on or shortly after the boundary line; it wins over a count printed
    // inside the item list (a warehouse club prints one for the bottom-of-basket items).
    for(let k=i;k<Math.min(L.length,i+12);k++){const c=printedCount(L[k].text);if(c!==null){count=c;break}}
@@ -137,8 +139,7 @@ function structure(lines){
   // (¥500+¥500 then ¥1,050), so reading goes on to the printed subtotal / total / tax / payment line:
   // - a label that is a misread 小計/合計 (or no letters at all) is not a product; it is listed for review;
   // - a short product name at that amount is kept, unselected, with the reason shown.
-  // Lines read after a subtotal-like line stay products but are marked, unless the printed subtotal later
-  // confirms they were part of the purchase.
+  // Lines read after a subtotal-like line stay products but are marked and left for the person to select.
   let doubt=null;
   if(price&&sum>0&&products.length>=2&&jpLetters(name)<=3&&letters(name)<=4&&nearSum(price.value,sum)){
    if(subtotalLike(name)){if(!sumLine)sumLine={line:i,text:s,area:line.area,count:products.length};rejected.push({text:s,reason:'小計か合計とみられる行（金額がそれまでの商品の合計とほぼ同じ）',area:line.area,sumLike:true});continue}

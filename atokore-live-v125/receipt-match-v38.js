@@ -1,6 +1,7 @@
 /* Atokore v38 receipt matching — pure logic, no network.
  * Receipt lines are abbreviated ("ﾊﾟﾝﾊﾟｰｽ ｻﾗｻﾗ ﾃｰﾌﾟM 60ﾏｲ"). This suggests products already in stock,
- * but never across a different size, form (tape/pants), content amount or brand: those are
+ * but never across a different size, form (tape/pants), content amount or brand (brands from the fixed
+ * BRANDS list only; flavour and other attributes are NOT compared): those are
  * different products even when the names look alike. A match the family confirmed once is stored on
  * the product itself (item.receiptAliases), so it is offered first next time and travels with the
  * product when the household shares data.
@@ -73,8 +74,9 @@ function candidates(raw,items,{limit=3,min=0.5}={}){
   const g=features(item.name);if(conflict(f,g))continue;
   // The same printed name is rarely read identically twice: a close match to a confirmed name counts too.
   const near=Array.isArray(item.receiptAliases)?Math.max(0,...item.receiptAliases.map(a=>dice(a,key))):0;
-  // Only offered (never pre-selected): a near match to a confirmed name may be a different flavour or size
-  // that OCR read alike. Only the exact confirmed text is "learned" and may be pre-selected.
+  // Only offered (never pre-selected): a near match to a confirmed name may be another product that OCR read
+  // alike (flavour is not compared at all; brands only from BRANDS). Only the exact confirmed text is
+  // "learned" and may be pre-selected.
   if(near>=0.75){out.push({item,score:0.9+near/20,learned:false,near:true});continue}
   let s=Math.max(dice(raw,item.name),coverage(raw,item.name)*0.92);
   if(f.brand&&f.brand===g.brand)s+=0.1;

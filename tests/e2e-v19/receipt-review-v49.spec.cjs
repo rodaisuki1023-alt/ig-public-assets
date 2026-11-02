@@ -42,7 +42,11 @@ test('a dated product: the review says "new row without a date", the confirmatio
   expect(page.__errors).toEqual([]);
 });
 
-test('learned receipt texts: exact text pre-selects; near text, other size, flavour, brand or amount do not', async ({ page }) => {
+// Attributes the matcher compares: size and form (diapers), content amount, and brands from a FIXED list only.
+// Flavour is not an attribute, nor is a brand outside that list: such products can still be OFFERED as a
+// candidate when the letters are alike; they are not pre-selected only because the printed text is not the
+// exact confirmed text.
+test('learned receipt texts: exact text pre-selects; near text, other size or amount do not; other flavour / unlisted brand are only offered', async ({ page }) => {
   const initial = { items: [
     { id: 1, name: 'テスト炭酸水 1L', cat: '食料品', qty: 1, unit: '本', place: 'パントリー', expType: '期限なし', exp: '', usage: 1, receiptAliases: ['テスト炭酸水1l'] },
     { id: 2, name: 'テストおむつ テープ M', cat: 'ベビー', qty: 1, unit: '袋', place: '収納', expType: '期限なし', exp: '', usage: 1, receiptAliases: ['テストおむつテープm'] },
@@ -52,10 +56,10 @@ test('learned receipt texts: exact text pre-selects; near text, other size, flav
   await open(page, { [KEY]: initial });
   await readText(page, [
     'テスト炭酸水1L ¥98',          // exactly the confirmed text → pre-selected
-    'テスト炭酸水レ ¥98',          // near the confirmed text (another flavour?) → offered only
+    'テスト炭酸水レ ¥98',          // near the confirmed text → offered only
     'テストおむつテープL ¥1,280',  // other size → never offered
-    'テストラーメンみそ味 ¥120',   // other flavour → not pre-selected
-    'メーカーB ヨーグルト 400g ¥198', // other brand → not pre-selected
+    'テストラーメンみそ味 ¥120',   // other flavour: not detected → may be offered, not pre-selected
+    'メーカーB ヨーグルト 400g ¥198', // brand not in the fixed list: not detected → may be offered, not pre-selected
     'メーカーA ヨーグルト 75g ¥98',  // other amount → never offered
     '小計 6点 ¥1,892'].join('\n'));
   const value = async t => rowOf(page, t).locator(PICK).count().then(n => n ? rowOf(page, t).locator(PICK).inputValue() : null);
@@ -69,6 +73,9 @@ test('learned receipt texts: exact text pre-selects; near text, other size, flav
   expect(sizeOptions.join()).not.toContain('テストおむつ テープ M');
   expect(await value('テストラーメンみそ味') || '').toBe('');
   expect(await value('メーカーBヨーグルト') || '').toBe('');
+  // The limit, stated: the other flavour IS offered as a candidate (flavour is not compared; the person must not
+  // pick it blindly). Whether an unlisted brand is offered depends only on how alike the letters are (here: not).
+  expect((await rowOf(page, 'テストラーメンみそ味').locator(`${PICK} option`).allTextContents()).join()).toContain('テストラーメン しょうゆ味');
   const amountOptions = await rowOf(page, 'メーカーAヨーグルト75g').locator(`${PICK} option`).allTextContents().catch(() => []);
   expect(amountOptions.join()).not.toContain('メーカーA ヨーグルト 400g');
   // Saving adds only to the exactly matched product.
@@ -81,36 +88,91 @@ test('learned receipt texts: exact text pre-selects; near text, other size, flav
   expect(page.__errors).toEqual([]);
 });
 
-// v49 2nd audit: print the OCR found but could not read is pointed out (inside the item list only), never
-// made a product; a receipt whose item count could not be read says the count check was not possible.
-// The OCR RESULT is synthetic here (the reader is replaced in the page) so the places are deterministic;
-// the real reader's output format is covered by receipt-photo-v49.spec.cjs.
-test('unread places inside the item list are shown with their picture; the count check says when it was not possible', async ({ page }) => {
+// v49 2nd/3rd audit: print the OCR found but could not read is pointed out, never made a product; the photo
+// review always says that not every miss can be detected and offers the whole photo. The OCR RESULT is
+// synthetic here (the reader is replaced in the page) so the cases are deterministic; the real reader's
+// output format is covered by receipt-photo-v49.spec.cjs.
+async function readSynthetic(page, lines, dropped) {
   await open(page, { [KEY]: { items: [], buys: [], routines: [] } });
   await go(page, 'premium');
   await page.locator('#pg-premium .premium').filter({ hasText: 'レシート一括補充' }).click();
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
   await page.setInputFiles('#receiptFile', { name: 'receipt.png', mimeType: 'image/png', buffer: png });
-  await page.evaluate(() => {
+  await page.evaluate(([lines, dropped]) => {
     const W = 400, H = 520, c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = '#222'; g.font = '20px sans-serif';
-    const at = (text, y, x = 20, w = 360, score = 0.95) => { g.fillText(text, x, y + 22); return { box: [[x, y], [x + w, y], [x + w, y + 28], [x, y + 28]], text, score }; };
-    const items = [at('テストストア', 10), at('テスト商品甲 ¥100', 80), at('テスト商品乙 ¥200', 130), at('テスト商品丙 ¥300', 230), at('小計 ¥600', 290), at('ポイント 6', 400)];
-    g.fillRect(20, 186, 200, 20); // something printed between 乙 and 丙 that could not be read
-    const box = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-    items.dropped = [{ box: box(20, 182, 120, 28), score: 0.3 }, { box: box(160, 184, 60, 26), score: 0.1, empty: true }, { box: box(20, 402, 300, 28), score: 0.2 }];
+    const items = lines.map(([text, y]) => { g.fillText(text, 20, y + 22); return { box: [[20, y], [380, y], [380, y + 28], [20, y + 28]], text, score: 0.95 }; });
+    items.dropped = dropped.map(([x, y, w, h, score]) => { g.fillRect(x, y + 4, w, h - 8); return { box: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], score }; });
     items.canvas = c; items.turn = 0;
     window.AtokoreReceiptImage = { prepare: async () => ({ found: true, candidates: [{ turn: 0, canvas: c }] }) };
-    window.AtokoreReceiptOcr = { ready: () => true, cached: async () => true, load: async () => {}, DOWNLOAD_MB: 38, readReceipt: async () => items };
-  });
+    window.AtokoreReceiptOcr = { ready: () => true, cached: async () => true, load: async () => {}, storage: () => ({ checked: 6, allStored: true, notStored: [] }), DOWNLOAD_MB: 38, readReceipt: async () => items };
+  }, [lines, dropped]);
   await page.locator('#receiptAnalyzeBtn').click();
   await expect(page.getByRole('heading', { name: '🧾 読み取り結果の確認' })).toBeVisible();
+}
+const GENERAL = '読み落としをすべて検出できるわけではありません。写真と商品一覧を見比べてください。';
+const BASE = [['テストストア', 10], ['テスト商品甲 ¥100', 80], ['テスト商品乙 ¥200', 130], ['テスト商品丙 ¥300', 230], ['小計 ¥600', 290], ['ポイント 6', 400]];
+
+test('unread places inside the item list are shown with their picture; the count check says when it was not possible', async ({ page }) => {
+  await readSynthetic(page, BASE, [[20, 182, 120, 28, 0.3], [160, 184, 60, 26, 0.1], [20, 402, 300, 28, 0.2]]);
   await expect(page.locator('[data-receipt-row]')).toHaveCount(3);
-  await expect(page.locator('#receiptUnread')).toContainText('文字として読めなかった部分が1か所');
-  await expect(page.locator('#receiptUnread img.receiptLineImg')).toHaveCount(1);
+  await expect(page.locator('#receiptUnread')).toContainText(GENERAL);
+  await expect(page.locator('#receiptUnread')).toContainText('商品の範囲に、文字として読めなかった部分が1か所');
+  await expect(page.locator('#receiptUnread .receiptUnreadImgs img.receiptLineImg')).toHaveCount(1);
   // The places are not products and nothing about them is selected.
   await expect(page.locator('#receiptSelectionCount')).toHaveText('3/3件を選択');
   await expect(page.locator('#receiptCount')).toContainText('点数の照合はできていません');
+});
+
+test('no unread run found: the photo review still says misses cannot all be detected, never "none"; the whole photo opens', async ({ page }) => {
+  await readSynthetic(page, BASE, []);
+  const note = page.locator('#receiptUnread');
+  await expect(note).toContainText(GENERAL);
+  await expect(note).not.toContainText(/読み落としは(?:ありません|なし)|読み落としなし/);
+  await expect(note).not.toContainText('各行の画像で確認できます');
+  await page.locator('#receiptWhole summary').click();
+  await expect(page.locator('#receiptWhole img.receiptWholeImg')).toBeVisible();
+  expect(await page.locator('#receiptWhole img.receiptWholeImg').evaluate(i => i.naturalWidth)).toBeGreaterThan(100);
+});
+
+test('dropped first product above the first row read is listed; a run on the store-name line is not', async ({ page }) => {
+  await readSynthetic(page, BASE.filter(([t]) => t !== 'テスト商品甲 ¥100'), [[20, 80, 200, 28, 0.2], [150, 12, 80, 26, 0.3]]);
+  await expect(page.locator('#receiptUnread')).toContainText('商品の範囲に、文字として読めなかった部分が1か所');
+  await expect(page.locator('#receiptUnread .receiptUnreadImgs img')).toHaveCount(1);
+});
+
+test('no subtotal/total line, or no product read: the range is not called the item range and no pictures flood in', async ({ page }) => {
+  await readSynthetic(page, BASE.filter(([t]) => !/小計|ポイント/.test(t)), [[20, 300, 200, 28, 0.2], [20, 350, 200, 28, 0.2], [20, 400, 200, 28, 0.2]]);
+  let note = page.locator('#receiptUnread');
+  await expect(note).toContainText('商品の範囲を確定できませんでした');
+  await expect(note).not.toContainText('商品の範囲に、');
+  await expect(note.locator('.receiptUnreadImgs img')).toHaveCount(0);
+  await expect(note.locator('#receiptWhole')).toHaveCount(1);
+  await page.locator('#sheet .close').click();
+  await readSynthetic(page, [['テストストア', 10], ['小計 ¥600', 290]], [[20, 80, 200, 28, 0.2], [20, 130, 200, 28, 0.1]]);
+  note = page.locator('#receiptUnread');
+  await expect(page.locator('[data-receipt-row]')).toHaveCount(0);
+  await expect(note).toContainText('商品の範囲を確定できませんでした');
+  await expect(note).toContainText('2か所');
+  await expect(note.locator('.receiptUnreadImgs img')).toHaveCount(0);
+});
+
+test('"各行の画像で確認できます" only for runs on rows that show a picture', async ({ page }) => {
+  await readSynthetic(page, BASE, [[300, 132, 40, 24, 0.3]]);
+  const note = page.locator('#receiptUnread');
+  await expect(note).toContainText('画像を表示している行の中に、読めなかった文字が1か所あります。各行の画像で確認できます。');
+  await expect(page.locator('[data-receipt-row]').filter({ hasText: 'テスト商品乙' }).locator('img.receiptLineImg')).toHaveCount(1);
+  await page.locator('#sheet .close').click();
+  // On a discount line (no row, no picture): a place, not "in a row".
+  await readSynthetic(page, [['テストストア', 10], ['テスト商品乙 ¥200', 130], ['割引 -20', 180], ['テスト商品丙 ¥300', 230], ['小計 ¥480', 280]], [[250, 182, 60, 26, 0.3]]);
+  await expect(page.locator('#receiptUnread')).not.toContainText('各行の画像で確認できます');
+  await expect(page.locator('#receiptUnread')).toContainText('1か所');
+});
+
+test('the text path (no photo) shows no photo notice', async ({ page }) => {
+  await open(page, { [KEY]: { items: [], buys: [], routines: [] } });
+  await readText(page, 'テスト商品甲 ¥100\nテスト商品乙 ¥200\n小計 2点 ¥300');
+  await expect(page.locator('#receiptUnread')).toHaveCount(0);
 });
 
 test('a matching count is not presented as proof that nothing was missed', async ({ page }) => {

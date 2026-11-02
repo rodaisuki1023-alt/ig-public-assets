@@ -67,7 +67,7 @@ const rules=[[/玉子|たまご|タマゴ|卵/,'卵'],[/豚(?:ばら|バラ)(?:�
 // v49: a generic name replaces the printed one only when the matched word is most (70%) of the name.
 // "テスト玉子とハムのサンド" is not 卵, "テストバナナケーキミニ" is not バナナ and "テスト麦茶2L" keeps its size.
 function coreText(c,keepSize){const t=hw(c).replace(/\d+(?:\.\d+)?\s*(?:ml|l|g|kg|個入り?|個|枚入り?|枚|本入り?|本|コ|袋|パック|p|入り?)(?![a-z])/gi,'');return (keepSize?t:t.replace(/[SMLＳＭＬ]?サイズ/g,'')).replace(/[\s　*＊※#()（）☆★]/g,'').replace(/(?:^|(?<=[^一-龠]))[大小特]$/,'')}
-// Generic name used only to look for a registered product ("玉子 Mサイズ" can be the registered 卵); the
+// Generic name used only to look for a registered product ("玉子 Lサイズ" can be the registered 卵); the
 // name shown keeps the printed size, so M and L eggs are never shown as the same product.
 function genericName(raw){const core=coreText(hw(raw));for(const [r,n] of rules){const m=core.match(r);if(m&&m[0].length>=Math.max(1,core.length*0.7))return n}return ''}
 function canon(raw){const c=hw(raw).replace(/^[*＊※#☆★\s]+/,'').replace(/\s+/g,' ').trim(),k=key(c),l=aliases()[k];if(l)return l;const core=coreText(c,true);for(const [r,n] of rules){const m=core.match(r);if(m&&m[0].length>=Math.max(1,core.length*0.7))return n}for(const arr of Object.values(C))for(const n of arr)if(k===key(n))return n;return c.slice(0,40)||'商品'}
@@ -79,14 +79,14 @@ function productText(raw){return compactTokens(hw(raw).replace(/^[|｜!！:;*＊
 // Department/tax codes printed before the name: "1520軽", "1100#8", "0002 ", "0011ﾃｽﾄ", "13*", "外8 ".
 function stripRetailPrefix(raw){const s=hw(raw).trim(),m=s.match(/^[\s|｜!！]*(?:[0-9IlOo]{4}(?:\s*(?:軽|経|#\s*[8B]|＃\s*[8B])\s*|\s+(?=\S)|(?=[ぁ-んァ-ヶ一-龠☆★])|(?=[A-Za-z]{2,}))|\d{2}\s*[*＊※]\s*|(?:外|内|非)\s*\d{1,2}\s+)/i);return m?{text:s.slice(m[0].length),had:true}:{text:s,had:false}}
 // Marks around the name: reduced-rate "*"/"※"/"☆", tax "外*" "軽", sale "特" and promotion codes ("M001").
-// Half-width katakana is often read with its voicing mark as a separate symbol ("ﾌﾞﾚﾝﾄﾞ" → "プ*レント*",
+// Half-width katakana is often read with its voicing mark as a separate symbol ("ﾌﾞﾗﾝﾄﾞ" → "プ*ラント*",
 // "ｶﾞ" → "カ°", "ﾌﾞ" → "プ*") and the long-vowel mark as "-". Rejoin them; other text is left as read.
 const VOICED='カガキギクグケゲコゴサザシジスズセゼソゾタダチヂツヅテデトドハバヒビフブヘベホボウヴ',SEMI='ハパヒピフプヘペホポ';
 // "・" also stands for a half-width voicing mark when it follows a kana that has a voiced form and comes
 // before ー or katakana ("ﾎﾞｰ" → "ホ・ー"); a separator after ン, ル, ム… ("テストル・ポワン") is kept.
 const VOICEABLE=/[カキクケコサシスセソタチツテトハヒフヘホ]/;
 // One hiragana letter inside a katakana word may be a misread ("テストクがーパン") but particles are real
-// ("テストポーのチキン"): such a letter is only flagged, never changed.
+// ("テストピーのスープ"): such a letter is only flagged, never changed.
 const ODD_HIRAGANA=/[ァ-ヶー](?![のとやをにへでも])[ぁ-ゖ](?=[ァ-ヶー])/;
 function joinKana(t){t=t.replace(/([ァ-ヶ])・(?=[ーァ-ヶ])/g,(m,k)=>VOICEABLE.test(k)?k+'゛':m);return t.replace(/([ァ-ヶ])[*゛"'”]/g,(m,k)=>{const i=VOICED.indexOf(k);if(i>=0&&i%2===0)return VOICED[i+1];const j=SEMI.indexOf(k);return j>=0&&j%2===1?VOICED[VOICED.indexOf(SEMI[j-1])+1]:k}).replace(/([ァ-ヶ])[°゜º]/g,(m,k)=>{const j=SEMI.indexOf(k);if(j>=0&&j%2===0)return SEMI[j+1];const i=VOICED.indexOf(k);return i>=0&&i%2===0?VOICED[i+1]:k}).replace(/([ァ-ヶ])-(?=[ァ-ヶ]|$)/g,'$1ー')}
 // A katakana ニ or ロ between two kanji is the kanji 二 / 口 ("山ニ屋" → 山二屋, "甘ロ" excluded: not between kanji).
@@ -154,7 +154,7 @@ window.receiptUpdateV7=(i,k,v)=>{const x=R.parsed[i];if(!x)return;if(k==='qty')v
 const RHIST='atokoreReceiptHistoryV1';
 function stockList(){try{return Array.isArray(items)?items:[]}catch(e){return []}}
 function matcher(){return window.AtokoreReceiptMatch||null}
-// Candidates for the printed text, then for the generic name when the printed one was replaced ("玉子 Mサイズ" → 卵).
+// Candidates for the printed text, then for the generic name when the printed one was replaced ("玉子 Lサイズ" → 卵).
 function candidatesFor(x,stock,m=matcher()){if(!m)return [];const seen=new Set(),out=[];for(const t of [x.raw,x.name!==x.raw?x.name:null,x.generic&&x.generic!==x.name?x.generic:null].filter(Boolean))for(const c of m.candidates(t,stock))if(!seen.has(String(c.item.id))){seen.add(String(c.item.id));out.push(c)}return out}
 // The candidates and the pre-selection of one row. Also used as is by the evaluation tool
 // (tests/receipt-eval/real-photos.cjs), so what is measured is what the review screen does.
@@ -192,19 +192,26 @@ window.receiptStoreV124=v=>{R.store=v};window.receiptDateV124=v=>{R.date=v};
 window.receiptMatchV38=(i,v)=>{const x=R.parsed[i];if(!x)return;x.matchId=v===''?null:(x.cands.find(c=>String(c.id)===v)?.id??null);if(x.matchId!=null){x.selected=true;x.low=false}review()};
 // A line the parser could not read as a product is never dropped silently: it can be added here.
 window.receiptPromoteV38=i=>{const r=(R.rejected||[])[i];if(!r)return;const raw=productText(stripRetailPrefix(String(r.text).replace(moneyTail,'')).text)||String(r.text).slice(0,40);R.rejected.splice(i,1);R.parsed.push({selected:true,raw,source:r.text,name:raw,qty:1,unit:fixedUnit(raw),cat:cat(raw,raw),price:0,total:0,place:place(raw,cat(raw,raw)),confidence:null,low:true});review()};
-// v49 2nd audit: places the OCR found print but could not read (low confidence or nothing), inside the item
-// list only (from the first product down to the subtotal/total line: payment and advertising below it are
-// not listed). Runs on a line that was read are part of that line (its picture is shown on the row); runs
-// between lines may be a whole missed product. They are never made products or selected.
+// Places the OCR found print but could not read (low confidence or nothing). Only what the text detector
+// marked as print is known: a line it never marked, or a dropped first product above everything that was
+// read, cannot be listed (v49 3rd audit) — the review always says so and offers the whole photo.
+// Range: from the read line just above the first product (or the first product) down to the subtotal/total
+// line. Without products or without that line the range is not known: places are counted, not shown as
+// pictures (no flood of payment/advertising runs), and the screen does not call it the item range.
+// A run on a row whose picture is shown is counted as part of that row; anywhere else it is a place.
+// Nothing here becomes a product or is selected.
 function unreadAreas(lines,p,dropped){
- const res={places:[],inLine:0,total:0};if(!Array.isArray(dropped)||!dropped.length)return res;
- const tops=[...(p.items||[]),...(p.rejected||[])].map(x=>x.area&&x.area.top).filter(Number.isFinite);
- const top=tops.length?Math.min(...tops):-Infinity,b=p.boundary&&p.boundary.area,bottom=b&&Number.isFinite(b.top)?b.top:Infinity;
- const read=(lines||[]).filter(l=>Number.isFinite(l.top)&&Number.isFinite(l.bottom));
+ const items=p.items||[],shown=[...items,...(p.rejected||[])].map(x=>x.area).filter(a=>a&&Number.isFinite(a.top));
+ const b=p.boundary&&p.boundary.area,read=(lines||[]).filter(l=>Number.isFinite(l.top)&&Number.isFinite(l.bottom));
+ const firstTop=items.map(x=>x.area&&x.area.top).filter(Number.isFinite).reduce((m,v)=>Math.min(m,v),Infinity);
+ const hasItems=Number.isFinite(firstTop),hasEnd=!!(b&&Number.isFinite(b.top));
+ const above=hasItems?read.filter(l=>l.bottom<=firstTop).reduce((m,l)=>Math.max(m,l.bottom),-Infinity):-Infinity;
+ const top=hasItems?(Number.isFinite(above)?above:firstTop):-Infinity,bottom=hasEnd?b.top:Infinity;
+ const res={places:[],inLine:0,total:0,rangeKnown:hasItems&&hasEnd};if(!Array.isArray(dropped)||!dropped.length)return res;
  const frags=dropped.map(d=>{const ys=d.box.map(q=>q[1]),xs=d.box.map(q=>q[0]);return {top:Math.min(...ys),bottom:Math.max(...ys),left:Math.min(...xs),right:Math.max(...xs)}})
-  .filter(f=>{const yc=(f.top+f.bottom)/2,h=f.bottom-f.top;return yc>=top-h*0.5&&yc<bottom}).sort((a,b)=>a.top-b.top);
+  .filter(f=>{const yc=(f.top+f.bottom)/2,h=f.bottom-f.top;return yc>=top-(hasItems&&Number.isFinite(above)?0:h*0.5)&&yc<bottom}).sort((a,b)=>a.top-b.top);
  for(const f of frags){const yc=(f.top+f.bottom)/2;res.total++;
-  if(read.some(l=>yc>=l.top&&yc<=l.bottom)){res.inLine++;continue}
+  if(shown.some(a=>yc>=a.top&&yc<=a.bottom)){res.inLine++;continue}
   const g=res.places.find(x=>yc>=x.top&&yc<=x.bottom);
   if(g){g.top=Math.min(g.top,f.top);g.bottom=Math.max(g.bottom,f.bottom);g.left=Math.min(g.left,f.left);g.right=Math.max(g.right,f.right);g.n++}else res.places.push({...f,n:1});
  }
@@ -212,10 +219,17 @@ function unreadAreas(lines,p,dropped){
 }
 // The parts worked for this reading but could not all be kept on the device (no space, storage blocked).
 function storageNote(){return R.partsNotStored?`<div class="receiptStatus receiptWarn" id="receiptPartsNotStored">読み取りの部品の一部を、この端末に保存できませんでした（空き容量の不足など）。今回は読み取れましたが、次回やオフラインのときは、もう一度ダウンロードが必要になることがあります。</div>`:''}
-function unreadNote(){const u=R.unread;if(!u||!u.total)return '';const c=R.sourceCanvas,MAX=6;
- if(!u.places.length)return `<div class="receiptStatus" id="receiptUnread">読み取った行の中に、読めなかった文字が${u.inLine}か所あります。各行の画像で確認できます。</div>`;
- const imgs=u.places.slice(0,MAX).map(x=>lineImage({top:x.top,bottom:x.bottom,left:0,right:c?c.width:x.right},'読めなかった部分')).join('');
- return `<div class="receiptStatus receiptWarn" id="receiptUnread">商品の範囲に、文字として読めなかった部分が${u.places.length}か所あります。商品が抜けていないか、画像で確認してください（必要なら「＋ 商品を追加」で追加できます）。${u.inLine?`ほかに、読み取った行の中にも${u.inLine}か所あります。`:''}${u.places.length>MAX?`画像は上から${MAX}か所まで表示しています。`:''}<div class="receiptUnreadImgs">${imgs}</div></div>`}
+// Photo reviews only. Never says that nothing was missed.
+function unreadNote(){const u=R.unread;if(!u)return '';const c=R.sourceCanvas,MAX=6,parts=[];
+ if(u.places.length){
+  if(u.rangeKnown)parts.push(`商品の範囲に、文字として読めなかった部分が${u.places.length}か所あります。商品が抜けていないか、下の画像で確認してください（必要なら「＋ 商品を追加」で追加できます）。${u.places.length>MAX?`画像は上から${MAX}か所まで表示しています。`:''}<div class="receiptUnreadImgs">${u.places.slice(0,MAX).map(x=>lineImage({top:x.top,bottom:x.bottom,left:0,right:c?c.width:x.right},'読めなかった部分')).join('')}</div>`);
+  else parts.push(`小計・合計の行か商品を読み取れず、商品の範囲を確定できませんでした。読み取った部分に、文字として読めなかった部分が${u.places.length}か所あります。写真全体で確認してください。`);
+ }
+ if(u.inLine)parts.push(`画像を表示している行の中に、読めなかった文字が${u.inLine}か所あります。各行の画像で確認できます。`);
+ return `<div class="receiptStatus ${u.places.length?'receiptWarn':''}" id="receiptUnread">読み落としをすべて検出できるわけではありません。写真と商品一覧を見比べてください。${parts.map(t=>`<div style="margin-top:6px">${t}</div>`).join('')}${wholePhoto()}</div>`}
+// The whole receipt photo (as read: upright and cropped), opened on demand inside the review.
+function wholePhoto(){return (R.sourceCanvas||R.previewUrl)?`<details class="receiptWhole" id="receiptWhole" style="margin-top:6px" ontoggle="receiptWholeV49(this)"><summary>写真全体を見る</summary><img class="receiptWholeImg" alt="読み取ったレシートの写真全体" style="display:block;max-width:100%;height:auto;margin-top:6px;border-radius:6px;border:1px solid #e3e7ee"></details>`:''}
+window.receiptWholeV49=d=>{if(!d.open)return;const img=d.querySelector('img');if(!img||img.src)return;try{img.src=R.sourceCanvas?R.sourceCanvas.toDataURL('image/jpeg',0.85):R.previewUrl}catch(e){console.warn('写真を表示できませんでした',e);if(R.previewUrl)img.src=R.previewUrl}};
 // The receipt's own item count against what was read: the quickest way to notice a missed line.
 // A matching count is not proof that nothing was missed (a misread line can still count as one item).
 function countNote(){if(!Number.isFinite(R.printedCount))return `<div class="receiptStatus" id="receiptCount">レシートの点数を読み取れなかったため、点数の照合はできていません。読み落としがないか、商品の行を確認してください。</div>`;const n=R.parsed.reduce((s,x)=>s+(+x.qty||0),0);

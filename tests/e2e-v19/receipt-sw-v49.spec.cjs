@@ -14,7 +14,7 @@ async function receiptPhoto(browser) {
   const p = await browser.newPage({ viewport: { width: 900, height: 900 }, deviceScaleFactor: 1 });
   await p.setContent(`<!doctype html><meta charset="utf-8"><style>body{margin:0;width:900px;height:900px;background:#b98a5a;display:flex;align-items:center;justify-content:center}
   .r{background:#fbfaf6;padding:26px 30px;width:420px;font:22px/1.5 'IPAGothic','Noto Sans CJK JP',monospace;color:#1d1d1d;white-space:pre}</style>
-  <div class="r">テストマート\n2026年10月27日(火) 12:54\nテスト純正ごま油 ¥398※\nテストヨーグルト ¥248※\n小計 2点 ¥646\n合計 ¥697</div>`);
+  <div class="r">テストマート\n2026年10月27日(火) 12:54\nテストごま油 ¥398※\nテストヨーグルト ¥248※\n小計 2点 ¥646\n合計 ¥697</div>`);
   // Fixed conditions (v49 audit): the receipt text needs a Japanese font; without it the picture is empty
   // boxes and the OCR result means nothing, so say so instead of failing somewhere later.
   const font = await p.evaluate(async () => { await document.fonts.ready; return ['IPAGothic', 'Noto Sans CJK JP'].find(f => document.fonts.check(`22px "${f}"`, 'テスト')) || null; });

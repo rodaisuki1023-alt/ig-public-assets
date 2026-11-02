@@ -97,7 +97,8 @@ function identity(parsedName, truthName) {
   // checked letter by letter: it is never counted as exact (v49 2nd audit) and is reported as undecidable.
   const a = norm(truthName), b = norm(parsedName);
   if (!a.includes('?') && a === b) return 'exact';
-  // same product: very close text, same numbers (size, amount, count) and no size/form/brand/amount conflict.
+  // machine-similar: very close text, same numbers (size, amount, count) and no size/form/brand/amount conflict
+  // (brands from receipt-match-v38's fixed list only; flavour is not compared, so another flavour can pass).
   const f = match.features(parsedName), g = match.features(truthName.replace(/\?/g, ''));
   if (sim(parsedName, truthName) >= 0.85 && digits(parsedName) === digits(truthName.replace(/\?/g, '')) && !match.conflict(f, g)) return 'same';
   // different: the name points to something else (wrong numbers, attributes or largely different text).
@@ -167,7 +168,8 @@ function summary(rows, learnedMode) {
     name_exact_ofDecidable: pct(F.filter(l => !l.truthUndecidable && l.identity === 'exact').length, L.filter(l => !l.truthUndecidable).length),
     name_undecidableTruthRows: L.filter(l => l.truthUndecidable).length,
     // MACHINE judgement, not a person's: letters ≥85% alike after normalisation, the same numbers and no
-    // size/flavour/brand/amount conflict (receipt-match-v38 features). Not a product-identity accuracy.
+    // size/form/brand/amount conflict (receipt-match-v38 features: brands from a fixed list only; flavour is NOT
+    // compared). Not a product-identity accuracy.
     name_machineSimilar_ofAll: pct(F.filter(l => l.identity !== 'different').length, L.length),
     name_machineDifferent_ofDetected: pct(F.filter(l => l.identity === 'different').length, F.length),
     C_qtyCorrect_ofDetected: pct(F.filter(l => l.qty === l.truthQty).length, F.length),

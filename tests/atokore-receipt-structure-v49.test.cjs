@@ -53,7 +53,7 @@ test('purchase quantity lines in the four layouts, checked against unit price ×
 
 test('a quantity line belongs to the line right above it, whether that line has a price or not', () => {
   assert.deepEqual(rows('テスト炭酸水 1L\n2コ X 単68 ¥136\n小計 2点 ¥136'), [['テスト炭酸水 1L', 2]]);
-  assert.deepEqual(rows('テスト鉄板麺 お 特 ¥396外\n( 2個 x @198)\n小計 ¥396'), [['テスト鉄板麺お特', 2]]);
+  assert.deepEqual(rows('テスト焼うどん お 特 ¥396外\n( 2個 x @198)\n小計 ¥396'), [['テスト焼うどんお特', 2]]);
   assert.deepEqual(rows('テストおむつ パンツ 外*\n990@ × 4個 ¥3,960\n4900000000001 (P×5)\n【小計】 ¥3,960'), [['テストおむつパンツ', 4]]);
   // After a discount line it is not attached to anything (and is never a product).
   const r = parse('テスト商品A 198\n値引 -50\n2コ X 単198 ¥396\n小計 ¥346');
@@ -115,15 +115,32 @@ test('v49 2nd audit: an amount equal to the items so far never ends the list (re
   v = view('商品甲 ¥500\n商品乙 ¥500\n小叶十 ¥1000\n外税8% ¥80\n合計 ¥1080');
   assert.deepEqual(v.items.map(x => x[0]), ['商品甲', '商品乙']); assert.equal(v.kind, 'subtotal');
   // A label that can only be a misread 計 is listed for review, not a product; lines after it stay products,
-  // marked unless the printed subtotal shows they were bought.
+  // marked and unselected (v49 3rd audit: even when a later subtotal agrees, the person decides).
   v = view('商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\n商品丙 ¥200\n小計 ¥1200');
-  assert.deepEqual(v.items, [['商品甲', true, []], ['商品乙', true, []], ['商品丙', true, []]]);
+  assert.deepEqual(v.items, [['商品甲', true, []], ['商品乙', true, []], ['商品丙', false, [AFTER]]]);
   assert.deepEqual(v.rejected, ['十 ¥1000']);
   v = view('商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\n広告の行 ¥300\n合計 ¥1080');
   assert.deepEqual(v.items.at(-1), ['広告の行', false, [AFTER]]);
   assert.deepEqual(v.rejected, ['十 ¥1000']);
   v = view('商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\nポイント 10');
   assert.deepEqual(v.items.map(x => x[0]), ['商品甲', '商品乙']); assert.equal(v.kind, 'sum');
+});
+
+test('v49 3rd audit: a line after a subtotal-like line is never made a normal selected product by matching amounts', () => {
+  const view = text => { const r = parse(text); return { items: r.items.map(x => [x.name, x.selected, x.reasons]), rejected: r.rejected.map(x => x.text) }; };
+  const AFTER = '小計とみられる行より後に読み取った行', SUM = '金額がそれまでの合計とほぼ同じ（小計の読み違いの可能性）';
+  // A tax-like line read after the misread subtotal makes the total agree: it stays listed, unselected, with the reason.
+  let v = view('商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\nテスト表示の行 ¥80\n合計 ¥1080');
+  assert.deepEqual(v.items, [['商品甲', true, []], ['商品乙', true, []], ['テスト表示の行', false, [AFTER]]]);
+  assert.deepEqual(v.rejected, ['十 ¥1000']);
+  // A total within tax of the sum does not clear the near-total doubt either; an exactly equal subtotal does.
+  v = view('商品甲 ¥500\n商品乙 ¥500\n豆乳 ¥1000\n合計 ¥2160');
+  assert.deepEqual(v.items.at(-1), ['豆乳', false, [SUM]]);
+  v = view('商品甲 ¥500\n商品乙 ¥500\n豆乳 ¥1000\n小計 ¥2000\n合計 ¥2160');
+  assert.deepEqual(v.items.at(-1), ['豆乳', true, []]);
+  // Ordinary receipts get no doubt at all (none of these lines is near the running total).
+  v = view('商品甲 ¥500\n商品乙 ¥300\n商品丙 ¥200\n小計 ¥1000\n合計 ¥1080');
+  assert.deepEqual(v.items, [['商品甲', true, []], ['商品乙', true, []], ['商品丙', true, []]]);
 });
 
 test('v49 2nd audit: unread OCR runs inside the item list are reported by place; never products', () => {
@@ -143,7 +160,7 @@ test('v49 2nd audit: unread OCR runs inside the item list are reported by place;
   assert.equal(u.total, 3); assert.equal(u.inLine, 1); assert.equal(u.places.length, 1); assert.equal(u.places[0].n, 2);
   assert.ok(u.places[0].top >= 200 && u.places[0].bottom <= 230);
   assert.deepEqual(p.items.map(x => x.name), ['商品甲', '商品乙', '商品丙']); // nothing became a product
-  assert.deepEqual(JSON.parse(JSON.stringify(R.unreadAreas(lines, p, []))), { places: [], inLine: 0, total: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(R.unreadAreas(lines, p, []))), { places: [], inLine: 0, total: 0, rangeKnown: true });
 });
 
 test('v49 2nd audit: a quantity line read without the space before the total (proportional print)', () => {
@@ -153,6 +170,28 @@ test('v49 2nd audit: a quantity line read without the space before the total (pr
   assert.deepEqual(rows('0011 テスト炭酸水 500ml\n2コ X単98¥196\n小計 ¥196'), [['テスト炭酸水 500ml', 2]]);
 });
 
+test('v49 3rd audit: unread places — dropped first product, no end line, no products, header overlap, rows without a picture', () => {
+  const box = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  const line = (text, top) => ({ text, top, bottom: top + 30, left: 20, right: 400, confidence: 90, minScore: 90 });
+  const areas = (lines, dropped) => { const p = JSON.parse(JSON.stringify(R.parseReceipt(lines))); return { p, u: JSON.parse(JSON.stringify(R.unreadAreas(lines, p, dropped))) }; };
+  const head = line('テストストア', 10);
+  // First product dropped by the OCR (between the store name and the first product read): listed.
+  let { p, u } = areas([head, line('テスト商品乙 ¥200', 130), line('テスト商品丙 ¥300', 180), line('小計 ¥500', 230)], [{ box: box(20, 82, 200, 28), score: 0.2 }]);
+  assert.equal(u.rangeKnown, true); assert.equal(u.places.length, 1); assert.deepEqual(p.items.map(x => x.name), ['テスト商品乙', 'テスト商品丙']);
+  // A run on the store-name line (overlapping the header) is not an item-list place.
+  ({ u } = areas([head, line('テスト商品乙 ¥200', 130), line('小計 ¥200', 230)], [{ box: box(150, 12, 80, 26), score: 0.3 }]));
+  assert.equal(u.total, 0); assert.equal(u.places.length, 0);
+  // No subtotal/total line: the range is not known (counted, the screen does not call it the item range).
+  ({ u } = areas([head, line('テスト商品乙 ¥200', 130), line('テスト商品丙 ¥300', 180)], [{ box: box(20, 300, 200, 28), score: 0.2 }]));
+  assert.equal(u.rangeKnown, false); assert.equal(u.places.length, 1);
+  // No product read at all: range not known; runs are counted, none become products.
+  ({ p, u } = areas([head, line('小計 ¥500', 230)], [{ box: box(20, 82, 200, 28), score: 0.2 }, { box: box(20, 130, 200, 28), score: 0.1, empty: true }]));
+  assert.equal(p.items.length, 0); assert.equal(u.rangeKnown, false); assert.equal(u.places.length, 2);
+  // A run on a line that is read but not shown with a picture (a discount line) is a place, not "in a row".
+  ({ u } = areas([head, line('テスト商品乙 ¥200', 130), line('割引 -20', 180), line('テスト商品丙 ¥300', 230), line('小計 ¥480', 280)], [{ box: box(250, 182, 60, 26), score: 0.3 }]));
+  assert.equal(u.inLine, 0); assert.equal(u.places.length, 1);
+});
+
 test('the printed item count is read in its common forms', () => {
   for (const [line, n] of [['お買上点数 9点', 9], ['小計/ 6点 ¥866', 6], ['小計 3点 ¥300', 3], ['買上点数 26点', 26], ['御買上げ点数 :15', 15], ['10点買', 10]]) assert.equal(S.printedCount(line), n, line);
   const r = parse('テスト商品A ¥100\nテスト商品B\n2コ X 単50 ¥100\n小計/ 3点 ¥200');
@@ -160,9 +199,9 @@ test('the printed item count is read in its common forms', () => {
 });
 
 test('header text and store codes are not products; department and tax codes leave the name', () => {
-  const r = parse('テストストア 本町店\nTEL 000-000-0000\n2026年10月27日(火) 12:54 #000019\n責:セルフレジ\nお会計券 #000008 R2827 11:44\n外8 テスト高糖度トマト ¥238外\n13*テスト麺 こってり味 ¥388\n0011テストバター 軽 ¥354\n0002 テスト豚切落し 大 ¥758※\n外8 テスト玉子 Mサイズ S001 ¥238外\nS001)Mサイズ特売 -50\n小計 ¥1,926');
+  const r = parse('テストストア 本町店\nTEL 000-000-0000\n2026年10月27日(火) 12:54 #000019\n責:セルフレジ\nお会計券 #000008 R2827 11:44\n外8 テスト高糖度トマト ¥238外\n13*テスト麺 あっさり味 ¥388\n0011テストバター 軽 ¥354\n0002 テスト鶏もも 大 ¥758※\n外8 テスト玉子 Lサイズ S001 ¥238外\nS001)Lサイズ特売 -50\n小計 ¥1,926');
   // Spaces between Japanese words are removed as before (receipts space-pad names).
-  assert.deepEqual(r.items.map(x => x.raw), ['テスト高糖度トマト', 'テスト麺こってり味', 'テストバター', 'テスト豚切落し大', 'テスト玉子 Mサイズ']);
+  assert.deepEqual(r.items.map(x => x.raw), ['テスト高糖度トマト', 'テスト麺あっさり味', 'テストバター', 'テスト鶏もも大', 'テスト玉子 Lサイズ']);
   assert.equal(r.rejected.length, 0);
 });
 
@@ -172,17 +211,17 @@ test('OCR quirks are tidied in names: Chinese forms of receipt words, voicing ma
 });
 
 test('a generic name replaces the printed one only when the word is most of the name', () => {
-  assert.deepEqual(rows('テスト玉子 Mサイズ ¥238\n小計 ¥238').map(r => r[0]), ['テスト玉子 Mサイズ']);
+  assert.deepEqual(rows('テスト玉子 Lサイズ ¥238\n小計 ¥238').map(r => r[0]), ['テスト玉子 Lサイズ']);
   // v49 audit: a printed size stays in the name (M and L eggs are different products); the generic name is
   // only used to look for the registered product.
-  assert.deepEqual(rows('玉子 Mサイズ ¥238\n玉子 ¥228\nテスト玉子とハムのサンド ¥358\nテストバナナケーキミニ ¥128\nテスト麦茶2L ¥118\nバナナ ¥198\n小計 ¥1,268').map(r => r[0]),
-    ['玉子 Mサイズ', '卵', 'テスト玉子とハムのサンド', 'テストバナナケーキミニ', 'テスト麦茶2L', 'バナナ']);
+  assert.deepEqual(rows('玉子 Lサイズ ¥238\n玉子 ¥228\nテスト玉子とハムのサンド ¥358\nテストバナナケーキミニ ¥128\nテスト麦茶2L ¥118\nバナナ ¥198\n小計 ¥1,268').map(r => r[0]),
+    ['玉子 Lサイズ', '卵', 'テスト玉子とハムのサンド', 'テストバナナケーキミニ', 'テスト麦茶2L', 'バナナ']);
 });
 
 test('suggestions: the printed text, then the generic name; never a different size or amount', () => {
   const stock = [{ id: 1, name: '卵' }, { id: 2, name: '豚こま肉' }, { id: 3, name: 'テスト麦茶 2L' }];
   const pick = raw => { const it = R.parseReceipt(raw + ' ¥100\n小計 ¥100').items[0]; return Array.from(R.candidatesFor(it, stock, M), c => c.item.id); };
-  assert.deepEqual(pick('玉子 Mサイズ'), [1]);
+  assert.deepEqual(pick('玉子 Lサイズ'), [1]);
   assert.deepEqual(pick('テスト麦茶 650ml'), []);
   assert.deepEqual(pick('テスト麦茶650m|'), []); // OCR read the l of ml as |
   assert.deepEqual(pick('テスト麦茶2L'), [3]);
@@ -212,8 +251,8 @@ test('v49 audit: general OCR repairs are flagged, never silent; separators and r
   it = one('テストクがーパン ¥100');
   assert.equal(it.name, 'テストクがーパン');
   assert.ok(it.reasons.includes('読み違いの可能性がある文字'));
-  it = one('テストポーのチキン ¥100');
-  assert.equal(it.name, 'テストポーのチキン');
+  it = one('テストピーのスープ ¥100');
+  assert.equal(it.name, 'テストピーのスープ');
   assert.equal(it.reasons.length, 0);
   // Katakana ニ between kanji; traditional 產; a code with ☆ before the name.
   assert.equal(one('山ニ屋 テストせんべい ¥100').name, '山二屋テストせんべい');
