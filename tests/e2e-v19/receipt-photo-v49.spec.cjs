@@ -31,17 +31,17 @@ const seedState = () => ({
   buys: [], routines: [],
 });
 
-async function receiptPhoto(browser) {
+async function receiptPhoto(browser, fonts = ['IPAGothic', 'Noto Sans CJK JP']) {
   // Rendered in a separate page: white receipt, slightly tilted, on a brown table, turned sideways.
   const p = await browser.newPage({ viewport: { width: 1400, height: 900 }, deviceScaleFactor: 1 });
   await p.setContent(`<!doctype html><meta charset="utf-8"><style>
     body{margin:0;width:1400px;height:900px;background:repeating-linear-gradient(90deg,#b98a5a 0 38px,#c79a68 38px 80px);display:flex;align-items:center;justify-content:center}
-    .r{transform:rotate(-89deg);background:#fbfaf6;padding:26px 30px;width:420px;font:22px/1.5 'IPAGothic','Noto Sans CJK JP',monospace;color:#1d1d1d;white-space:pre;box-shadow:0 3px 10px #0005}
+    .r{transform:rotate(-89deg);background:#fbfaf6;padding:26px 30px;width:420px;font:22px/1.5 ${fonts.map(f => `'${f}'`).join(',')},monospace;color:#1d1d1d;white-space:pre;box-shadow:0 3px 10px #0005}
   </style><div class="r">${LINES.map(l => l.replace(/&/g, '&amp;').replace(/</g, '&lt;')).join('\n')}</div>`);
   // Fixed conditions (v49 audit): the receipt text needs a Japanese font; without it the picture is empty
   // boxes and the OCR result means nothing, so say so instead of failing somewhere later.
-  const font = await p.evaluate(async () => { await document.fonts.ready; return ['IPAGothic', 'Noto Sans CJK JP'].find(f => document.fonts.check(`22px "${f}"`, 'テスト')) || null; });
-  if (!font) throw new Error('No Japanese font (IPAGothic or Noto Sans CJK JP) is installed: the synthetic receipt cannot be drawn.');
+  const font = await p.evaluate(async list => { await document.fonts.ready; return list.find(f => document.fonts.check(`22px "${f}"`, 'テスト')) || null; }, fonts);
+  if (!font) throw new Error(`No Japanese font (${fonts.join(' or ')}) is installed: the synthetic receipt cannot be drawn.`);
   const png = await p.screenshot({ type: 'png' });
   await p.close();
   return png;
@@ -115,6 +115,31 @@ test.describe('receipt photo, on-device OCR', () => {
     expect(added.reduce((s, x) => s + x.qty, 0)).toBe(4);
     expect(page.__errors).toEqual([]);
     expect(page.__external).toEqual([]);
+  });
+});
+
+// v49 2nd audit: the audit environment failed this photo test repeatedly. Reading the same receipt drawn in a
+// proportional Japanese font showed why: the OCR reads "2コ X単98¥196" without the space before the total, the
+// quantity line was not recognised, became a product, and the soda line was dropped. The parser now accepts
+// it; this test reads the receipt in that font so the condition is checked, not only the monospaced one.
+test.describe('receipt photo, proportional font', () => {
+  test.skip(({ browserName }) => browserName !== 'chromium', 'the font condition is browser-independent; the full flow runs in both browsers above');
+  test.setTimeout(240000);
+  test('the quantity line is read when its spaces are narrow; four products, soda ×2, the count matches', async ({ page, browser }) => {
+    const fonts = await (async () => { const p = await browser.newPage(); await p.setContent('<meta charset="utf-8">'); const ok = await p.evaluate(() => document.fonts.check('22px "IPAPGothic"', 'テスト')); await p.close(); return ok; })();
+    test.skip(!fonts, 'IPAPGothic (proportional Japanese font) is not installed');
+    const png = await receiptPhoto(browser, ['IPAPGothic']);
+    await open(page, { [KEY]: seedState() });
+    await openReceipt(page, png);
+    await page.locator('#receiptAnalyzeBtn').click();
+    await page.locator('#atkConfirm .atk-confirm-primary').click();
+    await expect(page.getByRole('heading', { name: '🧾 読み取り結果の確認' })).toBeVisible({ timeout: 200000 });
+    const rows = page.locator('[data-receipt-row]');
+    await expect(rows).toHaveCount(4);
+    const soda = rows.filter({ has: page.locator('input[value*="炭酸水"]') });
+    await expect(soda.locator('input[type=number]')).toHaveValue('2');
+    await expect(page.locator('#receiptCount')).toContainText('一致しています');
+    await expect(page.locator('.receiptRejected')).toHaveCount(0);
   });
 });
 

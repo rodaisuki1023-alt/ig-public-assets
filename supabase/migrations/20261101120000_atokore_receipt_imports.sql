@@ -48,7 +48,10 @@ begin
   if v_row.state = 'pending' and v_row.updated_at < now() - interval '30 minutes' then
     update atokore_private.receipt_imports set claimed_by = v_user, claimed_at = now(), updated_at = now()
      where household_id = v_hh and fingerprint = p_fingerprint;
-    return jsonb_build_object('claimed', true, 'state', 'pending', 'mine', true, 'tookOver', true);
+    -- The earlier member may still have saved without the record being marked (no connection afterwards):
+    -- the caller is told who started it and when, and decides.
+    return jsonb_build_object('claimed', true, 'state', 'pending', 'mine', true, 'tookOver', true, 'at', v_row.updated_at,
+      'who', (select m.display_name from atokore_private.members m where m.household_id = v_hh and m.user_id = v_row.claimed_by order by m.joined_at desc limit 1));
   end if;
   return jsonb_build_object(
     'claimed', coalesce(p_force, false), 'forced', coalesce(p_force, false), 'state', v_row.state, 'mine', false, 'at', v_row.updated_at,

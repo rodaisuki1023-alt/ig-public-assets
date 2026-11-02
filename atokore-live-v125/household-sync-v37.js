@@ -582,7 +582,18 @@ if(googleAuth?.hasCallback()){
 else if(session&&household&&(meta.engine?.shadow||meta.engine?.pendingApply)){makeEngine();watch();setStatus(engine.status().pending?'pending':'synced');syncNow();if(inviteCode)notice('すでに家族共有に参加しています。別の招待で自動的に切り替えることはありません')}
 // v49: family-wide receipt import records (supabase/migrations/20261101120000_atokore_receipt_imports.sql).
 // null when this phone is not sharing; a network error is thrown so the caller can say it could not check.
-async function receiptClaim(fingerprint,force=false){if(!household||!session)return null;return rpc('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
-async function receiptFinish(fingerprint,done){if(!household||!session)return null;return rpc('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({receiptClaim,receiptFinish,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+// v49 2nd audit: receipt reservations always answer with {ok, reason, scope}. scope is the household and the
+// user the call was made for, so a queued check is never sent to another household. reason tells apart what
+// the person can act on: offline / auth (signed out or expired) / not_member / unavailable (the shared server
+// does not have the receipt functions yet) / not_recorded (the server did not change the record) / error.
+function receiptScope(){return household&&session?household.id+':'+session.user.id:null}
+function receiptReason(e){const m=String(e&&e.message||'');if(e&&e.code==='network')return 'offline';if(e&&(e.code==='auth'||e.status===401))return 'auth';if(/not_member/.test(m))return 'not_member';if(e&&(e.code==='PGRST202'||e.status===404||/could not find the function/i.test(m)))return 'unavailable';return 'error'}
+async function receiptCall(fn,args){
+ const scope=receiptScope();if(!scope)return {ok:false,reason:'signed_out',scope:null};
+ try{const data=await rpc(fn,args)||{};return data.ok===false?{...data,ok:false,reason:'not_recorded',scope}:{...data,ok:true,scope}}
+ catch(e){return {ok:false,reason:receiptReason(e),scope}}
+}
+async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
+async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
+root.AtokoreHousehold=Object.freeze({receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

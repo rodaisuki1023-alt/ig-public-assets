@@ -34,6 +34,7 @@ async function read(page, png) {
   if (asked) await page.locator('#atkConfirm .atk-confirm-primary').click();
   await expect(page.getByRole('heading', { name: '🧾 読み取り結果の確認' })).toBeVisible({ timeout: 200000 });
   await expect(page.locator('[data-receipt-row]')).toHaveCount(2);
+  page.__partsNotStored = await page.locator('#receiptPartsNotStored').count();
   await page.locator('#sheet .close').click();
   return asked;
 }
@@ -53,6 +54,7 @@ test('reading parts: downloaded once, used after a restart, offline and after an
   expect(await read(page, png)).toBe(true);
   let mc = await modelCache(page);
   expect(mc.files).toEqual(PARTS);
+  expect(page.__partsNotStored).toBe(0); // stored: no "may need the download again" notice
 
   // 2. "Restart": a new page in the same browser. Not asked again; every part comes from the worker cache.
   await page.close(); page = await context.newPage();
@@ -106,4 +108,39 @@ test('reading parts: downloaded once, used after a restart, offline and after an
     return [...new Uint8Array(d)].map(x => x.toString(16).padStart(2, '0')).join('');
   });
   expect(fixed).toBe('f7aa897ca828a4c7c9e2739c30f9161a33306d532f020bcdb91dcfb664a5507e');
+
+  // 7. Part of the cache removed (one model): the notice comes back, the missing part is fetched and stored.
+  await page.evaluate(async () => {
+    const name = (await caches.keys()).find(k => k.startsWith('atokore-ocr:'));
+    await (await caches.open(name)).delete(new URL('./ocr/ppocrv6-rec-small.onnx', document.baseURI).href);
+  });
+  await page.close(); page = await context.newPage();
+  await open(page, { [KEY]: { items: [], buys: [], routines: [] } });
+  await worker(page);
+  expect(await read(page, png)).toBe(true);
+  expect((await modelCache(page)).files).toEqual(PARTS);
+  expect(page.__partsNotStored).toBe(0);
+});
+
+test('reading parts that cannot be stored (no space): this reading works, the person is told, and the next time asks again', async ({ browser, context }) => {
+  const png = await receiptPhoto(browser);
+  let page = await context.newPage();
+  await open(page, { [KEY]: { items: [], buys: [], routines: [] } });
+  await worker(page); await page.reload(); await worker(page);
+  // Storage is full: every Cache.put fails as browsers report it.
+  await page.evaluate(() => { Cache.prototype.put = function () { return Promise.reject(new DOMException('The quota has been exceeded.', 'QuotaExceededError')); }; });
+  expect(await read(page, png)).toBe(true);
+  expect(page.__partsNotStored).toBe(1);
+  const report = await page.evaluate(() => window.AtokoreReceiptOcr.storage());
+  expect(report.allStored).toBe(false);
+  expect(report.notStored.map(x => x.error)).toEqual(Array(6).fill('QuotaExceededError'));
+  expect(report.checked).toBe(6); // fetched and checked even though not stored
+  expect((await modelCache(page)).files).toEqual([]);
+  // Next time (storage works again): asked before downloading, then stored.
+  await page.close(); page = await context.newPage();
+  await open(page, { [KEY]: { items: [], buys: [], routines: [] } });
+  await worker(page);
+  expect(await read(page, png)).toBe(true);
+  expect(page.__partsNotStored).toBe(0);
+  expect((await modelCache(page)).files.length).toBe(6);
 });

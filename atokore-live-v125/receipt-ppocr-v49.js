@@ -1,7 +1,7 @@
 /* Atokore v49 on-device OCR — stage 2 of reading a receipt. Runs in the browser; the photo never
  * leaves the phone. PP-OCRv6 (PaddleOCR, Apache-2.0; ONNX conversion by RapidOCR, Apache-2.0) with
  * onnxruntime-web (MIT). Compared with the previous OCR (tesseract.js) it reads the half-width katakana
- * that Japanese POS receipts use ("ｸﾞﾘｺ", "ﾖﾂﾊﾞ") — measured on real receipts, see
+ * that Japanese POS receipts use ("ﾃｽﾄｸﾞﾐ", "ﾃｽﾄﾊﾞﾀｰ") — measured on real receipts, see
  * docs/atokore-receipt-quality-v49.md.
  *
  * Pipeline (same constants as RapidOCR 3.10, so results match the measured ones):
@@ -43,16 +43,40 @@ async function readBody(res,onBytes){
 }
 // Fetch and verify one file. A copy that does not match (damaged cache, interrupted download, tampering)
 // is removed from every cache and fetched once more from the network; a second mismatch stops reading.
+// v49 2nd audit: the page, not the service worker, stores the parts, and only after their SHA-256 matched.
+// Fetching, checking and storing are reported separately (storage()): a part that could not be stored (no
+// space, storage blocked) still works for this reading, and the person is told it may be downloaded again.
+// The cache is the one the service worker serves /ocr/ from (same name, see service-worker.js MODEL_CACHE).
+const MODEL_CACHE='atokore-ocr:'+new URL('./',document.baseURI).pathname+':ppocrv6-1';
+const TYPES={js:'text/javascript',mjs:'text/javascript',wasm:'application/wasm',onnx:'application/octet-stream',txt:'text/plain; charset=utf-8'};
+let report=[];
+async function store(f,bytes){
+ try{const c=await caches.open(MODEL_CACHE);await c.put(url(f),new Response(bytes,{headers:{'content-type':TYPES[f.name.split('.').pop()]||'application/octet-stream'}}));
+  return (await c.match(url(f)))?{stored:true,error:null}:{stored:false,error:'not_found_after_put'}}
+ catch(e){console.warn('読み取りの部品を保存できませんでした',f.name,e&&e.name);return {stored:false,error:e&&e.name||'error'}}
+}
 async function fetchVerified(f,onBytes){
+ let had=false;try{had=!!(await caches.match(url(f)))}catch(e){}
  for(let attempt=0;attempt<2;attempt++){
-  const res=await fetch(url(f),attempt?{cache:'reload'}:{});
+  // A stored copy is read from the cache directly (also without the service worker, e.g. offline).
+  let res=null;if(had&&!attempt){try{res=await caches.match(url(f))}catch(e){res=null}}
+  if(!res)res=await fetch(url(f),attempt?{cache:'reload'}:{});
   if(!res.ok)throw new Error('読み取りの部品を読み込めません（'+res.status+'）');
   const bytes=await readBody(res,onBytes);
-  if(await hex(bytes)===f.sha256)return bytes;
+  if(await hex(bytes)===f.sha256){
+   const fromCache=had&&attempt===0,st=fromCache?{stored:true,error:null}:await store(f,bytes);
+   report.push({file:f.name,fetched:true,verified:true,fromCache,stored:st.stored,error:st.error});
+   return bytes;
+  }
+  report.push({file:f.name,fetched:true,verified:false,fromCache:had&&attempt===0,stored:false,error:'hash_mismatch'});
   try{for(const k of await caches.keys())await (await caches.open(k)).delete(url(f))}catch(e){console.warn(e)}
  }
  throw new Error('読み取りの部品が壊れています。通信の良い場所でもう一度お試しください。');
 }
+// After load(): which parts are kept on this device. allStored=false → the next reading or offline use may
+// need the download again (the browser may also clear stored data later; that cannot be promised either way).
+function storage(){const last=new Map();for(const r of report)if(r.verified)last.set(r.file,r);const ok=[...last.values()];
+ return {checked:ok.length,allStored:ok.length===Object.keys(FILES).length&&ok.every(r=>r.stored),notStored:ok.filter(r=>!r.stored).map(r=>({file:r.file,error:r.error})),downloaded:ok.filter(r=>!r.fromCache).map(r=>r.file),entries:report.slice()}}
 // True when every part is already in this browser's cache (no download needed): the data-use notice is
 // shown again whenever it is not (for example after the site data was cleared).
 async function cached(){try{for(const f of Object.values(FILES))if(!(await caches.match(url(f))))return false;return true}catch(e){return false}}
@@ -148,7 +172,9 @@ async function recognize(source,opt={}){
  const crop=b=>{let c=canvas(b.w,b.h);ctx(c).drawImage(work,b.x,b.y,b.w,b.h,0,0,b.w,b.h);
   if(b.h/b.w>=1.5){const rc=canvas(b.h,b.w),x=ctx(rc);x.translate(0,b.w);x.rotate(-Math.PI/2);x.drawImage(c,0,0);c=rc}
   return {b,c,ratio:c.width/c.height}};
- const out=[],sx=ow/W,sy=oh/H;let read=0,stopped=false;
+ // v49 2nd audit: runs read with low confidence (or as nothing) are not text, but they are not forgotten:
+ // their place is kept so the review screen can point at a possibly missed line.
+ const out=[],dropped=[],sx=ow/W,sy=oh/H;let read=0,stopped=false;
  for(let band=0;band<boxes.length&&!stopped;band+=BAND){
   const crops=boxes.slice(band,band+BAND).map(crop),order=crops.map((_,i)=>i).sort((a,b)=>crops[a].ratio-crops[b].ratio),got=new Array(crops.length);
   for(let s=0;s<order.length;s+=BATCH){
@@ -161,11 +187,12 @@ async function recognize(source,opt={}){
     got[id]={box:[[b.x*sx,b.y*sy],[(b.x+b.w)*sx,b.y*sy],[(b.x+b.w)*sx,(b.y+b.h)*sy],[b.x*sx,(b.y+b.h)*sy]],text:d.text,score:d.score}});
   }
   read+=crops.length;
-  for(const g of got)if(g&&g.text&&g.score>=0.5)out.push(g);
+  for(const g of got){if(g&&g.text&&g.score>=0.5)out.push(g);else if(g)dropped.push({box:g.box,score:g.score,empty:!g.text})}
   onProgress&&onProgress(0.2+0.8*read/boxes.length);
   if(opt.stopAfter&&opt.stopAfter(out))stopped=true;
  }
  // Timings for the evaluation tool; not shown to users.
+ out.dropped=dropped;
  out.stats={detMs:Math.round(t1-t0),recMs:Math.round(performance.now()-t1),boxes:boxes.length,read,det:[dw,dh]};
  return out;
 }
@@ -186,5 +213,5 @@ async function readReceipt(prep,opt={}){
  items.turn=pick.turn;items.canvas=pick.canvas;return items;
 }
 function ready(){return !!state}
-root.AtokoreReceiptOcr=Object.freeze({load,cached,recognize,readReceipt,ready,DOWNLOAD_MB,ORT_VERSION,FILES});
+root.AtokoreReceiptOcr=Object.freeze({load,cached,storage,MODEL_CACHE,recognize,readReceipt,ready,DOWNLOAD_MB,ORT_VERSION,FILES});
 })(typeof window!=='undefined'?window:globalThis);

@@ -18,8 +18,8 @@ const SMALL={'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'
 // Receipts print kana for words a product name may hold in kanji or Latin letters (ﾒｲｼﾞ = 明治).
 const READINGS=[['明治','めいじ'],['森永','もりなが'],['和光堂','わこうどう'],['雪印','ゆきじるし'],['rico','りこ'],['粉ミルク','こなみるく'],['牛乳','ぎゅうにゅう'],['食パン','しょくぱん'],['卵','たまご'],['納豆','なっとう'],['洗剤','せんざい'],['柔軟剤','じゅうなんざい'],['缶','かん'],['小間','こま']];
 function readings(s){let t=s;for(const [k,v] of READINGS)t=t.split(k).join(v);return t}
-// Voicing marks are ignored when comparing (OCR often reads ブ as プ or バ as パ): "プロッコリー" still finds
-// ブロッコリー. Sizes, amounts and brands are compared separately and still block a suggestion.
+// Voicing marks are ignored when comparing (OCR often reads ブ as プ or バ as パ): "テストプロック" still finds
+// テストブロック. Sizes, amounts and brands are compared separately and still block a suggestion.
 function unvoice(s){return s.normalize('NFD').replace(/[\u3099\u309a]/g,'').normalize('NFC')}
 function compact(s){return unvoice(hira(readings(nfkc(s).toLowerCase()))).replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\ー~〜]/g,'').replace(/[ぁぃぅぇぉっゃゅょゎ]/g,c=>SMALL[c]).replace(/(.)\1+/g,'$1')}
 const SIZE=/(新生児|nb|ss|s|m|l|xl|ビッグより大きい|ビッグ|big|スーパービッグ)(?=$|[^a-z])/i;

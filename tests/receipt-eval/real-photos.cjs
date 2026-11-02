@@ -89,20 +89,21 @@ function align(T, P, score) {
 // Row correspondence: a parsed row is paired with a truth row when their names are at least 0.34 alike
 // (dynamic programming over the receipt order). 0.34 only decides WHICH row to compare; whether the name
 // and quantity are right is judged separately below (exact name, product identity, quantity).
-// Several printed lines of one product (two identical Costco lines) are one truth row with "lines": n.
+// Several printed lines of one product (two identical warehouse-club lines) are one truth row with "lines": n.
 let parseApi = null;
 const digits = s => (String(s).normalize('NFKC').match(/\d+/g) || []).join(',');
 function identity(parsedName, truthName) {
-  // exact: same text after width/space normalisation ('?' in the truth matches any character).
+  // exact: same text after width/space normalisation. A truth name with '?' (not readable by eye) cannot be
+  // checked letter by letter: it is never counted as exact (v49 2nd audit) and is reported as undecidable.
   const a = norm(truthName), b = norm(parsedName);
-  if (a.length === b.length && [...a].every((c, i) => c === '?' || c === b[i])) return 'exact';
+  if (!a.includes('?') && a === b) return 'exact';
   // same product: very close text, same numbers (size, amount, count) and no size/form/brand/amount conflict.
   const f = match.features(parsedName), g = match.features(truthName.replace(/\?/g, ''));
   if (sim(parsedName, truthName) >= 0.85 && digits(parsedName) === digits(truthName.replace(/\?/g, '')) && !match.conflict(f, g)) return 'same';
   // different: the name points to something else (wrong numbers, attributes or largely different text).
   return 'different';
 }
-function evaluate(r, parsed, ocr, stock) {
+function evaluate(r, parsed, ocr, stock, dropped, input) {
   const T = r.lines, P = parsed.items;
   const { pair, S } = align(T, P, (p, t) => sim(p.raw || p.name, t.name));
   const extraRows = new Set();
@@ -116,10 +117,12 @@ function evaluate(r, parsed, ocr, stock) {
     // qtyRow: the paired row only. qtyTotal: all rows of this product (a product printed on two lines).
     const qtyRow = item ? Number(item.qty) || 0 : null;
     const qty = item ? sameRows.reduce((s, k) => s + (Number(P[k].qty) || 0), 0) : null;
-    const cands = !item ? [] : parseApi.candidatesFor ? parseApi.candidatesFor(item, stock, match) : match.candidates(item.raw || item.name, stock);
-    // Pre-selection exactly as the review screen decides it (receipt.js prepareRows): v49 only an exact
-    // learned text on a row that is not in doubt; before v49 any "learned" candidate (incl. near matches).
-    const auto = !!(cands[0] && cands[0].learned && (parseApi.candidatesFor ? !item.low : true));
+    // Candidates and pre-selection come from receipt.js itself (rowCandidates / preselectId, the functions the
+    // review screen runs): no copy of the condition here. Older receipt.js without them: any learned candidate.
+    let cands = [], autoId = null;
+    if (item && parseApi.rowCandidates) { const rc = parseApi.rowCandidates(item, stock, match); cands = rc.map(c => ({ ...c, item: { id: c.id } })); autoId = parseApi.preselectId(item, rc); }
+    else if (item) { cands = parseApi.candidatesFor ? parseApi.candidatesFor(item, stock, match) : match.candidates(item.raw || item.name, stock); autoId = cands[0] && cands[0].learned ? cands[0].item.id : null; }
+    const auto = autoId != null;
     const id = item ? identity(item.name, t.name) : null;
     return {
       name: t.name, truthQty: t.qty, truthStock: t.stock, printedLines: t.lines || 1,
@@ -127,13 +130,17 @@ function evaluate(r, parsed, ocr, stock) {
       found: !!item, alignSim: item ? Math.round(S[ti][j] * 100) / 100 : 0, rawSim: item ? Math.round(S[ti][j] * 100) / 100 : 0,
       parsedRaw: item?.raw ?? null, parsedName: item?.name ?? null, identity: id,
       qty, qtyRow, selected: item ? !!item.selected : false, low: item ? !!item.low : false, reasons: item?.reasons || [],
-      top: cands[0]?.item.id ?? null, candidateIds: cands.map(c => c.item.id), autoLinked: auto, autoLinkedTo: auto ? cands[0].item.id : null,
+      top: cands[0]?.item.id ?? null, candidateIds: cands.map(c => c.item.id), autoLinked: auto, autoLinkedTo: autoId, truthUndecidable: String(t.name).includes('?'), parsedItem: item,
       // A missed product that still appears in the "読み取れなかった行" list can be noticed by the person.
       missedButListed: !item && rejectedTexts.some(x => spanSim(x, t.name) >= 0.6),
     };
   });
   const extras = P.filter((_, k) => !used.has(k)).map(x => ({ raw: x.raw || x.name, qty: x.qty, selected: !!x.selected }));
-  return { lines, extras, rejected: parsed.rejected.length, printedCount: parsed.printedCount ?? null, countedQty: parsed.countedQty ?? null, stoppedAtSubtotal: parsed.stoppedAtSubtotal };
+  // Places the OCR could not read inside the item list, as the review screen lists them (photo runs that kept
+  // the dropped runs only; older caches did not keep them).
+  const unread = Array.isArray(dropped) && parseApi.unreadAreas && Array.isArray(input) ? parseApi.unreadAreas(input, parsed, dropped) : null;
+  return { lines, extras, rejected: parsed.rejected.length, printedCount: parsed.printedCount ?? null, countedQty: parsed.countedQty ?? null, stoppedAtSubtotal: parsed.stoppedAtSubtotal,
+    unreadPlaces: unread ? unread.places.length : null, unreadInLine: unread ? unread.inLine : null };
 }
 const pct = (a, b) => b ? `${(100 * a / b).toFixed(1)}% (${a}/${b})` : '未測定（分母0）';
 function summary(rows, learnedMode) {
@@ -156,9 +163,13 @@ function summary(rows, learnedMode) {
     B_nonProductRows: `${rows.reduce((s, r) => s + r.extras.length, 0)} rows (${rows.reduce((s, r) => s + r.extras.filter(x => x.selected).length, 0)} pre-selected)`,
     B_unreadListPerReceipt: { median: med(rows.map(r => r.rejected)), max: Math.max(...rows.map(r => r.rejected)), total: rows.reduce((s, r) => s + r.rejected, 0) },
     countCheck: `${rows.filter(r => r.printedCount !== null).length}/${rows.length} receipts with a printed count; mismatch shown on ${rows.filter(r => r.printedCount !== null && r.printedCount !== r.countedQty).length}`,
-    name_exact_ofAll: pct(F.filter(l => l.identity === 'exact').length, L.length),
-    name_sameProduct_ofAll: pct(F.filter(l => l.identity !== 'different').length, L.length),
-    name_different_ofDetected: pct(F.filter(l => l.identity === 'different').length, F.length),
+    // Exact: '?' truth rows are left out of the denominator and counted as undecidable.
+    name_exact_ofDecidable: pct(F.filter(l => !l.truthUndecidable && l.identity === 'exact').length, L.filter(l => !l.truthUndecidable).length),
+    name_undecidableTruthRows: L.filter(l => l.truthUndecidable).length,
+    // MACHINE judgement, not a person's: letters ≥85% alike after normalisation, the same numbers and no
+    // size/flavour/brand/amount conflict (receipt-match-v38 features). Not a product-identity accuracy.
+    name_machineSimilar_ofAll: pct(F.filter(l => l.identity !== 'different').length, L.length),
+    name_machineDifferent_ofDetected: pct(F.filter(l => l.identity === 'different').length, F.length),
     C_qtyCorrect_ofDetected: pct(F.filter(l => l.qty === l.truthQty).length, F.length),
     C_qtyCorrect_ofAll: pct(F.filter(l => l.qty === l.truthQty).length, L.length),
     C_qtyRowCorrect_ofDetected: pct(F.filter(l => l.qtyRow === l.truthQty).length, F.length),
@@ -168,29 +179,35 @@ function summary(rows, learnedMode) {
     D_knownTopCorrect: pct(known.filter(l => l.top === l.truthStock).length, known.length),
     D_wrongTopForKnown: known.filter(l => l.top && l.top !== l.truthStock).length,
     D_newWithStockSuggested: `${fresh.filter(l => l.top).length} of ${fresh.length}`,
-    D_autoLinked: `${auto.length} (${learnedMode ? 'learned aliases present' : 'no learned aliases: pre-selection cannot happen'})`,
+    D_autoLinked: learnedMode ? `${auto.length} (aliases learned from the OCR text of EARLIER receipts only; ${Math.max(0, ...rows.map(r => r.learnedAliases || 0))} aliases learned before the last receipt)` : `${auto.length} (no learned aliases: pre-selection cannot happen)`,
+    D_learnedLaterOccurrences: learnedMode ? L.filter(l => l.learnedBefore).length : '未測定（--learned なし）',
     D_autoLinkedWrong: auto.filter(l => l.truthStock === null || (typeof l.truthStock === 'string' && l.truthStock !== 'any' && l.autoLinkedTo !== l.truthStock)).length,
     D_autoLinkedUnknown: auto.filter(l => l.truthStock === 'any').length,
     estimatedCorrections: { median: med(edits), max: Math.max(...edits), total: edits.reduce((a, b) => a + b, 0) },
     ms: TEXT ? '未測定（文字列モード）' : { median: med(rows.map(r => r.ms)), max: Math.max(...rows.map(r => r.ms)) },
     stoppedAtSubtotal: `${rows.filter(r => r.stoppedAtSubtotal).length}/${rows.length}`,
+    B_unreadPlaces: rows.some(r => r.unreadPlaces === null) ? '未測定（OCRの除外断片を保存していない実行）' : { total: rows.reduce((s, r) => s + r.unreadPlaces, 0), max: Math.max(...rows.map(r => r.unreadPlaces)), receiptsWithAny: rows.filter(r => r.unreadPlaces > 0).length, inReadLines: rows.reduce((s, r) => s + r.unreadInLine, 0) },
+    countNotChecked: `${rows.filter(r => r.printedCount === null).length}/${rows.length} receipts: printed count not read (the screen says the count check was not possible)`,
   };
 }
-// --learned: the registered products carry the receipt text confirmed for them before (the printed name of
-// every truth row linked to a product, as if the family had confirmed it once), plus aliases of OTHER
-// products that look alike (same name with another size/flavour) to measure wrong pre-selection.
-function learnedStock(stock) {
-  const out = stock.map(x => ({ ...x, receiptAliases: [] }));
-  for (const r of truthAll) for (const t of r.lines) {
-    const it = out.find(x => x.id === t.stock); if (it) match.remember(it, t.name);
+// --learned (v49 2nd audit): receipts are read in id order; after each receipt the text the APP would remember
+// on confirmation (the parsed row's OCR text, receipt.js onSaved → remember(item, raw)) is stored for the rows
+// that the truth links to a registered product, and only LATER receipts are evaluated with it. No alias is
+// made from the truth names. The ids are not purchase dates; with 15 receipts few products repeat, so the
+// number of later occurrences is reported next to the result.
+function learnAfter(stock, row) {
+  let n = 0;
+  for (const l of row.lines) {
+    if (!l.found || typeof l.truthStock !== 'string' || l.truthStock === 'any' || !l.parsedItem) continue;
+    const it = stock.find(x => x.id === l.truthStock); if (it && l.parsedItem.raw) { match.remember(it, l.parsedItem.raw); n++; }
   }
-  for (const [id, alias] of (Array.isArray(STOCK_RAW) ? [] : STOCK_RAW.nearAliases || [])) { const it = out.find(x => x.id === id); if (it) match.remember(it, alias); }
-  return out;
+  return n;
 }
 
 (async () => {
   const parse = parser(); parseApi = parse;
-  const EVAL_STOCK = LEARNED ? learnedStock(STOCK) : STOCK;
+  const EVAL_STOCK = LEARNED ? STOCK.map(x => ({ ...x, receiptAliases: [] })) : STOCK;
+  const seenStock = new Set();let aliasCount = 0;
   const rows = [];
   let browser, page, worker;
   if (!TEXT && !CACHE && ENGINE === 'ppocr') {
@@ -222,13 +239,13 @@ function learnedStock(stock) {
     await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
   }
   for (const r of truth) {
-    let input, ocr = null, ms = 0;
+    let input, ocr = null, ms = 0, dropped = null;
     if (CACHE) {
       // Parser-only iteration on OCR output saved by an earlier run (EVAL_SAVE_OCR); OCR is not re-run.
       const z = JSON.parse(fs.readFileSync(path.join(CACHE, r.id + '.ocr.json'), 'utf8'));
       // Raw OCR boxes are regrouped with the current receipt-ocr-lines-v49.js, so line-grouping changes are measured too.
       const regrouped = z.items ? require(process.env.LINES_JS || path.join(APP_DIR, 'receipt-ocr-lines-v49.js')).groupBoxes(z.items) : null;
-      ocr = { text: regrouped ? regrouped.map(l => l.text).join('\n') : z.text, confidence: z.confidence }; input = regrouped || (z.lines ? z.lines : { text: z.text, tsv: z.tsv }); ms = z.ms;
+      ocr = { text: regrouped ? regrouped.map(l => l.text).join('\n') : z.text, confidence: z.confidence }; input = regrouped || (z.lines ? z.lines : { text: z.text, tsv: z.tsv }); ms = z.ms; dropped = z.dropped || null;
     } else if (TEXT) {
       const f = path.join(DIR, 'text', r.id + '.txt');
       if (!fs.existsSync(f)) { console.error(`${r.id}: no transcription, skipped`); continue; }
@@ -243,15 +260,15 @@ function learnedStock(stock) {
         const R = window.AtokoreReceiptImage, O = window.AtokoreReceiptOcr, L = window.AtokoreReceiptLines, S = window.AtokoreReceiptStructure;
         const p = await R.prepare(new File([u], 'r.jpg', { type: 'image/jpeg' }));
         const items = await O.readReceipt(p, { stopAfter: got => S.itemListEnded(L.groupBoxes(got)) });
-        return { turn: items.turn, items: [...items], stats: items.stats };
+        return { turn: items.turn, items: [...items], dropped: items.dropped || null, stats: items.stats };
       }, bytes);
       ms = Date.now() - t0;
       const lines = require(path.join(APP_DIR, 'receipt-ocr-lines-v49.js')).groupBoxes(res.items);
       ocr = { text: lines.map(l => l.text).join('\n'), confidence: null };
-      input = lines;
+      input = lines; dropped = res.dropped;
       if (process.env.EVAL_SAVE_OCR) {
         fs.writeFileSync(path.join(process.env.EVAL_SAVE_OCR, r.id + '.ocr.txt'), ocr.text);
-        fs.writeFileSync(path.join(process.env.EVAL_SAVE_OCR, r.id + '.ocr.json'), JSON.stringify({ text: ocr.text, lines, items: res.items, confidence: null, ms, turn: res.turn, stats: res.stats }));
+        fs.writeFileSync(path.join(process.env.EVAL_SAVE_OCR, r.id + '.ocr.json'), JSON.stringify({ text: ocr.text, lines, items: res.items, dropped: res.dropped, confidence: null, ms, turn: res.turn, stats: res.stats }));
       }
     } else {
       const bytes = fs.readFileSync(path.join(DIR, 'img', r.id + '.jpg')).toString('base64');
@@ -282,7 +299,10 @@ function learnedStock(stock) {
       }
     }
     const parsed = parse.parseReceipt(input);
-    const row = { id: r.id, split: r.split, ms, ocrConfidence: ocr ? Math.round(ocr.confidence) : null, ...evaluate(r, parsed, ocr, EVAL_STOCK) };
+    const row = { id: r.id, split: r.split, ms, ocrConfidence: ocr ? Math.round(ocr.confidence) : null, learnedAliases: aliasCount, ...evaluate(r, parsed, ocr, EVAL_STOCK, dropped, input) };
+    for (const l of row.lines) { const known = typeof l.truthStock === 'string' && l.truthStock !== 'any'; l.learnedBefore = LEARNED && known && seenStock.has(l.truthStock); if (known && l.found) seenStock.add(l.truthStock); }
+    if (LEARNED) aliasCount += learnAfter(EVAL_STOCK, row);
+    for (const l of row.lines) delete l.parsedItem;
     rows.push(row);
     const L = row.lines;
     console.log(`${r.id} ${TEXT ? 'text' : ms + 'ms'} found ${L.filter(l => l.found).length}/${L.length} qtyOK ${L.filter(l => l.found && l.qty === l.truthQty).length} extras ${row.extras.length}${ocr ? ' ocrRead80 ' + L.filter(l => l.ocrRead >= 0.8).length : ''}`);

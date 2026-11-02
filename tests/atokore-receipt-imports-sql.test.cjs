@@ -53,6 +53,10 @@ test('giving up releases only one\'s own pending reservation; an abandoned one c
   const over = await call(db, A, 'hh_receipt_claim', { p_fingerprint: FP });
   assert.equal(over.claimed, true);
   assert.equal(over.tookOver, true);
+  // The member whose import was left unfinished is named, so the caller can warn before going on.
+  assert.ok(over.who && over.at, 'who started the abandoned import and when');
+  // The late finish of the earlier member is refused (the record is A's now): the app queues and warns.
+  assert.equal((await call(db, B, 'hh_receipt_finish', { p_fingerprint: FP, p_done: true })).ok, false);
   // A finished import is never taken over.
   await call(db, A, 'hh_receipt_finish', { p_fingerprint: FP, p_done: true });
   await db.query("update atokore_private.receipt_imports set updated_at = now() - interval '2 days'");

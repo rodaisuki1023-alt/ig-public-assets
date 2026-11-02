@@ -121,12 +121,11 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Receipt-reading models: cache first (large, immutable per file name); downloaded on first use only.
+  // Receipt-reading parts: served from their cache when present, otherwise from the network. The worker does
+  // not store them: the page (receipt-ppocr-v49.js) stores each part only after its SHA-256 matched, waits for
+  // the result and tells the person when it could not be stored (v49 2nd audit).
   if (/\/ocr\/[^/]+$/.test(url.pathname)) {
-    event.respondWith(caches.open(MODEL_CACHE).then(cache => cache.match(request).then(hit => hit || fetch(request).then(response => {
-      if (response && response.ok && response.type === 'basic') cache.put(request, response.clone()).catch(() => {});
-      return response;
-    }))));
+    event.respondWith(caches.open(MODEL_CACHE).then(cache => cache.match(request)).then(hit => hit || fetch(request)));
     return;
   }
 

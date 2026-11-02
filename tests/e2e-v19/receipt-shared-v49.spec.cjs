@@ -181,3 +181,22 @@ test('family: imported offline, the check runs when the connection is back and o
     expect(await senbei(b.page)).toBe(local);
   } finally { await a.ctx.close(); await b.ctx.close(); }
 });
+
+test('family: a shared server without the receipt functions (not applied yet) is named as such; no later check is promised', async ({ browser, request }, info) => {
+  test.setTimeout(150000);
+  const { a, b } = await pair(browser, request, info);
+  try {
+    // The shared server answers as PostgREST does for a function that does not exist.
+    await a.page.route(EMU + '/rest/v1/rpc/hh_receipt_*', route => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST202', message: 'Could not find the function public.hh_receipt_claim' }) }));
+    await readTextOn(a.page, FACT_RECEIPT());
+    await a.page.locator('#receiptApplyBtn').click();
+    await expect(a.page.locator('#atkConfirmTitle')).toHaveText('家族の取り込み状況は確認できません');
+    await expect(a.page.locator('#atkConfirmNote')).toContainText('まだ対応していません');
+    await expect(a.page.locator('#atkConfirmNote')).not.toContainText('通信が戻');
+    await a.page.locator('#atkConfirm .atk-confirm-primary').click();
+    await a.page.locator('#qaCommit').click();
+    await expect(a.page.locator('#pg-stock')).toHaveClass(/on/);
+    expect(await senbei(a.page)).toBe(1);
+    expect(a.page.__errors).toEqual([]);
+  } finally { await a.ctx.close(); await b.ctx.close(); }
+});

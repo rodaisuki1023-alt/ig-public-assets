@@ -47,10 +47,11 @@ const COUNT_WORD='(?:コ|個|ケ|ヶ|ヵ|カ|点|本|袋|パック|枚|入)';
 function quantityLine(raw){
  const s=hw(raw).replace(/\s+/g,' ').trim().replace(/^\(\s*|\s*\)$/g,'').trim();
  let qty=null,unit=null,total=null,m;
- // "2コ X 単68 ¥136", "2. x単98 ¥196" (コ read as .), "2個 x @198", "2個 x 0198" (@ read as 0)
- if((m=s.match(new RegExp('^(\\d{1,2})\\s*(?:'+COUNT_WORD+'|\\.)?\\s*[xX]\\s*(?:単価?|@|[06](?=\\d{2,}))?\\s*[¥\\\\]?\\s*(\\d[\\d,]*)(?:\\s*円)?(?:\\s+[¥\\\\]?\\s*(\\d[\\d,]*))?\\s*[外内※*＊]?$'))))[qty,unit,total]=[+m[1],+m[2].replace(/,/g,''),m[3]?+m[3].replace(/,/g,''):null];
+ // "2コ X 単68 ¥136", "2. x単98 ¥196" (コ read as .), "2個 x @198", "2個 x 0198" (@ read as 0); the space before
+ // the total may be missing when the print is proportional ("2コ X単98¥196", v49 2nd audit).
+ if((m=s.match(new RegExp('^(\\d{1,2})\\s*(?:'+COUNT_WORD+'|\\.)?\\s*[xX]\\s*(?:単価?|@|[06](?=\\d{2,}))?\\s*[¥\\\\]?\\s*(\\d[\\d,]*)(?:\\s*円)?(?:(?:\\s+[¥\\\\]?|\\s*[¥\\\\])\\s*(\\d[\\d,]*))?\\s*[外内※*＊]?$'))))[qty,unit,total]=[+m[1],+m[2].replace(/,/g,''),m[3]?+m[3].replace(/,/g,''):null];
  // "@160 x 2個", "990@ x 4個 ¥3,960", "単98 x 2コ"
- else if((m=s.match(new RegExp('^(?:単価?|@)?\\s*[¥\\\\]?\\s*(\\d[\\d,]*)\\s*@?\\s*[xX]\\s*(\\d{1,2})\\s*'+COUNT_WORD+'(?:\\s+[¥\\\\]?\\s*(\\d[\\d,]*))?\\s*[外内※*＊]?$'))))[unit,qty,total]=[+m[1].replace(/,/g,''),+m[2],m[3]?+m[3].replace(/,/g,''):null];
+ else if((m=s.match(new RegExp('^(?:単価?|@)?\\s*[¥\\\\]?\\s*(\\d[\\d,]*)\\s*@?\\s*[xX]\\s*(\\d{1,2})\\s*'+COUNT_WORD+'(?:(?:\\s+[¥\\\\]?|\\s*[¥\\\\])\\s*(\\d[\\d,]*))?\\s*[外内※*＊]?$'))))[unit,qty,total]=[+m[1].replace(/,/g,''),+m[2],m[3]?+m[3].replace(/,/g,''):null];
  if(qty===null)return null;
  if(unit&&total){const r=total/unit;if(Number.isInteger(r)&&r>=1&&r<=30)qty=r}
  if(!(qty>=1&&qty<=30))return null;
@@ -90,15 +91,24 @@ function letters(s){return (s.match(/[ぁ-んァ-ヶ一-龠々ーA-Za-z]/g)||[])
 function jpLetters(s){return (s.match(/[ぁ-んァ-ヶ一-龠々]/g)||[]).length}
 function nameLike(s){const t=s.replace(/[\d\s.,¥\\%*＊※()（）\-]/g,'');return jpLetters(t)>=2||(/[A-Za-z]{3,}/.test(t)&&letters(t)>=3)||/^(?:米|卵|麺|塩|酢|油|茶|豆|葱)$/.test(t)||/^[A-Za-z]{1,3}-?\d{1,3}$/.test(s.trim())}
 const JAN=/^\d{8,14}(?:\s|$)/;
+const SUM_DOUBTS=['金額がそれまでの合計とほぼ同じ（小計の読み違いの可能性）','小計とみられる行より後に読み取った行'];
+// Within 98-111% of the items so far: the subtotal, or the total with 8-10% tax.
+function nearSum(v,sum){return v>=Math.round(sum*0.98)&&v<=Math.round(sum*1.11)}
+// A label that can only be a misread 小計/合計 (large print split or misread) or has no letters at all.
+function subtotalLike(name){const t=fixKei(hw(name).replace(/[\s　|｜!！*＊※#＃:：【】\[\]()（）.・-]/g,''));return letters(t)===0||/^[小合](?:計|言|叶|吋|十|卜|ト|言十|叶十|言卜|計十)?$/.test(t)||/^(?:十|計|言十|叶十|計十)$/.test(t)}
 
 // Stage 3c: classify every line, then assemble products with their quantities.
 function structure(lines){
  const L=(lines||[]).map(l=>({text:clean(typeof l==='string'?l:l.text),confidence:typeof l==='object'&&Number.isFinite(l?.confidence)?l.confidence:null,minScore:typeof l==='object'&&Number.isFinite(l?.minScore)?l.minScore:null,area:typeof l==='object'&&Number.isFinite(l?.top)?{top:l.top,bottom:l.bottom,left:l.left,right:l.right}:null})).filter(l=>l.text);
- const products=[],rejected=[];let boundary=null,count=null,afterCpn=false,sum=0;
+ const products=[],rejected=[];let boundary=null,count=null,afterCpn=false,sum=0,sumLine=null;
  for(let i=0;i<L.length;i++){
   const line=L[i],s=line.text;
   if(isSubtotal(s)||isTotal(s)||isTaxSummary(s)){
-   boundary={text:s,kind:isSubtotal(s)?'subtotal':isTotal(s)?'total':'tax'};
+   boundary={text:s,kind:isSubtotal(s)?'subtotal':isTotal(s)?'total':'tax',area:line.area};
+   // A printed subtotal equal to the items read (or a total within tax of it) shows that every line kept
+   // so far was a purchase: the doubts about the amount are cleared.
+   const bp=priceTail(s),covers=bp&&!bp.negative&&(boundary.kind==='subtotal'?bp.value===sum:boundary.kind==='total'&&nearSum(bp.value,sum));
+   if(covers)products.forEach(p=>{p.doubt=(p.doubt||[]).filter(d=>!SUM_DOUBTS.includes(d))});
    // The item count is printed on or shortly after the boundary line; it wins over a count printed
    // inside the item list (a warehouse club prints one for the bottom-of-basket items).
    for(let k=i;k<Math.min(L.length,i+12);k++){const c=printedCount(L[k].text);if(c!==null){count=c;break}}
@@ -123,14 +133,24 @@ function structure(lines){
   const name=(price?s.slice(0,price.index):s).trim();
   // A line whose amount is the sum of the items so far (with or without tax) is the subtotal or total even
   // when its label is misread ("小叶十", "十"): a short label is never taken as a product then.
-  if(price&&sum>0&&products.length>=2&&jpLetters(name)<=3&&letters(name)<=4&&price.value>=Math.round(sum*0.98)&&price.value<=Math.round(sum*1.11)){
-   boundary={text:s,kind:'sum'};for(let k=i;k<Math.min(L.length,i+12);k++){const c=printedCount(L[k].text);if(c!==null){count=c;break}}break;
+  // v49 2nd audit: the amount alone never ends the list. A real product can cost what the items so far cost
+  // (¥500+¥500 then ¥1,050), so reading goes on to the printed subtotal / total / tax / payment line:
+  // - a label that is a misread 小計/合計 (or no letters at all) is not a product; it is listed for review;
+  // - a short product name at that amount is kept, unselected, with the reason shown.
+  // Lines read after a subtotal-like line stay products but are marked, unless the printed subtotal later
+  // confirms they were part of the purchase.
+  let doubt=null;
+  if(price&&sum>0&&products.length>=2&&jpLetters(name)<=3&&letters(name)<=4&&nearSum(price.value,sum)){
+   if(subtotalLike(name)){if(!sumLine)sumLine={line:i,text:s,area:line.area,count:products.length};rejected.push({text:s,reason:'小計か合計とみられる行（金額がそれまでの商品の合計とほぼ同じ）',area:line.area,sumLike:true});continue}
+   doubt=SUM_DOUBTS[0];
   }
   if(!nameLike(name)){if(price||letters(name))rejected.push({text:s,reason:'商品名として判定できない文字',area:line.area});continue}
   const coupon=afterCpn;afterCpn=false;
-  products.push({line:i,text:name,source:s,qty:1,qtyLine:'',qtyChecked:false,priced:!!price,price:price?price.value:null,structured:!!price,coupon,confidence:line.confidence,minScore:line.minScore,area:line.area});
+  products.push({line:i,text:name,source:s,qty:1,qtyLine:'',qtyChecked:false,priced:!!price,price:price?price.value:null,structured:!!price,coupon,confidence:line.confidence,minScore:line.minScore,area:line.area,doubt:doubt?[doubt]:(sumLine?[SUM_DOUBTS[1]]:[])});
   if(price&&!coupon)sum+=price.value;
  }
+ // No printed subtotal/total/tax line was read: the subtotal-like line is the best known end (for the count).
+ if(!boundary&&sumLine){boundary={text:sumLine.text,kind:'sum',area:sumLine.area};for(let k=sumLine.line;k<Math.min(L.length,sumLine.line+12);k++){const c=printedCount(L[k].text);if(c!==null){count=c;break}}}
  // A name without price that got no quantity line is uncertain (the price may have been lost): it is
  // listed for review. Before the first real product it is the store header and is skipped.
  const out=[],first=products.findIndex(p=>p.structured);

@@ -93,6 +93,66 @@ test('the item list ends at subtotal, total or the tax summary, even when the la
   assert.equal(S.itemListEnded(['テスト商品A ¥100', 'テスト商品B ¥200']), false);
 });
 
+test('v49 2nd audit: an amount equal to the items so far never ends the list (real products are kept)', () => {
+  const view = text => { const r = parse(text); return { items: r.items.map(x => [x.name, x.selected, x.reasons]), rejected: r.rejected.map(x => x.text), kind: r.boundary && r.boundary.kind }; };
+  const SUM = '金額がそれまでの合計とほぼ同じ（小計の読み違いの可能性）', AFTER = '小計とみられる行より後に読み取った行';
+  // Near the running total (¥1,050 after ¥1,000), the same amount, and the same amount after a discount:
+  // the printed subtotal equals every line kept, so all are purchases and nothing needs review.
+  for (const text of ['商品甲 ¥500\n商品乙 ¥500\n豆乳 ¥1050\n商品丙 ¥200\n小計 ¥2250',
+    '商品甲 ¥500\n商品乙 ¥500\n豆乳 ¥1000\n商品丙 ¥200\n小計 ¥2200',
+    '商品甲 ¥500\n商品乙 ¥700\n値引 -¥200\n豆乳 ¥1000\n商品丙 ¥200\n小計 ¥2200']) {
+    assert.deepEqual(view(text).items, [['商品甲', true, []], ['商品乙', true, []], ['豆乳', true, []], ['商品丙', true, []]], text);
+  }
+  // No printed subtotal or item count: kept, unselected, with the reason shown; the next line is normal.
+  assert.deepEqual(view('商品甲 ¥500\n商品乙 ¥500\n豆乳 ¥1000\n商品丙 ¥200').items,
+    [['商品甲', true, []], ['商品乙', true, []], ['豆乳', false, [SUM]], ['商品丙', true, []]]);
+  // The printed subtotal does not include it: still kept for review, never dropped.
+  assert.deepEqual(view('商品甲 ¥500\n商品乙 ¥500\n豆乳 ¥1000\n小計 ¥1000\n合計 ¥1080').items,
+    [['商品甲', true, []], ['商品乙', true, []], ['豆乳', false, [SUM]]]);
+  // A real subtotal and a misread one still end the list; tax and payment are never products.
+  let v = view('商品甲 ¥500\n商品乙 ¥500\n小計 ¥1000\n外税8% ¥80\n合計 ¥1080\nお預り ¥2000');
+  assert.deepEqual(v.items.map(x => x[0]), ['商品甲', '商品乙']); assert.equal(v.kind, 'subtotal');
+  v = view('商品甲 ¥500\n商品乙 ¥500\n小叶十 ¥1000\n外税8% ¥80\n合計 ¥1080');
+  assert.deepEqual(v.items.map(x => x[0]), ['商品甲', '商品乙']); assert.equal(v.kind, 'subtotal');
+  // A label that can only be a misread 計 is listed for review, not a product; lines after it stay products,
+  // marked unless the printed subtotal shows they were bought.
+  v = view('商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\n商品丙 ¥200\n小計 ¥1200');
+  assert.deepEqual(v.items, [['商品甲', true, []], ['商品乙', true, []], ['商品丙', true, []]]);
+  assert.deepEqual(v.rejected, ['十 ¥1000']);
+  v = view('商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\n広告の行 ¥300\n合計 ¥1080');
+  assert.deepEqual(v.items.at(-1), ['広告の行', false, [AFTER]]);
+  assert.deepEqual(v.rejected, ['十 ¥1000']);
+  v = view('商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\nポイント 10');
+  assert.deepEqual(v.items.map(x => x[0]), ['商品甲', '商品乙']); assert.equal(v.kind, 'sum');
+});
+
+test('v49 2nd audit: unread OCR runs inside the item list are reported by place; never products', () => {
+  const box = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  const line = (text, top) => ({ text, top, bottom: top + 30, left: 20, right: 400, confidence: 90, minScore: 90 });
+  const lines = [line('テスト店', 10), line('商品甲 ¥100', 100), line('商品乙 ¥200', 150), line('商品丙 ¥300', 250), line('小計 ¥600', 300), line('ポイント 6', 400)];
+  const p = JSON.parse(JSON.stringify(R.parseReceipt(lines)));
+  assert.deepEqual(p.items.map(x => x.name), ['商品甲', '商品乙', '商品丙']);
+  const dropped = [
+    { box: box(10, 15, 30, 20), score: 0.2 },   // store header: above the first product, not listed
+    { box: box(300, 152, 40, 24), score: 0.3 }, // on a line that was read: part of that line
+    { box: box(30, 202, 120, 26), score: 0.4 }, // between lines: a possibly missed product (two runs, one place)
+    { box: box(200, 204, 60, 24), score: 0.1, empty: true },
+    { box: box(30, 410, 200, 26), score: 0.2 }, // after the subtotal: payment / advertising, not listed
+  ];
+  const u = JSON.parse(JSON.stringify(R.unreadAreas(lines, p, dropped)));
+  assert.equal(u.total, 3); assert.equal(u.inLine, 1); assert.equal(u.places.length, 1); assert.equal(u.places[0].n, 2);
+  assert.ok(u.places[0].top >= 200 && u.places[0].bottom <= 230);
+  assert.deepEqual(p.items.map(x => x.name), ['商品甲', '商品乙', '商品丙']); // nothing became a product
+  assert.deepEqual(JSON.parse(JSON.stringify(R.unreadAreas(lines, p, []))), { places: [], inLine: 0, total: 0 });
+});
+
+test('v49 2nd audit: a quantity line read without the space before the total (proportional print)', () => {
+  for (const q of ['2コ X単98¥196', '2コX単98¥196', '2コ X 単98 ¥196']) assert.deepEqual({ ...S.quantityLine(q) }, { qty: 2, unitPrice: 98, total: 196, checked: true }, q);
+  assert.deepEqual({ ...S.quantityLine('@160 x 2個¥320') }, { qty: 2, unitPrice: 160, total: 320, checked: true });
+  // The line above keeps its name and gets the quantity; the quantity line is never a product.
+  assert.deepEqual(rows('0011 テスト炭酸水 500ml\n2コ X単98¥196\n小計 ¥196'), [['テスト炭酸水 500ml', 2]]);
+});
+
 test('the printed item count is read in its common forms', () => {
   for (const [line, n] of [['お買上点数 9点', 9], ['小計/ 6点 ¥866', 6], ['小計 3点 ¥300', 3], ['買上点数 26点', 26], ['御買上げ点数 :15', 15], ['10点買', 10]]) assert.equal(S.printedCount(line), n, line);
   const r = parse('テスト商品A ¥100\nテスト商品B\n2コ X 単50 ¥100\n小計/ 3点 ¥200');
@@ -108,7 +168,7 @@ test('header text and store codes are not products; department and tax codes lea
 
 test('OCR quirks are tidied in names: Chinese forms of receipt words, voicing marks of half-width kana', () => {
   assert.equal(S.hw('2コX单68'), '2コX単68');
-  assert.deepEqual(rows('テストプ*レント*アイスコ-ヒ- ¥980\nオーカ°ニックハ°ナナ ¥399\n小计 ¥1,379'), [['テストブレンドアイスコーヒー', 1], ['オーガニックパナナ', 1]]);
+  assert.deepEqual(rows('テストプ*ラント*パン ¥980\nテストカ°ムハ°イ ¥399\n小计 ¥1,379'), [['テストブランドパン', 1], ['テストガムパイ', 1]]);
 });
 
 test('a generic name replaces the printed one only when the word is most of the name', () => {
@@ -133,41 +193,41 @@ test('OCR boxes on one printed line are joined left to right', () => {
   const box = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const lines = L.groupBoxes([
     { box: box(400, 102, 80, 30), text: '*108', score: 0.99 },
-    { box: box(20, 100, 300, 32), text: 'テスト白桃烏龍茶 600ml', score: 0.97 },
-    { box: box(20, 150, 300, 32), text: 'テストポッキー', score: 0.9 },
+    { box: box(20, 100, 300, 32), text: 'テスト緑茶 600ml', score: 0.97 },
+    { box: box(20, 150, 300, 32), text: 'テストスナック', score: 0.9 },
     { box: box(400, 149, 80, 30), text: '*233', score: 0.98 },
   ]);
-  assert.deepEqual(lines.map(l => l.text), ['テスト白桃烏龍茶 600ml *108', 'テストポッキー *233']);
+  assert.deepEqual(lines.map(l => l.text), ['テスト緑茶 600ml *108', 'テストスナック *233']);
   assert.ok(lines.every(l => l.confidence >= 90));
 });
 
 test('v49 audit: general OCR repairs are flagged, never silent; separators and real words are kept', () => {
   const one = text => parse(text + '\n小計 ¥100').items[0];
   // A half-width voicing mark read as "・" between kana; a real separator after ル stays.
-  let it = one('ハリホ・ーコ・ールト・ベア ¥100');
-  assert.equal(it.name, 'ハリボーゴールドベア');
+  let it = one('テストカ・ーテ・ンセット ¥100');
+  assert.equal(it.name, 'テストガーデンセット');
   assert.ok(it.reasons.includes('濁点か半濁点か不確か') && !it.selected);
-  assert.equal(one('イル・チッチョ 生ハム ¥100').name, 'イル・チッチョ生ハム');
+  assert.equal(one('テストル・ポワン 生地 ¥100').name, 'テストル・ポワン生地');
   // One hiragana letter inside a katakana word is flagged, not changed; particles are real words.
-  it = one('オーがニックバナナ ¥100');
-  assert.equal(it.name, 'オーがニックバナナ');
+  it = one('テストクがーパン ¥100');
+  assert.equal(it.name, 'テストクがーパン');
   assert.ok(it.reasons.includes('読み違いの可能性がある文字'));
-  it = one('ヤッポーのチキンナゲット ¥100');
-  assert.equal(it.name, 'ヤッポーのチキンナゲット');
+  it = one('テストポーのチキン ¥100');
+  assert.equal(it.name, 'テストポーのチキン');
   assert.equal(it.reasons.length, 0);
   // Katakana ニ between kanji; traditional 產; a code with ☆ before the name.
-  assert.equal(one('不ニ家 アンパンマン ¥100').name, '不二家アンパンマン');
-  assert.equal(one('エクアドル產バナナ ¥100').name, 'エクアドル産バナナ');
-  assert.equal(one('0008☆ブロッコリー ¥100').raw, 'ブロッコリー');
+  assert.equal(one('山ニ屋 テストせんべい ¥100').name, '山二屋テストせんべい');
+  assert.equal(one('外国產テストバナナ ¥100').name, '外国産テストバナナ');
+  assert.equal(one('0008☆テスト野菜 ¥100').raw, 'テスト野菜');
   // "7" before katakana may be a misread ア: flagged, not changed ("7P" brand names stay as printed).
-  it = one('7イリス強炭酸水 ¥100');
-  assert.equal(it.raw, '7イリス強炭酸水');
+  it = one('7イテストソーダ ¥100');
+  assert.equal(it.raw, '7イテストソーダ');
   assert.ok(it.reasons.includes('読み違いの可能性がある文字'));
-  assert.equal(one('7P白桃烏龍茶 600ml *108').reasons.length, 0);
+  assert.equal(one('7Pテスト茶 600ml *108').reasons.length, 0);
 });
 
 test('v49 audit: a misread voicing mark still finds the registered product, sizes still block', () => {
-  assert.deepEqual(M.candidates('プロッコリー', [{ id: 1, name: 'ブロッコリー' }]).map(c => c.item.id), [1]);
+  assert.deepEqual(M.candidates('テストプロック', [{ id: 1, name: 'テストブロック' }]).map(c => c.item.id), [1]);
   assert.deepEqual(M.candidates('ハナナ', [{ id: 1, name: 'バナナ' }]).map(c => c.item.id), [1]);
   assert.deepEqual(M.candidates('テスト麦茶 650ml', [{ id: 1, name: 'テスト麦茶 2L' }]), []);
 });
