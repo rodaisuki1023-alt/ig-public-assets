@@ -40,6 +40,8 @@ const context = {
   closeM() {},
 };
 context.AtokoreDates={localDate:context.today};
+// v49: the line structure stage is its own module (loaded before receipt.js in index.html).
+context.AtokoreReceiptStructure=require('../atokore-live-v125/receipt-structure-v49.js');
 context.window = context;
 
 vm.runInNewContext(source, context, { filename: 'receipt.js' });
@@ -227,9 +229,13 @@ assert.match(source, /receiptSelectAllV7/);
 assert.match(source, /どの商品ですか？/);
 assert.match(source, /読み取れなかった行/);
 assert.match(source, /確認画面へ進む/);
-assert.doesNotMatch(source, /tesseract\.js@5\//, 'the OCR library version is pinned');
-assert.match(source, /tessedit_pageseg_mode:'6'/);
-assert.match(source, /tsv:true/);
+// v49: the photo is read on the device with PP-OCR (receipt-ppocr-v49.js); tesseract.js is no longer used.
+assert.doesNotMatch(source, /tesseract/i, 'the previous OCR is not loaded any more');
+assert.match(source, /AtokoreReceiptOcr/);
+assert.match(source, /写真はこの端末の中で読み取り、外部には送りません/);
+const ocr = fs.readFileSync(path.join(__dirname, '..', 'atokore-live-v125', 'receipt-ppocr-v49.js'), 'utf8');
+assert.match(ocr, /onnxruntime-web@'\+ORT_VERSION|ORT_VERSION='1\.30\.0'/, 'the OCR runtime version is pinned');
+assert.match(ocr, /ORT_VERSION='\d+\.\d+\.\d+'/);
 
 console.log('Atokore receipt structure parser: all tests passed');
 
@@ -254,11 +260,17 @@ assert.equal(codePrice.items.length,2, 'coupon lines are not product candidates'
 assert.equal(codePrice.items[0].name,'PRODUCT TEA 10PKS');
 assert.equal(codePrice.items[0].qty,1);
 assert.equal(codePrice.items[1].qty,2);
-assert.ok(codePrice.items.every(x=>x.low&&!x.selected), 'unverified candidates always require explicit selection');
+// v49: a club row is pre-selected only when quantity × unit price equals the printed total (checked
+// arithmetic); otherwise it needs explicit selection and says why.
+assert.ok(codePrice.items.every(x=>!x.low&&x.selected), 'rows whose quantity and amount add up are pre-selected');
+const mismatch = parser.parseReceipt('PRODUCT TEA\n123456 1● 1,398 1,500 E\n合計 1,500');
+assert.equal(mismatch.items.length,1);
+assert.equal(mismatch.items[0].selected,false,'quantity and amount that do not add up need review');
+assert.ok(mismatch.items[0].reasons.includes('数量と金額が合わない'));
 const missingDetail = parser.parseReceipt('PRODUCT TEA\n何か違う行\n小計 100');
 assert.equal(missingDetail.items.length,0);
 
 const noSubtotal = parser.parseReceipt('PRODUCT TEA\n123456 1● 1,398 1,398 E\n**** 合計 1,398\n商品みたいな決済名 999');
 assert.equal(noSubtotal.stoppedAtSubtotal,false, 'total is not mislabeled as a subtotal');
 assert.equal(noSubtotal.items.length,1, 'never evaluate lines after a total');
-assert.equal(noSubtotal.items[0].selected,false);
+assert.equal(noSubtotal.items[0].selected,true, 'the item-code line adds up (1 × 1,398 = 1,398)');

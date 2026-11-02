@@ -69,13 +69,16 @@ jobs:
           node --test tests/atokore-product-photos-v30.test.cjs
           node --test tests/atokore-baby-food-v35.test.cjs
           node --test tests/atokore-batch-review-v36.test.cjs
-          node --test --test-concurrency=1 tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs tests/atokore-history-w2-sql.test.cjs tests/atokore-household-guest-v42.test.cjs
+          node --test --test-concurrency=1 tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs tests/atokore-history-w2-sql.test.cjs tests/atokore-receipt-imports-sql.test.cjs tests/atokore-household-guest-v42.test.cjs
           node --test tests/atokore-household-google-v40.test.cjs
           node --test tests/atokore-home-v43.test.cjs tests/atokore-polish-v44.test.cjs tests/atokore-muse-v45.test.cjs
           node tests/atokore-actions.integration.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
           node --test tests/atokore-receipt-match-v38.test.cjs
+          node --test tests/atokore-receipt-structure-v49.test.cjs
+          node --test tests/atokore-receipt-eval-smoke.test.cjs
+          node --test tests/atokore-receipt-family-queue.test.cjs
           node tests/atokore-pwa.test.cjs
           node --test tests/atokore-routine-catalog-v20.test.cjs
           node --test tests/atokore-routine-stock-one-tap.test.cjs
