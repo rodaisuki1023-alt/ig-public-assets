@@ -132,7 +132,8 @@ test('no unread run found: the photo review still says misses cannot all be dete
   await expect(note).not.toContainText('各行の画像で確認できます');
   await page.locator('#receiptWhole summary').click();
   await expect(page.locator('#receiptWhole img.receiptWholeImg')).toBeVisible();
-  expect(await page.locator('#receiptWhole img.receiptWholeImg').evaluate(i => i.naturalWidth)).toBeGreaterThan(100);
+  // The picture is set when the section opens and decodes afterwards: wait for it, then check it is the photo.
+  await expect.poll(() => page.locator('#receiptWhole img.receiptWholeImg').evaluate(i => i.complete ? i.naturalWidth : 0), { timeout: 5000 }).toBeGreaterThan(100);
 });
 
 test('dropped first product above the first row read is listed; a run on the store-name line is not', async ({ page }) => {
