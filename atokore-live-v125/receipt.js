@@ -1,7 +1,7 @@
 /* あとこれ v12.5m - 小計終了・画面整理対応レシートOCR */
 (()=>{
 const css=`.receiptPick{border:1px dashed #b8c4d6;border-radius:16px;padding:14px;background:#f8fbff;text-align:center}.receiptSourceGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.receiptSourceBtn{position:relative;display:flex;align-items:center;justify-content:center;min-height:48px;padding:9px 7px;border:1px solid #cfe0f3;border-radius:12px;background:#fff;color:#1769aa;font-size:12px;font-weight:900;cursor:pointer}.receiptSourceBtn input{position:absolute!important;width:1px!important;height:1px!important;opacity:0;pointer-events:none}.receiptFileName{margin-top:9px;font-size:11px;color:#667085;overflow-wrap:anywhere}.receiptPreview{width:100%;max-height:260px;object-fit:contain;border-radius:12px;margin-top:10px;background:#f3f4f6}.receiptProgress{height:8px;background:#e9eef5;border-radius:999px;overflow:hidden;margin:10px 0}.receiptProgress>i{display:block;height:100%;width:0;background:#1677ff;transition:width .2s}.receiptReview{border:1px solid #dfe4ea;border-radius:13px;padding:8px;margin:7px 0;background:#fff}.receiptReview.low{border-color:#f6b44c;background:#fffaf0}.receiptCompactTop{display:flex;gap:7px;align-items:center}.receiptCheck{width:24px;height:24px;flex:0 0 24px}.receiptNameInput{min-width:0;flex:1;width:100%;padding:9px 10px;border:1px solid #d9dee7;border-radius:10px;font-size:16px;background:#fff}.receiptDelete{width:42px;height:42px;flex:0 0 42px;border:0;background:#fff0f0;color:#b42318;border-radius:10px;font-size:17px}.receiptCompactBar{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-top:6px}.receiptQty{display:flex;align-items:center;gap:4px}.receiptQtyLabel{font-size:11px;font-weight:900;color:#667085;margin-right:2px}.receiptQty button{width:38px;height:38px;border:0;border-radius:10px;background:#eef2f7;color:#25324a;font-size:18px;font-weight:900}.receiptQty input{width:50px;height:38px;padding:5px;border:1px solid #d9dee7;border-radius:9px;background:#fff;text-align:center;font-size:16px}.receiptItemDetails{flex:1;min-width:0;padding-top:2px}.receiptItemDetails summary{min-height:36px;display:flex;align-items:center;justify-content:flex-end;color:#526176;font-size:11px;font-weight:900;cursor:pointer;list-style:none}.receiptItemDetails summary::-webkit-details-marker{display:none}.receiptGrid{display:grid;gap:7px;margin-top:6px}.receiptGrid.two{grid-template-columns:1fr 1fr}.receiptGrid input,.receiptGrid select,.receiptMeta input{width:100%;padding:9px;border:1px solid #d9dee7;border-radius:9px;font-size:15px;background:#fff}.receiptOriginal{font-size:10px;color:#98a2b3;margin-top:5px;word-break:break-all}.receiptQuality{display:inline-block;padding:2px 6px;border-radius:999px;background:#fff0cc;color:#8a4b00;font-size:10px;font-weight:900}.receiptStatus{padding:10px 12px;border-radius:12px;background:#eef6ff;font-size:13px;margin:10px 0}.receiptWarn{background:#fff4e5;color:#8a4b00}.receiptSelectionBar{display:flex;align-items:center;gap:6px;margin:8px 0}.receiptSelectionBar .btn{padding:7px 9px;font-size:11px}.receiptSelectionCount{margin-right:auto;color:#667085;font-size:11px;font-weight:900}.receiptRaw{width:100%;min-height:120px;padding:10px;border:1px solid #d9dee7;border-radius:10px;font-size:12px}.receiptExcluded{margin:7px 0;padding:7px 9px;border-radius:9px;background:#f7f8fa;color:#667085;font-size:11px;overflow-wrap:anywhere}.receiptMeta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.receiptFoot{position:sticky;bottom:-26px;background:#fff;padding:8px 0 4px;border-top:1px solid #eef0f3}.receiptFoot .row{padding:8px;margin:0 0 6px}@media(max-width:360px){.receiptSourceGrid{grid-template-columns:1fr}.receiptCompactBar{align-items:stretch;flex-direction:column}.receiptItemDetails summary{justify-content:flex-start}}`;
-const st=document.createElement('style');st.textContent=css+'#receiptAnalyzeBtn:disabled{background:#d9dee7;color:#8992a3;box-shadow:none;cursor:not-allowed;opacity:1}';document.head.appendChild(st);
+const st=document.createElement('style');st.textContent=css+'.receiptLineImg{display:block;max-width:100%;height:auto;max-height:44px;margin:6px 0 2px;border-radius:6px;border:1px solid #e3e7ee;background:#fff}.receiptLotNote{margin:6px 0;padding:8px 10px;border-radius:10px;background:#fff4e5;color:#6b3a00;font-size:12px}.receiptExcludedWhy{display:block;color:#8a4b00;font-size:11px}#receiptAnalyzeBtn:disabled{background:#d9dee7;color:#8992a3;box-shadow:none;cursor:not-allowed;opacity:1}';document.head.appendChild(st);
 let R={file:null,previewUrl:'',text:'',store:'',date:'',confidence:0,parsed:[],rejected:[],stoppedAtSubtotal:false,subtotalLine:''},loading=null;
 const $r=id=>document.getElementById(id);
 function fixedUnitBase(n){return /牛乳|低脂肪乳|豆乳|ミネラルウォーター|飲料水|ジュース|炭酸水|醤油|めんつゆ|白だし|料理酒|みりん|酢|洗剤|柔軟剤|ソープ|シャンプー/.test(n)?'本':/豚|鶏|牛肉|牛こま|牛薄切り|ひき肉|鮭|さば|ぶり|あじ|たら|肉|魚/.test(n)?'パック':/米$|お米|無洗米|小麦粉|片栗粉/.test(n)?'袋':/オムツ|パンツ|ゴミ袋|レジ袋|保存袋|防臭袋/.test(n)?'袋':/おしりふき|マスク|ナプキン|離乳食|ベビーフード/.test(n)?'パック':/ティッシュ/.test(n)?'箱':/卵/.test(n)?'個':'個'}
@@ -9,31 +9,90 @@ function fixedUnitBase(n){return /牛乳|低脂肪乳|豆乳|ミネラルウォ�
 function babyKind(n){try{return window.AtokoreBabyKit?.kind(n)||''}catch(e){return ''}}
 function fixedUnit(n){const k=babyKind(n);if(k==='diaper')return '袋';if(k==='wipes')return 'パック';if(k==='milk')return /缶/.test(n)?'缶':/液体/.test(n)?'本':'箱';try{if(window.AtokoreBabyFood?.isFood(n))return '個'}catch(e){}return fixedUnitBase(n)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function openReceipt(){R={file:null,previewUrl:'',text:'',store:'',date:'',confidence:0,parsed:[],rejected:[],stoppedAtSubtotal:false,subtotalLine:''};openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 レシート一括補充</h2><div class="receiptStatus">商品名と数量だけを読み取り、小計で終了します。</div><details class="detail"><summary>読み取りルール</summary><div class="muted" style="margin:8px 0">価格・税・支払い情報・読めない文字は登録しません。解析後に商品名と数量を確認してから在庫へ反映できます。</div></details><div class="receiptPick"><div class="name">レシート画像を選ぶ</div><div class="muted" style="margin-top:5px">レシート全体を正面から、文字が大きく写るように撮ってください。</div><div class="receiptSourceGrid"><label class="receiptSourceBtn">📷 カメラで撮る<input id="receiptCamera" type="file" accept="image/*" capture="environment" onchange="receiptPickedV7(this)"></label><label class="receiptSourceBtn">🖼 写真・ファイルから選ぶ<input id="receiptFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="receiptPickedV7(this)"></label></div><div id="receiptFileName" class="receiptFileName">まだ画像は選択されていません</div><img id="receiptPreview" class="receiptPreview hide" alt="選択したレシート画像"></div><div id="receiptProgressWrap" class="hide"><div id="receiptProgressText" class="muted" style="margin-top:10px">準備中…</div><div class="receiptProgress"><i id="receiptProgressBar"></i></div></div><button id="receiptAnalyzeBtn" class="btn" style="width:100%;margin-top:12px" onclick="analyzeReceiptV7()" disabled>画像を選ぶと解析できます</button><details class="detail" style="margin-top:12px"><summary>レシートの文字を貼って読み取る</summary><div class="muted" style="margin:8px 0">読み取りにくい場合の予備機能です。貼り付けた文字も同じルールで解析します。</div><p class="muted">1行に1商品で入力してください。例：</p><pre class="receipt-example">牛乳 198円
+function openReceipt(){flushClaims().catch(e=>console.warn(e));R={file:null,previewUrl:'',text:'',store:'',date:'',confidence:0,parsed:[],rejected:[],stoppedAtSubtotal:false,subtotalLine:'',unread:null};openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 レシート一括補充</h2><div class="receiptStatus">商品名と数量だけを読み取り、小計で終了します。写真はこの端末の中で読み取り、外部には送りません。</div><details class="detail"><summary>読み取りルール</summary><div class="muted" style="margin:8px 0">価格・税・支払い情報・読めない文字は登録しません。解析後に商品名と数量を確認してから在庫へ反映できます。</div></details><div class="receiptPick"><div class="name">レシート画像を選ぶ</div><div class="muted" style="margin-top:5px">レシート全体を真上から、文字が大きく写るように撮ってください。横向きのままでも読み取れます。</div><div class="receiptSourceGrid"><label class="receiptSourceBtn">📷 カメラで撮る<input id="receiptCamera" type="file" accept="image/*" capture="environment" onchange="receiptPickedV7(this)"></label><label class="receiptSourceBtn">🖼 写真・ファイルから選ぶ<input id="receiptFile" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif" onchange="receiptPickedV7(this)"></label></div><div id="receiptFileName" class="receiptFileName">まだ画像は選択されていません</div><img id="receiptPreview" class="receiptPreview hide" alt="選択したレシート画像"></div><div id="receiptProgressWrap" class="hide"><div id="receiptProgressText" class="muted" style="margin-top:10px">準備中…</div><div class="receiptProgress"><i id="receiptProgressBar"></i></div></div><button id="receiptAnalyzeBtn" class="btn" style="width:100%;margin-top:12px" onclick="analyzeReceiptV7()" disabled>画像を選ぶと解析できます</button><details class="detail" style="margin-top:12px"><summary>レシートの文字を貼って読み取る</summary><div class="muted" style="margin:8px 0">読み取りにくい場合の予備機能です。貼り付けた文字も同じルールで解析します。</div><p class="muted">1行に1商品で入力してください。例：</p><pre class="receipt-example">牛乳 198円
 卵 258円
-小計 456円</pre><p class="muted">改行が消えて1行になった場合は、商品ごとに改行し直してください。</p><textarea id="receiptManualText" class="receiptRaw" placeholder="レシートの文字を貼り付け"></textarea><button class="btn ghost" style="width:100%;margin-top:8px" onclick="analyzeReceiptTextV7()">商品名を解析</button></details>`)}
+小計 456円</pre><p class="muted">改行が消えて1行になった場合は、商品ごとに改行し直してください。</p><textarea id="receiptManualText" class="receiptRaw" placeholder="レシートの文字を貼り付け"></textarea><button class="btn ghost" style="width:100%;margin-top:8px" onclick="analyzeReceiptTextV7()">商品名を解析</button></details><button class="btn ghost receiptCredits" style="width:100%;margin-top:12px" onclick="receiptCreditsV49()">文字認識の部品とライセンス</button>`)}
 window.closeReceiptV7=()=>{if(R.previewUrl)URL.revokeObjectURL(R.previewUrl);closeM()};
+// v49 2nd audit: the attribution and the licenses of the reading parts, reachable from the app itself.
+const CREDIT_FILES=[['帰属表示と変更点（NOTICE）','NOTICE.md'],['Apache License 2.0（PaddleOCR）','licenses/LICENSE-Apache-2.0-PaddleOCR.txt'],['RapidOCR のライセンス','licenses/LICENSE-RapidOCR.txt'],['RapidOCR のモデルの帰属表示','licenses/RapidOCR-MODEL_LICENSES.md'],['MIT License（onnxruntime）','licenses/LICENSE-onnxruntime.txt'],['onnxruntime の第三者通知','licenses/ThirdPartyNotices-onnxruntime.txt']];
+window.receiptCreditsV49=()=>openM(`<button class="close" onclick="showPremium('receipt')">戻る</button><h2>文字認識の部品とライセンス</h2><div class="muted" style="margin:8px 0">レシートの読み取りは、次の部品をこの端末の中で使っています。写真は外部に送りません。</div><ul class="receiptCreditList"><li>文字認識モデル：PaddleOCR PP-OCRv6（Apache License 2.0）。ONNX形式への変換は RapidOCR（Apache License 2.0）。文字の位置を見つけるモデルは、あとこれで8bitに軽量化した改変版です。</li><li>実行部品：onnxruntime-web 1.30.0（MIT License、Microsoft）</li></ul><div class="muted" style="margin:8px 0">各組織が、あとこれを推奨・提携しているという意味ではありません。</div><div class="receiptCreditLinks">${CREDIT_FILES.map(([t,f])=>`<a class="btn ghost" style="display:block;margin-top:8px" href="./ocr/${f}" target="_blank" rel="noopener">${t}</a>`).join('')}</div>`);
 window.receiptPickedV7=input=>{const f=input.files&&input.files[0];if(!f)return;const imageType=/^image\//i.test(f.type||''),imageName=/\.(?:jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(f.name||'');if(!imageType&&!imageName){input.value='';alert('画像ファイルを選んでください（JPG・PNG・HEICなど）');return}R.file=f;R.imageHash=null;try{f.arrayBuffer().then(b=>crypto.subtle.digest('SHA-256',b)).then(h=>{if(R.file===f)R.imageHash=[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}).catch(()=>{})}catch(e){}if(R.previewUrl)URL.revokeObjectURL(R.previewUrl);R.previewUrl=URL.createObjectURL(f);const im=$r('receiptPreview');if(im){im.src=R.previewUrl;im.classList.remove('hide')}const n=$r('receiptFileName');if(n)n.textContent=`選択中：${f.name||'レシート画像'}`;const b=$r('receiptAnalyzeBtn');if(b){b.disabled=false;b.textContent='商品名を解析'}};
 function progress(label,p){const w=$r('receiptProgressWrap');if(w)w.classList.remove('hide');const t=$r('receiptProgressText');if(t)t.textContent=label;const b=$r('receiptProgressBar');if(b)b.style.width=`${Math.max(2,Math.min(100,Math.round((p||0)*100)))}%`}
-function loadOCR(){if(window.Tesseract)return Promise.resolve();if(loading)return loading;loading=new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.async=true;s.onload=res;s.onerror=()=>rej(new Error('OCRライブラリ読込失敗'));document.head.appendChild(s)});return loading}
-async function prep(f){const u=URL.createObjectURL(f);try{const im=new Image();await new Promise((res,rej)=>{im.onload=res;im.onerror=rej;im.src=u});const nw=im.naturalWidth||im.width,nh=im.naturalHeight||im.height;if(!nw||!nh)throw new Error('画像サイズを取得できません');const sc=Math.min(2,Math.max(1,1400/nw),2200/nw,3200/nh),w=Math.max(1,Math.round(nw*sc)),h=Math.max(1,Math.round(nh*sc)),pad=Math.max(16,Math.round(Math.min(w,h)*.018)),c=document.createElement('canvas');c.width=w+pad*2;c.height=h+pad*2;const x=c.getContext('2d',{willReadFrequently:true});x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';x.drawImage(im,pad,pad,w,h);const d=x.getImageData(pad,pad,w,h),p=d.data;for(let i=0;i<p.length;i+=4){const g=Math.round(p[i]*.299+p[i+1]*.587+p[i+2]*.114),v=Math.max(0,Math.min(255,Math.round((g-128)*1.24+140)));p[i]=p[i+1]=p[i+2]=v}x.putImageData(d,pad,pad);return c}finally{URL.revokeObjectURL(u)}}
-window.analyzeReceiptV7=async()=>{if(!R.file){alert('レシートの写真または画像ファイルを選んでください');return}const b=$r('receiptAnalyzeBtn');if(b)b.disabled=true;let w=null;try{progress('OCRを準備しています…',.03);await loadOCR();progress('画像を読みやすく調整しています…',.08);const c=await prep(R.file);w=await Tesseract.createWorker('jpn+eng',Tesseract.OEM.LSTM,{logger:m=>{if(m.status==='recognizing text')progress(`商品名を読み取っています… ${Math.round((m.progress||0)*100)}%`,.12+(m.progress||0)*.82)}});await w.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',user_defined_dpi:'300'});const z=await w.recognize(c,{rotateAuto:true},{text:true,tsv:true});R.text=z.data.text||'';R.confidence=Math.round(z.data.confidence||0);const p=parse({text:R.text,tsv:z.data.tsv||''});R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;progress('商品名の解析完了',1);setTimeout(review,150)}catch(e){console.error(e);progress('読み取りに失敗しました',1);failed();if(b)b.disabled=false}finally{if(w)try{await w.terminate()}catch(e){console.warn(e)}}};
+// v49: the photo is read on this device. Stage 1 finds, crops and turns the paper (receipt-image-v49.js),
+// stage 2 reads the text with PP-OCR (receipt-ppocr-v49.js), stage 3 rebuilds lines and structure.
+// The first use downloads the reading parts once, after asking (data use on mobile networks).
+const OCR_READY='atokoreReceiptOcrV49Ready';
+function ocrReady(){try{return localStorage.getItem(OCR_READY)==='1'}catch(e){return false}}
+async function askDownload(){
+ const O=window.AtokoreReceiptOcr;if(!O)return false;
+ // Asked whenever the parts are not in this browser's cache (also after the site data was cleared).
+ if(O.ready()||await O.cached())return true;
+ const ask=window.AtokoreConfirm?.ask;if(!ask)return true;
+ return ask('読み取りの準備（初回のみ）',`レシートを読み取る部品（最大約${O.DOWNLOAD_MB}MB：文字認識のモデルと実行部品）をダウンロードします。部品はこの端末に保存し、次回からは保存したものを使います。ただし、保存できなかったときや、部品の破損・データの消去・アプリの更新があったときは、もう一度ダウンロードします。写真はこの端末の中で読み取り、外部には送りません。Wi-Fiでの利用をおすすめします。`,'ダウンロードして読み取る');
+}
+let reading=false;
+window.analyzeReceiptV7=async(turn)=>{
+ if(!R.file){alert('レシートの写真または画像ファイルを選んでください');return}
+ if(reading)return;
+ const b=$r('receiptAnalyzeBtn'),I=window.AtokoreReceiptImage,O=window.AtokoreReceiptOcr,Lines=window.AtokoreReceiptLines,S=window.AtokoreReceiptStructure;
+ if(!I||!O||!Lines||!S){failed();return}
+ if(!await askDownload())return;
+ reading=true;if(b)b.disabled=true;
+ try{
+  progress('読み取りの準備をしています…',.02);
+  await O.load(share=>progress(`読み取りの部品をダウンロードしています… ${Math.round(share*100)}%`,.02+share*.28));
+  try{localStorage.setItem(OCR_READY,'1')}catch(e){}
+  const kept=O.storage?O.storage():null;R.partsNotStored=!!(kept&&kept.checked&&!kept.allStored);
+  progress('レシートの位置と向きを調べています…',.32);
+  const prepared=await I.prepare(R.file,turn===undefined?{}:{turn});
+  const got=await O.readReceipt(prepared,{onProgress:x=>progress(`文字を読み取っています… ${Math.round(x*100)}%`,.35+x*.6),stopAfter:items=>S.itemListEnded(Lines.groupBoxes(items))});
+  const lines=Lines.groupBoxes(got),scores=got.map(x=>x.score);
+  R.turn=got.turn;R.sourceCanvas=got.canvas||null;crops.clear();R.paperFound=prepared.found;R.text=lines.map(l=>l.text).join('\n');R.confidence=scores.length?Math.round(100*scores.reduce((s,n)=>s+n,0)/scores.length):0;
+  const p=parse(lines);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;R.facts=p.facts;R.unread=unreadAreas(lines,p,got.dropped);
+  progress('読み取りが終わりました',1);setTimeout(review,150);
+ }catch(e){console.error(e);progress('読み取りに失敗しました',1);failed();if(b)b.disabled=false}
+ finally{reading=false}
+};
+// Read again with the picture turned by a quarter (wrong orientation, or the paper was not found).
+window.receiptRotateV49=()=>{if(!R.file||reading)return;const next=R.turn===90?-90:R.turn===-90?180:R.turn===180?0:90;openReceiptReading();window.analyzeReceiptV7(next)};
+function openReceiptReading(){const keep=R;openReceipt();R=keep;const n=$r('receiptFileName');if(n&&R.file)n.textContent=R.file.name||'選んだ画像';const pv=$r('receiptPreview');if(pv&&R.previewUrl){pv.src=R.previewUrl;pv.classList.remove('hide')}}
 // Reading failed (no network for the OCR files, unsupported image…): offer the next steps in place.
 function failed(){const w=$r('receiptProgressWrap');if(!w)return;let box=$r('receiptFailed');if(!box){box=document.createElement('div');box.id='receiptFailed';box.className='receiptStatus receiptWarn';w.after(box)}box.innerHTML='読み取れませんでした。何も登録していません。<div class="receiptSourceGrid"><button class="btn ghost" onclick="document.getElementById(\'receiptCamera\').click()">撮り直す</button><button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button></div><div class="muted" style="margin-top:6px">文字をコピーできる場合は、下の「レシートの文字を貼って読み取る」も使えます。</div>'}
-window.analyzeReceiptTextV7=()=>{const t=($r('receiptManualText')?.value||'').trim();if(!t){alert('文字を貼り付けてください');return}R.text=t;R.confidence=0;const p=parse(t);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;review()};
+window.analyzeReceiptTextV7=()=>{const t=($r('receiptManualText')?.value||'').trim();if(!t){alert('文字を貼り付けてください');return}R.text=t;R.confidence=0;R.unread=null;const p=parse(t);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;R.facts=p.facts;review()};
 function hw(s){return String(s||'').normalize('NFKC').replace(/，/g,',').replace(/￥/g,'¥').replace(/×/g,'x')}
 function key(s){return hw(s).toLowerCase().replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\]/g,'')}
 function aliases(){try{return JSON.parse(localStorage.getItem('atokoreReceiptAliases')||'{}')||{}}catch(e){return {}}}
 function learn(raw,name){const k=key(raw);if(!k||!name)return;const a=aliases();a[k]=name;try{localStorage.setItem('atokoreReceiptAliases',JSON.stringify(a))}catch(e){}}
 const rules=[[/玉子|たまご|タマゴ|卵/,'卵'],[/豚(?:ばら|バラ)(?:うす切り|薄切り)?/,'豚バラ肉'],[/豚(?:こま|コマ)(?:切れ)?/,'豚こま肉'],[/鶏もも/,'鶏もも肉'],[/鶏むね/,'鶏むね肉'],[/牛乳|おいしいミルク|メグミルク|乳飲料/,'牛乳'],[/豆乳/,'豆乳'],[/食パン|超熟|本仕込/,'食パン'],[/ヨーグルト|ヨーグル/,'ヨーグルト'],[/納豆/,'納豆'],[/豆腐/,'豆腐'],[/バナナ/,'バナナ'],[/りんご|リンゴ/,'りんご'],[/みかん|ミカン/,'みかん'],[/トイレット.*ペーパー|トイレ.*ロール/,'トイレットペーパー'],[/箱?ティッシュ|ティシュ/,'ティッシュ'],[/キッチン.*ペーパー/,'キッチンペーパー'],[/おしり.*ふき/,'おしりふき'],[/おむつ|オムツ|紙パンツ/,'オムツ'],[/柔軟剤/,'柔軟剤'],[/食器.*洗剤/,'食器用洗剤'],[/洗濯.*洗剤|衣料.*洗剤/,'洗濯洗剤'],[/シャンプー/,'シャンプー'],[/コンディショナー|リンス/,'コンディショナー'],[/ボディ.*ソープ/,'ボディソープ'],[/ハンド.*ソープ/,'ハンドソープ'],[/マスク/,'マスク'],[/歯ブラシ/,'歯ブラシ'],[/歯磨|ハミガキ/,'歯磨き粉'],[/ミネラル.*ウォーター|天然水/,'ミネラルウォーター'],[/麦茶/,'麦茶'],[/コーヒー|珈琲/,'コーヒー'],[/冷凍.*餃子/,'冷凍餃子'],[/冷凍.*からあげ|冷凍.*唐揚/,'冷凍からあげ']];
-function canon(raw){const c=hw(raw).replace(/^[*＊※#\s]+/,'').replace(/\s+/g,' ').trim(),k=key(c),l=aliases()[k];if(l)return l;for(const [r,n] of rules)if(r.test(c))return n;for(const arr of Object.values(C))for(const n of arr)if(k===key(n))return n;return c.slice(0,40)||'商品'}
+// v49: a generic name replaces the printed one only when the matched word is most (70%) of the name.
+// "テスト玉子とハムのサンド" is not 卵, "テストバナナケーキミニ" is not バナナ and "テスト麦茶2L" keeps its size.
+function coreText(c,keepSize){const t=hw(c).replace(/\d+(?:\.\d+)?\s*(?:ml|l|g|kg|個入り?|個|枚入り?|枚|本入り?|本|コ|袋|パック|p|入り?)(?![a-z])/gi,'');return (keepSize?t:t.replace(/[SMLＳＭＬ]?サイズ/g,'')).replace(/[\s　*＊※#()（）☆★]/g,'').replace(/(?:^|(?<=[^一-龠]))[大小特]$/,'')}
+// Generic name used only to look for a registered product ("玉子 Lサイズ" can be the registered 卵); the
+// name shown keeps the printed size, so M and L eggs are never shown as the same product.
+function genericName(raw){const core=coreText(hw(raw));for(const [r,n] of rules){const m=core.match(r);if(m&&m[0].length>=Math.max(1,core.length*0.7))return n}return ''}
+function canon(raw){const c=hw(raw).replace(/^[*＊※#☆★\s]+/,'').replace(/\s+/g,' ').trim(),k=key(c),l=aliases()[k];if(l)return l;const core=coreText(c,true);for(const [r,n] of rules){const m=core.match(r);if(m&&m[0].length>=Math.max(1,core.length*0.7))return n}for(const arr of Object.values(C))for(const n of arr)if(k===key(n))return n;return c.slice(0,40)||'商品'}
 function cat(n,r=''){try{if(window.AtokoreBabyFood?.isFood(n+' '+r))return '離乳食'}catch(e){}if(babyKind(n)||babyKind(r))return 'ベビー';for(const [c,a] of Object.entries(C))if(a.includes(n))return c;const s=n+' '+r;if(/オムツ|おしりふき|ミルク|離乳食|ベビー/.test(s))return 'ベビー';if(/洗剤|柔軟剤|ティッシュ|ペーパー|ラップ|スポンジ|ゴミ袋|シャンプー|ソープ|掃除/.test(s))return '日用品';if(/薬|マスク|歯ブラシ|歯磨|ナプキン|消毒|絆創膏|湿布/.test(s))return '衛生・薬';if(/電池|電球|ケーブル|フィルター|カセットボンベ/.test(s))return '家電・生活用品';if(/非常|防災|簡易トイレ|アルファ米/.test(s))return '防災';return /[ぁ-んァ-ヶ一-龠]/.test(s)?'食料品':'その他'}
 function place(n,c){if(/冷凍/.test(n))return '冷凍庫';if(/牛乳|豆乳|卵|ヨーグルト|チーズ|バター|生クリーム|納豆|豆腐|油揚げ|厚揚げ|豚|鶏|牛肉|ひき肉|鮭|さば|ぶり|あじ|たら|レタス|白菜|きゅうり|トマト|ほうれん草|小松菜|ブロッコリー|もやし|きのこ/.test(n))return '冷蔵庫';return c==='食料品'?'パントリー':c==='防災'?'防災収納':'収納'}
 function noise(l){return /合計|小計|税込|税抜|消費税|内税|外税|税率|お預|預り|お釣|釣銭|おつり|クレジット|電子マネー|ポイント|値引|割引|クーポン|レジ(?:No|番号|担当|係|$)|担当|TEL|電話|領収|商品点数|買上点数|商品コード|商品番号|品番|現金|カード|支払|決済|対象額|本体価格|お会計|レシート|取引|会員|バーコード|JAN|登録番号|インボイス|営業時間|住所|郵便|毎度|ありがとう|返品|交換|伝票|発行日時|スキャンNo|ストアNo/.test(l)}
 function compactTokens(s){let t=String(s||'');for(let i=0;i<2;i++)t=t.replace(/([ぁ-んァ-ヶ一-龠々ー])\s+(?=[ぁ-んァ-ヶ一-龠々ー])/g,'$1');return t.replace(/([A-Za-z])\s+(?=\d)/g,'$1').replace(/(\d)\s+(?=(?:ml|l|g|kg|缶|個入|本入|枚入|袋入))/gi,'$1')}
 function productText(raw){return compactTokens(hw(raw).replace(/^[|｜!！:;*＊※#＃\s]+/,'').replace(/^(?:(?:JAN|商品(?:コード|番号)|品番|No\.?)\s*[:：]?\s*)?\d{5,}\s*/i,'').replace(/\b\d{7,}\b/g,' ').replace(/(\d+(?:\.\d+)?)\s+(ml|l|g|kg|個入|本入|枚入|袋入|パック)(?=\s|$)/gi,'$1$2').replace(/\s+(?:単価|@)\s*¥?\s*\d[\d,]*(?:\s*円)?(?:\s*[xX]\s*\d{1,3})?\s*$/i,'').replace(/\s+(?:x|X)\s*\d{1,3}\s*$/,'').replace(/\s+\d{1,3}\s*点\s*$/,'').replace(/(?:^|\s)\d{2,6}(?=\s|$)/g,' ').replace(/\s+/g,' ').trim())}
-function stripRetailPrefix(raw){const s=hw(raw).trim(),m=s.match(/^[\s|｜!！]*[0-9IlOo]{4}(?:\s*(?:軽|経|#\s*[8B]|＃\s*[8B])\s*|\s+(?=\S)|(?=[ぁ-んァ-ヶ一-龠]))/i);return m?{text:s.slice(m[0].length),had:true}:{text:s,had:false}}
-function quantityDetail(raw){const s=hw(raw).replace(/\s+/g,' ').trim(),m=s.match(/^(\d{1,3})\s*(コ|個|本|袋|箱|パック|枚|点)\s*(?:[xX*＊]\s*(?:単(?:価)?|@)?|(?:単(?:価)?|@)\s*)¥?\s*\d[\d,]*(?:\s*¥?\s*\d[\d,]*)?\s*$/);return m?{qty:Math.max(1,+m[1]||1),unit:m[2]==='コ'||m[2]==='点'?'個':m[2]}:null}
+// Department/tax codes printed before the name: "1520軽", "1100#8", "0002 ", "0011ﾃｽﾄ", "13*", "外8 ".
+function stripRetailPrefix(raw){const s=hw(raw).trim(),m=s.match(/^[\s|｜!！]*(?:[0-9IlOo]{4}(?:\s*(?:軽|経|#\s*[8B]|＃\s*[8B])\s*|\s+(?=\S)|(?=[ぁ-んァ-ヶ一-龠☆★])|(?=[A-Za-z]{2,}))|\d{2}\s*[*＊※]\s*|(?:外|内|非)\s*\d{1,2}\s+)/i);return m?{text:s.slice(m[0].length),had:true}:{text:s,had:false}}
+// Marks around the name: reduced-rate "*"/"※"/"☆", tax "外*" "軽", sale "特" and promotion codes ("M001").
+// Half-width katakana is often read with its voicing mark as a separate symbol ("ﾌﾞﾗﾝﾄﾞ" → "プ*ラント*",
+// "ｶﾞ" → "カ°", "ﾌﾞ" → "プ*") and the long-vowel mark as "-". Rejoin them; other text is left as read.
+const VOICED='カガキギクグケゲコゴサザシジスズセゼソゾタダチヂツヅテデトドハバヒビフブヘベホボウヴ',SEMI='ハパヒピフプヘペホポ';
+// "・" also stands for a half-width voicing mark when it follows a kana that has a voiced form and comes
+// before ー or katakana ("ﾎﾞｰ" → "ホ・ー"); a separator after ン, ル, ム… ("テストル・ポワン") is kept.
+const VOICEABLE=/[カキクケコサシスセソタチツテトハヒフヘホ]/;
+// One hiragana letter inside a katakana word may be a misread ("テストクがーパン") but particles are real
+// ("テストピーのスープ"): such a letter is only flagged, never changed.
+const ODD_HIRAGANA=/[ァ-ヶー](?![のとやをにへでも])[ぁ-ゖ](?=[ァ-ヶー])/;
+function joinKana(t){t=t.replace(/([ァ-ヶ])・(?=[ーァ-ヶ])/g,(m,k)=>VOICEABLE.test(k)?k+'゛':m);return t.replace(/([ァ-ヶ])[*゛"'”]/g,(m,k)=>{const i=VOICED.indexOf(k);if(i>=0&&i%2===0)return VOICED[i+1];const j=SEMI.indexOf(k);return j>=0&&j%2===1?VOICED[VOICED.indexOf(SEMI[j-1])+1]:k}).replace(/([ァ-ヶ])[°゜º]/g,(m,k)=>{const j=SEMI.indexOf(k);if(j>=0&&j%2===0)return SEMI[j+1];const i=VOICED.indexOf(k);return i>=0&&i%2===0?VOICED[i+1]:k}).replace(/([ァ-ヶ])-(?=[ァ-ヶ]|$)/g,'$1ー')}
+// A katakana ニ or ロ between two kanji is the kanji 二 / 口 ("山ニ屋" → 山二屋, "甘ロ" excluded: not between kanji).
+function kanjiInside(t){return t.replace(/([一-龠々])([ニロ])(?=[一-龠々])/g,(m,a,b)=>a+(b==='ニ'?'二':'口'))}
+function nameText(t){return kanjiInside(joinKana(hw(t))).replace(/(\d)\s*m[|I!](?![A-Za-z])/g,'$1ml').replace(/^[*＊※☆★◎・]+\s*/,'').replace(/\s+[A-Z]\d{3}$/,'').replace(/\s*(?:外|内|軽|非)\s*[*＊※]?$/,'').replace(/\s*[*＊※]$/,'').trim()}
+function quantityDetail(raw){const s=hw(raw).replace(/\s+/g,' ').trim().replace(/^\(\s*|\s*\)$/g,'');let m=s.match(/^(\d{1,3})\s*(コ|個|本|袋|箱|パック|枚|点)\s*(?:[xX*＊]\s*(?:単(?:価)?|@)?|(?:単(?:価)?|@)\s*)¥?\s*\d[\d,]*(?:\s*¥?\s*\d[\d,]*)?\s*$/);if(!m){const reverse=s.match(/^(?:単(?:価)?|@)\s*¥?\s*\d[\d,]*(?:円)?\s*[xX*＊]\s*(\d{1,3})\s*(コ|個|本|袋|箱|パック|枚|点)\s*$/);if(reverse)m=reverse}return m?{qty:Math.max(1,+m[1]||1),unit:m[2]==='コ'||m[2]==='点'?'個':m[2]}:null}
 // v38: only the receipt's own count notation ("2コ", "3点", "x2") is a purchase quantity. "60枚", "10個入",
 // "6本", "3パック" in a product line describe the contents of one pack and stay in the name, so
 // "60枚入りのおむつ 1袋" is never registered as 60.
@@ -42,13 +101,52 @@ function productSignal(s){const k=key(s),a=aliases();if(a[k])return {ok:true,sco
 function tsvLines(tsv){const groups=new Map();for(const row of String(tsv||'').split(/\r?\n/)){const p=row.split('\t');if(p.length<12||p[0]!=='5')continue;const text=p.slice(11).join('\t').trim(),conf=Number(p[10]);if(!text)continue;const k=[p[1],p[2],p[3],p[4]].join('.'),left=+p[6]||0,top=+p[7]||0,width=+p[8]||0,height=+p[9]||0,g=groups.get(k)||{words:[],left,top,right:left+width,bottom:top+height,weight:0,confidence:0};g.words.push({text,left,top});g.left=Math.min(g.left,left);g.top=Math.min(g.top,top);g.right=Math.max(g.right,left+width);g.bottom=Math.max(g.bottom,top+height);if(Number.isFinite(conf)&&conf>=0){const weight=Math.max(1,text.length);g.confidence+=conf*weight;g.weight+=weight}groups.set(k,g)}return [...groups.values()].map(g=>({text:g.words.sort((a,b)=>a.left-b.left).map(w=>w.text).join(' '),confidence:g.weight?Math.round(g.confidence/g.weight):null,left:g.left,top:g.top,width:g.right-g.left,height:g.bottom-g.top})).sort((a,b)=>Math.abs(a.top-b.top)>Math.max(a.height,b.height)*.55?a.top-b.top:a.left-b.left)}
 function sourceLines(source){if(source&&typeof source==='object'&&!Array.isArray(source)){const t=tsvLines(source.tsv);if(t.length>=2)return t;source=source.text||''}if(Array.isArray(source))return source.map(x=>typeof x==='string'?{text:x,confidence:null}:x);return hw(source).split(/\r\n|[\n\r\u2028\u2029]/).map(text=>({text,confidence:null}))}
 const onlyMoney=/^[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*(?:円)?\s*[*＊]?$/;
-const moneyTail=/(?:^|[\s¥￥])(?:[¥￥Y]\s*)?(\d{1,3}(?:,\d{3})+|\d{1,6})(?:\s*円)?\s*[*＊]?$/i;
+const moneyTail=/(?:^|[\s¥￥])(?:[¥￥Y]\s*)?(\d{1,3}(?:,\d{3})+|\d{1,6})(?:\s*円)?\s*(?:[*＊※]|外|内)?\s*$/i;
 function combinedLines(source){const ls=sourceLines(source).map(x=>({...x,text:hw(x.text).replace(/[\t　]+/g,' ').replace(/\s+/g,' ').trim()})).filter(x=>x.text),out=[];for(let i=0;i<ls.length;i++){const a=ls[i],b=ls[i+1];if(b&&!moneyTail.test(a.text)&&onlyMoney.test(b.text)&&!quantityDetail(b.text)){const cs=[a.confidence,b.confidence].filter(Number.isFinite);out.push({...a,text:`${a.text} ${b.text}`,confidence:cs.length?Math.round(cs.reduce((s,n)=>s+n,0)/cs.length):null});i++}else out.push(a)}return out}
-function subtotalBoundary(raw){const s=hw(raw).replace(/[\s　]+/g,'').replace(/^[|｜!！*＊※#＃:：]+/,'');return /^(?:(?:お?買(?:い?上げ|上)|商品|課税対象|税抜|税込|軽減税率対象|8%対象|10%対象))?小計(?=$|[:：¥￥Y\d(（])/i.test(s)}
+function subtotalBoundary(raw){const s=hw(raw).replace(/[\s　]+/g,'').replace(/^[|｜!！*＊※#＃:：]+/,'');return /^(?:(?:お?買(?:い?上げ|上)|商品|課税対象|税抜|税込|軽減税率対象|8%対象|10%対象))?小計(?=$|[/:：¥￥Y\d(（])/i.test(s)}
 function metadataLine(s){return noise(s)||/(?:20\d{2}|\b\d{2})[\/\-.年]\d{1,2}[\/\-.月]\d{1,2}|\b\d{1,2}:\d{2}(?::\d{2})?\b|〒\s*\d{3}[-ー]\d{4}|(?:^|\s)No\.?\s*\d{4,}/i.test(s)}
 // The receipt's printed date is the purchase date; it is never used as a best-before date.
 function receiptDate(lines){for(const l of lines){if(subtotalBoundary(l.text))break;const m=hw(l.text).match(/(20\d{2})\s*[\/\-.年]\s*(\d{1,2})\s*[\/\-.月]\s*(\d{1,2})/);if(m){const y=+m[1],mo=+m[2],d=+m[3];if(mo>=1&&mo<=12&&d>=1&&d<=31)return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0')}}return ''}
-function parse(source){const out=[],rejected=[],lines=combinedLines(source);let stoppedAtSubtotal=false,subtotalLine='';for(const line of lines){if(subtotalBoundary(line.text)){stoppedAtSubtotal=true;subtotalLine=line.text;break}if(metadataLine(line.text))continue;const detail=quantityDetail(line.text);if(detail){const prev=out[out.length-1];if(prev&&!prev.low){prev.qty=detail.qty;prev.unit=detail.unit||prev.unit;prev.qtySource=line.text}continue}const money=line.text.match(moneyTail),base=money?line.text.slice(0,money.index):line.text,prefix=stripRetailPrefix(base),productish=!!money||prefix.had;if(!productish)continue;const q=extractQuantity(prefix.text),raw=q.text,signal=productSignal(raw);if(!raw||noise(raw)||!signal.ok){rejected.push({text:line.text,reason:'商品名として判定できない文字'});continue}const name=canon(raw),nameSignal=productSignal(name);if(!nameSignal.ok){rejected.push({text:line.text,reason:'商品名の確度が不足'});continue}const conf=Number.isFinite(line.confidence)?Math.round(line.confidence):null,quality=conf===null?signal.score:Math.round(signal.score*.55+conf*.45),low=conf!==null&&(conf<48||quality<58),c=cat(name,raw),item={selected:!low,raw,source:line.text,name,qty:q.qty,unit:q.unit||fixedUnit(name),cat:c,price:0,total:0,place:place(name,c),confidence:conf,quality,low};const duplicate=out.find(x=>key(x.name)===key(item.name)&&!x.low&&!item.low);if(duplicate){duplicate.qty+=item.qty;duplicate.source+=` / ${line.text}`;if(conf!==null)duplicate.confidence=duplicate.confidence===null?conf:Math.min(duplicate.confidence,conf)}else out.push(item)}return {store:'',date:receiptDate(lines)||window.AtokoreDates.localDate(),items:out.slice(0,60),rejected:rejected.slice(0,40),lineCount:lines.length,stoppedAtSubtotal,subtotalLine}}
+// Code/quantity/price on the following line is tentative: never auto-select these candidates.
+function codePriceCandidates(lines){
+ const out=[];
+ for(let i=0;i<lines.length;i++){
+  const a=lines[i],b=lines[i+1],name=hw(a.text).trim();
+  const m=b&&hw(b.text).trim().match(/^\d{4,8}\s+(\d{1,2})\s*(?:個|点|[●•])?\s+[\d,]+\s+[\d,]+\s+[ET]\s*$/i);
+  if(m&&!metadataLine(name)&&!subtotalBoundary(name)&&!/\bCPN\b/i.test(name)&&/[A-Za-zぁ-んァ-ヶ一-龠々]/.test(name)&&!moneyTail.test(name)){
+   out.push({...a,costcoCandidate:true,costcoQty:Math.max(1,Number(m[1])||1)});i++;
+  }else out.push(a);
+ }
+ return out;
+}
+// v49: line structure comes from receipt-structure-v49.js (prices, quantity lines, coupons, the end of the
+// item list and the printed item count); this names each product and decides what needs review.
+function parse(source){
+ const S=window.AtokoreReceiptStructure,lines=combinedLines(source),st=S.structure(lines),out=[],rejected=st.rejected.slice();
+ for(const p of st.products){
+  // Club names are printed with spaces and codes that matter ("COUNTRY MAAM 10PKS"): kept as printed.
+  const prefix=stripRetailPrefix(p.text),q=p.club?{text:prefix.text,qty:1,unit:''}:extractQuantity(nameText(prefix.text)),raw=nameText(q.text),signal=productSignal(raw);
+  // Warehouse clubs print English names ("TERIYAKI UDON"); the item-code line below confirms the row.
+  if(!raw||noise(raw)||!(signal.ok||(p.club&&/[A-Za-z]{3,}/.test(raw)))){rejected.push({text:p.source,reason:'商品名として判定できない文字'});continue}
+  const name=canon(raw),qty=p.qtyLine?p.qty:q.qty,score=signal.ok?signal.score:p.club&&p.qtyChecked?84:signal.score;
+  const conf=Number.isFinite(p.confidence)?Math.round(p.confidence):null,quality=conf===null?score:Math.round(score*.55+conf*.45);
+  // Review needed (not pre-selected): unclear OCR, or a warehouse-club line whose unit price × quantity
+  // does not add up to the printed total.
+  const reasons=[];if(conf!==null&&(conf<48||quality<58))reasons.push('文字が不鮮明');if(p.club&&!p.qtyChecked)reasons.push('数量と金額が合わない');
+  // A voicing mark read as a separate symbol after ハ行 (ﾊﾞ or ﾊﾟ?) cannot be told apart: say so instead of guessing.
+  const before=hw(prefix.text);
+  if(/[ハヒフヘホパピプペポ][°゜º*゛"'”]/.test(before)||/[カキクケコサシスセソタチツテトハヒフヘホ]・(?=[ーァ-ヶ])/.test(before))reasons.push('濁点か半濁点か不確か');
+  if(ODD_HIRAGANA.test(before)||/(^|[^0-9A-Za-z])7(?=[ァ-ヶ])/.test(before))reasons.push('読み違いの可能性がある文字');
+  // One word of the line read with low confidence (the line average can hide it).
+  if(Number.isFinite(p.minScore)&&p.minScore<70&&!reasons.includes('文字が不鮮明'))reasons.push('一部の文字が不鮮明');for(const d of p.doubt||[])if(!reasons.includes(d))reasons.push(d);
+  const low=reasons.length>0,c=cat(name,raw);
+  const item={selected:!low,raw,source:p.source+(p.qtyLine?' / '+p.qtyLine:''),name,qty,unit:q.unit||fixedUnit(name),cat:c,price:0,total:0,place:place(name,c),confidence:conf,quality,low,reasons,qtySource:p.qtyLine||'',area:p.area||null,generic:genericName(raw)};
+  const duplicate=out.find(x=>key(x.name)===key(item.name)&&!x.low&&!item.low);
+  if(duplicate){duplicate.qty+=item.qty;duplicate.source+=` / ${item.source}`;duplicate.merged=(duplicate.merged||1)+1;if(conf!==null)duplicate.confidence=duplicate.confidence===null?conf:Math.min(duplicate.confidence,conf)}else out.push(item);
+ }
+ const counted=out.reduce((s,x)=>s+(+x.qty||0),0),b=st.boundary;
+ return {store:'',date:receiptDate(lines)||window.AtokoreDates.localDate(),items:out.slice(0,60),rejected:rejected.slice(0,40),lineCount:lines.length,
+  stoppedAtSubtotal:!!b&&b.kind==='subtotal',subtotalLine:b&&b.kind==='subtotal'?b.text:'',boundary:b,facts:S.receiptFacts?S.receiptFacts(lines):null,printedCount:st.printedCount,countedQty:counted,countMatches:st.printedCount===null?null:st.printedCount===counted}}
 function opts(cur,a){return a.map(v=>`<option ${v===cur?'selected':''}>${v}</option>`).join('')}
 window.receiptUpdateV7=(i,k,v)=>{const x=R.parsed[i];if(!x)return;if(k==='qty')v=Math.max(1,+v||1);x[k]=v;if(k==='name'){x.cat=cat(v,x.raw);x.unit=fixedUnit(v);x.place=place(v,x.cat);x.low=false}count()};window.receiptToggleV7=(i,on)=>{if(R.parsed[i])R.parsed[i].selected=on;count()};window.receiptStepV7=(i,d)=>{const x=R.parsed[i];if(!x)return;x.qty=Math.max(1,(+x.qty||1)+d);const q=$r(`receiptQty-${i}`);if(q)q.value=x.qty;count()};window.receiptSelectAllV7=on=>{R.parsed.forEach(x=>{if(String(x.name||'').trim()&&+x.qty>0)x.selected=!!on});review()};window.receiptDeleteV7=i=>{R.parsed.splice(i,1);review()};window.receiptAddV7=()=>{R.parsed.push({selected:true,raw:'',source:'',name:'',qty:1,unit:'個',cat:'食料品',price:0,total:0,place:'パントリー',low:false});review()};
 // ---- v38 review: each row says which registered product it is (or that it is new); nothing is
@@ -56,7 +154,16 @@ window.receiptUpdateV7=(i,k,v)=>{const x=R.parsed[i];if(!x)return;if(k==='qty')v
 const RHIST='atokoreReceiptHistoryV1';
 function stockList(){try{return Array.isArray(items)?items:[]}catch(e){return []}}
 function matcher(){return window.AtokoreReceiptMatch||null}
-function prepareRows(){for(const x of R.parsed){if(x.cands)continue;const m=matcher();x.cands=m&&x.raw?m.candidates(x.raw,stockList()).map(c=>({id:c.item.id,name:c.item.name,learned:c.learned})):[];if(x.matchId===undefined)x.matchId=x.cands[0]?.learned?x.cands[0].id:null}}
+// Candidates for the printed text, then for the generic name when the printed one was replaced ("玉子 Lサイズ" → 卵).
+function candidatesFor(x,stock,m=matcher()){if(!m)return [];const seen=new Set(),out=[];for(const t of [x.raw,x.name!==x.raw?x.name:null,x.generic&&x.generic!==x.name?x.generic:null].filter(Boolean))for(const c of m.candidates(t,stock))if(!seen.has(String(c.item.id))){seen.add(String(c.item.id));out.push(c)}return out}
+// The candidates and the pre-selection of one row. Also used as is by the evaluation tool
+// (tests/receipt-eval/real-photos.cjs), so what is measured is what the review screen does.
+function rowCandidates(x,stock,M){return candidatesFor(x,stock,M).map(c=>({id:c.item.id,name:c.item.name,learned:!!c.learned,near:!!c.near}))}
+// Pre-selected only when this exact printed text was confirmed for the product before (and the row itself
+// is not in doubt); a near match is offered but chosen by the person.
+function preselectId(x,cands){return cands[0]&&cands[0].learned&&!x.low?cands[0].id:null}
+function prepareRows(){for(const x of R.parsed){if(x.cands)continue;x.cands=rowCandidates(x,stockList());
+ if(x.matchId===undefined)x.matchId=preselectId(x,x.cands);x.autoLinked=x.matchId!=null}}
 function linked(x){return x.matchId==null?null:stockList().find(v=>String(v.id)===String(x.matchId))||null}
 function signature(){const m=matcher(),keys=R.parsed.map(x=>m?m.lineKey(x.raw||x.name):String(x.raw||x.name)).sort();return (R.date||'')+'|'+keys.join('|')}
 function history(){try{const v=JSON.parse(localStorage.getItem(RHIST)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
@@ -64,22 +171,164 @@ function history(){try{const v=JSON.parse(localStorage.getItem(RHIST)||'[]');ret
 // different shopping trip with similar items is never discarded.
 function duplicateOf(){const sig=signature();return history().find(h=>(R.imageHash&&h.image===R.imageHash)||(R.parsed.length>=2&&h.sig===sig))||null}
 function remember(){try{const h=history().filter(x=>x.sig!==signature()||x.image!==R.imageHash);h.push({sig:signature(),image:R.imageHash||null,at:Date.now(),n:R.parsed.filter(x=>x.selected).length});localStorage.setItem(RHIST,JSON.stringify(h.slice(-30)))}catch(e){}}
+// v49 audit: the printed line itself, cut from the photo, under each row — the quickest way to see that a
+// name was misread (OCR confidence alone does not show it).
+const crops=new Map();
+function lineImage(area,label){const src=lineCrop(area);return src?`<img class="receiptLineImg" src="${src}" alt="${label}のレシートの印字" loading="lazy">`:''}
+function lineCrop(area){
+ const c=R.sourceCanvas;if(!c||!area||!Number.isFinite(area.top))return '';
+ const k=[area.left,area.top,area.right,area.bottom].map(Math.round).join(',');if(crops.has(k))return crops.get(k);
+ try{const pad=6,x0=Math.max(0,Math.floor(area.left-pad)),y0=Math.max(0,Math.floor(area.top-pad)),x1=Math.min(c.width,Math.ceil(area.right+pad)),y1=Math.min(c.height,Math.ceil(area.bottom+pad)),w=x1-x0,h=y1-y0;if(w<4||h<4)return '';
+  const sc=Math.min(1,640/w),o=document.createElement('canvas');o.width=Math.round(w*sc);o.height=Math.round(h*sc);o.getContext('2d').drawImage(c,x0,y0,w,h,0,0,o.width,o.height);
+  const url=o.toDataURL('image/jpeg',0.75);crops.set(k,url);return url}catch(e){console.warn(e);return ''}
+}
+// v49 audit: a registered product that records a best-before date is not added to: the purchase becomes a new
+// row without a date (dates are never copied). Said here, before the confirmation screen.
+function lotNote(x){const hit=linked(x);if(!hit||!hit.exp||hit.expType==='期限なし')return '';return `<div class="receiptLotNote">「${esc(hit.name)}」は期限を記録している在庫です。今回の分は<b>期限が未設定の新しい行</b>として追加し、今ある行（期限 ${esc(hit.exp)}）の数量は変えません。</div>`}
 function row(x,i){const cs=['食料品','離乳食','日用品','衛生・薬','ベビー','子ども','衣類','家電・生活用品','防災','その他'],us=['個','本','袋','箱','パック','枚','缶'],label=esc(x.name||`商品${i+1}`),hit=linked(x);
- const choice=x.cands&&x.cands.length?`<label class="receiptMatch"><span>どの商品ですか？</span><select aria-label="${label}に対応する商品" onchange="receiptMatchV38(${i},this.value)"><option value="">新しい商品として登録</option>${x.cands.map(c=>`<option value="${esc(c.id)}" ${String(c.id)===String(x.matchId)?'selected':''}>登録済み：${esc(c.name)}${c.learned?'（前回と同じ）':''}</option>`).join('')}</select></label>`:'';
- return `<div class="receiptReview ${x.low?'low':''}" data-receipt-row="${i}"><div class="receiptCompactTop"><input class="receiptCheck" type="checkbox" aria-label="${label}を選択" ${x.selected?'checked':''} onchange="receiptToggleV7(${i},this.checked)">${hit?`<span class="receiptLinked">${esc(hit.name)}<small>レシート：${esc(x.raw||x.name)}</small></span>`:`<input class="receiptNameInput" aria-label="商品名" value="${esc(x.name)}" onchange="receiptUpdateV7(${i},'name',this.value)">`}<button class="receiptDelete" onclick="receiptDeleteV7(${i})" aria-label="${label}を削除">🗑</button></div>${choice}<div class="receiptCompactBar"><div class="receiptQty"><span class="receiptQtyLabel">買った数</span><button onclick="receiptStepV7(${i},-1)" aria-label="${label}の数量を減らす">−</button><input id="receiptQty-${i}" type="number" min="1" step="1" aria-label="${label}の数量" value="${x.qty}" onchange="receiptUpdateV7(${i},'qty',this.value)"><button onclick="receiptStepV7(${i},1)" aria-label="${label}の数量を増やす">＋</button></div>${hit?'':`<details class="receiptItemDetails" ${x.low?'open':''}><summary>${x.low?'<span class="receiptQuality">要確認・未選択</span>':'単位・分類'}　⌄</summary><div class="receiptGrid two"><div><div class="label">単位</div><select onchange="receiptUpdateV7(${i},'unit',this.value)">${opts(x.unit,us)}</select></div><div><div class="label">カテゴリー</div><select onchange="receiptUpdateV7(${i},'cat',this.value)">${opts(x.cat,cs)}</select></div></div>${x.source?`<div class="receiptOriginal">元の行: ${esc(x.source)}${x.confidence!==null&&x.confidence!==undefined?`・行信頼度 ${esc(x.confidence)}%`:''}</div>`:''}</details>`}</div></div>`}
+ const choice=x.cands&&x.cands.length?`<label class="receiptMatch"><span>どの商品ですか？</span><select aria-label="${label}に対応する商品" onchange="receiptMatchV38(${i},this.value)"><option value="">新しい商品として登録</option>${x.cands.map(c=>`<option value="${esc(c.id)}" ${String(c.id)===String(x.matchId)?'selected':''}>登録済み：${esc(c.name)}${c.learned?'（前回と同じ表記）':c.near?'（前回と似た表記）':''}</option>`).join('')}</select></label>`:'';
+ return `<div class="receiptReview ${x.low?'low':''}" data-receipt-row="${i}"><div class="receiptCompactTop"><input class="receiptCheck" type="checkbox" aria-label="${label}を選択" ${x.selected?'checked':''} onchange="receiptToggleV7(${i},this.checked)">${hit?`<span class="receiptLinked">${esc(hit.name)}<small>レシート：${esc(x.raw||x.name)}</small></span>`:`<input class="receiptNameInput" aria-label="商品名" value="${esc(x.name)}" onchange="receiptUpdateV7(${i},'name',this.value)">`}<button class="receiptDelete" onclick="receiptDeleteV7(${i})" aria-label="${label}を削除">🗑</button></div>${lineImage(x.area,label)}${choice}${lotNote(x)}<div class="receiptCompactBar"><div class="receiptQty"><span class="receiptQtyLabel">買った数</span><button onclick="receiptStepV7(${i},-1)" aria-label="${label}の数量を減らす">−</button><input id="receiptQty-${i}" type="number" min="1" step="1" aria-label="${label}の数量" value="${x.qty}" onchange="receiptUpdateV7(${i},'qty',this.value)"><button onclick="receiptStepV7(${i},1)" aria-label="${label}の数量を増やす">＋</button></div>${hit?'':`<details class="receiptItemDetails" ${x.low?'open':''}><summary>${x.low?`<span class="receiptQuality">要確認・未選択${x.reasons&&x.reasons.length?'：'+esc(x.reasons.join('・')):''}</span>`:'単位・分類'}　⌄</summary><div class="receiptGrid two"><div><div class="label">単位</div><select onchange="receiptUpdateV7(${i},'unit',this.value)">${opts(x.unit,us)}</select></div><div><div class="label">カテゴリー</div><select onchange="receiptUpdateV7(${i},'cat',this.value)">${opts(x.cat,cs)}</select></div></div>${x.source?`<div class="receiptOriginal">元の行: ${esc(x.source)}${x.confidence!==null&&x.confidence!==undefined?`・行信頼度 ${esc(x.confidence)}%`:''}</div>`:''}</details>`}</div></div>`}
 window.receiptStoreV124=v=>{R.store=v};window.receiptDateV124=v=>{R.date=v};
 window.receiptMatchV38=(i,v)=>{const x=R.parsed[i];if(!x)return;x.matchId=v===''?null:(x.cands.find(c=>String(c.id)===v)?.id??null);if(x.matchId!=null){x.selected=true;x.low=false}review()};
 // A line the parser could not read as a product is never dropped silently: it can be added here.
 window.receiptPromoteV38=i=>{const r=(R.rejected||[])[i];if(!r)return;const raw=productText(stripRetailPrefix(String(r.text).replace(moneyTail,'')).text)||String(r.text).slice(0,40);R.rejected.splice(i,1);R.parsed.push({selected:true,raw,source:r.text,name:raw,qty:1,unit:fixedUnit(raw),cat:cat(raw,raw),price:0,total:0,place:place(raw,cat(raw,raw)),confidence:null,low:true});review()};
-function review(){prepareRows();const low=R.parsed.filter(x=>x.low).length,rejected=R.rejected||[],selected=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0).length,warn=low>0||(R.confidence&&R.confidence<65)||!R.stoppedAtSubtotal,boundary=R.stoppedAtSubtotal?'小計で読み取りを終えました。':'小計が見つからないため全体を確認してください。',dup=duplicateOf(),hard=R.parsed.length&&R.parsed.filter(x=>x.low).length>=R.parsed.length*0.6;
- openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 読み取り結果の確認</h2>${dup?`<div class="receiptStatus receiptWarn" id="receiptDuplicate">${new Date(dup.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}に登録したレシートと同じ可能性があります。二重に追加しないよう確認してください（別の買い物ならそのまま進めます）。</div>`:''}<div class="receiptStatus ${warn?'receiptWarn':''}">${R.parsed.length}行を商品として読み取りました。${low?`読み取りが不確かな${low}行は選択していません。`:''}${boundary}${R.date?` 購入日：${esc(R.date)}`:''}</div>${hard?`<div class="receiptStatus receiptWarn">文字がうまく読めていません。明るい場所で真上から撮り直すか、<button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button>のほうが早いかもしれません。</div>`:''}${R.parsed.length?`<div class="receiptSelectionBar"><span id="receiptSelectionCount" class="receiptSelectionCount">${selected}/${R.parsed.length}件を選択</span><button class="btn ghost" onclick="receiptSelectAllV7(true)">全選択</button><button class="btn ghost" onclick="receiptSelectAllV7(false)">全解除</button></div>`:''}${R.parsed.length?R.parsed.map(row).join(''):'<div class="empty">商品名を読み取れませんでした。下の「商品を追加」か「読み取れなかった行」から追加できます。</div>'}<button class="btn ghost" style="width:100%;margin-top:8px" onclick="receiptAddV7()">＋ 商品を追加</button>${rejected.length?`<details class="detail receiptRejected" style="margin-top:12px" open><summary>読み取れなかった行（${rejected.length}行）</summary><div class="muted" style="margin:8px 0">商品名と判断できなかった行です。商品なら追加してください。</div>${rejected.map((x,k)=>`<div class="receiptExcluded"><span>${esc(x.text)}</span><button class="btn ghost" onclick="receiptPromoteV38(${k})">商品として追加</button></div>`).join('')}</details>`:''}<details class="detail" style="margin-top:12px"><summary>読み取った文字をすべて見る</summary><textarea class="receiptRaw" readonly>${esc(R.text)}</textarea></details><div class="receiptFoot"><label class="row"><input id="receiptRemoveBuy" type="checkbox" checked style="width:22px;height:22px"><div class="grow"><div class="name">買い物リストからも消す</div><div class="meta">追加した商品を買い物リストから消します</div></div></label><button id="receiptApplyBtn" class="btn" style="width:100%" onclick="receiptApplyV7()">確認画面へ進む</button></div>`);count()}
+// Places the OCR found print but could not read (low confidence or nothing). Only what the text detector
+// marked as print is known: a line it never marked, or a dropped first product above everything that was
+// read, cannot be listed (v49 3rd audit) — the review always says so and offers the whole photo.
+// Range: from the read line just above the first product (or the first product) down to the subtotal/total
+// line. Without products or without that line the range is not known: places are counted, not shown as
+// pictures (no flood of payment/advertising runs), and the screen does not call it the item range.
+// A run on a row whose picture is shown is counted as part of that row; anywhere else it is a place.
+// Nothing here becomes a product or is selected.
+function unreadAreas(lines,p,dropped){
+ const items=p.items||[],shown=[...items,...(p.rejected||[])].map(x=>x.area).filter(a=>a&&Number.isFinite(a.top));
+ const b=p.boundary&&p.boundary.area,read=(lines||[]).filter(l=>Number.isFinite(l.top)&&Number.isFinite(l.bottom));
+ const firstTop=items.map(x=>x.area&&x.area.top).filter(Number.isFinite).reduce((m,v)=>Math.min(m,v),Infinity);
+ const hasItems=Number.isFinite(firstTop),hasEnd=!!(b&&Number.isFinite(b.top));
+ const above=hasItems?read.filter(l=>l.bottom<=firstTop).reduce((m,l)=>Math.max(m,l.bottom),-Infinity):-Infinity;
+ const top=hasItems?(Number.isFinite(above)?above:firstTop):-Infinity,bottom=hasEnd?b.top:Infinity;
+ const res={places:[],inLine:0,total:0,rangeKnown:hasItems&&hasEnd};if(!Array.isArray(dropped)||!dropped.length)return res;
+ const frags=dropped.map(d=>{const ys=d.box.map(q=>q[1]),xs=d.box.map(q=>q[0]);return {top:Math.min(...ys),bottom:Math.max(...ys),left:Math.min(...xs),right:Math.max(...xs)}})
+  .filter(f=>{const yc=(f.top+f.bottom)/2,h=f.bottom-f.top;return yc>=top-(hasItems&&Number.isFinite(above)?0:h*0.5)&&yc<bottom}).sort((a,b)=>a.top-b.top);
+ for(const f of frags){const yc=(f.top+f.bottom)/2;res.total++;
+  if(shown.some(a=>yc>=a.top&&yc<=a.bottom)){res.inLine++;continue}
+  const g=res.places.find(x=>yc>=x.top&&yc<=x.bottom);
+  if(g){g.top=Math.min(g.top,f.top);g.bottom=Math.max(g.bottom,f.bottom);g.left=Math.min(g.left,f.left);g.right=Math.max(g.right,f.right);g.n++}else res.places.push({...f,n:1});
+ }
+ return res;
+}
+// The parts worked for this reading but could not all be kept on the device (no space, storage blocked).
+function storageNote(){return R.partsNotStored?`<div class="receiptStatus receiptWarn" id="receiptPartsNotStored">読み取りの部品の一部を、この端末に保存できませんでした（空き容量の不足など）。今回は読み取れましたが、次回やオフラインのときは、もう一度ダウンロードが必要になることがあります。</div>`:''}
+// Photo reviews only. Never says that nothing was missed.
+function unreadNote(){const u=R.unread;if(!u)return '';const c=R.sourceCanvas,MAX=6,parts=[];
+ if(u.places.length){
+  if(u.rangeKnown)parts.push(`商品の範囲に、文字として読めなかった部分が${u.places.length}か所あります。商品が抜けていないか、下の画像で確認してください（必要なら「＋ 商品を追加」で追加できます）。${u.places.length>MAX?`画像は上から${MAX}か所まで表示しています。`:''}<div class="receiptUnreadImgs">${u.places.slice(0,MAX).map(x=>lineImage({top:x.top,bottom:x.bottom,left:0,right:c?c.width:x.right},'読めなかった部分')).join('')}</div>`);
+  else parts.push(`小計・合計の行か商品を読み取れず、商品の範囲を確定できませんでした。読み取った部分に、文字として読めなかった部分が${u.places.length}か所あります。写真全体で確認してください。`);
+ }
+ if(u.inLine)parts.push(`画像を表示している行の中に、読めなかった文字が${u.inLine}か所あります。各行の画像で確認できます。`);
+ return `<div class="receiptStatus ${u.places.length?'receiptWarn':''}" id="receiptUnread">読み落としをすべて検出できるわけではありません。写真と商品一覧を見比べてください。${parts.map(t=>`<div style="margin-top:6px">${t}</div>`).join('')}${wholePhoto()}</div>`}
+// The whole receipt photo (as read: upright and cropped), opened on demand inside the review.
+function wholePhoto(){return (R.sourceCanvas||R.previewUrl)?`<details class="receiptWhole" id="receiptWhole" style="margin-top:6px" ontoggle="receiptWholeV49(this)"><summary>写真全体を見る</summary><img class="receiptWholeImg" alt="読み取ったレシートの写真全体" style="display:block;max-width:100%;height:auto;margin-top:6px;border-radius:6px;border:1px solid #e3e7ee"></details>`:''}
+window.receiptWholeV49=d=>{if(!d.open)return;const img=d.querySelector('img');if(!img||img.src)return;try{img.src=R.sourceCanvas?R.sourceCanvas.toDataURL('image/jpeg',0.85):R.previewUrl}catch(e){console.warn('写真を表示できませんでした',e);if(R.previewUrl)img.src=R.previewUrl}};
+// The receipt's own item count against what was read: the quickest way to notice a missed line.
+// A matching count is not proof that nothing was missed (a misread line can still count as one item).
+function countNote(){if(!Number.isFinite(R.printedCount))return `<div class="receiptStatus" id="receiptCount">レシートの点数を読み取れなかったため、点数の照合はできていません。読み落としがないか、商品の行を確認してください。</div>`;const n=R.parsed.reduce((s,x)=>s+(+x.qty||0),0);
+ if(n===R.printedCount)return `<div class="receiptStatus" id="receiptCount">レシートの点数（${R.printedCount}点）と読み取った数量の合計が一致しています。点数が合っていても、読み違いや読み落としがないとは限りません。</div>`;
+ return `<div class="receiptStatus receiptWarn" id="receiptCount">レシートには${R.printedCount}点とあり、読み取った数量の合計は${n}点です。${n<R.printedCount?'読み落とした商品や数量がないか確認してください。':'数量が多すぎないか確認してください。'}</div>`}
+function review(){prepareRows();const low=R.parsed.filter(x=>x.low).length,rejected=R.rejected||[],selected=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0).length,warn=low>0||(R.confidence&&R.confidence<65)||!R.stoppedAtSubtotal||!!(R.unread&&R.unread.places.length),boundary=R.stoppedAtSubtotal?'小計で読み取りを終えました。':'小計が見つからないため全体を確認してください。',dup=duplicateOf(),hard=R.parsed.length&&R.parsed.filter(x=>x.low).length>=R.parsed.length*0.6;
+ openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 読み取り結果の確認</h2>${dup?`<div class="receiptStatus receiptWarn" id="receiptDuplicate">${new Date(dup.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}に登録したレシートと同じ可能性があります。二重に追加しないよう確認してください（別の買い物ならそのまま進めます）。</div>`:''}<div class="receiptStatus ${warn?'receiptWarn':''}">${R.parsed.length}行を商品として読み取りました。${low?`読み取りが不確かな${low}行は選択していません。`:''}${boundary}${R.date?` 購入日：${esc(R.date)}`:''}</div>${countNote()}${unreadNote()}${storageNote()}${hard?`<div class="receiptStatus receiptWarn">文字がうまく読めていません。明るい場所で真上から撮り直すか、<button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button>のほうが早いかもしれません。${R.file?'<button class="btn ghost" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`:''}${R.parsed.length?`<div class="receiptSelectionBar"><span id="receiptSelectionCount" class="receiptSelectionCount">${selected}/${R.parsed.length}件を選択</span><button class="btn ghost" onclick="receiptSelectAllV7(true)">全選択</button><button class="btn ghost" onclick="receiptSelectAllV7(false)">全解除</button></div>`:''}${R.parsed.length?R.parsed.map(row).join(''):`<div class="empty">商品名を読み取れませんでした。下の「商品を追加」か「読み取れなかった行」から追加できます。${R.file?'<br><button class="btn ghost" style="margin-top:8px" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`}<button class="btn ghost" style="width:100%;margin-top:8px" onclick="receiptAddV7()">＋ 商品を追加</button>${rejected.length?`<details class="detail receiptRejected" style="margin-top:12px" open><summary>読み取れなかった行（${rejected.length}行）</summary><div class="muted" style="margin:8px 0">商品名と判断できなかった行です。商品なら追加してください。</div>${rejected.map((x,k)=>`<div class="receiptExcluded"><span>${esc(x.text)}${x.reason?`<small class="receiptExcludedWhy">${esc(x.reason)}</small>`:''}${lineImage(x.area,'読み取れなかった行')}</span><button class="btn ghost" onclick="receiptPromoteV38(${k})">商品として追加</button></div>`).join('')}</details>`:''}<details class="detail" style="margin-top:12px"><summary>読み取った文字をすべて見る</summary><textarea class="receiptRaw" readonly>${esc(R.text)}</textarea></details><div class="receiptFoot"><label class="row"><input id="receiptRemoveBuy" type="checkbox" checked style="width:22px;height:22px"><div class="grow"><div class="name">買い物リストからも消す</div><div class="meta">追加した商品を買い物リストから消します</div></div></label><button id="receiptApplyBtn" class="btn" style="width:100%" onclick="receiptApplyV7()">確認画面へ進む</button></div>`);count()}
 function count(){const n=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0).length,b=$r('receiptApplyBtn'),c=$r('receiptSelectionCount');if(b)b.textContent=`選んだ${n}件を確認画面へ`;if(c)c.textContent=`${n}/${R.parsed.length}件を選択`}
 window.receiptManualPickV38=()=>{closeReceiptV7();try{window.atkOpenAdd?.('stock')}catch(e){}};
-window.receiptApplyV7=()=>{
+// ---- v49 audit: the same receipt imported twice in the family. Before the confirmation screen the
+// receipt is reserved on the shared server (hh_receipt_claim) by a fingerprint of the store, date, time,
+// total and receipt number, and of the photo bytes. Another member's import is shown with their name;
+// the person decides. Offline, the check runs when the connection is back and only warns: stock that was
+// already saved is never removed or merged automatically.
+const CLAIM_QUEUE='atokoreReceiptClaimQueueV1';
+async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function receiptKeys(r){const out=[];try{if(r.facts&&r.facts.strong)out.push({fp:await sha256(r.facts.key),kind:'receipt'});if(r.imageHash)out.push({fp:await sha256('img|'+r.imageHash),kind:'photo'})}catch(e){console.warn(e)}return out}
+function family(){const h=window.AtokoreHousehold;try{return h&&h.receiptClaim&&h.receiptScope&&h.homeState&&h.homeState().joined?h:null}catch(e){return null}}
+// Queued checks carry the household and user (scope) they belong to; they are only ever sent for that scope.
+function claimQueue(){try{const v=JSON.parse(localStorage.getItem(CLAIM_QUEUE)||'[]');return Array.isArray(v)?v.filter(k=>k&&typeof k.fp==='string'):[]}catch(e){return []}}
+function setClaimQueue(v){try{localStorage.setItem(CLAIM_QUEUE,JSON.stringify(v.slice(-50)));return true}catch(e){console.warn('レシートの確認待ちを保存できませんでした',e);return false}}
+function enqueueClaims(fps,scope){if(!scope||!fps.length)return;const q=claimQueue();for(const fp of fps)if(!q.some(k=>k.fp===fp&&k.scope===scope))q.push({fp,scope,at:Date.now()});setClaimQueue(q)}
+const whenText=at=>{const d=new Date(at);return Number.isFinite(d.getTime())?d.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'日時不明'};
+// What the person is told when the family could not be asked, by reason. Only "offline" promises a later check.
+function claimNotice(reason){
+ if(reason==='offline')return ['家族の取り込み状況を確認できませんでした','通信できませんでした。通信が戻ってから次にレシートの画面を開いたときに、同じレシートを家族が取り込んでいないか確認します。在庫は自動では変更しません。'];
+ if(reason==='auth'||reason==='signed_out')return ['家族の取り込み状況を確認できませんでした','共有のログインが切れています。共有の設定からログインし直すと、次にレシートの画面を開いたときに確認します。在庫は自動では変更しません。'];
+ if(reason==='unavailable')return ['家族の取り込み状況は確認できません','共有サーバーがこの確認にまだ対応していません。この端末の中での確認（同じ写真・同じ内容）だけを行いました。在庫は自動では変更しません。'];
+ if(reason==='not_member')return ['家族の取り込み状況を確認できませんでした','この端末は共有している世帯から外れています。家族との確認はできません。在庫は自動では変更しません。'];
+ return ['家族の取り込み状況を確認できませんでした','共有サーバーで確認できませんでした（原因は不明です）。在庫は自動では変更しません。'];
+}
+// Receipts saved while the family could not be asked (or whose record could not be marked afterwards):
+// asked now, for the current household and user only. A family import found is reported; stock is never changed.
+let flushing=null;
+function flushClaims(){if(!flushing)flushing=doFlush().finally(()=>{flushing=null});return flushing}
+async function doFlush(){
+ const fam=family();if(!fam)return {sent:0};
+ const scope=fam.receiptScope();if(!scope)return {sent:0};
+ const all=claimQueue(),mine=all.filter(k=>k.scope===scope);if(!mine.length)return {sent:0};
+ const keep=[],found=[];let stop=null,sent=0;
+ for(const k of mine){
+  if(stop){keep.push(k);continue}
+  const r=await fam.receiptClaim(k.fp);sent++;
+  if(!r||!r.ok||r.scope!==scope){keep.push(k);if(!r||['offline','auth','signed_out','unavailable','not_member'].includes(r.reason)||r.scope!==scope)stop=r?r.reason:'error';continue}
+  if(!r.claimed){found.push(r);continue}
+  if(r.tookOver)found.push({...r,unfinished:true});
+  if(r.state!=='done'){const f=await fam.receiptFinish(k.fp,true);if(!f||!f.ok||f.scope!==scope)keep.push(k)}
+ }
+ // Entries of other households/users stay as they are; they are never sent here.
+ const others=claimQueue().filter(k=>k.scope!==scope);setClaimQueue([...others,...keep]);
+ if(found.length){const f=found[0];window.AtokoreConfirm?.tell?.('同じレシートを家族が取り込んでいました',`あとから確認したところ、${f.who||'家族'}さんが${whenText(f.at)}に同じレシートを${f.unfinished?'取り込み始めていました（確定したかは分かりません）':f.state==='done'?'取り込んでいました':'取り込んでいる途中でした'}。二重に追加されていないか在庫を確認してください（自動では変更していません）。`)}
+ return {sent,kept:keep.length,found:found.length,stop};
+}
+window.receiptFlushClaimsV49=flushClaims;
+// Before the confirmation screen: reserve the receipt for this household. Another member's import (done, in
+// progress, or started long ago and never finished) is shown with their name; the person decides.
+// A warning, not a guarantee: the stock save itself is separate and is never repeated or undone here.
+async function familyCheck(r){
+ const fam=family();if(!fam)return {go:true,keys:[],checked:false,shared:false};
+ const scope=fam.receiptScope();if(!scope)return {go:true,keys:[],checked:false,shared:true,scope:null,reason:'signed_out'};
+ const keys=await receiptKeys(r);if(!keys.length)return {go:true,keys:[],checked:false,shared:true,scope};
+ const held=[];
+ const giveUp=()=>{for(const fp of held)fam.receiptFinish(fp,false).then(x=>{if(!x||!x.ok)console.warn('レシートの予約を解除できませんでした',x&&x.reason)})};
+ for(const k of keys){
+  const res=await fam.receiptClaim(k.fp);
+  if(!res||!res.ok||res.scope!==scope){giveUp();return {go:true,keys:keys.map(x=>x.fp),checked:false,shared:true,scope,reason:res&&res.scope===scope?res.reason:'error'}}
+  if(!res.claimed||res.tookOver){
+   const what=k.kind==='photo'?'同じ写真':'店・日時・合計が同じレシート';
+   const [title,text]=res.tookOver?['同じレシートの取り込みが途中で止まっています',`${res.who||'家族'}さんが${whenText(res.at)}に${what}の取り込みを始めましたが、確定したかは分かりません。同じ買い物なら、在庫を確認してから進めてください。`]
+    :[res.state==='done'?'同じレシートを家族が取り込み済みです':'同じレシートを家族が取り込み中です',`${res.who||'家族'}さんが${whenText(res.at)}に、${what}を${res.state==='done'?'取り込みました':'取り込んでいる途中です'}。同じ買い物なら取り込まないでください。別の買い物のときだけ進めてください。`];
+   if(res.tookOver)held.push(k.fp);
+   const ok=await window.AtokoreConfirm.ask(title,text,'別の買い物として取り込む');
+   if(!ok){giveUp();return {go:false}}
+   continue}
+  held.push(k.fp)}
+ return {go:true,keys:held,checked:true,shared:true,scope};
+}
+// After the stock was saved: mark the reservations done, for the scope they were made in. A failure (offline,
+// signed out, household changed, record not marked) is queued and checked later; the save is not repeated.
+async function finishClaims(fc){
+ if(!fc||!fc.keys||!fc.keys.length||!fc.scope)return;
+ if(!fc.checked){enqueueClaims(fc.keys,fc.scope);return}
+ const fam=family(),now=fam&&fam.receiptScope();
+ if(!fam||now!==fc.scope){enqueueClaims(fc.keys,fc.scope);return}
+ const failed=[];
+ for(const fp of fc.keys){const f=await fam.receiptFinish(fp,true);if(!f||!f.ok||f.scope!==fc.scope)failed.push(fp)}
+ // Checked right away: a reservation taken over by another member is reported now; offline stays queued.
+ if(failed.length){enqueueClaims(failed,fc.scope);await flushClaims()}
+}
+window.__receiptFamilyV49={claimQueue,enqueueClaims,flushClaims,familyCheck,finishClaims,claimNotice};
+window.receiptApplyV7=async()=>{
+ if(R.applying)return;
  const rows=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0);if(!rows.length){alert('登録する商品を選んでください');return}
  const entries=rows.map(r=>{const hit=linked(r);return hit?{name:hit.name,cat:hit.cat||r.cat||cat(hit.name,r.raw),unit:hit.unit||r.unit||fixedUnit(hit.name),qty:Math.max(1,Math.round(+r.qty)||1)}:{name:String(r.name).trim().slice(0,120),cat:r.cat||cat(r.name,r.raw),unit:r.unit||fixedUnit(r.name),qty:Math.max(1,Math.round(+r.qty)||1)}});
  const removeBuy=!!$r('receiptRemoveBuy')?.checked,date=R.date,snapshot=rows.map((r,k)=>({raw:r.raw,entry:entries[k]})),qa=window.AtokoreQuickAdd;
  if(!qa?.openWithEntries){alert('この版では確認画面を開けません');return}
+ R.applying=true;let fc;try{fc=await familyCheck(R)}finally{R.applying=false}
+ if(!fc.go)return;
+ if(fc.shared&&fc.reason){const [t,m]=claimNotice(fc.reason);window.AtokoreConfirm?.tell?.(t,m)}
  const done=R;closeReceiptV7();
  // Saved only by the review screen's final button; afterwards remember which product each printed
  // name was (on the product itself, so the family sees it too) and record this receipt.
@@ -91,9 +340,11 @@ window.receiptApplyV7=()=>{
   R=done;remember();
   if(save()===false)throw Error('receipt follow-up not saved');
   try{render()}catch(e){}
+  // Mark the reservation done; when that is not possible the check is queued for its own household.
+  finishClaims(fc).catch(e=>console.warn('レシートの予約を記録できませんでした',e));
  }});
 };
-window.__atokoreReceiptV125M={parseReceipt:parse,parseProductNames:parse,cleanProductName:productText,parseTsvLines:tsvLines,isSubtotalBoundary:subtotalBoundary};
+window.__atokoreReceiptV125M={unreadAreas,rowCandidates,preselectId,candidatesFor,parseReceipt:parse,parseProductNames:parse,cleanProductName:productText,parseTsvLines:tsvLines,isSubtotalBoundary:subtotalBoundary};
 const baseShow=showPremium;showPremium=function(k){if(k==='receipt')return openReceipt();if(k==='money'){const v=items.reduce((s,x)=>s+(Number.isFinite(x.purchaseTotal)?x.purchaseTotal:(x.price||0)*Math.max(1,x.qty||1)),0);return openM(`<button class="close" onclick="closeM()">閉じる</button><h2>💰 節約レポート</h2><div class="metrics"><div class="metric"><b>¥${v.toLocaleString()}</b><span class="muted">推定在庫金額</span></div><div class="metric"><b>${items.filter(x=>x.price>0).length}</b><span class="muted">価格記録</span></div><div class="metric"><b>${items.length}</b><span class="muted">登録品</span></div></div>`)}return baseShow(k)};
 const badge=document.querySelector('.badge');if(badge)badge.textContent='試用版 v12.5m';const prem=[...document.querySelectorAll('#pg-premium .premium')].find(x=>x.textContent.includes('レシート一括補充'));if(prem){const m=prem.querySelector('.meta');if(m)m.textContent='小計まで解析→商品名・数量だけ確認→在庫反映'}
 })();

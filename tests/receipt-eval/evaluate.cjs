@@ -3,28 +3,24 @@
 // 2. Applies the app's own image preparation (copied from receipt.js prep()).
 // 3. Runs tesseract.js with the app's settings (jpn+eng, LSTM, psm 6, preserved spaces, tsv).
 // 4. Parses with the app's receipt.js and suggests stock products with receipt-match-v38.js.
-// Usage: TESS_DIR=<dir with node_modules/tesseract.js@5.1.1> node tests/receipt-eval/evaluate.cjs [count] [--old]
+// Usage: node tests/receipt-eval/evaluate.cjs [count] [--engine ppocr|tesseract] [--dry-run]
+//   --engine ppocr (default, v49): the app's receipt-image/receipt-ppocr modules in Chromium; ORT_DIST may
+//     point at a local onnxruntime-web dist (the vendored copy in atokore-live-v125/ocr/ is used otherwise).
+//   --engine tesseract: the v38 path; needs TESS_DIR with node_modules/tesseract.js@5.1.1.
+//   --dry-run: no browser or OCR; parses the synthetic receipts as text to check the tool still runs.
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const { chromium } = require('@playwright/test');
 const { STOCK, receipts } = require('./dataset.cjs');
 const match = require('../../atokore-live-v125/receipt-match-v38.js');
 
-const TESS = require(path.join(process.env.TESS_DIR, 'node_modules/tesseract.js'));
+const argv = process.argv.slice(2), ENGINE = argv.includes('--engine') ? argv[argv.indexOf('--engine') + 1] : 'ppocr', DRY = argv.includes('--dry-run');
+const TESS = ENGINE === 'tesseract' && !DRY ? require(path.join(process.env.TESS_DIR, 'node_modules/tesseract.js')) : null;
 const OUT = process.env.EVAL_OUT || path.join(__dirname, 'out');
-const count = Number(process.argv[2] || 24);
+const count = Number(argv.find(x => /^\d+$/.test(x)) || 24);
 fs.mkdirSync(OUT, { recursive: true });
 
-function parser(sourceFile) {
-  const ctx = { console, C: { 食料品: ['牛乳', '卵', '食パン', 'バナナ', 'キャベツ', 'ヨーグルト', '納豆', '鶏むね肉', '豚こま肉'], 日用品: ['ティッシュ', '洗濯洗剤'] },
-    document: { createElement: () => ({ textContent: '', style: {}, appendChild() {} }), head: { appendChild() {} }, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] },
-    localStorage: { getItem: () => null, setItem() {} }, URL: { createObjectURL: () => '', revokeObjectURL() {} }, Image: function Image() {},
-    today: () => '2026-10-21', showPremium() {}, openM() {}, closeM() {}, alert() {}, items: [], buys: [], save() {}, render() {}, go() {} };
-  ctx.window = ctx; vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(sourceFile, 'utf8'), ctx);
-  return ctx.__atokoreReceiptV125M;
-}
+const { loadReceipt, APP } = require('./load-receipt.cjs');
 const html = (r, variant) => `<!doctype html><meta charset="utf-8"><style>
  body{margin:0;background:${variant === 'photo' ? '#d9d4cc' : '#fff'}}
  .r{width:340px;margin:${variant === 'photo' ? '24px 30px' : '0'};padding:18px 16px;background:${variant === 'photo' ? '#f3f0ea' : '#fff'};font:15px/1.55 'IPAGothic',monospace;color:#222;white-space:pre;
@@ -48,23 +44,56 @@ function similar(a, b) {
 }
 
 (async () => {
+  const parse = loadReceipt({ today: '2026-10-21' });
+  if (DRY) {
+    // Wiring check only: every synthetic receipt parses and its product rows come out (no OCR involved).
+    let lines = 0, rows = 0;
+    for (const r of receipts(count)) { const p = parse.parseReceipt(r.lines.join('\n')); lines += r.truth.length; rows += p.items.length; }
+    console.log(JSON.stringify({ dryRun: true, receipts: count, truthLines: lines, parsedRows: rows }));
+    if (!rows) process.exit(1);
+    return;
+  }
   const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM_PATH || undefined });
   const page = await browser.newPage({ deviceScaleFactor: 2 });
-  const parse = parser(path.resolve(__dirname, '../../atokore-live-v125/receipt.js'));
-  const worker = await TESS.createWorker('jpn+eng', 1, { cachePath: path.join(process.env.TESS_DIR, 'lang') });
-  await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+  let worker = null, app = null;
+  if (ENGINE === 'tesseract') {
+    worker = await TESS.createWorker('jpn+eng', 1, { cachePath: path.join(process.env.TESS_DIR, 'lang') });
+    await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+  } else {
+    app = await browser.newPage();
+    await app.route('https://app.test/**', route => {
+      const rel = new URL(route.request().url()).pathname.slice(1);
+      if (rel === 'e.html') return route.fulfill({ contentType: 'text/html', body: '<meta charset="utf-8"><script src="receipt-image-v49.js"></script><script src="receipt-ppocr-v49.js"></script><script src="receipt-ocr-lines-v49.js"></script><script src="receipt-structure-v49.js"></script>' });
+      const f = path.join(APP, rel); if (!fs.existsSync(f)) return route.fulfill({ status: 404, body: '' });
+      route.fulfill({ body: fs.readFileSync(f), contentType: f.endsWith('.wasm') ? 'application/wasm' : f.endsWith('.js') || f.endsWith('.mjs') ? 'text/javascript' : 'application/octet-stream' });
+    });
+    if (process.env.ORT_DIST) await app.route('https://cdn.jsdelivr.net/npm/onnxruntime-web@*/dist/**', route => route.fulfill({ body: fs.readFileSync(path.join(process.env.ORT_DIST, path.basename(new URL(route.request().url()).pathname))), contentType: route.request().url().endsWith('.wasm') ? 'application/wasm' : 'text/javascript' }));
+    await app.goto('https://app.test/e.html');
+  }
   const rows = [];
   for (const r of receipts(count)) {
     for (const variant of ['scan', 'photo']) {
       await page.setContent(html(r, variant));
       const shot = await page.locator(variant === 'photo' ? 'body' : '.r').screenshot();
-      const prepped = await page.evaluate(([code, src]) => (0, eval)('(' + code + ')')(src), [PREP, 'data:image/png;base64,' + shot.toString('base64')]);
-      const file = path.join(OUT, `${r.id}-${variant}.png`);
-      fs.writeFileSync(file, Buffer.from(prepped.split(',')[1], 'base64'));
       const t0 = Date.now();
-      const z = await worker.recognize(file, { rotateAuto: true }, { text: true, tsv: true });
+      let parsed;
+      if (worker) {
+        const prepped = await page.evaluate(([code, src]) => (0, eval)('(' + code + ')')(src), [PREP, 'data:image/png;base64,' + shot.toString('base64')]);
+        const file = path.join(OUT, `${r.id}-${variant}.png`);
+        fs.writeFileSync(file, Buffer.from(prepped.split(',')[1], 'base64'));
+        const z = await worker.recognize(file, { rotateAuto: true }, { text: true, tsv: true });
+        parsed = parse.parseReceipt({ text: z.data.text, tsv: z.data.tsv });
+      } else {
+        const lines = await app.evaluate(async b64 => {
+          const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          const p = await AtokoreReceiptImage.prepare(new File([u], 'r.png', { type: 'image/png' }));
+          const items = await AtokoreReceiptOcr.readReceipt(p, { stopAfter: got => AtokoreReceiptStructure.itemListEnded(AtokoreReceiptLines.groupBoxes(got)) });
+          return AtokoreReceiptLines.groupBoxes(items);
+        }, shot.toString('base64'));
+        parsed = parse.parseReceipt(lines);
+      }
       const ms = Date.now() - t0;
-      const parsed = parse.parseReceipt({ text: z.data.text, tsv: z.data.tsv });
+      const z = { data: { confidence: 0 } };
       // Align parsed rows to printed lines in order (receipts keep line order): dynamic programming
       // over name similarity, so a garbled OCR row still counts as "a row appeared for this line".
       const T = r.truth, P = parsed.items, sim = T.map(t => P.map(p => similar(p.raw || p.name, t.printed)));
@@ -80,7 +109,7 @@ function similar(a, b) {
       const lines = T.map((t, ti) => {
         const best = pair.has(ti) ? pair.get(ti) : null, found = best !== null, score = found ? sim[ti][best] : 0;
         const item = found ? P[best] : null;
-        const cands = item ? match.candidates(item.raw || item.name, STOCK) : [];
+        const cands = item ? (parse.candidatesFor ? parse.candidatesFor(item, STOCK, match) : match.candidates(item.raw || item.name, STOCK)) : [];
         const top = cands[0]?.item.id ?? null;
         return { printed: t.printed, truthStock: t.stockId, truthQty: t.qty, found, readable: score >= 0.6, parsedName: item?.name ?? null, parsedQty: item?.qty ?? null,
           selected: item ? !!item.selected : false, top, candidateIds: cands.map(c => c.item.id), nameScore: Math.round(score * 100) / 100 };
@@ -90,7 +119,7 @@ function similar(a, b) {
       process.stdout.write(`${r.id} ${variant} ${ms}ms found ${lines.filter(l => l.found).length}/${lines.length} extras ${extras.length}\n`);
     }
   }
-  await worker.terminate(); await browser.close();
+  if (worker) await worker.terminate(); await browser.close();
   const summary = {};
   for (const variant of ['scan', 'photo']) {
     const rs = rows.filter(x => x.variant === variant), ls = rs.flatMap(x => x.lines), found = ls.filter(l => l.found);

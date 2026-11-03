@@ -144,11 +144,25 @@
     const value=el.style.getPropertyValue('font-size');
     const size=scaledSize(value,isField);
     if(size)el.style.setProperty('font-size',size,el.style.getPropertyPriority('font-size'));
+    // Class-only rules (for example .receiptNameInput) cannot be identified as
+    // fields while walking stylesheets. Cover actual fields when they appear,
+    // including those inserted later by the receipt review. Measure at scale 1
+    // so changing the preference later still scales from the original size.
+    if(isField&&!value){
+      const ownScale=el.style.getPropertyValue('--atk-font-scale');
+      const priority=el.style.getPropertyPriority('--atk-font-scale');
+      el.style.setProperty('--atk-font-scale','1');
+      const baseSize=getComputedStyle(el).fontSize;
+      if(ownScale)el.style.setProperty('--atk-font-scale',ownScale,priority);
+      else el.style.removeProperty('--atk-font-scale');
+      const fieldSize=scaledSize(baseSize,true);
+      if(fieldSize)el.style.setProperty('font-size',fieldSize,'important');
+    }
   }
   function scaleInlineTree(el){
     if(el.nodeType!==1)return;
     scaleInline(el);
-    el.querySelectorAll('[style]').forEach(scaleInline);
+    el.querySelectorAll('[style],input,select,textarea').forEach(scaleInline);
   }
   scaleSheets();
   scaleInlineTree(document.body);
