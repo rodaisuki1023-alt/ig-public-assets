@@ -317,10 +317,10 @@ jobs:
           node --test _preview_baby_source/tests/atokore-edit-after-add.test.cjs
           node --test _preview_baby_source/tests/atokore-distinct-icons.test.cjs
 
-      - name: Checkout reviewed v19 P0 safety trial source
+      - name: Checkout reviewed v19 integrated v49 trial source
         uses: actions/checkout@v4
         with:
-          ref: 808461dc8401a81beaa20296b33b5d8d3ed56bf0
+          ref: efc11f747e1a7fdafa927350361c3a029738f552
           path: _preview_v19_source
           persist-credentials: false
 
@@ -334,12 +334,13 @@ jobs:
             _preview_v19_source/atokore-live-v125 "$PREVIEW" 19
           python3 - <<'PY'
           from pathlib import Path
+          import hashlib, re
           base = Path('_site/preview-baby-v19')
           html = (base / 'index.html').read_text()
           worker = (base / 'service-worker.js').read_text()
           bootstrap = (base / 'storage-bootstrap-v19.js').read_text()
           assert 'ベビー特化 試用版 v19' in html
-          assert 'polish-v44.js?v=48' in html and 'polish-v44.css?v=44' in html
+          assert 'polish-v44.js?v=49.1' in html and 'polish-v44.css?v=49.1' in html
           assert "'./polish-v44.js'" in worker and "'./polish-v44.css'" in worker
           assert 'common-v45.js?v=48' in html and 'insights-v45.js?v=48' in html and 'muse-v45.css?v=48' in html
           for asset in ['common-v45.js','insights-v45.js','muse-v45.css']:
@@ -351,7 +352,7 @@ jobs:
           assert '家族の最近の変更' in (base / 'home-v43.js').read_text()
           assert 'history.js?v=48' in html
           assert '機能更新 v48' in (base / 'insights-v45.js').read_text()
-          for asset in ['search-v48.js','search-ui-v48.js','search-v48.css','stock-rules-v48.js','stock-order-v48.js','stock-v48.css']:
+          for asset in ['search-v48.js','search-ui-v48.js','search-v48.css','stock-rules-v48.js','stock-v48.css']:
               assert asset + '?v=48' in html and f"'./{asset}'" in worker, asset
           assert '家族共有に参加している間は' in (base / 'data-safety-v19.js').read_text()
           assert "{v:'v48'" in (base / 'history.js').read_text()
@@ -381,12 +382,12 @@ jobs:
           assert 'bf-stock-grid' in (base / 'baby-focus-v17.css').read_text()
           assert 'brandAppearance' in (base / 'baby-kit-v17.js').read_text()
           assert 'product-photos-v30.js?v=48' in html and 'product-photos-v30.css?v=31' in html
-          assert 'atokore-redesign.js?v=45' in html and 'edit-after-add.js?v=48' in html
+          assert 'atokore-redesign.js?v=45' in html and 'edit-after-add.js?v=49.1' in html
           photos = (base / 'product-photos-v30.js').read_text()
           assert 'atokorePreviewProductPhotosV19' in photos and 'indexedDB.open' in photos
           assert 'localStorage.setItem' not in photos and 'fetch(' not in photos
           assert "'./product-photos-v30.js'" in worker and "'./product-photos-v30.css'" in worker
-          assert 'quick-add.js?v=48' in html
+          assert 'quick-add.js?v=49.1' in html
           assert 'quick-add.css?v=27' in html
           quick = (base / 'quick-add.js').read_text()
           assert 'groupsFor' in quick and 'subgroupOf' in quick and 'isBabyFood' in quick
@@ -396,12 +397,12 @@ jobs:
           for name in ['diaper-bear-v24', 'wipes-bear-v24', 'milk-bear-v26']:
               image = f'icons/baby/{name}.webp'
               assert (base / image).is_file() and image in worker
-          assert 'stability.js?v=48' in html
+          assert 'stability.js?v=49.1' in html
           assert 'sameProduct(x,bought)' in (base / 'stability.js').read_text()
           assert '＋ ストックに追加' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'baby-flow-v17.js').read_text()
           assert '追加してもいいですか？' in (base / 'routine-catalog-v20.js').read_text()
-          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v48.2'" in worker
+          assert 'function ownsPath(' in worker and "CACHE_VERSION = 'atokore-pwa-v49.1'" in worker
           # v48.1: month ages keep the digit boundary (7ヶ月 never finds 17ヶ月) and ヶ/ケ/ヵ/カ/か/箇月 are one spelling.
           search_js = (base / 'search-v48.js').read_text()
           assert 'search-v48.js?v=48.1' in html and '(?:ゖ|ゕ|か|け|箇)月' in search_js and "'(^|[^0-9])'" in search_js
@@ -413,8 +414,12 @@ jobs:
           assert 'buy-duplicates-v48.js?v=48.2' in html and "'./buy-duplicates-v48.js'" in worker
           assert '数量や行は自動で変更しません' in (base / 'buy-duplicates-v48.js').read_text()
           # v48.2: in-app notices instead of alert(), 44px controls (cache keys bumped with the fixes).
-          for asset in ['common-v45.js', 'edit-after-add.js', 'stability.js', 'stock-order-v48.js', 'muse-v45.css']:
+          for asset in ['common-v45.js', 'muse-v45.css']:
               assert asset + '?v=48.2' in html, asset
+          for asset in ['display.js', 'edit-after-add.js', 'stability.js', 'stock-order-v48.js']:
+              assert asset + '?v=49.1' in html and f"'./{asset}'" in worker, asset
+          assert 'function foodMonthFor(' in (base / 'polish-v44.js').read_text()
+          assert 'babyFoodMonth' in (base / 'stability.js').read_text()
           # Dedicated trial backend; Google sign-in remains explicit and preserves pre-load overrides.
           config = (base / 'household-config-v37.js').read_text()
           assert "Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')" in config
@@ -423,7 +428,7 @@ jobs:
           assert 'google: true' in config and 'email: false' in config and 'guest: true' in config
           sync = (base / 'household-sync-v37.js').read_text()
           assert 'atokorePreviewHouseholdSyncV19' in sync and 'atokorePreviewHouseholdSessionV19' in sync
-          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', '48.2'), ('household-sync-v37.css', 48), ('household-google-v40.js', 40)]:
+          for name, version in [('household-config-v37.js', 42), ('household-core-v37.js', 40), ('household-sync-v37.js', '49.1'), ('household-sync-v37.css', 48), ('household-google-v40.js', 40)]:
               assert name + f'?v={version}' in html and f"'./{name}'" in worker, name
           assert 'atokorePreviewHouseholdInviteV19' in sync
           assert 'Googleなしで共有に参加する' in sync and 'recoveryHelp' in sync
@@ -432,12 +437,26 @@ jobs:
           # No server secrets in the browser: only the public anon key could ever be configured.
           built = ''.join(p.read_text() for p in base.glob('*.js'))
           assert 'service_role' not in built and 'sb_secret_' not in built
-          # v38 receipts: pinned on-device OCR, suggestions, receipt history on trial-only storage.
+          # v49 receipts: self-hosted OCR, verified parts, notices and trial-only storage.
           receipt_js = (base / 'receipt.js').read_text()
-          assert 'receipt.js?v=46' in html and 'tesseract.js@5.1.1' in receipt_js
+          for asset in ['receipt.js', 'receipt-image-v49.js', 'receipt-ppocr-v49.js', 'receipt-ocr-lines-v49.js', 'receipt-structure-v49.js', 'receipt-match-v38.js']:
+              assert asset + '?v=49.1' in html and f"'./{asset}'" in worker, asset
+          ocr = (base / 'receipt-ppocr-v49.js').read_text()
+          assert "BASE='./ocr/'" in ocr and 'https://' not in ocr
+          assets = re.findall(r"name:'([^']+)',sha256:'([0-9a-f]{64})',bytes:(\d+)", ocr)
+          assert len(assets) == 6
+          notice = (base / 'ocr/NOTICE.md').read_text()
+          for name, digest, size in assets:
+              data = (base / 'ocr' / name).read_bytes()
+              assert len(data) == int(size) and hashlib.sha256(data).hexdigest() == digest, name
+              assert name in notice and digest in notice, name
+          for name in ['LICENSE-Apache-2.0-PaddleOCR.txt', 'LICENSE-RapidOCR.txt', 'RapidOCR-MODEL_LICENSES.md', 'LICENSE-onnxruntime.txt', 'ThirdPartyNotices-onnxruntime.txt']:
+              assert (base / 'ocr/licenses' / name).is_file(), name
+          assert 'receiptCreditsV49' in receipt_js and 'receiptPartsNotStored' in receipt_js
+          assert '読み落としをすべて検出できるわけではありません' in receipt_js
           assert 'どの商品ですか？' in receipt_js and '読み取れなかった行' in receipt_js
           assert 'atokorePreviewReceiptHistoryV19' in receipt_js
-          assert 'receipt-match-v38.js?v=38' in html and 'receipt-v38.css?v=38' in html
+          assert 'receipt-v38.css?v=38' in html
           assert "'./receipt-match-v38.js'" in worker and "'./receipt-v38.css'" in worker
           # v39 first run and reorder line.
           onboarding = (base / 'onboarding-v39.js').read_text()
@@ -467,6 +486,10 @@ jobs:
           node --test _preview_v19_source/tests/atokore-polish-v44.test.cjs
           node --test _preview_v19_source/tests/atokore-muse-v45.test.cjs
           node --test _preview_v19_source/tests/atokore-receipt-match-v38.test.cjs
+          node --test _preview_v19_source/tests/atokore-receipt-structure-v49.test.cjs
+          node --test _preview_v19_source/tests/atokore-receipt-eval-smoke.test.cjs
+          node --test _preview_v19_source/tests/atokore-receipt-family-queue.test.cjs
+          node --test _preview_v19_source/tests/atokore-food-month-display.test.cjs
           node _preview_v19_source/tests/atokore-receipt-product-names.test.cjs
           node --test _preview_v19_source/tests/atokore-peach-ui.test.cjs
           node --test _preview_v19_source/tests/atokore-search-v48.test.cjs
