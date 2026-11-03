@@ -15,7 +15,7 @@
       const amount=Math.max(1,Number(qty)||1);
       let found=list.find(v=>Core.sameProduct(v,item));
       if(found)found.qty=(Number(found.qty)||0)+amount;
-      else list.push({id:Core.uniqueId(),name:item.name,qty:amount,unit,stockId:item.id,cat:item.cat||''});
+      else {const age=Number(item.babyFoodMonth);const ageField=Number.isInteger(age)&&age>=1&&age<=48?{babyFoodMonth:age}:{};list.push({id:Core.uniqueId(),name:item.name,qty:amount,unit,stockId:item.id,cat:item.cat||'',...ageField})}
       return true;
     },
     removeByIds(list,ids){
@@ -29,7 +29,7 @@
         let target=bought.stockId!=null?stock.find(x=>Number(x.id)===Number(bought.stockId)&&Core.sameProduct(x,bought)):null;
         if(!target)target=stock.find(x=>Core.sameProduct(x,bought));
         if(target)target.qty=(Number(target.qty)||0)+(Number(bought.qty)||1);
-        else {const details={};for(const k of ['place','expType','exp','memo','minQty','qtyBasis','inUse'])if(bought[k]!==undefined)details[k]=bought[k];stock.push({id:Core.uniqueId(),name:bought.name,cat:bought.cat||inferCat(bought.name),qty:Number(bought.qty)||1,unit:bought.unit||'個',place:'その他',expType:'期限なし',exp:'',usage:1,...details})}
+        else {const details={};for(const k of ['place','expType','exp','memo','minQty','qtyBasis','inUse','babyFoodMonth'])if(bought[k]!==undefined)details[k]=bought[k];stock.push({id:Core.uniqueId(),name:bought.name,cat:bought.cat||inferCat(bought.name),qty:Number(bought.qty)||1,unit:bought.unit||'個',place:'その他',expType:'期限なし',exp:'',usage:1,...details})}
       }
       return {count:picked.length,remaining:(Array.isArray(list)?list:[]).filter(x=>!selected.has(Number(x.id)))};
     }

@@ -106,8 +106,17 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.equal('minQty' in editor.validate({name:'卵',qty:1,cat:'食料品',unit:'個',minQty:''},{...sample,minQty:4}),false);
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
  const worker=fs.readFileSync(path.join(base,'service-worker.js'),'utf8');
- assert.match(html,/edit-after-add\.js\?v=48/);
+ assert.match(html,/edit-after-add\.js\?v=49\.1/);
  assert.match(html,/edit-after-add\.css\?v=39/);
  assert.match(worker,/'\.\/edit-after-add.js'/);
- assert.match(worker,/atokore-pwa-v48/);
+ assert.match(worker,/atokore-pwa-v49\.1/);
+});
+
+test('baby food month is optional, validated, and retains unrelated fields',()=>{
+ const item={id:8,name:'手作りスープ',cat:'離乳食',qty:1,unit:'個',babyFoodMonth:7,photo:'keep'};
+ const form={...item,expType:'期限なし',minQty:''};
+ assert.equal(editor.validate({...form,babyFoodMonth:'16'},item).babyFoodMonth,16);
+ assert.equal(editor.validate({...form,babyFoodMonth:'16'},item).photo,'keep');
+ assert.equal(editor.validate({...form,babyFoodMonth:''},item).babyFoodMonth,undefined);
+ assert.throws(()=>editor.validate({...form,babyFoodMonth:'49'},item),/月齢/);
 });

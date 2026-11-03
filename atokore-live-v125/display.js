@@ -15,48 +15,10 @@
   .displayPreviewQty{font-weight:900;margin-left:auto;white-space:nowrap}
   .displayNote{font-size:12px;color:#667085;line-height:1.5}
 
-  body.atk-fs-tiny{font-size:11.5px}
-  body.atk-fs-tiny .top h1{font-size:16px}
-  body.atk-fs-tiny .sub{font-size:9.5px}
-  body.atk-fs-tiny .hero h2{font-size:18px}
-  body.atk-fs-tiny .name{font-size:11.5px}
-  body.atk-fs-tiny .meta,body.atk-fs-tiny .muted{font-size:9px}
-  body.atk-fs-tiny .section{font-size:12px}
-  body.atk-fs-tiny .metric b{font-size:16px}
-  body.atk-fs-tiny .btn,body.atk-fs-tiny .product,body.atk-fs-tiny .chip,body.atk-fs-tiny .quick button{font-size:11px}
-  body.atk-fs-tiny .tab{font-size:8.5px}
-  body.atk-fs-tiny .tab b{font-size:15px}
-  body.atk-fs-tiny .expiryBadge{font-size:8.5px;padding:2px 5px}
-  body.atk-fs-tiny .label{font-size:11px}
-  body.atk-fs-tiny .routineCount,body.atk-fs-tiny .catalogCount{font-size:9px}
-
-  body.atk-fs-small{font-size:13px}
-  body.atk-fs-small .top h1{font-size:18px}
-  body.atk-fs-small .hero h2{font-size:21px}
-  body.atk-fs-small .name{font-size:13px}
-  body.atk-fs-small .meta,body.atk-fs-small .muted{font-size:10.5px}
-  body.atk-fs-small .section{font-size:14px}
-  body.atk-fs-small .metric b{font-size:18px}
-  body.atk-fs-small .btn,body.atk-fs-small .product,body.atk-fs-small .chip,body.atk-fs-small .quick button{font-size:12.5px}
-  body.atk-fs-small .tab{font-size:9.5px}
-  body.atk-fs-small .tab b{font-size:17px}
-  body.atk-fs-small .expiryBadge{font-size:10px}
-  body.atk-fs-small .label{font-size:12px}
-  body.atk-fs-small .routineCount{font-size:10.5px}
-
-  body.atk-fs-large{font-size:18px}
-  body.atk-fs-large .top h1{font-size:24px}
-  body.atk-fs-large .hero h2{font-size:28px}
-  body.atk-fs-large .name{font-size:18px}
-  body.atk-fs-large .meta,body.atk-fs-large .muted{font-size:14px}
-  body.atk-fs-large .section{font-size:19px}
-  body.atk-fs-large .metric b{font-size:25px}
-  body.atk-fs-large .btn,body.atk-fs-large .product,body.atk-fs-large .chip,body.atk-fs-large .quick button{font-size:17px}
-  body.atk-fs-large .tab{font-size:12.5px}
-  body.atk-fs-large .tab b{font-size:22px}
-  body.atk-fs-large .expiryBadge{font-size:13px}
-  body.atk-fs-large .label{font-size:15px}
-  body.atk-fs-large .routineCount{font-size:14px}
+  body{--atk-font-scale:1;font-size:calc(16px * var(--atk-font-scale))}
+  body.atk-fs-tiny{--atk-font-scale:.82}
+  body.atk-fs-small{--atk-font-scale:.92}
+  body.atk-fs-large{--atk-font-scale:1.2}
 
   body.atk-density-ultra .content{padding:5px 6px}
   body.atk-density-ultra .top{padding:7px 10px;min-height:48px}
@@ -146,6 +108,72 @@
   .field input,.field select,.field textarea,.routineInline input,.routineNameEdit,.receiptGrid input,.receiptGrid select,.receiptMeta input,.bulkAddText,.bulkAddGrid input,.bulkAddGrid select,.bulkAddGrid2 input,.bulkAddGrid2 select{font-size:16px!important}
   `;
   const st=document.createElement('style');st.id='atokoreDisplayStyles';st.textContent=css;document.head.appendChild(st);
+
+  // Existing screens use many fixed px sizes, including late-injected styles.
+  // Scale those declarations at their original specificity so fonts retain their
+  // relative hierarchy and button dimensions are not scaled.
+  function scaledSize(value, isField){
+    const match=/^(\d+(?:\.\d+)?)px$/.exec(value.trim());
+    if(!match)return null;
+    const scaled='calc('+match[1]+'px * var(--atk-font-scale, 1))';
+    return isField?'max(16px, '+scaled+')':scaled;
+  }
+  function scaleRules(rules){
+    for(const rule of Array.from(rules||[])){
+      if(rule.cssRules)scaleRules(rule.cssRules);
+      const style=rule.style;if(!style)return;
+      // The old list-only overrides would hide the globally scaled sizes.
+      if(/\.atk-fs-(?:tiny|small|large)/.test(rule.selectorText||'')){
+        style.removeProperty('font-size');continue;
+      }
+      const value=style.getPropertyValue('font-size');
+      const selector=rule.selectorText||'';
+      const isField=/(?:^|[\s>+~,])(?:input|select|textarea)(?:[\s.#[(:>+~,]|$)/.test(selector);
+      const size=scaledSize(value,isField);
+      if(size)style.setProperty('font-size',size,style.getPropertyPriority('font-size'));
+    }
+  }
+  function scaleSheets(){
+    for(const sheet of Array.from(document.styleSheets)){
+      try{scaleRules(sheet.cssRules)}catch(e){/* Cross-origin sheets cannot be edited. */}
+    }
+  }
+  function scaleInline(el){
+    if(el.nodeType!==1)return;
+    const isField=/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
+    const value=el.style.getPropertyValue('font-size');
+    const size=scaledSize(value,isField);
+    if(size)el.style.setProperty('font-size',size,el.style.getPropertyPriority('font-size'));
+    // Class-only rules (for example .receiptNameInput) cannot be identified as
+    // fields while walking stylesheets. Cover actual fields when they appear,
+    // including those inserted later by the receipt review. Measure at scale 1
+    // so changing the preference later still scales from the original size.
+    if(isField&&!value){
+      const ownScale=el.style.getPropertyValue('--atk-font-scale');
+      const priority=el.style.getPropertyPriority('--atk-font-scale');
+      el.style.setProperty('--atk-font-scale','1');
+      const baseSize=getComputedStyle(el).fontSize;
+      if(ownScale)el.style.setProperty('--atk-font-scale',ownScale,priority);
+      else el.style.removeProperty('--atk-font-scale');
+      const fieldSize=scaledSize(baseSize,true);
+      if(fieldSize)el.style.setProperty('font-size',fieldSize,'important');
+    }
+  }
+  function scaleInlineTree(el){
+    if(el.nodeType!==1)return;
+    scaleInline(el);
+    el.querySelectorAll('[style],input,select,textarea').forEach(scaleInline);
+  }
+  scaleSheets();
+  scaleInlineTree(document.body);
+  window.addEventListener('load',scaleSheets,{once:true});
+  new MutationObserver(records=>{
+    for(const record of records){
+      if(record.type==='attributes')scaleInline(record.target);
+      else for(const node of record.addedNodes)scaleInlineTree(node);
+    }
+  }).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['style']});
+  new MutationObserver(scaleSheets).observe(document.head,{subtree:true,childList:true,characterData:true});
 
   function loadPrefs(){
     try{

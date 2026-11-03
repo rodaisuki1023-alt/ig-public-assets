@@ -41,4 +41,11 @@ assert.ok(Core, '統合操作コアが読み込めること');
   assert.equal(tissue.cat, '日用品');
 }
 
+{
+  const item={id:81,name:'手作りスープ',qty:1,unit:'個',cat:'離乳食',babyFoodMonth:16};
+  const buys=[];Core.addStockToBuy(buys,item);assert.equal(buys[0].babyFoodMonth,16);
+  const stock=[];Core.purchase(stock,buys,[buys[0].id]);assert.equal(stock[0].babyFoodMonth,16);
+  const existing={...item,id:82,babyFoodMonth:8};Core.purchase([existing],buys,[buys[0].id]);assert.equal(existing.babyFoodMonth,8);
+  const noAge=[];Core.addStockToBuy(noAge,{id:83,name:'不明',unit:'個',cat:'離乳食'});assert.equal('babyFoodMonth' in noAge[0],false);
+}
 console.log('Atokore action core: all tests passed');
