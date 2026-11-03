@@ -147,7 +147,7 @@ function structure(lines){
   }
   if(!nameLike(name)){if(price||letters(name))rejected.push({text:s,reason:'商品名として判定できない文字',area:line.area});continue}
   const coupon=afterCpn;afterCpn=false;
-  products.push({line:i,text:name,source:s,qty:1,qtyLine:'',qtyChecked:false,priced:!!price,price:price?price.value:null,structured:!!price,coupon,confidence:line.confidence,minScore:line.minScore,area:line.area,doubt:doubt?[doubt]:(sumLine?[SUM_DOUBTS[1]]:[])});
+  products.push({line:i,text:name,source:s,qty:1,qtyLine:'',qtyChecked:false,priced:!!price,price:price?price.value:null,structured:!!price,coupon,confidence:line.confidence,minScore:line.minScore,area:line.area,doubt:[...(doubt?[doubt]:[]),...(sumLine?[SUM_DOUBTS[1]]:[])]});
   if(price&&!coupon)sum+=price.value;
  }
  // No printed subtotal/total/tax line was read: the subtotal-like line is the best known end (for the count).

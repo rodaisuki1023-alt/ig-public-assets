@@ -143,6 +143,22 @@ test('v49 3rd audit: a line after a subtotal-like line is never made a normal se
   assert.deepEqual(v.items, [['商品甲', true, []], ['商品乙', true, []], ['商品丙', true, []]]);
 });
 
+test('overlapping subtotal doubts keep later rows unselected even when the subtotal matches', () => {
+  const AFTER = '小計とみられる行より後に読み取った行';
+  const SUM = '金額がそれまでの合計とほぼ同じ（小計の読み違いの可能性）';
+  for (const amount of [1000, 1050]) {
+    for (const ending of ['', `\n小計 ¥${1000 + amount}`, `\n合計 ¥${1000 + amount}`]) {
+      const result = parse(`商品甲 ¥500\n商品乙 ¥500\n十 ¥1000\n短品 ¥${amount}${ending}`);
+      const row = result.items.find(x => x.name === '短品');
+      assert.ok(row, 'the row must remain available for the person to choose');
+      assert.equal(row.selected, false, 'matching amounts must not clear the post-subtotal doubt');
+      assert.ok(row.reasons.includes(AFTER));
+      assert.equal(row.reasons.includes(SUM), !ending.startsWith('\n小計'));
+      assert.deepEqual(result.rejected.map(x => x.text), ['十 ¥1000']);
+    }
+  }
+});
+
 test('v49 2nd audit: unread OCR runs inside the item list are reported by place; never products', () => {
   const box = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
   const line = (text, top) => ({ text, top, bottom: top + 30, left: 20, right: 400, confidence: 90, minScore: 90 });
