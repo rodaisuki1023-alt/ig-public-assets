@@ -327,6 +327,8 @@ jobs:
       - name: Build v19 safety trial (separate storage, no family sync)
         run: |
           set -eu
+          # The evaluation dry-run imports Playwright; keep every required tool in a clean runner.
+          npm install --no-save --ignore-scripts jsdom@26.1.0 @electric-sql/pglite@0.5.8 @playwright/test@1.56.1
           PREVIEW=_site/preview-baby-v19
           # The trial's own build script renames every storage key to atokorePreview*V19, stubs
           # family sync and fails if a production key or a referenced file is missing.
