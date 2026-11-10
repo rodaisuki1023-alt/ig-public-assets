@@ -72,11 +72,23 @@ const okName=x=>!!x&&typeof x==='object'&&typeof x.name==='string'&&x.name.trim(
 const okRecord=x=>okName(x)&&Number.isFinite(Number(x.qty))&&Number.isFinite(Number(x.id));
 const okRoutine=x=>okName(x)&&Number.isFinite(Number(x.id))&&Array.isArray(x.items)&&x.items.every(okRecord);
 
+// Controls compare IDs as numbers. Never renumber colliding rows: stock links and
+// product photos may refer to those IDs, so reject the whole file before restore.
+function assertUniqueIds(list,label){
+ const ids=new Set();
+ for(const row of list){
+  const id=Number(row.id);
+  if(ids.has(id))throw Error(label+'に同じIDの行が複数あります。安全のため復元を中止しました。元のファイルを確認してください。');
+  ids.add(id);
+ }
+}
+
 function parseBackup(text){
  let data;try{data=JSON.parse(text)}catch(e){throw Error('ファイルを読み込めませんでした（JSON形式ではありません）')}
  const state=data&&data.app==='atokore'&&data.data?data.data:data;
  if(!valid(state))throw Error('あとこれのバックアップファイルではありません');
  const a=cleanList(state.items,okRecord),b=cleanList(state.buys,okRecord),c=cleanList(state.routines,okRoutine);
+ assertUniqueIds(a.out,'ストック');assertUniqueIds(b.out,'買い物リスト');assertUniqueIds(c.out,'いつものリスト');
  const history=Array.isArray(data?.history)?data.history.filter(h=>h&&typeof h==='object'&&typeof h.title==='string').slice(0,200):null;
  const createdAt=typeof data?.exportedAt==='string'&&!Number.isNaN(Date.parse(data.exportedAt))?data.exportedAt:null;
  return {state:{items:a.out,buys:b.out,routines:c.out},history,dropped:a.dropped+b.dropped+c.dropped,createdAt,photos:Array.isArray(data?.photos)?data.photos:[]};
