@@ -8,6 +8,7 @@ on:
       - 'atokore-trial-v12/family.js'
       - 'tests/atokore-core.test.cjs'
       - 'tests/atokore-actions.integration.test.cjs'
+      - 'tests/atokore-family-safety.test.cjs'
       - 'tests/atokore-receipt-input.test.cjs'
       - 'tests/atokore-receipt-product-names.test.cjs'
       - 'tests/atokore-pwa.test.cjs'
@@ -95,6 +96,7 @@ jobs:
           assert 'catalogLimit=6' in ui
           assert "tab==='activity'&&load().length" in history
           assert 'familyModeTabs' in family
+          assert 'restoreFamilyBackupSafe' in family and 'resumeFamilySafe' in family
           assert '#receiptAnalyzeBtn:disabled' in receipt
           assert "'&quot;'" in ui
           assert 'rel="manifest" href="./manifest.webmanifest"' in index
@@ -150,6 +152,7 @@ jobs:
           node --test tests/atokore-baby-visuals.test.cjs
           node tests/atokore-core.test.cjs
           node tests/atokore-actions.integration.test.cjs
+          node --test tests/atokore-family-safety.test.cjs
           node tests/atokore-receipt-input.test.cjs
           node tests/atokore-receipt-product-names.test.cjs
           node tests/atokore-pwa.test.cjs
