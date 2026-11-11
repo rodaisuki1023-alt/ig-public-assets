@@ -76,10 +76,14 @@ async function main() {
   const sql=fs.readFileSync(path.join(dir,'20261101120000_atokore_receipt_imports.sql'),'utf8');
   const old='v_hh uuid := atokore_private.my_household(v_user);';
   assert.equal(sql.split(old).length-1,2);
-  const candidate=sql.replaceAll(old,'v_hh uuid := atokore_private.lock_member(v_user);');
-  // Candidate is applied ONLY to this disposable database, never to the real migration file.
-  const definitions=candidate.match(/create or replace function public\.hh_receipt_[\s\S]*?end \$\$;/g);
-  assert.equal(definitions.length,2);
+  const expected=sql.replaceAll(old,'v_hh uuid := atokore_private.lock_member(v_user);');
+  const expectedDefinitions=expected.match(/create or replace function public\.hh_receipt_[\s\S]*?end \$\$;/g);
+  // The exact SQL proposed for later review is the SQL tested here, not an in-memory-only sketch.
+  // No live Supabase connection: this program requires localhost/atokore_ci at startup.
+  const reviewSql=fs.readFileSync(path.join(__dirname,'candidate-member-lock.sql'),'utf8');
+  const definitions=reviewSql.match(/create or replace function public\.hh_receipt_[\s\S]*?end \$\$;/g);
+  assert.equal(definitions?.length,2);
+  assert.deepEqual(definitions,expectedDefinitions,'review SQL must only change two membership lookups');
   await pool.query(definitions.join('\n'));
   await scenario(hh,'candidate-household-lock',true);
 }
