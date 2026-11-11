@@ -67,3 +67,36 @@ test('joining while the undo confirmation is open rechecks membership before cha
   expect(await stored(page)).toEqual(before);
   expect(await page.evaluate(() => window.__testPhotoUndo)).toBe(0);
 });
+
+test('joining during file-restore confirmation cannot replace saved data or photos', async ({ page }) => {
+  await open(page, { [KEY]: baseState() });
+  const before = await stored(page);
+  const next = baseState({ items: [{ id: 99, name: '合成ファイル内の商品', cat: '日用品', qty: 8, unit: '個' }], buys: [], routines: [] });
+  await page.evaluate(() => {
+    window.__testJoinedDuringFileRestore = false;
+    window.__testPhotoReplacements = 0;
+    window.AtokoreHousehold = { homeState: () => ({ joined: window.__testJoinedDuringFileRestore }) };
+    window.AtokoreProductPhotos = {
+      parsePhotos: () => [],
+      countPhotos: async () => 0,
+      replaceAll: () => { window.__testPhotoReplacements++; },
+    };
+    atkOpenBackup();
+  });
+  const backup = { app: 'atokore', format: 2, data: next, photos: [] };
+  await page.setInputFiles('.atk-backup-file', {
+    name: 'synthetic-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(backup)),
+  });
+  // The file was selected before joining; the application must recheck when
+  // the async confirmation resolves, not rely on the earlier share status.
+  await expect(page.locator('#atkConfirm')).toBeVisible();
+  await page.evaluate(() => { window.__testJoinedDuringFileRestore = true; });
+  await appConfirm(page, true);
+  await expect(page.locator('#atkSafetyBanner')).toContainText('家族共有に参加している間');
+  expect(await stored(page)).toEqual(before);
+  expect(await page.evaluate(k => localStorage.getItem(k + 'BeforeRestore'), KEY)).toBeNull();
+  expect(await page.evaluate(() => window.__testPhotoReplacements)).toBe(0);
+  expect(page.__errors).toEqual([]);
+});
