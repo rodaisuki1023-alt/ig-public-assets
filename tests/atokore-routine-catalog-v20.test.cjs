@@ -5,7 +5,20 @@ const {JSDOM}=require('jsdom');
 const base=path.resolve(__dirname,'../atokore-live-v125');
 function browser(){
  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
- const dom=new JSDOM(html,{url:'https://example.invalid/preview-baby-v19/',runScripts:'dangerously',pretendToBeVisual:true});
+ // The stock-picker tests exercise an existing household, not a brand-new user.
+ // Seed the fixture explicitly before the inline app script reads localStorage.
+ const existingHousehold={
+  items:[
+   {id:1,name:'牛乳',cat:'食料品',qty:1,unit:'本',place:'冷蔵庫'},
+   {id:2,name:'オムツ',cat:'ベビー',qty:2,unit:'袋',place:'収納'}
+  ],
+  buys:[],routines:[]
+ };
+ const dom=new JSDOM(html,{
+  url:'https://example.invalid/preview-baby-v19/',
+  runScripts:'dangerously',pretendToBeVisual:true,
+  beforeParse(window){window.localStorage.setItem('atokoreTrialV4',JSON.stringify(existingHousehold));}
+ });
  const w=dom.window;w.alert=()=>{};w.confirm=()=>true;w.HTMLElement.prototype.scrollIntoView=function(){};
  for(const file of ['common-v45.js','data-safety-v19.js','ui.js','stability.js','baby-visuals.js','atokore-redesign.js','product-icons.js','baby-kit-v17.js','quick-add.js','edit-after-add.js','baby-flow-v17.js','routine-catalog-v20.js'])
   w.eval(fs.readFileSync(path.join(base,file),'utf8'));
