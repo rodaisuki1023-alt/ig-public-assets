@@ -65,9 +65,15 @@ test('select and batch register groceries using real PWA storage and inventory r
  w.atkOpenAdd();w.AtokoreQuickAdd.setCategory('食料品');click('[data-qa-pick="卵"]');click('[data-qa-review]');click('[data-qa-commit]');
  const newer=JSON.parse(w.localStorage.getItem('atokoreTrialV4'));
  const eggs=newer.items.filter(x=>x.name==='卵');
- assert.equal(eggs.length,2,'an existing expiring egg lot must remain separate');
- assert.ok(eggs.some(x=>x.exp&&x.qty===6),'existing dated stock must not be modified');
- assert.ok(eggs.some(x=>!x.exp&&x.qty===3),'repeated undated quick additions should combine');
+ assert.equal(eggs.length,1,'new users have no fictional dated stock');
+ assert.ok(eggs[0]&&!eggs[0].exp&&eggs[0].qty===3,'repeated undated quick additions should combine');
+ assert.equal(newer.items.length,3,'only the selected eggs, milk and onion are saved');
+ // An actual previously saved expiring lot must still remain separate.
+ const existingDated={id:991,name:'卵',cat:'食料品',unit:'個',qty:6,exp:'2099-01-01'};
+ const split=quick.buildBatch([existingDated],[{name:'卵',cat:'食料品',unit:'個',qty:1}]);
+ assert.equal(split.length,2,'an existing dated lot is not merged into an undated addition');
+ assert.equal(split[0].qty,6);
+ assert.ok(split.some(x=>!x.exp&&x.qty===1));
  assert.ok(newer.buys&&Array.isArray(newer.buys));
  dom.window.close();
 });
