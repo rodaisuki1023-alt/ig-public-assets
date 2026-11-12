@@ -86,6 +86,10 @@ test('unavailable photo storage does not affect stock; normal app never enables 
  await page.addInitScript(()=>{Object.defineProperty(IDBFactory.prototype,'open',{configurable:true,value(){throw new DOMException('denied','SecurityError')}})});
  const initial=baseState();await open(page,{[KEY]:initial});await go(page,'stock');await editor(page);await choose(page);await page.click('.atk-photo-save');
  await expect(page.locator('.atk-photo-status')).toContainText('保存領域を開けません');expect(await stored(page)).toEqual(initial);
+ // The normal-app stand-in now starts empty too. Give it an explicit existing
+ // household, rather than relying on sample stock, so the photo-UI gate is exercised.
+ await page.evaluate(state=>localStorage.setItem('atokoreTrialV4',JSON.stringify(state)),initial);
  await page.goto('/ig-public-assets/');await go(page,'stock');await page.locator('#stockList [data-stock-id="2"] .name').click();
  await expect(page.locator('.atk-photo-open')).toHaveCount(0);
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('atokoreTrialV4')))).toEqual(initial);
 });

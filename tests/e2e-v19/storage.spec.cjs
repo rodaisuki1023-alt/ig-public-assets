@@ -79,8 +79,15 @@ test.describe('save failures never look like success', () => {
     expect(await raw(page)).toBe('{broken json');
 
     await go(page, 'stock');
+    await expect(page.locator('#stockList [data-stock-id]')).toHaveCount(0);
+    // With no sample stock, a locked launch correctly displays an empty list.
+    // Inject only a synthetic in-memory row to exercise the real +/- and edit
+    // controls. Never replace the unreadable saved bytes to prepare this fixture.
+    const showTestStock = () => page.evaluate(item => { items = [item]; render(); }, baseState().items[0]);
+    await showTestStock();
     await page.locator('#stockList [data-stock-id] button.icon', { hasText: '＋' }).first().click();
     expect(await raw(page)).toBe('{broken json');
+    expect(await page.evaluate(() => items.length)).toBe(0); // failed save rolls back to the empty launch state
 
     await page.click('#bfNavAdd');
     await chooseBaby(page, { kind: 'diaper', brand: 'メリーズ', type: 'テープ', size: 'S' });
@@ -88,6 +95,7 @@ test.describe('save failures never look like success', () => {
     await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
     expect(await raw(page)).toBe('{broken json');
 
+    await showTestStock(); // quick-add failure also restored the empty launch state
     const id = await page.evaluate(() => items[0].id);
     await page.evaluate(id => window.atokoreEditStock(id), id);
     await page.click('.atk-edit-save');
