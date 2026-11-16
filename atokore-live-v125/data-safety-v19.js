@@ -72,11 +72,23 @@ const okName=x=>!!x&&typeof x==='object'&&typeof x.name==='string'&&x.name.trim(
 const okRecord=x=>okName(x)&&Number.isFinite(Number(x.qty))&&Number.isFinite(Number(x.id));
 const okRoutine=x=>okName(x)&&Number.isFinite(Number(x.id))&&Array.isArray(x.items)&&x.items.every(okRecord);
 
+// Controls compare IDs as numbers. Never renumber colliding rows: stock links and
+// product photos may refer to those IDs, so reject the whole file before restore.
+function assertUniqueIds(list,label){
+ const ids=new Set();
+ for(const row of list){
+  const id=Number(row.id);
+  if(ids.has(id))throw Error(label+'に同じIDの行が複数あります。安全のため復元を中止しました。元のファイルを確認してください。');
+  ids.add(id);
+ }
+}
+
 function parseBackup(text){
  let data;try{data=JSON.parse(text)}catch(e){throw Error('ファイルを読み込めませんでした（JSON形式ではありません）')}
  const state=data&&data.app==='atokore'&&data.data?data.data:data;
  if(!valid(state))throw Error('あとこれのバックアップファイルではありません');
  const a=cleanList(state.items,okRecord),b=cleanList(state.buys,okRecord),c=cleanList(state.routines,okRoutine);
+ assertUniqueIds(a.out,'ストック');assertUniqueIds(b.out,'買い物リスト');assertUniqueIds(c.out,'いつものリスト');
  const history=Array.isArray(data?.history)?data.history.filter(h=>h&&typeof h==='object'&&typeof h.title==='string').slice(0,200):null;
  const createdAt=typeof data?.exportedAt==='string'&&!Number.isNaN(Date.parse(data.exportedAt))?data.exportedAt:null;
  return {state:{items:a.out,buys:b.out,routines:c.out},history,dropped:a.dropped+b.dropped+c.dropped,createdAt,photos:Array.isArray(data?.photos)?data.photos:[]};
@@ -104,10 +116,16 @@ function download(body,name,type){
  setTimeout(()=>URL.revokeObjectURL(url),4000);
 }
 
+// Both file restore and its undo replace the whole local list. Check again after
+// an asynchronous confirmation: sharing may have started while it was open.
+function restoreAllowed(){
+ if(locked()){banner(LOCK_MESSAGE,'error');return false}
+ if(root.AtokoreHousehold?.homeState?.().joined){banner('家族共有に参加している間は、バックアップの復元・復元前に戻す操作はできません。共有中の一覧が置き換わるためです。','error');return false}
+ return true;
+}
 function applyRestore(parsed){
  const store=storage();
- if(locked()){banner(LOCK_MESSAGE,'error');return false}
- if(root.AtokoreHousehold?.homeState?.().joined){banner('家族共有に参加している間は、ファイルから復元できません。','error');return false}
+ if(!restoreAllowed())return false;
  if(!store){banner('この端末では保存領域を使えないため復元できません。','error');return false}
  const previous=JSON.stringify(current());
  try{store.setItem(BEFORE_RESTORE,JSON.stringify({at:Date.now(),data:JSON.parse(previous)}))}
@@ -127,12 +145,14 @@ function applyRestore(parsed){
 }
 
 function undoRestore(){
+ if(!restoreAllowed())return;
  const store=storage();let saved=null;
  try{saved=JSON.parse(store?.getItem(BEFORE_RESTORE)||'null')}catch(e){}
  if(!saved||!valid(saved.data)){banner('戻せる退避データがありません。','error');return}
  root.AtokoreConfirm.ask('復元する前の状態に戻しますか？','端末内に退避していた、復元前の内容に戻します。','元に戻す').then(ok=>{if(ok)undoRestoreConfirmed(saved)});
 }
 function undoRestoreConfirmed(saved){
+ if(!restoreAllowed())return;
  const before=JSON.parse(JSON.stringify(current()));
  assign(saved.data);
  if(!save()){assign(before);return}

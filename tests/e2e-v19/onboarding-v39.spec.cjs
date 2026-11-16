@@ -14,9 +14,10 @@ for (const [width, height] of [[320, 568], [375, 560], [390, 844], [430, 932]]) 
     await open(page);
     await expect(card(page)).toBeVisible();
     expect(await onboardingState(page)).toBeNull(); // showing the card writes nothing
-    // The built-in examples (牛乳・卵) are not offered again, so nothing is added to their counts.
-    await expect(chip(page, '牛乳')).toHaveCount(0);
-    await expect(chip(page, '卵')).toHaveCount(0);
+    // First-run entries are real stock, never pre-seeded examples.
+    await expect(chip(page, '牛乳')).toHaveCount(1);
+    await expect(chip(page, '卵')).toHaveCount(1);
+    await expect(page.locator('#stockList [data-stock-id]')).toHaveCount(0);
     await expect(page.locator('[data-ob-go]')).toBeDisabled();
     for (const name of ['おしりふき', 'トイレットペーパー', 'ティッシュ', '洗濯洗剤', '食器用洗剤']) await chip(page, name).click();
     await chip(page, 'お米').click();
@@ -33,10 +34,10 @@ for (const [width, height] of [[320, 568], [375, 560], [390, 844], [430, 932]]) 
     await expect(page.locator('#qaTray')).toBeVisible();
     expect(await stored(page)).toBeNull();
     await page.click('#qaCommit');
-    await expect.poll(async () => (await stored(page))?.items.length).toBe(7);
+    await expect.poll(async () => (await stored(page))?.items.length).toBe(4);
     const saved = await stored(page);
-    expect(saved.items.slice(0, 3).map(x => [x.id, x.name, x.qty])).toEqual([[1, '牛乳', 1], [2, 'オムツ', 2], [3, '卵', 6]]);
-    const added = Object.fromEntries(saved.items.slice(3).map(x => [x.name, x]));
+    expect(saved.items.some(x => ['牛乳', 'オムツ', '卵'].includes(x.name))).toBe(false);
+    const added = Object.fromEntries(saved.items.map(x => [x.name, x]));
     expect(Object.keys(added).sort()).toEqual(['おしりふき', 'ティッシュ', 'トイレットペーパー', '洗濯洗剤'].sort());
     expect(Object.values(added).every(x => x.qty === 1)).toBe(true);
     expect(added['トイレットペーパー'].minQty).toBe(2);
@@ -110,4 +111,25 @@ test('reorder line in the edit form: 要補充 follows it, empty means the defau
   await go(page, 'home');
   await expect(page.locator('#atkTasks [data-atk-open="7"]')).toHaveCount(0);
   expect(page.__errors).toEqual([]);
+});
+
+test('brand-new users save only the products they chose, while returning households keep their stock', async ({ page }) => {
+  await open(page);
+  expect(await stored(page)).toBeNull();
+  await expect(card(page)).toBeVisible();
+  await chip(page, 'おしりふき').click();
+  await page.click('[data-ob-go]');
+  await expect(page.locator('#qaTray')).toBeVisible();
+  await page.click('#qaCommit');
+  await expect.poll(async () => (await stored(page))?.items.length).toBe(1);
+  expect((await stored(page)).items.map(x => x.name)).toEqual(['おしりふき']);
+  await page.reload();
+  expect((await stored(page)).items.map(x => x.name)).toEqual(['おしりふき']);
+
+  const existing = await page.context().newPage();
+  const earlier = { items: [{ id: 31, name: '以前に登録したおむつ', qty: 5, unit: '袋', cat: 'ベビー' }], buys: [], routines: [] };
+  await open(existing, { [KEY]: earlier });
+  expect(await stored(existing)).toEqual(earlier);
+  await expect(existing.locator('#atkOnboarding')).toHaveCount(0);
+  await existing.close();
 });
