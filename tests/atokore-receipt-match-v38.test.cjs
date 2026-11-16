@@ -58,10 +58,12 @@ test('a confirmed match is remembered on the product and comes first next time',
   assert.equal(again[0].learned, true);
   // Price differences on the same printed name do not matter; at most 10 names per product.
   assert.equal(m.candidates('ﾍﾞﾋﾞｰﾜｲﾌﾟ 318', items)[0].learned, true);
-  // A slightly different OCR reading of the same printed name still finds the confirmed product.
+  // A slightly different OCR reading still finds the confirmed product, but only as a suggestion (v49):
+  // a near match may be another flavour or size read alike, so it is never "learned" (never pre-selected).
   const noisy = m.candidates('ﾍﾞﾋﾞｰﾜｲﾌﾞ 298', items)[0];
   assert.equal(noisy.item.name, 'Rico おしりふき');
-  assert.equal(noisy.learned, true);
+  assert.equal(noisy.learned, false);
+  assert.equal(noisy.near, true);
   // ...but never across a size conflict: a confirmed "テープM" name does not pull in an "L" line.
   const tapes = stock.map(x => ({ ...x }));
   m.remember(tapes[0], 'ﾊﾟﾝﾊﾟｰｽ ｻﾗｻﾗ ﾃｰﾌﾟM');

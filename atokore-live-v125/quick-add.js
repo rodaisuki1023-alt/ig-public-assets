@@ -402,7 +402,10 @@ function buyMatch(v){let list=[];try{list=Array.isArray(buys)?buys:[]}catch(e){}
 function lineEffect(v){
  if(state.routineTarget)return 'いつものリストに追加（在庫数は変わりません）';
  if(state.destination==='buy'){const found=buyMatch(v);return found?'買い物リストに登録済み：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit:'買い物リストに新しく追加'}
- const found=stockMatch(v);return found?'登録済みの在庫に合算：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit:'新しい商品として登録';
+ const found=stockMatch(v);if(found)return '登録済みの在庫に合算：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit;
+ // v49: the same product recorded with a best-before date is kept as its own lot; say so instead of "new".
+ const dated=stockItems().find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&x.exp&&x.expType!=='期限なし');
+ return dated?'期限つきの在庫とは別の行として登録（期限は未設定。今ある行は変わりません）':'新しい商品として登録';
 }
 function lineDetails(v){
  const parts=[];

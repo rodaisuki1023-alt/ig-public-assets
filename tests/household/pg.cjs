@@ -32,6 +32,7 @@ const SIGNATURES = {
   hh_push: [['p_ops', 'jsonb'], ['p_device', 'text']], hh_pull: [['p_since', 'bigint'], ['p_limit', 'int']], hh_changes: [['p_limit', 'int']],
   hh_entitlements: [], hh_consume: [['p_feature', 'text'], ['p_event_key', 'text']],
   hh_undo_purchases: [['p_ops','jsonb']],
+  hh_receipt_claim: [['p_fingerprint', 'text'], ['p_force', 'boolean']], hh_receipt_finish: [['p_fingerprint', 'text'], ['p_done', 'boolean']],
 };
 
 async function createDb() {

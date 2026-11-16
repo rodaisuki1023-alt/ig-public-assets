@@ -42,7 +42,7 @@ function cardHTML(){
  const lines=picked.map(name=>{const unit=CHOICES.find(c=>c[0]===name)[2];return '<label class="atk-ob-line"><span>'+esc(name)+'</span><span class="atk-ob-line-input">残り<input type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" aria-label="'+esc(name)+'の補充の目安" data-ob-min="'+esc(name)+'" value="'+esc(mins[name]??'')+'">'+esc(unit)+'以下で知らせる</span></label>'}).join('');
  return '<section id="atkOnboarding" class="atk-ob" aria-labelledby="atkObTitle">'+
   '<h3 id="atkObTitle">まずは、切らしたくない物を選びましょう</h3>'+
-  '<p class="atk-ob-sub">タップで選ぶだけ（'+MAX+'つまで）。登録はこの端末の中だけで、アカウントは不要です。数や名前はあとから変えられます。</p>'+
+  '<p class="atk-ob-sub">タップで選ぶだけ（'+MAX+'つまで）。アカウントなしで始められます。商品はこの端末に保存され、家族共有中は家族にも反映されます。数や名前はあとから変更できます。</p>'+
   '<div class="atk-ob-chips" role="group" aria-label="よく使う商品">'+chips+'</div>'+
   (picked.length?'<details class="atk-ob-more"><summary>補充の目安を決める（任意）</summary><p class="atk-ob-note">空欄なら残り1以下で「要補充」に出ます。</p>'+lines+'</details>':'')+
   '<p id="atkObError" class="atk-ob-error" role="alert" hidden></p>'+

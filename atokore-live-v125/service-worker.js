@@ -1,14 +1,22 @@
 // Several apps share this origin (the production app at the site root and sandboxed trials in
 // sub-directories). This worker therefore only touches its own directory and its own caches.
 // Refreshed worker for the direct one-tap repeat-list stock-add release.
-const CACHE_VERSION = 'atokore-pwa-v48.3';
+const CACHE_VERSION = 'atokore-pwa-v49.1';
 const SCOPE_PATH = new URL(self.registration ? self.registration.scope : './', self.location.href).pathname;
 const CACHE_PREFIX = 'atokore-shell:' + SCOPE_PATH + ':';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
+// Receipt-reading models (about 24 MB) are kept in their own cache across app updates: their file names
+// change when the models change, so a new release never re-downloads them needlessly.
+const MODEL_PREFIX = 'atokore-ocr:' + SCOPE_PATH + ':';
+const MODEL_CACHE = MODEL_PREFIX + 'ppocrv6-1';
 const APP_SHELL = [
   './',
   './index.html',
   './final.css',
+  './receipt-image-v49.js',
+  './receipt-ppocr-v49.js',
+  './receipt-ocr-lines-v49.js',
+  './receipt-structure-v49.js',
   './receipt.js',
   './display.js',
   './bulk.js',
@@ -64,7 +72,7 @@ const APP_SHELL = [
 function ownsPath(pathname) {
   if (!pathname.startsWith(SCOPE_PATH)) return false;
   const rest = pathname.slice(SCOPE_PATH.length);
-  return !rest.includes('/') || rest.startsWith('icons/');
+  return !rest.includes('/') || rest.startsWith('icons/') || /^ocr\/[^/]+$/.test(rest);
 }
 
 self.addEventListener('install', event => {
@@ -76,7 +84,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       // Delete only this app's older shells; other apps' caches on the same origin are left alone.
-      .then(keys => Promise.all(keys.filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map(key => caches.delete(key))))
+      .then(keys => Promise.all(keys.filter(key => (key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME) || (key.startsWith(MODEL_PREFIX) && key !== MODEL_CACHE)).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -110,6 +118,14 @@ self.addEventListener('fetch', event => {
         })
         .catch(() => caches.open(CACHE_NAME).then(cache => cache.match(SCOPE_PATH).then(hit => hit || cache.match('./index.html'))))
     );
+    return;
+  }
+
+  // Receipt-reading parts: served from their cache when present, otherwise from the network. The worker does
+  // not store them: the page (receipt-ppocr-v49.js) stores each part only after its SHA-256 matched, waits for
+  // the result and tells the person when it could not be stored (v49 2nd audit).
+  if (/\/ocr\/[^/]+$/.test(url.pathname)) {
+    event.respondWith(caches.open(MODEL_CACHE).then(cache => cache.match(request)).then(hit => hit || fetch(request)));
     return;
   }
 

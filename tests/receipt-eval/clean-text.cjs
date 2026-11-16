@@ -3,17 +3,12 @@
 // Usage: node tests/receipt-eval/clean-text.cjs [count]
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const { STOCK, HELD_OUT, receipts } = require('./dataset.cjs');
 const match = require('../../atokore-live-v125/receipt-match-v38.js');
 
-const ctx = { console, C: { 食料品: ['牛乳', '卵', '食パン', 'バナナ', 'キャベツ', 'ヨーグルト', '納豆'], 日用品: ['ティッシュ', '洗濯洗剤'] },
-  document: { createElement: () => ({ style: {}, appendChild() {} }), head: { appendChild() {} }, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] },
-  localStorage: { getItem: () => null, setItem() {} }, URL: {}, Image: function Image() {}, today: () => '2026-10-21',
-  showPremium() {}, openM() {}, closeM() {}, alert() {}, items: [], buys: [], save() {}, render() {}, go() {} };
-ctx.window = ctx; vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../../atokore-live-v125/receipt.js'), 'utf8'), ctx);
-const parse = ctx.__atokoreReceiptV125M.parseReceipt;
+// v49: the shared loader provides the structure stage and dates the parser needs.
+const api = require('./load-receipt.cjs').loadReceipt({ today: '2026-10-21' });
+const parse = api.parseReceipt;
 
 const count = Number(process.argv[2] || 24);
 const t = { lines: 0, rows: 0, qty: 0, known: 0, knownTop: 0, knownIn: 0, wrongTop: 0, newWrong: 0, extra: 0, rejectedProducts: 0, dateOk: 0, subtotal: 0, receipts: 0 };
@@ -30,7 +25,8 @@ for (const r of receipts(count)) {
     if (!row) { t.rejectedProducts++; return; }
     t.rows++;
     if (row.qty === truth.qty) t.qty++;
-    const c = match.candidates(row.raw, STOCK), top = c[0]?.item.id ?? null;
+    // Same candidates as the review screen (printed text, then the generic name).
+    const c = api.candidatesFor ? api.candidatesFor(row, STOCK, match) : match.candidates(row.raw, STOCK), top = c[0]?.item.id ?? null;
     if (truth.stockId !== null) {
       t.known++;
       if (top === truth.stockId) t.knownTop++; else misses.push(`${truth.printed} → ${top === null ? '(なし)' : STOCK.find(s => s.id === top).name}`);
