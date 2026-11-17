@@ -1,0 +1,61 @@
+name: Atokore Public Sandbox Safety Check
+on:
+  push:
+    branches: [atokore-iphone-review-v50-20261117]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-synthetic-only-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reject household connection or unsafe shared storage names
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          src=Path('atokore-live-v125')
+          html=(src/'index.html').read_text(encoding='utf-8')
+          conf=(src/'household-config-v37.js').read_text(encoding='utf-8')
+          assert conf.strip().endswith('window.ATOKORE_HOUSEHOLD_CONFIG = null;')
+          assert '家族共有/Googleログイン無効' in html
+          assert '合成データのみ' in html
+          assert 'family sharing intentionally disabled' in (src/'family.js').read_text()
+          joined='\n'.join(f.read_text(encoding='utf-8') for f in [src/'index.html',*src.glob('*.js')])
+          assert 'vzyxurodowpjltwbgbyc.supabase.co' not in joined
+          assert 'sb_publishable_26Owk0KT0uV4J0T64QZQyw_wIri_8Ui' not in joined
+          for key in ('atokoreTrialV4','atokoreHistoryV1','atokoreFamilySafeV2',
+                      'atokoreHouseholdSyncV1','atokoreHouseholdSessionV1',
+                      'atokoreHouseholdOAuthV1','atokoreHouseholdInviteV1',
+                      'atokoreReceiptHistoryV1','atokoreOnboardingV1'):
+            assert not re.search(r'\b'+key+r'\b',joined), 'unscoped key: '+key
+          for path in re.findall(r'<script[^>]+src="([^"]+)"',html)+re.findall(r'<link[^>]+href="([^"]+)"',html):
+            name=path.split('?',1)[0].removeprefix('./')
+            assert (src/name).is_file(), 'referenced file missing: '+name
+          print('PASS: family backend and Google login disabled; local storage isolated')
+          PY
+      - name: Confirm all review JavaScript parses
+        run: |
+          for script in atokore-live-v125/*.js; do node --check "$script"; done
+      - name: Verify third-party HTML preview delivers the review, not source text
+        continue-on-error: true
+        env:
+          REVIEW_URL_BASE: https://raw.githack.com/rodaisuki1023-alt/ig-public-assets
+        run: |
+          curl --retry 3 --retry-delay 5 --max-time 30 --fail --location --silent --show-error \
+            -D /tmp/review-headers -o /tmp/review-index \
+            "$REVIEW_URL_BASE/$GITHUB_SHA/atokore-live-v125/index.html"
+          grep -q 'atkSafeReviewBanner' /tmp/review-index
+          grep -Eiq '^content-type: *text/html' /tmp/review-headers
+          echo 'Proxy served the exact reviewed commit with HTML mime type'
