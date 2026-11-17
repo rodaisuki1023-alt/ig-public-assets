@@ -139,7 +139,7 @@ test('confirmation opened in daycare cannot remove or reset an item after switch
   click(w, $('[data-pack=outing]'));
   complete(true); await nextTick();
   click(w, $('[data-pack=daycare]'));
-  assert.match($('#atkPackProgress').textContent, /保育園セット：1\\/6/);
+  assert.match($('#atkPackProgress').textContent, /保育園セット：1\/6/);
 
   click(w, $('#atkPackRows .atk-pack-remove'));
   click(w, $('[data-pack=outing]'));
