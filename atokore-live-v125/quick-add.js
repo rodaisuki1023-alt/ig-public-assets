@@ -740,8 +740,28 @@ function openWithEntries(entries,destination='stock',options={}){
  openQuick();openReview();renderItems();
  if(skipped)notify(skipped+'件は内容を確認できなかったため読み込みませんでした');
 }
+// The first-run guide opens the *existing* detailed product picker. It never
+// creates a generic 'おむつ' or '離乳食' row, and saving still requires review.
+function openGuidedProduct(kind,options={}){
+ if(!['diaper','milk','wipes','food'].includes(kind)||!doc||!$('pg-add'))return false;
+ // Do not silently replace the pending list (or an in-progress routine edit).
+ if(state.tray.length||state.routineTarget||state.committing)return false;
+ state.afterSave=null;state.loadedSet=null;state.loadedSnapshot='';
+ setReviewing(false);
+ state.destination='stock';
+ if(kind==='food'){
+  food.maker='';food.series='';food.month='';food.query='';food.limit=24;
+  food.selected='';food.qty=1;
+  for(const field of ['Brand','Series','Name','Age','Amount','Format'])food['custom'+field]='';
+ }
+ openQuick();
+ setCategory(kind==='food'?'離乳食':'ベビー');
+ if(kind!=='food')chooseBabyField('kind',kind);
+ state.afterSave=typeof options.onSaved==='function'?options.onSaved:null;
+ return true;
+}
 function setCategory(cat){state.cat=cat;state.group='すべて';state.query='';state.showAll=false;if($('qaSearch'))$('qaSearch').value='';renderAll()}
-const api=Object.freeze({prefillFree,openReview,closeReview,isReviewing(){return state.reviewing},kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
+const api=Object.freeze({prefillFree,openReview,closeReview,isReviewing(){return state.reviewing},kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openGuidedProduct,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreQuickAdd=api;
 if(doc&&typeof window!=='undefined')setup();
