@@ -220,3 +220,47 @@ test('invalid active template cannot select inherited object properties', () => 
   assert.equal($('#atkPackAddButton').disabled,true);
   dom.window.close();
 });
+
+test('deletion confirmation cannot delete another tab newer item with a reused id', async () => {
+  const { dom, w, $ } = open();
+  const key = w.AtokorePackingChecklist.key;
+  let answer;
+  w.AtokoreConfirm.ask = () => new Promise(resolve => { answer = resolve; });
+  click(w, $('#atkPackRows .atk-pack-remove'));
+  const newer = {
+    version: 1, active: 'daycare',
+    lists: {
+      daycare: [{ id: 'daycare-0', name: '新しい連絡帳', done: true }],
+      outing: [{ id: 'outing-0', name: 'おむつ', done: false }]
+    }
+  };
+  const raw = JSON.stringify(newer);
+  w.localStorage.setItem(key, raw);
+  w.dispatchEvent(new w.StorageEvent('storage', { key, newValue: raw, storageArea: w.localStorage }));
+  answer(true);
+  await nextTick();
+  assert.equal(w.localStorage.getItem(key), raw, 'older confirmation must not delete new data');
+  assert.match($('#atkPackRows').textContent, /新しい連絡帳/);
+  dom.window.close();
+});
+
+test('reset confirmation cannot erase another tab newer checks', async () => {
+  const { dom, w, $ } = open();
+  const key = w.AtokorePackingChecklist.key;
+  const first = $('#atkPackRows input[type=checkbox]');
+  first.checked = true;
+  change(w, first);
+  let answer;
+  w.AtokoreConfirm.ask = () => new Promise(resolve => { answer = resolve; });
+  click(w, $('#atkPackReset'));
+  const newer = JSON.parse(w.localStorage.getItem(key));
+  newer.lists.daycare[1].done = true;
+  const raw = JSON.stringify(newer);
+  w.localStorage.setItem(key, raw);
+  w.dispatchEvent(new w.StorageEvent('storage', { key, newValue: raw, storageArea: w.localStorage }));
+  answer(true);
+  await nextTick();
+  assert.equal(w.localStorage.getItem(key), raw, 'stale reset must not erase a new check');
+  assert.match($('#atkPackProgress').textContent, /保育園セット：2\/6/);
+  dom.window.close();
+});
