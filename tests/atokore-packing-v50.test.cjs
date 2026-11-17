@@ -1,0 +1,130 @@
+// The packing checklist is a separate, local-only trial feature. All inputs use synthetic data.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { JSDOM } = require('jsdom');
+const base = path.resolve(__dirname, '../atokore-live-v125');
+const html = fs.readFileSync(path.join(base, 'index.html'), 'utf8');
+const source = fs.readFileSync(path.join(base, 'packing-checklist-v50.js'), 'utf8');
+function open(url = 'https://example.invalid/ig-public-assets/preview-baby-v19/', saved = {}) {
+  const dom = new JSDOM(html, { url, runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window;
+  for (const [k, v] of Object.entries(saved)) w.localStorage.setItem(k, v);
+  w.AtokoreConfirm = { ask: async () => true };
+  w.eval(source);
+  const $ = sel => w.document.querySelector(sel);
+  return { dom, w, $ };
+}
+function click(w, el) { el.dispatchEvent(new w.MouseEvent('click', { bubbles: true })); }
+function change(w, el) { el.dispatchEvent(new w.Event('change', { bubbles: true })); }
+const nextTick = () => new Promise(resolve => setImmediate(resolve));
+
+test('first launch shows two unsaved templates, and no fictional stock or purchase', () => {
+  const { dom, w, $ } = open();
+  assert.equal($('#atkPackRows').children.length, 6);
+  assert.match($('#atkPackProgress').textContent, /0\/6/);
+  assert.equal(w.localStorage.length, 0, 'viewing template must not create saved data');
+  assert.equal(w.localStorage.getItem('atokoreTrialV4'), null);
+  assert.equal(w.localStorage.getItem('atokorePreviewTrialV19'), null);
+  dom.window.close();
+});
+
+test('check one item, reload with saved data, preserve done state without touching inventory', () => {
+  const stock = JSON.stringify({ items: [{ id: 1, name: 'おむつ', qty: 2 }], buys: [], routines: [] });
+  const a = open(undefined, { atokorePreviewTrialV19: stock });
+  const checkbox = a.$('#atkPackRows input[type=checkbox]');
+  checkbox.checked = true; change(a.w, checkbox);
+  const key = a.w.AtokorePackingChecklist.key;
+  const saved = a.w.localStorage.getItem(key);
+  assert.ok(saved);
+  assert.match(a.$('#atkPackProgress').textContent, /1\/6/);
+  assert.equal(a.w.localStorage.getItem('atokorePreviewTrialV19'), stock);
+  a.dom.window.close();
+  const b = open(undefined, { [key]: saved, atokorePreviewTrialV19: stock });
+  assert.equal(b.$('#atkPackRows input[type=checkbox]').checked, true);
+  assert.equal(b.w.localStorage.getItem('atokorePreviewTrialV19'), stock);
+  b.dom.window.close();
+});
+
+test('daycare and outing have independent items and progress, reset only chosen checkboxes', async () => {
+  const { dom, w, $ } = open();
+  const first = $('#atkPackRows input[type=checkbox]');
+  first.checked = true; change(w, first);
+  click(w, $('[data-pack=outing]'));
+  assert.match($('#atkPackProgress').textContent, /お出かけセット：0\/6/);
+  assert.equal($('#atkPackRows input[type=checkbox]').checked, false);
+  const outing = $('#atkPackRows input[type=checkbox]');
+  outing.checked = true; change(w, outing);
+  click(w, $('#atkPackReset')); await nextTick();
+  assert.match($('#atkPackProgress').textContent, /お出かけセット：0\/6/);
+  click(w, $('[data-pack=daycare]'));
+  assert.match($('#atkPackProgress').textContent, /保育園セット：1\/6/);
+  dom.window.close();
+});
+
+test('custom entries are plain text, may be removed only after in-app confirmation', async () => {
+  const { dom, w, $ } = open();
+  const payload = '<img src=x onerror=alert(1)>';
+  $('#atkPackAddInput').value = payload;
+  click(w, $('#atkPackAddButton'));
+  assert.equal($('#atkPackRows').children.length, 7);
+  assert.equal($('#atkPackRows img'), null, 'no HTML injection');
+  assert.ok($('#atkPackRows').textContent.includes(payload));
+  let accepted = false;
+  w.AtokoreConfirm.ask = async () => accepted;
+  click(w, $('#atkPackRows .atk-pack-row:last-child .atk-pack-remove')); await nextTick();
+  assert.equal($('#atkPackRows').children.length, 7);
+  accepted = true;
+  click(w, $('#atkPackRows .atk-pack-row:last-child .atk-pack-remove')); await nextTick();
+  assert.equal($('#atkPackRows').children.length, 6);
+  dom.window.close();
+});
+
+test('quota failure leaves saved bytes and visible checkbox unchanged', () => {
+  const { dom, w, $ } = open();
+  const key = w.AtokorePackingChecklist.key;
+  const raw = w.localStorage.getItem(key);
+  const original = w.Storage.prototype.setItem;
+  w.Storage.prototype.setItem = function () { throw new Error('QuotaExceededError'); };
+  try {
+    const box = $('#atkPackRows input[type=checkbox]');
+    box.checked = true; change(w, box);
+    assert.equal(w.localStorage.getItem(key), raw);
+    assert.equal($('#atkPackRows input[type=checkbox]').checked, false);
+    assert.match($('#atkPackError').textContent, /保存できませんでした/);
+  } finally { w.Storage.prototype.setItem = original; dom.window.close(); }
+});
+
+test('corrupt previous checklist refuses all writes and keeps original bytes', () => {
+  const url = 'https://example.invalid/ig-public-assets/preview-baby-v19/';
+  const key = 'atokorePackingChecklistV1:/ig-public-assets/preview-baby-v19/';
+  const { dom, w, $ } = open(url, { [key]: '{broken json' });
+  assert.equal(w.AtokorePackingChecklist.status().locked, true);
+  assert.equal($('#atkPackAddButton').disabled, true);
+  assert.equal($('#atkPackRows input[type=checkbox]').disabled, true);
+  assert.equal(w.localStorage.getItem(key), '{broken json');
+  assert.match($('#atkPackError').textContent, /変更を停止/);
+  dom.window.close();
+});
+
+test('production, v19 and other previews have distinct storage keys', () => {
+  const urls = ['/ig-public-assets/', '/ig-public-assets/preview-baby-v19/', '/ig-public-assets/preview-baby-v17/'];
+  const keys = urls.map(p => {
+    const t = open('https://example.invalid' + p);
+    const key = t.w.AtokorePackingChecklist.key;
+    t.dom.window.close();
+    return key;
+  });
+  assert.equal(new Set(keys).size, 3);
+  assert.ok(keys[1].includes('preview-baby-v19'));
+});
+
+test('CSS, script and service-worker shell reference the same files', () => {
+  const sw = fs.readFileSync(path.join(base, 'service-worker.js'), 'utf8');
+  assert.match(html, /packing-checklist-v50\.js\?v=50/);
+  assert.match(html, /packing-checklist-v50\.css\?v=50/);
+  assert.ok(sw.includes("'./packing-checklist-v50.js'"));
+  assert.ok(sw.includes("'./packing-checklist-v50.css'"));
+  assert.ok(fs.statSync(path.join(base, 'packing-checklist-v50.css')).size > 200);
+});
