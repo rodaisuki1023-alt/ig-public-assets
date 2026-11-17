@@ -1,30 +1,33 @@
 # あとこれ v19 試用公開候補（公開前承認ゲート）｜2026-11-17
 
-このDraft PRは**公開設定に固定しているv19試用版ソースだけ**を、統合済みの候補 `4fcbb825f8d3b893ae060a62fcaf7f4a209c0fea` に更新する提案。PR作成・本書の修正では、公開・本番・実データ・DBは変更しない。
+このDraft PRは、**v19試用版の公開元だけ**を統合候補 `4fcbb825f8d3b893ae060a62fcaf7f4a209c0fea` に変更する提案。2026-11-17時点で、公開・実DB変更・実世帯データ操作・通常版変更は行っていない。
 
-## 実際の差分とテスト状況
-- 元の試用版固定SHA：`efc11f747e1a7fdafa927350361c3a029738f552`
-- 更新候補の固定SHA：`4fcbb825f8d3b893ae060a62fcaf7f4a209c0fea`（`codex/atokore-integrated-v49-review`）
-- 統合PR #101 のHEAD `ec0644050cfc2bc5300f9ff7c2fcb8bb6bda81cc` は3ワークフロー全success。統合後のHEAD `4fcbb825f8d3b893ae060a62fcaf7f4a209c0fea` も「Atokore Peach UI Checks」「Atokore Baby Visuals Check」「Atokore v19 Trial Checks」の3ワークフローがsuccess（GitHub Actionsから直接取得）。
-- **PR #102自身のチェックは未実行／0件**。上記の成功は、この公開設定変更を含むGitHub Pagesビルド・実配信の合格を意味しない。
-- PR #102のアプリ変更はなし。Pagesワークフローの**v19固定SHAだけ**を更新し、他のプレビュー・通常版固定SHAは維持。
+## 差分と検証結果
+- 旧v19試用版固定SHA：`efc11f747e1a7fdafa927350361c3a029738f552`
+- 新v19試用版固定SHA候補：`4fcbb825f8d3b893ae060a62fcaf7f4a209c0fea`（`codex/atokore-integrated-v49-review` HEAD、PR #101統合先）
+- 統合候補HEADのCIはPeach UI / Baby Visuals / v19 Trial Checksが**3系統success**（GitHub Actions runs 43892386036 / 43892386213 / 43892386072）。
+- **PR #102専用の、公開を行わないCIを追加してsuccess**： [Atokore v19 Release Candidate Dry Run / run 44073871798](https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/44073871798)（実行対象HEAD `73f8632997012f69241c5115ca31358d9715e3d8`）。固定SHA確認、候補のチェックアウト、Pagesと同じ `build-preview.py` による生成、全生成JSの構文、既知の通常版localStorageキー分離、旧family.jsスタブ、**新household-sync実装の存在**、保存・バックアップ・初回登録・いつものリスト単体回帰テストがすべてsuccess。
+- PR #102内の公開設定差分はv19固定SHA1箇所のみ。別途 `.github/workflows/atokore-v19-release-dry-run.yml` と本書が追加・更新されている。通常版・他プレビュー用SHAは不変。
+- **この成功はGitHub Pagesの実配信、実iPhone、実DBのRLS認証、実世帯データ保存を検証したものではない。**
 
-## 家族共有の安全上の重要な区別（2026-11-17 再監査）
-- `scripts/atokore/build-preview.py` はトップレベルHTML/JSにある既知のlocalStorageキーをv19専用名へ置き換え、**旧 `family.js` のみをスタブへ置換**する。未変換の既知キー・HTMLから参照されるファイルがあればビルドを停止する。
-- 一方、`index.html` は**別実装**の `household-config-v37.js`、`household-core-v37.js`、`household-google-v40.js`、`household-sync-v37.js` を読み込む。設定ファイルには試用専用Supabaseのpublishable key / URLがあり、`household-sync-v37.js` は設定が有効なら初期化され、既存セッションによっては自動同期し得る。
-- よって「v19では家族同期をすべて止める」「ネットワークへ一切送らない」と**表現してはならない**。実機で試用DBを使う家族共有は機能として存在する。従来の「family sync disabled」は**旧 `family.js` に限る**。
-- Pages通常版とv19試用版のlocalStorageキー分離はコード／CIの対象だが、**既存v19利用者の保存データや試用DBの内容が更新後も安全かどうか**は、CIだけでは証明できない。DBのRLS/権限と実接続の独立確認は未了。
-- PR #93/#98で扱う「家族から除外」と進行中のレシート確定の競合については、隔離DB上の修正候補と実DB適用を混同しない。**現行試用DBへの反映・動作確認ができるまで、これを解消済みと断定しない**。
+## 家族共有の安全上の重要な区別
+- `scripts/atokore/build-preview.py` は既知のlocalStorageキーをv19専用名へ置換し、旧 `family.js` のみをスタブ化。未変換の既知キーやHTML参照欠落はビルドで拒否する。
+- しかし `index.html` は別系統の `household-config-v37.js`、`household-core-v37.js`、`household-google-v40.js`、`household-sync-v37.js` を読み込む。試用専用Supabase設定が有効で、既存セッションによっては同期が動作し得る。**「家族同期を完全に停止」「外部通信なし」とは言えない**。
+- 現行のv19試用環境とDBには既存データがあり得るため、公開によって家族共有や保存済みデータを壊さない検証が必要。
+- 2026-11-17の管理接続確認：Supabase `atokore-family-trial` は一覧/詳細APIで `ACTIVE_HEALTHY` と報告された一方、`execute_sql` と `list_migrations` はPostgreSQL認証失敗 (`28P01`)、`get_advisors` はhibernatedと返り**RLS/現行関数・権限は読み取り検証できなかった**。同じ確認を繰り返したり、DB権限・接続設定を自動変更しない。
+- PR #93/#98で扱う「家族除外とレシート確定の競合」対策は、隔離PostgreSQLでのレビュー候補のみ。試用DBに適用済みとは言えない。現行SQLとの差分（2関数の `my_household` → `lock_member`）はGitHubソース上で確認済み。
+- DB接続復旧後に**メタデータ限定の読み取り**で確認する対象：テーブルのRLS有効化・policy一覧、SECURITY DEFINER関数の`search_path`・PUBLIC/anon/authenticated EXECUTE権限、receipt claim/finishの関数定義と修正候補との差分、適用済みmigration。実世帯テーブルのレコードは照会しない。
 
-## 公開前ゲート
-- [x] v19候補ソースの3系統CI成功（候補固定SHAを直接照合）
-- [x] v19の公開固定SHA差分が1箇所のみであることを確認（PR #102パッチ）
-- [x] 旧 `family.js` と新 `household-sync-v37.js` の違いを静的確認し記録
-- [ ] PR #102のHEADから、**Pages公開を行わない**一時環境でワークフロー相当のビルドを実行し、差分と隔離・構文・テストを検証
-- [ ] 実際のiPhone画面で、初回在庫空、保存/削除/検索、写真、復元Undo、重複ID拒否、320/375/393/430pxを**架空データだけ**で検証。新バージョンのiPhone確認は、更新候補にアクセスできる隔離試用環境が用意された後に実施
-- [ ] Googleログインと家族共有について、専用の**検証世帯**でのみ、試用DBのRLS・非メンバー拒否・削除済みメンバー拒否・既存v19保存状態を照合。実世帯データでの読取/書込試験は禁止
-- [ ] 現在の公開URL、既存v19データ、通常版、Pages出力を変更せずにロールバックできる手順を確認
-- [ ] オーナーが**「試用版の公開」**を明示承認する
+## 公開前ゲート（記録は過大評価しない）
+- [x] v19統合候補HEADの3系統CI成功
+- [x] 公開用v19固定SHA差分と通常版・別プレビュー不変を静的照合
+- [x] 旧 `family.js` と現役 `household-sync-v37.js` を識別
+- [x] PR #102専用・非公開の候補生成、構文、保存キー分離、主要単体回帰テストがsuccess（run 44073871798）
+- [ ] GitHub Pagesの公開経路全体のビルド／生成物照合（**配信なし**での独立再現が理想。実配信は未実施）
+- [ ] 320 / 375 / 393 / 430pxの表示、初回在庫空、検索、写真、保存失敗、復元Undo、重複ID拒否を**iPhone実機・架空データだけ**で確認
+- [ ] **検証世帯のみ**を用いた家族共有の非メンバー拒否・除外済みメンバー拒否、旧v19保存状態と同期への影響を確認。接続可能になるまで未完了
+- [ ] 既存v19・通常版・他プレビューの公開ファイル/サービスワーカー/キャッシュ/保存キーを保護し、公開後の退避・復帰方法を確認。旧SHA `efc11f747e1a7fdafa927350361c3a029738f552` へのピン差し戻しは、**配信済みのデータを削除しない条件付きのロールバック手段**であり、ユーザーデータの復元を保証しない
+- [ ] オーナーが「**試用版の公開**」を明示承認
 
 ## 安全ルール
-Draftのまま維持し、AI COMPANYの別の自動タスク・Claude Code・Museによる自動マージや`workflow_dispatch`を禁止する。`main`、GitHub Pages、実Supabase、実世帯、通常版、課金設定への変更は別承認。iPhoneの操作確認や実DB確認を、この文書の静的監査だけで「完了」としない。
+本PRはDraftを維持し、本人承認なしにmainへのマージ、GitHub Pages公開、`workflow_dispatch`、実Supabase DB/実世帯データの読み書き、課金・権限変更は行わない。新規CIには`pull_request`だけを設定し、`contents: read`以外のGitHub権限、Pages・デプロイ・DB資格情報・本番接続は付与しない。試用版公開の判断は追加ゲートの完了後に行う。
