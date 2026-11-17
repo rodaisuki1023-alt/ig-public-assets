@@ -4,7 +4,7 @@
  */
 (function(root){
 'use strict';
-const KEY='atokoreHouseholdOAuthV1',TTL=15*60*1000;
+const KEY='atokorePreviewHouseholdOAuthV19',TTL=15*60*1000;
 function create(env){
  const now=env.now||(()=>Date.now()),base=env.url.replace(/\/+$/,'');
  const fail=message=>Object.assign(Error(message),{code:'auth'});
