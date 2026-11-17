@@ -75,5 +75,5 @@ jobs:
           node-version: '22'
       - name: Install pinned local browser test runner
         run: npm install --no-save --ignore-scripts @playwright/test@1.56.1
-      - name: Independent-origin preview: Chromium and WebKit real browser smoke
+      - name: "Independent-origin preview: Chromium and WebKit real browser smoke"
         run: node tests/atokore-cdn-sandbox-smoke.cjs
