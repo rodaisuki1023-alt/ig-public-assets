@@ -71,7 +71,26 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       }));
       assert.ok(scroll.scroll <= scroll.width + 2, label + ' horizontal overflow: ' + JSON.stringify(scroll));
       assert.deepEqual(household, [], label + ' must not request real household backend');
-      assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
+      assert.match(await page.locator('#pg-stock').textContent(), /ストックからまとめて買い物へ/);
+      assert.doesNotMatch(await page.locator('#pg-stock').textContent(), /在庫からまとめて買い物へ/);
+      // Re-enter a pristine first-run state on the same independent origin.
+      await page.evaluate(() => localStorage.clear());
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await page.locator('#atkOnboarding').waitFor({ timeout: 10_000 });
+      assert.equal(await page.locator('[data-ob-guide]').count(), 4, 'four detailed guide choices');
+      assert.equal(await page.locator('[data-ob-pick="おむつ"]').count(), 0, 'no unbranded diaper chip');
+      assert.equal(await page.locator('[data-ob-pick="おしりふき"]').count(), 0, 'no unbranded wipes chip');
+      assert.equal(await page.locator('[data-ob-pick="粉ミルク"]').count(), 0, 'no unbranded milk chip');
+      await page.locator('[data-ob-guide="diaper"]').click();
+      await page.locator('#qaBaby').waitFor({ timeout: 12_000 });
+      assert.match(await page.locator('#qaBaby').textContent(), /おむつを追加/);
+      await page.evaluate(() => window.go('home'));
+      await page.locator('[data-ob-guide="food"]').click();
+      await page.locator('#qaBabyFood').waitFor({ timeout: 12_000 });
+      assert.match(await page.locator('#qaBabyFood').textContent(), /メーカー/);
+      assert.equal(await page.evaluate(() => localStorage.getItem('atokorePreviewTrialV19')), null, 'guide navigation never saves');
+      assert.deepEqual(household, [], label + ' must not request real household backend');
+            assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
       console.log('PASS', label, 'URL', url);
     } finally {
       await context.close();
