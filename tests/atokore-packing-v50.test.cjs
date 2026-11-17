@@ -128,3 +128,24 @@ test('CSS, script and service-worker shell reference the same files', () => {
   assert.ok(sw.includes("'./packing-checklist-v50.css'"));
   assert.ok(fs.statSync(path.join(base, 'packing-checklist-v50.css')).size > 200);
 });
+
+test('confirmation opened in daycare cannot remove or reset an item after switching to outing', async () => {
+  const { dom, w, $ } = open();
+  const check = $('#atkPackRows input[type=checkbox]');
+  check.checked = true; change(w, check);
+  let complete;
+  w.AtokoreConfirm.ask = () => new Promise(resolve => { complete = resolve; });
+  click(w, $('#atkPackReset'));
+  click(w, $('[data-pack=outing]'));
+  complete(true); await nextTick();
+  click(w, $('[data-pack=daycare]'));
+  assert.match($('#atkPackProgress').textContent, /保育園セット：1\\/6/);
+
+  click(w, $('#atkPackRows .atk-pack-remove'));
+  click(w, $('[data-pack=outing]'));
+  complete(true); await nextTick();
+  assert.equal($('#atkPackRows').children.length, 6);
+  click(w, $('[data-pack=daycare]'));
+  assert.equal($('#atkPackRows').children.length, 6);
+  dom.window.close();
+});
