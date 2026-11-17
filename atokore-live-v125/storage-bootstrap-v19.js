@@ -7,7 +7,7 @@
  */
 (function(root){
 'use strict';
-const KEY='atokoreTrialV4',HISTORY='atokoreHistoryV1';
+const KEY='atokorePreviewTrialV19',HISTORY='atokorePreviewHistoryV19';
 const SOURCES=[['atokorePreviewTrialV17','atokorePreviewHistoryV17'],['atokorePreviewTrialV16','atokorePreviewHistoryV16']];
 function valid(state){return !!state&&typeof state==='object'&&Array.isArray(state.items)&&Array.isArray(state.buys)&&Array.isArray(state.routines)}
 function parse(raw){try{return JSON.parse(raw)}catch(e){return undefined}}
