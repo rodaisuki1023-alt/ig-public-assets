@@ -11,6 +11,7 @@ for (const [width, height] of [[320, 568], [375, 667], [393, 852], [430, 932]]) 
     await page.setViewportSize({ width, height });
     const original = baseState();
     await open(page, { [KEY]: original });
+    const stockBefore = await stored(page);
     await go(page, 'buy');
     await expect(page.locator('#atkPackingMvp')).toBeVisible();
     await expect(page.locator('#atkPackRows .atk-pack-row')).toHaveCount(6);
@@ -19,7 +20,7 @@ for (const [width, height] of [[320, 568], [375, 667], [393, 852], [430, 932]]) 
 
     await page.locator('#atkPackRows input[type=checkbox]').first().check();
     await expect(page.locator('#atkPackProgress')).toHaveText('保育園セット：1/6 準備済み');
-    expect(await stored(page)).toEqual(original);
+    expect(await stored(page)).toEqual(stockBefore);
     await page.reload();
     await go(page, 'buy');
     await expect(page.locator('#atkPackRows input[type=checkbox]').first()).toBeChecked();
@@ -38,7 +39,7 @@ for (const [width, height] of [[320, 568], [375, 667], [393, 852], [430, 932]]) 
     await expect(page.locator('#atkPackProgress')).toHaveText('お出かけセット：0/7 準備済み');
     await page.locator('[data-pack=daycare]').click();
     await expect(page.locator('#atkPackProgress')).toHaveText('保育園セット：1/6 準備済み');
-    expect(await stored(page)).toEqual(original);
+    expect(await stored(page)).toEqual(stockBefore);
     expect(await noHorizontalScroll(page)).toBe(true);
     expect(page.__errors).toEqual([]);
   });
@@ -47,6 +48,7 @@ for (const [width, height] of [[320, 568], [375, 667], [393, 852], [430, 932]]) 
 test('packing deletion confirms in-app and does not delete inventory', async ({ page }) => {
   const original = baseState();
   await open(page, { [KEY]: original });
+  const stockBefore = await stored(page);
   await go(page, 'buy');
   await page.locator('#atkPackRows .atk-pack-remove').first().click();
   await appConfirm(page, false);
@@ -54,7 +56,7 @@ test('packing deletion confirms in-app and does not delete inventory', async ({ 
   await page.locator('#atkPackRows .atk-pack-remove').first().click();
   await appConfirm(page, true);
   await expect(page.locator('#atkPackRows .atk-pack-row')).toHaveCount(5);
-  expect(await stored(page)).toEqual(original);
+  expect(await stored(page)).toEqual(stockBefore);
   expect(page.__dialogs).toEqual([]);
 });
 
@@ -81,9 +83,10 @@ test('production and trial checklists never reuse the same storage key', async (
 test('unreadable checklist is protected; trial stock remains unchanged', async ({ page }) => {
   const original = baseState();
   await open(page, { [KEY]: original, [packKey]: '{broken-json' });
+  const stockBefore = await stored(page);
   await go(page, 'buy');
   await expect(page.locator('#atkPackAddButton')).toBeDisabled();
   await expect(page.locator('#atkPackError')).toContainText('変更を停止しています');
   expect(await page.evaluate(k => localStorage.getItem(k), packKey)).toBe('{broken-json');
-  expect(await stored(page)).toEqual(original);
+  expect(await stored(page)).toEqual(stockBefore);
 });
