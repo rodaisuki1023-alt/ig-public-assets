@@ -3,7 +3,7 @@
 'use strict';
 const doc=typeof document==='undefined'?null:document;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const DATA='atokoreTrialV4',PREF='atokoreDisplayPrefsV1';
+const DATA='atokorePreviewTrialV19',PREF='atokorePreviewDisplayPrefsV19';
 const CATS=['ベビー','離乳食','食料品','日用品','衛生・薬','子ども','衣類','家電・生活用品','防災','その他'];
 const copy=v=>JSON.parse(JSON.stringify(v));
 function snapshot(){try{return copy({items,buys,routines})}catch(_){return {items:[],buys:[],routines:[]}}}
