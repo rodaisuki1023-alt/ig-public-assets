@@ -124,7 +124,7 @@ test('brand-new users save only the products they chose, while returning househo
   await expect.poll(async () => (await stored(page))?.items.length).toBe(1);
   expect((await stored(page)).items.map(x => x.name)).toEqual(['牛乳']);
   await page.reload();
-  expect((await stored(page)).items.map(x => x.name)).toEqual(['おしりふき']);
+  expect((await stored(page)).items.map(x => x.name)).toEqual(['牛乳']);
 
   const existing = await page.context().newPage();
   const earlier = { items: [{ id: 31, name: '以前に登録したおむつ', qty: 5, unit: '袋', cat: 'ベビー' }], buys: [], routines: [] };
