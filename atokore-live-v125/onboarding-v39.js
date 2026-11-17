@@ -7,7 +7,7 @@
  */
 (function(root){
 'use strict';
-const KEY='atokoreOnboardingV1',DATA_KEY='atokoreTrialV4';
+const KEY='atokorePreviewOnboardingV19',DATA_KEY='atokorePreviewTrialV19';
 const MAX=5;
 // name, category, unit: common products in families with small children, then any household.
 const CHOICES=[
