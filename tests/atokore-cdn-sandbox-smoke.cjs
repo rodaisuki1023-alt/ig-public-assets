@@ -27,6 +27,11 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       name: '__Http-phish', value: '1', domain: 'raw.githack.com', path: '/',
       httpOnly: true, secure: true, sameSite: 'Lax',
     }]);
+    // rawgit.hack shows a human consent notice for browser HTML; its published
+    // documentation explicitly allows this HTTP-only opt-in cookie for browser
+    // automation. This is test-only, never shipped in the user-facing app.
+    await context.addCookies([{ name: '__Http-phish', value: '1',
+      domain: 'raw.githack.com', path: '/', secure: true, httpOnly: true }]);
     const page = await context.newPage();
     const errors = [], household = [];
     page.on('pageerror', e => errors.push(e.message));
