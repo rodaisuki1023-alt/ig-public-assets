@@ -10,7 +10,7 @@ const doc=typeof document==='undefined'?null:document;
 const Rules=root.AtokoreStockRules;
 if(!doc||!Rules)return;
 const $=id=>doc.getElementById(id);
-const PREF='atokoreDisplayPrefsV1';
+const PREF='atokorePreviewDisplayPrefsV19';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function readPref(){try{return JSON.parse(root.localStorage.getItem(PREF)||'{}')||{}}catch(_){return {}}}
 let mode=Rules.SORT_KEYS.includes(readPref().stockSort)?readPref().stockSort:'category';
