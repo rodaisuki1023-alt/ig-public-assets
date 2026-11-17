@@ -21,7 +21,7 @@ function progress(label,p){const w=$r('receiptProgressWrap');if(w)w.classList.re
 // v49: the photo is read on this device. Stage 1 finds, crops and turns the paper (receipt-image-v49.js),
 // stage 2 reads the text with PP-OCR (receipt-ppocr-v49.js), stage 3 rebuilds lines and structure.
 // The first use downloads the reading parts once, after asking (data use on mobile networks).
-const OCR_READY='atokoreReceiptOcrV49Ready';
+const OCR_READY='atokorePreviewReceiptOcrReadyV19';
 function ocrReady(){try{return localStorage.getItem(OCR_READY)==='1'}catch(e){return false}}
 async function askDownload(){
  const O=window.AtokoreReceiptOcr;if(!O)return false;
@@ -61,8 +61,8 @@ function failed(){const w=$r('receiptProgressWrap');if(!w)return;let box=$r('rec
 window.analyzeReceiptTextV7=()=>{const t=($r('receiptManualText')?.value||'').trim();if(!t){alert('文字を貼り付けてください');return}R.text=t;R.confidence=0;R.unread=null;const p=parse(t);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;R.facts=p.facts;review()};
 function hw(s){return String(s||'').normalize('NFKC').replace(/，/g,',').replace(/￥/g,'¥').replace(/×/g,'x')}
 function key(s){return hw(s).toLowerCase().replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\]/g,'')}
-function aliases(){try{return JSON.parse(localStorage.getItem('atokoreReceiptAliases')||'{}')||{}}catch(e){return {}}}
-function learn(raw,name){const k=key(raw);if(!k||!name)return;const a=aliases();a[k]=name;try{localStorage.setItem('atokoreReceiptAliases',JSON.stringify(a))}catch(e){}}
+function aliases(){try{return JSON.parse(localStorage.getItem('atokorePreviewReceiptAliasesV19')||'{}')||{}}catch(e){return {}}}
+function learn(raw,name){const k=key(raw);if(!k||!name)return;const a=aliases();a[k]=name;try{localStorage.setItem('atokorePreviewReceiptAliasesV19',JSON.stringify(a))}catch(e){}}
 const rules=[[/玉子|たまご|タマゴ|卵/,'卵'],[/豚(?:ばら|バラ)(?:うす切り|薄切り)?/,'豚バラ肉'],[/豚(?:こま|コマ)(?:切れ)?/,'豚こま肉'],[/鶏もも/,'鶏もも肉'],[/鶏むね/,'鶏むね肉'],[/牛乳|おいしいミルク|メグミルク|乳飲料/,'牛乳'],[/豆乳/,'豆乳'],[/食パン|超熟|本仕込/,'食パン'],[/ヨーグルト|ヨーグル/,'ヨーグルト'],[/納豆/,'納豆'],[/豆腐/,'豆腐'],[/バナナ/,'バナナ'],[/りんご|リンゴ/,'りんご'],[/みかん|ミカン/,'みかん'],[/トイレット.*ペーパー|トイレ.*ロール/,'トイレットペーパー'],[/箱?ティッシュ|ティシュ/,'ティッシュ'],[/キッチン.*ペーパー/,'キッチンペーパー'],[/おしり.*ふき/,'おしりふき'],[/おむつ|オムツ|紙パンツ/,'オムツ'],[/柔軟剤/,'柔軟剤'],[/食器.*洗剤/,'食器用洗剤'],[/洗濯.*洗剤|衣料.*洗剤/,'洗濯洗剤'],[/シャンプー/,'シャンプー'],[/コンディショナー|リンス/,'コンディショナー'],[/ボディ.*ソープ/,'ボディソープ'],[/ハンド.*ソープ/,'ハンドソープ'],[/マスク/,'マスク'],[/歯ブラシ/,'歯ブラシ'],[/歯磨|ハミガキ/,'歯磨き粉'],[/ミネラル.*ウォーター|天然水/,'ミネラルウォーター'],[/麦茶/,'麦茶'],[/コーヒー|珈琲/,'コーヒー'],[/冷凍.*餃子/,'冷凍餃子'],[/冷凍.*からあげ|冷凍.*唐揚/,'冷凍からあげ']];
 // v49: a generic name replaces the printed one only when the matched word is most (70%) of the name.
 // "テスト玉子とハムのサンド" is not 卵, "テストバナナケーキミニ" is not バナナ and "テスト麦茶2L" keeps its size.
@@ -151,7 +151,7 @@ function opts(cur,a){return a.map(v=>`<option ${v===cur?'selected':''}>${v}</opt
 window.receiptUpdateV7=(i,k,v)=>{const x=R.parsed[i];if(!x)return;if(k==='qty')v=Math.max(1,+v||1);x[k]=v;if(k==='name'){x.cat=cat(v,x.raw);x.unit=fixedUnit(v);x.place=place(v,x.cat);x.low=false}count()};window.receiptToggleV7=(i,on)=>{if(R.parsed[i])R.parsed[i].selected=on;count()};window.receiptStepV7=(i,d)=>{const x=R.parsed[i];if(!x)return;x.qty=Math.max(1,(+x.qty||1)+d);const q=$r(`receiptQty-${i}`);if(q)q.value=x.qty;count()};window.receiptSelectAllV7=on=>{R.parsed.forEach(x=>{if(String(x.name||'').trim()&&+x.qty>0)x.selected=!!on});review()};window.receiptDeleteV7=i=>{R.parsed.splice(i,1);review()};window.receiptAddV7=()=>{R.parsed.push({selected:true,raw:'',source:'',name:'',qty:1,unit:'個',cat:'食料品',price:0,total:0,place:'パントリー',low:false});review()};
 // ---- v38 review: each row says which registered product it is (or that it is new); nothing is
 // saved here. The final step is the shared review screen and its destination button.
-const RHIST='atokoreReceiptHistoryV1';
+const RHIST='atokorePreviewReceiptHistoryV19';
 function stockList(){try{return Array.isArray(items)?items:[]}catch(e){return []}}
 function matcher(){return window.AtokoreReceiptMatch||null}
 // Candidates for the printed text, then for the generic name when the printed one was replaced ("玉子 Lサイズ" → 卵).
@@ -244,7 +244,7 @@ window.receiptManualPickV38=()=>{closeReceiptV7();try{window.atkOpenAdd?.('stock
 // total and receipt number, and of the photo bytes. Another member's import is shown with their name;
 // the person decides. Offline, the check runs when the connection is back and only warns: stock that was
 // already saved is never removed or merged automatically.
-const CLAIM_QUEUE='atokoreReceiptClaimQueueV1';
+const CLAIM_QUEUE='atokorePreviewReceiptClaimQueueV19';
 async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 async function receiptKeys(r){const out=[];try{if(r.facts&&r.facts.strong)out.push({fp:await sha256(r.facts.key),kind:'receipt'});if(r.imageHash)out.push({fp:await sha256('img|'+r.imageHash),kind:'photo'})}catch(e){console.warn(e)}return out}
 function family(){const h=window.AtokoreHousehold;try{return h&&h.receiptClaim&&h.receiptScope&&h.homeState&&h.homeState().joined?h:null}catch(e){return null}}
