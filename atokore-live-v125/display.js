@@ -1,6 +1,6 @@
 /* あとこれ v10 - 表示設定（極小文字 × 超コンパクト対応） */
 (()=>{
-  const KEY='atokoreDisplayPrefsV1';
+  const KEY='atokorePreviewDisplayPrefsV19';
   const defaults={font:'standard',density:'standard'};
   let prefs=loadPrefs();
 
