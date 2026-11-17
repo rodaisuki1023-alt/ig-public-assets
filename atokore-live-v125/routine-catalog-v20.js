@@ -33,7 +33,7 @@ function saveSelected(id,lines){
    const added={id:sequence,name,qty,unit};nextItems.push(added);selectedIds.push(added.id);
   }
   const nextRoutines=routines.map(x=>Number(x.id)===id?{...x,items:nextItems}:x);
-  const key='atokoreTrialV4',raw=JSON.stringify({items,buys,routines:nextRoutines});
+  const key='atokorePreviewTrialV19',raw=JSON.stringify({items,buys,routines:nextRoutines});
   root.localStorage.setItem(key,raw);
   if(root.localStorage.getItem(key)!==raw)throw Error('保存内容を検証できませんでした');
   routines=nextRoutines;
@@ -231,7 +231,7 @@ if(typeof legacyDelete==='function')root.deleteRoutine=function(id){
   const before=routines,nativeConfirm=root.confirm;
   root.confirm=()=>true;
   try{legacyDelete.call(this,list.id)}finally{root.confirm=nativeConfirm}
-  let stored=null;try{stored=JSON.parse(root.localStorage.getItem('atokoreTrialV4')||'null')}catch(e){}
+  let stored=null;try{stored=JSON.parse(root.localStorage.getItem('atokorePreviewTrialV19')||'null')}catch(e){}
   if(!stored||!Array.isArray(stored.routines)||stored.routines.some(x=>x.id===list.id)){
    // Not saved: keep showing the list exactly as it is stored.
    if(!routines.some(x=>x.id===list.id))routines=before;
