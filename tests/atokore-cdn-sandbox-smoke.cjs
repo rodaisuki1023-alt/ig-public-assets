@@ -21,6 +21,12 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       locale: 'ja-JP',
       serviceWorkers: 'block',
     });
+    // The public Git preview proxy shows a once-per-day HTML phishing notice.
+    // Browser CI sets the documented consent cookie; humans must click Continue once.
+    await context.addCookies([{
+      name: '__Http-phish', value: '1', domain: 'raw.githack.com', path: '/',
+      httpOnly: true, secure: true, sameSite: 'Lax',
+    }]);
     const page = await context.newPage();
     const errors = [], household = [];
     page.on('pageerror', e => errors.push(e.message));
