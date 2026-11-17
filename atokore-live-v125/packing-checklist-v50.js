@@ -151,8 +151,11 @@
         // A kit switch while the dialog is open must not delete from the new kit.
         if (!root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
         const kit = state.active;
+        const expected = snapshot;
         const yes = await root.AtokoreConfirm.ask('持ち物を削除しますか？', item.name + 'をこのリストから削除します。在庫には影響しません。', '削除');
-        if (yes && state.active === kit) edited(next => { next.lists[kit] = next.lists[kit].filter(x => x.id !== item.id); });
+        // A newer edit or another tab's update invalidates a decision made about old contents.
+        if (yes && !locked && state.active === kit && snapshot === expected)
+          edited(next => { next.lists[kit] = next.lists[kit].filter(x => x.id !== item.id); });
       });
       row.append(label, remove);
       rows.append(row);
@@ -181,8 +184,10 @@
   reset.addEventListener('click', async () => {
     if (locked || !root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
     const kit = state.active;
+    const expected = snapshot;
     const yes = await root.AtokoreConfirm.ask('チェックを戻しますか？', NAMES[kit] + 'のチェックだけをすべて外します。リストと在庫は残ります。', 'チェックを戻す');
-    if (yes && state.active === kit) edited(next => { for (const item of next.lists[kit]) item.done = false; });
+    if (yes && !locked && state.active === kit && snapshot === expected)
+      edited(next => { for (const item of next.lists[kit]) item.done = false; });
   });
 
   render();
