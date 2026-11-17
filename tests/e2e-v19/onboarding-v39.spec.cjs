@@ -19,7 +19,7 @@ for (const [width, height] of [[320, 568], [375, 560], [390, 844], [430, 932]]) 
     await expect(chip(page, '卵')).toHaveCount(1);
     await expect(page.locator('#stockList [data-stock-id]')).toHaveCount(0);
     await expect(page.locator('[data-ob-go]')).toBeDisabled();
-    for (const name of ['おしりふき', 'トイレットペーパー', 'ティッシュ', '洗濯洗剤', '食器用洗剤']) await chip(page, name).click();
+    for (const name of ['牛乳', 'トイレットペーパー', 'ティッシュ', '洗濯洗剤', '食器用洗剤']) await chip(page, name).click();
     await chip(page, 'お米').click();
     await expect(page.locator('#atkObError')).toContainText('5つまで');
     await expect(chip(page, 'お米')).toHaveAttribute('aria-pressed', 'false');
@@ -36,12 +36,12 @@ for (const [width, height] of [[320, 568], [375, 560], [390, 844], [430, 932]]) 
     await page.click('#qaCommit');
     await expect.poll(async () => (await stored(page))?.items.length).toBe(4);
     const saved = await stored(page);
-    expect(saved.items.some(x => ['牛乳', 'オムツ', '卵'].includes(x.name))).toBe(false);
+    expect(saved.items.some(x => ['オムツ', '卵', 'おむつ', 'おしりふき', '粉ミルク'].includes(x.name))).toBe(false);
     const added = Object.fromEntries(saved.items.map(x => [x.name, x]));
-    expect(Object.keys(added).sort()).toEqual(['おしりふき', 'ティッシュ', 'トイレットペーパー', '洗濯洗剤'].sort());
+    expect(Object.keys(added).sort()).toEqual(['ティッシュ', 'トイレットペーパー', '洗濯洗剤', '牛乳'].sort());
     expect(Object.values(added).every(x => x.qty === 1)).toBe(true);
     expect(added['トイレットペーパー'].minQty).toBe(2);
-    expect('minQty' in added['おしりふき']).toBe(false);
+    expect('minQty' in added['牛乳']).toBe(false);
     expect((await onboardingState(page)).doneAt).toBeTruthy();
     await go(page, 'home');
     await expect(card(page)).toHaveCount(0);
@@ -117,12 +117,12 @@ test('brand-new users save only the products they chose, while returning househo
   await open(page);
   expect(await stored(page)).toBeNull();
   await expect(card(page)).toBeVisible();
-  await chip(page, 'おしりふき').click();
+  await chip(page, '牛乳').click();
   await page.click('[data-ob-go]');
   await expect(page.locator('#qaTray')).toBeVisible();
   await page.click('#qaCommit');
   await expect.poll(async () => (await stored(page))?.items.length).toBe(1);
-  expect((await stored(page)).items.map(x => x.name)).toEqual(['おしりふき']);
+  expect((await stored(page)).items.map(x => x.name)).toEqual(['牛乳']);
   await page.reload();
   expect((await stored(page)).items.map(x => x.name)).toEqual(['おしりふき']);
 
@@ -132,4 +132,68 @@ test('brand-new users save only the products they chose, while returning househo
   expect(await stored(existing)).toEqual(earlier);
   await expect(existing.locator('#atkOnboarding')).toHaveCount(0);
   await existing.close();
+});
+
+
+// Specialist guide must be discoverable on the first screen, without creating
+// generic unbranded stock or touching family data before review confirmation.
+test('first-run guides open the existing detailed baby and food pickers without writing stock', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await open(page);
+  await expect(card(page)).toBeVisible();
+  for (const kind of ['diaper', 'milk', 'wipes', 'food'])
+    await expect(page.locator('[data-ob-guide="' + kind + '"]')).toBeVisible();
+  await expect(chip(page, 'おむつ')).toHaveCount(0);
+  await expect(chip(page, '粉ミルク')).toHaveCount(0);
+  await expect(chip(page, 'おしりふき')).toHaveCount(0);
+  await page.click('[data-ob-guide="diaper"]');
+  await expect(page.locator('#qaBaby')).toBeVisible();
+  await expect(page.locator('#qaBaby .qa-baby-intro')).toContainText('おむつを追加');
+  expect(await stored(page)).toBeNull();
+  await page.click('[data-qa-baby="brand"][data-value="マミーポコ"]');
+  await page.click('[data-qa-baby="type"][data-value="パンツ"]');
+  await page.click('[data-qa-baby="size"][data-value="M"]');
+  await page.click('[data-qa-babyadd]');
+  expect(await stored(page)).toBeNull();
+  await page.click('[data-qa-review]');
+  await expect(page.locator('#qaTray')).toBeVisible();
+  await page.click('#qaCommit');
+  await expect.poll(async () => (await stored(page))?.items.length).toBe(1);
+  const item = (await stored(page)).items[0];
+  expect(item.name).toMatch(/マミーポコ.*おむつ.*パンツ.*M/);
+  expect(item.name).not.toBe('おむつ');
+  expect(await onboardingState(page)).toMatchObject({guided: 'diaper', chosen: 1});
+  await go(page, 'home');
+  await expect(card(page)).toHaveCount(0);
+  expect(await noHorizontalScroll(page)).toBe(true);
+  expect(page.__errors).toEqual([]);
+});
+
+test('food guide opens maker/month/real-product picker, save happens only at confirm', async ({ page }) => {
+  await open(page);
+  await page.click('[data-ob-guide="food"]');
+  await expect(page.locator('#qaBabyFood')).toBeVisible();
+  await expect(page.locator('#qaBabyFood')).toContainText('メーカー');
+  expect(await stored(page)).toBeNull();
+  await page.click('[data-qa-food-maker="morinaga"]');
+  await page.click('[data-qa-food-product="morinaga-9528"]');
+  await page.click('[data-qa-food-add]');
+  expect(await stored(page)).toBeNull();
+  await page.click('[data-qa-review]');
+  await page.click('#qaCommit');
+  await expect.poll(async () => (await stored(page))?.items.length).toBe(1);
+  const item = (await stored(page)).items[0];
+  expect(item.cat).toBe('離乳食');
+  expect(item.name).toContain('森永');
+  expect(await onboardingState(page)).toMatchObject({ guided: 'food', chosen: 1 });
+  expect(page.__errors).toEqual([]);
+});
+
+test('choosing general items prevents losing an uncommitted selection by jumping to a guide', async ({ page }) => {
+  await open(page);
+  await chip(page, '牛乳').click();
+  await page.click('[data-ob-guide="diaper"]');
+  await expect(page.locator('#atkObError')).toContainText('まだ保存されていません');
+  await expect(chip(page, '牛乳')).toHaveAttribute('aria-pressed', 'true');
+  expect(await stored(page)).toBeNull();
 });
