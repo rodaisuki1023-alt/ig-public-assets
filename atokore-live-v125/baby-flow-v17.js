@@ -136,7 +136,7 @@ function routineToStock(r,idText){
   oldItems=records();total=oldItems.length;
   next=root.AtokoreQuickAdd?.buildBatch?.(oldItems,r.entries,Date.now());
   if(!Array.isArray(next))throw Error('商品の在庫反映に失敗しました');
-  const store=root.localStorage,key='atokoreTrialV4';
+  const store=root.localStorage,key='atokorePreviewTrialV19';
   const serialized=JSON.stringify({items:next,buys,routines});
   store.setItem(key,serialized);
   if(store.getItem(key)!==serialized)throw Error('保存結果を確認できませんでした');
@@ -188,7 +188,7 @@ function routineToBuy(r,idText){
    if(found)found.qty=(Number(found.qty)||0)+line.qty;
    else{while(ids.has(sequence))sequence++;ids.add(sequence);next.push({id:sequence++,...line})}
   }
-  const raw=JSON.stringify({items,buys:next,routines}),key='atokoreTrialV4';
+  const raw=JSON.stringify({items,buys:next,routines}),key='atokorePreviewTrialV19';
   root.localStorage.setItem(key,raw);
   if(root.localStorage.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
   buys=next;lastDirectBuy={id:idText,at:Date.now()};
