@@ -633,7 +633,7 @@ function setup(){
   addLine({name:raw,cat,qty:1,unit:defaultUnit(raw,cat)});$('qaFree').value='';
  }
  const oldGo=root.go;
- if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false,()=>root.go(page,...rest)))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
+ if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false,()=>root.go(page,...rest)))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}if(page!=='add'&&!state.tray.length&&!state.committing)state.afterSave=null;const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
  if(typeof oldStock==='function')root.renderStock=function(...a){const v=oldStock.apply(this,a);decorateRows('#stockList [data-stock-id]');return v};
  if(typeof oldBuy==='function')root.renderBuy=function(...a){const v=oldBuy.apply(this,a);decorateRows('#buyList [data-buy-id]');return v};
