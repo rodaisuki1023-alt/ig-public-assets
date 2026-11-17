@@ -149,3 +149,74 @@ test('confirmation opened in daycare cannot remove or reset an item after switch
   assert.equal($('#atkPackRows').children.length, 6);
   dom.window.close();
 });
+
+test('stale tab cannot overwrite a newer checklist saved by a second tab', () => {
+  const { dom, w, $ } = open();
+  const key = w.AtokorePackingChecklist.key;
+  const latest = {
+    version: 1, active: 'daycare',
+    lists: {
+      daycare: [{ id: 'daycare-0', name: '連絡帳', done: true }],
+      outing: [{ id: 'outing-0', name: 'おむつ', done: false }]
+    }
+  };
+  const raw = JSON.stringify(latest);
+  // Emulates a different tab writing the shared same-origin localStorage key.
+  w.localStorage.setItem(key, raw);
+  const checkbox = $('#atkPackRows input[type=checkbox]');
+  checkbox.checked = true; change(w, checkbox);
+  assert.equal(w.localStorage.getItem(key), raw, 'must not stomp the external write');
+  assert.equal($('#atkPackRows').children.length, 1, 'reload latest data instead');
+  assert.match($('#atkPackError').textContent, /別のタブ/);
+  assert.equal(w.AtokorePackingChecklist.status().locked, false);
+  // A deliberate retry after seeing current data may now save safely.
+  const current = $('#atkPackRows input[type=checkbox]');
+  current.checked = false; change(w, current);
+  assert.equal(JSON.parse(w.localStorage.getItem(key)).lists.daycare[0].done, false);
+  dom.window.close();
+});
+
+test('external deletion or corrupt update locks editor without resurrecting old data', () => {
+  const { dom, w, $ } = open();
+  const key = w.AtokorePackingChecklist.key;
+  const first = $('#atkPackRows input[type=checkbox]');
+  first.checked = true; change(w, first);
+  w.localStorage.removeItem(key); // another tab removed the checklist
+  const second = $('#atkPackRows input[type=checkbox]');
+  second.checked = false; change(w, second);
+  assert.equal(w.localStorage.getItem(key), null);
+  assert.equal(w.AtokorePackingChecklist.status().locked, true);
+  assert.match($('#atkPackError').textContent, /別のタブでチェックリストが削除/);
+  dom.window.close();
+});
+
+test('storage event refreshes a changed checklist in a second tab', () => {
+  const { dom, w, $ } = open();
+  const key = w.AtokorePackingChecklist.key;
+  const state = {
+    version: 1, active: 'outing',
+    lists: {
+      daycare: [{ id: 'daycare-0', name: '連絡帳', done: false }],
+      outing: [{ id: 'outing-0', name: '水筒', done: true }]
+    }
+  };
+  const raw = JSON.stringify(state);
+  w.localStorage.setItem(key, raw);
+  w.dispatchEvent(new w.StorageEvent('storage', { key, newValue: raw, storageArea: w.localStorage }));
+  assert.match($('#atkPackProgress').textContent, /お出かけセット：1\/1/);
+  assert.equal($('#atkPackRows input[type=checkbox]').checked, true);
+  assert.equal(w.localStorage.getItem(key), raw);
+  dom.window.close();
+});
+
+test('invalid active template cannot select inherited object properties', () => {
+  const url='https://example.invalid/ig-public-assets/preview-baby-v19/';
+  const key='atokorePackingChecklistV1:/ig-public-assets/preview-baby-v19/';
+  const source={ version:1, active:'constructor', lists: { daycare:[], outing:[] } };
+  const raw=JSON.stringify(source);
+  const { dom, w, $ }=open(url,{ [key]:raw });
+  assert.equal(w.AtokorePackingChecklist.status().locked,true);
+  assert.equal(w.localStorage.getItem(key),raw);
+  assert.equal($('#atkPackAddButton').disabled,true);
+  dom.window.close();
+});
