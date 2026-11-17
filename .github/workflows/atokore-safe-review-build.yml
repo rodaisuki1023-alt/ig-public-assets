@@ -49,3 +49,13 @@ jobs:
       - name: JavaScript syntax in generated review build
         run: |
           find _local_review -maxdepth 1 -name '*.js' -print0 | xargs -0 -n 1 node --check
+      # Artifact only: stores static assets for the owner's separate-origin manual test.
+      # Not a website, not a deployment, and never a source of credentials.
+      - name: Package isolated trial for owner-only iPhone deployment
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 106 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: atokore-v50-local-only-review
+          path: _local_review/
+          if-no-files-found: error
+          retention-days: 3
