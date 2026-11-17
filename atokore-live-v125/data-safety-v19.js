@@ -6,7 +6,7 @@
  */
 (function(root){
 'use strict';
-const KEY='atokoreTrialV4',HISTORY='atokoreHistoryV1',BEFORE_RESTORE=KEY+'BeforeRestore';
+const KEY='atokorePreviewTrialV19',HISTORY='atokorePreviewHistoryV19',BEFORE_RESTORE=KEY+'BeforeRestore';
 const doc=typeof document==='undefined'?null:document;
 const valid=s=>!!s&&typeof s==='object'&&Array.isArray(s.items)&&Array.isArray(s.buys)&&Array.isArray(s.routines);
 function storage(){try{return root.localStorage||null}catch(e){return null}}
