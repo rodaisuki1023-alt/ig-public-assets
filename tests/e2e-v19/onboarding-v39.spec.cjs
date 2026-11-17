@@ -197,3 +197,37 @@ test('choosing general items prevents losing an uncommitted selection by jumping
   await expect(chip(page, '牛乳')).toHaveAttribute('aria-pressed', 'true');
   expect(await stored(page)).toBeNull();
 });
+
+test('leaving an empty first-run guide does not mark a later unrelated stock add as guided', async ({ page }) => {
+  await open(page);
+  await page.click('[data-ob-guide="diaper"]');
+  await expect(page.locator('#qaBaby')).toBeVisible();
+  await go(page, 'home');
+  await expect(card(page)).toBeVisible();
+  expect(await onboardingState(page)).toBeNull();
+  await page.evaluate(() => window.atkOpenAdd('stock'));
+  await page.click('[data-qa-cat="食料品"]');
+  await page.click('[data-qa-pick="卵"]');
+  await page.click('[data-qa-review]');
+  await page.click('#qaCommit');
+  await expect.poll(async () => (await stored(page))?.items.length).toBe(1);
+  expect((await stored(page)).items[0].name).toBe('卵');
+  expect(await onboardingState(page)).toBeNull();
+  expect(page.__errors).toEqual([]);
+});
+
+test('switching guide save destination to shopping never claims stock onboarding completed', async ({ page }) => {
+  await open(page);
+  await page.click('[data-ob-guide="diaper"]');
+  await page.click('[data-qa-baby="brand"][data-value="マミーポコ"]');
+  await page.click('[data-qa-baby="type"][data-value="パンツ"]');
+  await page.click('[data-qa-baby="size"][data-value="M"]');
+  await page.click('[data-qa-babyadd]');
+  await page.evaluate(() => window.AtokoreQuickAdd.setDestination('buy'));
+  await page.click('[data-qa-review]');
+  await page.click('#qaCommit');
+  await expect.poll(async () => (await stored(page))?.buys.length).toBe(1);
+  expect((await stored(page)).items).toEqual([]);
+  expect(await onboardingState(page)).toBeNull();
+  expect(page.__errors).toEqual([]);
+});
