@@ -10,8 +10,15 @@
 const KEY='atokoreOnboardingV1',DATA_KEY='atokoreTrialV4';
 const MAX=5;
 // name, category, unit: common products in families with small children, then any household.
+// Detailed baby products use the existing brand/product picker instead of a
+// generic unnamed row in the five-item batch.
+const GUIDES=[
+ ['diaper','🧷 おむつ','メーカー・タイプ・サイズ'],
+ ['milk','🍼 ミルク','商品・種類'],
+ ['wipes','🧻 おしりふき','メーカー・商品'],
+ ['food','🥣 離乳食','メーカー・月齢・商品'],
+];
 const CHOICES=[
- ['おむつ','ベビー','袋','🧷'],['おしりふき','ベビー','パック','🧻'],['粉ミルク','ベビー','缶','🍼'],
  ['トイレットペーパー','日用品','パック','🧻'],['ティッシュ','日用品','箱','🤧'],['洗濯洗剤','日用品','本','🧺'],
  ['食器用洗剤','日用品','本','🍽️'],['牛乳','食料品','本','🥛'],['卵','食料品','パック','🥚'],['お米','食料品','袋','🍚'],
 ];
@@ -41,9 +48,11 @@ function cardHTML(){
  const chips=available().map(([name,,unit,icon])=>{const on=picked.includes(name);return '<button type="button" class="atk-ob-chip'+(on?' on':'')+'" aria-pressed="'+on+'" data-ob-pick="'+esc(name)+'"><span aria-hidden="true">'+icon+'</span>'+esc(name)+'</button>'}).join('');
  const lines=picked.map(name=>{const unit=CHOICES.find(c=>c[0]===name)[2];return '<label class="atk-ob-line"><span>'+esc(name)+'</span><span class="atk-ob-line-input">残り<input type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" aria-label="'+esc(name)+'の補充の目安" data-ob-min="'+esc(name)+'" value="'+esc(mins[name]??'')+'">'+esc(unit)+'以下で知らせる</span></label>'}).join('');
  return '<section id="atkOnboarding" class="atk-ob" aria-labelledby="atkObTitle">'+
-  '<h3 id="atkObTitle">まずは、切らしたくない物を選びましょう</h3>'+
-  '<p class="atk-ob-sub">タップで選ぶだけ（'+MAX+'つまで）。アカウントなしで始められます。商品はこの端末に保存され、家族共有中は家族にも反映されます。数や名前はあとから変更できます。</p>'+
-  '<div class="atk-ob-chips" role="group" aria-label="よく使う商品">'+chips+'</div>'+
+  '<h3 id="atkObTitle">まずは、よく使うストックを登録しましょう</h3>'+
+  '<p class="atk-ob-sub">おむつ・ミルク・おしりふき・離乳食は、メーカーやサイズまで選んで登録できます。商品を選ぶだけでは保存されません。</p>'+
+  '<div class="atk-ob-guides" role="group" aria-label="メーカー・サイズから商品を選んで登録">'+GUIDES.map(([id,name,detail])=>'<button type="button" class="atk-ob-guide" data-ob-guide="'+esc(id)+'"><strong>'+esc(name)+'</strong><small>'+esc(detail)+'から選ぶ</small></button>').join('')+'</div>'+
+  '<p class="atk-ob-sub atk-ob-batch-label">または、日用品・食品をまとめて登録（'+MAX+'つまで）</p>'+
+  '<div class="atk-ob-chips" role="group" aria-label="よく使う日用品・食品">'+chips+'</div>'+
   (picked.length?'<details class="atk-ob-more"><summary>補充の目安を決める（任意）</summary><p class="atk-ob-note">空欄なら残り1以下で「要補充」に出ます。</p>'+lines+'</details>':'')+
   '<p id="atkObError" class="atk-ob-error" role="alert" hidden></p>'+
   '<div class="atk-ob-actions"><button type="button" class="atk-ob-primary" data-ob-go'+(picked.length?'':' disabled')+'>'+(picked.length?'選んだ'+picked.length+'つを確認する':'商品を選んでください')+'</button>'+
@@ -96,7 +105,18 @@ function go(){
  }});
 }
 function onClick(event){
- const t=event.target.closest?.('[data-ob-pick],[data-ob-go],[data-ob-later],[data-ob-tip-ok],[data-ob-share]');if(!t)return;
+ const t=event.target.closest?.('[data-ob-guide],[data-ob-pick],[data-ob-go],[data-ob-later],[data-ob-tip-ok],[data-ob-share]');if(!t)return;
+ if(t.hasAttribute('data-ob-guide')){
+  const kind=t.getAttribute('data-ob-guide');
+  if(!GUIDES.some(x=>x[0]===kind))return;
+  if(picked.length){error('選択中の日用品・食品がまだ保存されていません。先に「選んだ商品を確認する」から登録してください。');return}
+  const opened=root.AtokoreQuickAdd?.openGuidedProduct?.(kind,{onSaved:()=>{
+   writeState({doneAt:new Date().toISOString(),chosen:1,guided:kind});
+   picked=[];mins={};
+  }});
+  if(!opened){error('追加予定の商品がある場合は先に保存・取り消ししてください。その後もう一度お試しください。');return}
+  error('');return;
+ }
  if(t.hasAttribute('data-ob-pick')){
   const name=t.getAttribute('data-ob-pick');
   if(picked.includes(name))picked=picked.filter(n=>n!==name);
@@ -113,7 +133,7 @@ function onClick(event){
 }
 function onInput(event){const t=event.target;if(t?.hasAttribute?.('data-ob-min'))mins[t.getAttribute('data-ob-min')]=t.value}
 
-const api=Object.freeze({CHOICES,MAX,entries,reorderLine,eligible,available,state:readState});
+const api=Object.freeze({CHOICES,GUIDES,MAX,entries,reorderLine,eligible,available,state:readState});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreOnboarding=api;
 if(doc&&typeof window!=='undefined'){
