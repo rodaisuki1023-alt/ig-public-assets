@@ -110,8 +110,11 @@ function onClick(event){
   const kind=t.getAttribute('data-ob-guide');
   if(!GUIDES.some(x=>x[0]===kind))return;
   if(picked.length){error('選択中の日用品・食品がまだ保存されていません。先に「選んだ商品を確認する」から登録してください。');return}
-  const opened=root.AtokoreQuickAdd?.openGuidedProduct?.(kind,{onSaved:()=>{
-   writeState({doneAt:new Date().toISOString(),chosen:1,guided:kind});
+  const opened=root.AtokoreQuickAdd?.openGuidedProduct?.(kind,{onSaved:({destination,lines})=>{
+   // The first-run card introduces STOCK management. A deliberate change of
+   // destination to the shopping list must not be reported as stock onboarding.
+   if(destination!=='stock'||!Array.isArray(lines)||!lines.length)return;
+   writeState({doneAt:new Date().toISOString(),chosen:lines.length,guided:kind});
    picked=[];mins={};
   }});
   if(!opened){error('追加予定の商品がある場合は先に保存・取り消ししてください。その後もう一度お試しください。');return}
