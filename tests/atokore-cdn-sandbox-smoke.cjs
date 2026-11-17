@@ -30,6 +30,14 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
     try {
       const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
       assert.equal(response?.status(), 200, label + ' page must be served');
+      if (!(await page.locator('#atkSafeReviewBanner').count())) {
+        const markup = await page.content();
+        console.log('Review browser diagnostics:', JSON.stringify({
+          label, finalUrl: page.url(), responseUrl: response?.url(),
+          contentType: await response?.headerValue('content-type'),
+          bodyHead: markup.slice(0, 850), totalBytes: markup.length,
+        }));
+      }
       await page.locator('#atkSafeReviewBanner').waitFor({ timeout: 15_000 });
       assert.match(await page.locator('#atkSafeReviewBanner').textContent(), /合成データのみ/);
       assert.equal(await page.evaluate(() => window.ATOKORE_HOUSEHOLD_CONFIG), null, label + ' sharing disabled');
