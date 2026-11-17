@@ -160,7 +160,7 @@
     buttonAdd.disabled = locked || items.length >= 50;
     input.disabled = locked || items.length >= 50;
     reset.disabled = locked || done === 0;
-    if (locked) notice('チェックリストの保存内容を読めません。データを保護するため変更を停止しています。');
+    if (locked && error.hidden) notice('チェックリストの保存内容を読めません。データを保護するため変更を停止しています。');
   }
 
   for (const b of section.querySelectorAll('[data-pack]')) {
