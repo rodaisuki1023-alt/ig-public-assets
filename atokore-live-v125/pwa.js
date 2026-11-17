@@ -2,7 +2,7 @@
   const isStandalone = () =>
     window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const DISMISS_KEY = 'atokorePwaInstallDismissedAt';
+  const DISMISS_KEY = 'atokorePreviewPwaInstallDismissedAtV19';
   let deferredPrompt = null;
 
   function installCardRecentlyDismissed() {
