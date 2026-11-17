@@ -53,6 +53,8 @@ const APP_SHELL = [
   './p0-fixes-v19.css',
   './routine-catalog-v20.css',
   './routine-catalog-v20.js',
+  './packing-checklist-v50.js',
+  './packing-checklist-v50.css',
   './storage-bootstrap-v19.js',
   './data-safety-v19.js',
   './product-icons.js',
