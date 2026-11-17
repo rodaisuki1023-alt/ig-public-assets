@@ -72,7 +72,7 @@
   const ref=(x,kind='item')=>({id:x.id,kind,name:x.name,unit:x.unit});
   function logHistory(title,detail,type='other',icon='✎',extra){
     if(!lastSaveOk)return;
-    try{const key='atokoreHistoryV1',history=JSON.parse(localStorage.getItem(key)||'[]');history.unshift({id:Core.uniqueId(),ts:Date.now(),title,detail,type,icon,...(extra?.refs?{refs:extra.refs}:{}),...(extra?.change!=null?{change:String(extra.change)}:{})});localStorage.setItem(key,JSON.stringify(history.slice(0,200)))}catch(e){}
+    try{const key='atokorePreviewHistoryV19',history=JSON.parse(localStorage.getItem(key)||'[]');history.unshift({id:Core.uniqueId(),ts:Date.now(),title,detail,type,icon,...(extra?.refs?{refs:extra.refs}:{}),...(extra?.change!=null?{change:String(extra.change)}:{})});localStorage.setItem(key,JSON.stringify(history.slice(0,200)))}catch(e){}
   }
   function toast(message){
     let node=document.getElementById('stableToastV125h');
