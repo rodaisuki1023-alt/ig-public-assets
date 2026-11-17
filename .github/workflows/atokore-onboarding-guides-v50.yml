@@ -1,0 +1,50 @@
+name: Atokore First-Run Detailed Product Guide Checks
+on:
+  pull_request:
+    paths:
+      - 'atokore-live-v125/index.html'
+      - 'atokore-live-v125/onboarding-v39.js'
+      - 'atokore-live-v125/onboarding-v39.css'
+      - 'atokore-live-v125/quick-add.js'
+      - 'tests/e2e-v19/onboarding-v39.spec.cjs'
+      - '.github/workflows/atokore-onboarding-guides-v50.yml'
+permissions:
+  contents: read
+jobs:
+  guided-first-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+      options: --shm-size=1gb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned test-only dependencies
+        run: npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
+      - name: Unit and content checks (no publishing)
+        run: |
+          node --check atokore-live-v125/onboarding-v39.js
+          node --check atokore-live-v125/quick-add.js
+          node --test tests/atokore-quick-add.test.cjs
+          python3 -I scripts/atokore/build-preview.py atokore-live-v125 _guide_preview 19
+          python3 - <<'PY'
+          from pathlib import Path
+          html=Path('_guide_preview/index.html').read_text()
+          onboarding=Path('_guide_preview/onboarding-v39.js').read_text()
+          assert 'ストックからまとめて買い物へ' in html
+          assert '在庫からまとめて買い物へ' not in html
+          for kind in ('diaper','milk','wipes','food'):
+            assert "'"+kind+"'" in onboarding
+          assert 'openGuidedProduct' in onboarding
+          assert 'atokorePreviewOnboardingV19' in onboarding
+          PY
+      - name: Independent first-run Playwright Chromium + WebKit 320-430px
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs onboarding-v39.spec.cjs
