@@ -12,8 +12,8 @@ const ask=(title,detail,action)=>root.AtokoreConfirm.ask(title,detail,action);
 const doc=typeof document==='undefined'?null:document;
 const cfg=root.ATOKORE_HOUSEHOLD_CONFIG;
 const core=root.AtokoreHouseholdCore;
-const DATA_KEY='atokoreTrialV4',META_KEY='atokoreHouseholdSyncV1',SESSION_KEY='atokoreHouseholdSessionV1';
-const INVITE_KEY='atokoreHouseholdInviteV1';
+const DATA_KEY='atokorePreviewTrialV19',META_KEY='atokorePreviewHouseholdSyncV19',SESSION_KEY='atokorePreviewHouseholdSessionV19';
+const INVITE_KEY='atokorePreviewHouseholdInviteV19';
 const BEFORE_SHARE=DATA_KEY+'BeforeShare';
 const RECOVERY=DATA_KEY+'SyncRecovery';
 function validConfig(c){
