@@ -1,5 +1,5 @@
 /* あとこれ / Quick Add v14
- * Search + one-tap presets + pending list with a review screen before saving. Uses the original local-first atokoreTrialV4 data model.
+ * Search + one-tap presets + pending list with a review screen before saving. Uses the original local-first atokorePreviewTrialV19 data model.
  * No third-party images, payments, affiliate APIs, or network requests.
  */
 (function(root) {
@@ -470,7 +470,7 @@ function persist(tray){
   if(state.routineTarget.onCommit(tray)!==true)throw Error('いつものリストを保存できませんでした');
   return {merged:0,ids:[]};
  }
- const key='atokoreTrialV4',store=root.localStorage;
+ const key='atokorePreviewTrialV19',store=root.localStorage;
  if(state.destination==='buy'){
   const nextBuys=buys.map(x=>({...x})),ids=new Set(nextBuys.map(x=>Number(x.id)));let merged=0,sequence=Date.now();
   for(const x of tray){const found=nextBuys.find(y=>y.name===x.name&&y.unit===x.unit);
