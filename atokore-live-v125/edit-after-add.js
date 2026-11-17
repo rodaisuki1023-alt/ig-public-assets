@@ -1,4 +1,4 @@
-/* Edit after add — first-party local-only UI. Uses existing atokoreTrialV4 records. */
+/* Edit after add — first-party local-only UI. Uses existing atokorePreviewTrialV19 records. */
 (function(root){
 'use strict';
 const $=id=>typeof document==='undefined'?null:document.getElementById(id);
@@ -95,7 +95,7 @@ function edit(id,options={}){
    if(draft){options.onSave(next);form.dataset.saved='1';root.closeM?.();return}
    // Optimistic in-memory updates are avoided: write to localStorage before UI mutation.
    const records=items.map(x=>Number(x.id)===n?next:x);
-   localStorage.setItem('atokoreTrialV4',JSON.stringify({items:records,buys,routines}));
+   localStorage.setItem('atokorePreviewTrialV19',JSON.stringify({items:records,buys,routines}));
    items=records;form.dataset.saved='1';
    document.dispatchEvent(new CustomEvent('atokore-stock-edited',{detail:{before:curr,after:next}}));
    // Notify any existing local-first family/sync adapters, then redraw.
