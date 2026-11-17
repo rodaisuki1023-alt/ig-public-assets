@@ -28,7 +28,7 @@
       id, names.map((name, i) => ({ id: id + '-' + i, name, done: false }))
     ]))
   });
-  const valid = s => s && s.version === 1 && NAMES[s.active] &&
+  const valid = s => s && s.version === 1 && Object.prototype.hasOwnProperty.call(NAMES, s.active) &&
     s.lists && typeof s.lists === 'object' &&
     ['daycare', 'outing'].every(id => Array.isArray(s.lists[id]) && s.lists[id].length <= 50 &&
       s.lists[id].every(x => x && typeof x.id === 'string' && x.id.length <= 100 &&
@@ -37,6 +37,7 @@
 
   let state = initial();
   let locked = false;
+  let snapshot = null; // raw bytes last read or successfully committed by this tab
   let store = null;
   try {
     store = root.localStorage;
@@ -46,6 +47,7 @@
       if (!valid(parsed)) throw Error('invalid-kit');
       state = parsed;
     }
+    snapshot = saved;
   } catch (e) {
     // Never replace an unreadable checklist. Refuse writes, even to the defaults on screen.
     locked = true;
@@ -55,10 +57,43 @@
     error.hidden = !message;
     error.textContent = message || '';
   }
+  function reconcile(raw) {
+    if (raw === snapshot) return;
+    if (raw === null) {
+      locked = true; // another tab reset/deleted data: do not resurrect its old checklist
+      notice('別のタブでチェックリストが削除されました。古い内容で上書きしないため、この画面での変更を停止しています。');
+      render();
+      return;
+    }
+    try {
+      const latest = JSON.parse(raw);
+      if (!valid(latest)) throw Error('corrupt-checklist');
+      state = latest;
+      snapshot = raw;
+      notice('別のタブでチェックリストが更新されました。最新の内容に読み直しました。操作をもう一度確認してください。');
+    } catch (e) {
+      locked = true;
+      notice('別のタブで保存内容が読めない状態になりました。保護のため変更を停止しています。');
+    }
+    render();
+  }
+  root.addEventListener?.('storage', event => {
+    if (event.key === KEY || event.key === null) {
+      try { reconcile(store.getItem(KEY)); }
+      catch (e) { locked = true; notice('保存状態を読み直せません。変更を停止しています。'); render(); }
+    }
+  });
+
   function commit(next) {
     if (locked) return false;
     const raw = JSON.stringify(next);
     try {
+      // Other tabs share localStorage. A stale tab must not erase newer checklist edits.
+      const current = store.getItem(KEY);
+      if (current !== snapshot) {
+        reconcile(current);
+        return false; // explicitly retry the current action after reviewing the fresh checklist
+      }
       store.setItem(KEY, raw);
       if (store.getItem(KEY) !== raw) throw Error('write-verification');
     } catch (e) {
@@ -67,6 +102,7 @@
       return false;
     }
     state = next;
+    snapshot = raw;
     notice('');
     render();
     return true;
