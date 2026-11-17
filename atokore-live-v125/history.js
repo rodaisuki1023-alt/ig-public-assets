@@ -1,6 +1,6 @@
 /* あとこれ v10 - 操作履歴 / アプリ更新履歴 */
 (()=>{
-  const KEY='atokoreHistoryV1';
+  const KEY='atokorePreviewHistoryV19';
   const MAX=200;
   let tab='activity';
   const css=`
