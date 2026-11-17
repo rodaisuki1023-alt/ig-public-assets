@@ -112,10 +112,11 @@
       remove.disabled = locked;
       remove.setAttribute('aria-label', item.name + 'をリストから削除');
       remove.addEventListener('click', async () => {
-        // Use the app's in-app confirmation. Never use a native confirm or silent deletion.
+        // A kit switch while the dialog is open must not delete from the new kit.
         if (!root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
+        const kit = state.active;
         const yes = await root.AtokoreConfirm.ask('持ち物を削除しますか？', item.name + 'をこのリストから削除します。在庫には影響しません。', '削除');
-        if (yes) edited(next => { next.lists[next.active] = next.lists[next.active].filter(x => x.id !== item.id); });
+        if (yes && state.active === kit) edited(next => { next.lists[kit] = next.lists[kit].filter(x => x.id !== item.id); });
       });
       row.append(label, remove);
       rows.append(row);
@@ -143,8 +144,9 @@
   input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
   reset.addEventListener('click', async () => {
     if (locked || !root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
-    const yes = await root.AtokoreConfirm.ask('チェックを戻しますか？', NAMES[state.active] + 'のチェックだけをすべて外します。リストと在庫は残ります。', 'チェックを戻す');
-    if (yes) edited(next => { for (const item of next.lists[next.active]) item.done = false; });
+    const kit = state.active;
+    const yes = await root.AtokoreConfirm.ask('チェックを戻しますか？', NAMES[kit] + 'のチェックだけをすべて外します。リストと在庫は残ります。', 'チェックを戻す');
+    if (yes && state.active === kit) edited(next => { for (const item of next.lists[kit]) item.done = false; });
   });
 
   render();
