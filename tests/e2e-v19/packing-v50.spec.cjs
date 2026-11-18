@@ -112,3 +112,29 @@ for(const width of [320,393])test('Muse P2: shopping shortcut reaches kit and ba
  expect(await noHorizontalScroll(page)).toBe(true);
  expect(page.__errors).toEqual([]);
 });
+
+for(const width of [320,393])test('Muse P2: delete and reset are distinguishable without restoring removed items at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:760});
+ await open(page,{[KEY]:baseState()});
+ const before=await stored(page);
+ await go(page,'buy');
+ const reset=page.locator('#atkPackReset');
+ await expect(reset).toHaveText('準備済みチェックをすべて外す');
+ await page.locator('#atkPackRows input[type=checkbox]').first().check();
+ const second=page.locator('#atkPackRows .atk-pack-row').nth(1);
+ const removedName=await second.locator('.atk-pack-label span').textContent();
+ await second.locator('.atk-pack-remove').click();
+ await expect(page.locator('#atkConfirmNote')).toContainText('削除した項目は戻りません');
+ await appConfirm(page,true);
+ await expect(page.locator('#atkPackRows .atk-pack-row')).toHaveCount(5);
+ await expect(page.locator('#atkPackRows')).not.toContainText(removedName);
+ await reset.click();
+ await expect(page.locator('#atkConfirmNote')).toContainText('削除済みの項目は復元されません');
+ await appConfirm(page,true);
+ await expect(page.locator('#atkPackRows .atk-pack-row')).toHaveCount(5);
+ await expect(page.locator('#atkPackRows input[type=checkbox]').first()).not.toBeChecked();
+ await expect(page.locator('#atkPackProgress')).toHaveText('保育園セット：0/5 準備済み');
+ expect(await stored(page)).toEqual(before);
+ expect(await noHorizontalScroll(page)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
