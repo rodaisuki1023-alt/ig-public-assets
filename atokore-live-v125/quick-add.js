@@ -626,7 +626,7 @@ function setup(){
  pane.innerHTML='<div class="qa-routine-pick-head" id="qaRoutinePicker" hidden><button type="button" data-qa-routine-back>← いつものリストに戻る</button><strong>いつものリストに商品を追加</strong><p>選んだ商品はストック数を増やさず、このリストだけに保存します。</p></div>'+
  '<div class="qa-heading"><strong>商品を選んで、まとめて追加</strong><span>おむつ・ミルク・おしりふきをかんたん登録。食品・日用品も使えます</span></div>'+ 
  '<div class="bf-destination" id="bfDestination"><button type="button" data-qa-dest="stock">ストックに追加</button><button type="button" data-qa-dest="buy">買い物リストに追加</button></div>'+ 
- '<section id="qaFreeTop" class="qa-free-top" aria-labelledby="qaFreeTitle"><h3 id="qaFreeTitle">商品名を入力して追加</h3><p id="qaFreeDest" class="qa-free-dest"></p><div class="qa-free"><input id="qaFree" placeholder="例：ベビー綿棒 200本" maxlength="120" aria-labelledby="qaFreeTitle"><button type="button" data-qa-free>追加予定に入れる</button></div><p class="qa-free-note">最後の「保存」ボタンを押すまで登録されません。</p></section>'+
+ '<section id="qaFreeTop" class="qa-free-top" aria-labelledby="qaFreeTitle"><h3 id="qaFreeTitle">商品名を入力して追加</h3><p id="qaFreeDest" class="qa-free-dest"></p><div class="qa-free"><input id="qaFree" placeholder="例：ベビー綿棒 200本" maxlength="120" aria-labelledby="qaFreeTitle"><button type="button" data-qa-free>追加予定に入れる</button></div><p class="qa-free-note" id="qaFreeNote">追加予定に入れた後、確認画面で保存できます。</p></section>'+
  '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button></div>'+
  '<div id="qaBaby" class="qa-baby"></div><div id="qaBabyFood" class="qa-babyfood"></div><div id="qaRecent"></div></div>'+
@@ -737,6 +737,7 @@ function renderDestination(){
  const button=$('qaCommit');if(button)button.textContent=commitLabel();
  const baby=$('qaBaby')?.querySelector('[data-qa-babyadd]');
  if(baby)baby.textContent='＋ 追加予定に入れる';
+ const freeNote=$('qaFreeNote');if(freeNote)freeNote.textContent='「追加した商品を確認する」→「'+commitLabel()+'」で保存されます。';
  const note=$('qaBabySaveNote');
  if(note)note.textContent='まだ保存されません。「追加した商品を確認する」で内容を確かめ、最後に「'+commitLabel()+'」を押すと保存されます。';
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
