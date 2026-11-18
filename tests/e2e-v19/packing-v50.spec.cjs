@@ -90,3 +90,25 @@ test('unreadable checklist is protected; trial stock remains unchanged', async (
   expect(await page.evaluate(k => localStorage.getItem(k), packKey)).toBe('{broken-json');
   expect(await stored(page)).toEqual(stockBefore);
 });
+
+for(const width of [320,393])test('Muse P2: shopping shortcut reaches kit and batch-select caption is readable at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:720});
+ await open(page,{[KEY]:baseState()});
+ const original=await stored(page);
+ await go(page,'buy');
+ const jump=page.locator('#pg-buy .atk-pack-jump');
+ await expect(jump).toBeVisible();
+ await expect(jump).toHaveAttribute('href','#atkPackingMvp');
+ const bb=await jump.boundingBox();
+ expect(bb.height).toBeGreaterThanOrEqual(44);
+ await expect(page.locator('#pg-buy .atk-bulk-pick span').first()).toHaveCSS('font-size','11px');
+ const before=await page.locator('#atkPackingMvp').evaluate(el=>el.getBoundingClientRect().top);
+ await jump.click();
+ await expect.poll(async()=>page.locator('#atkPackingMvp').evaluate(el=>el.getBoundingClientRect().top)).toBeLessThan(before);
+ const top=await page.locator('#atkPackingMvp').evaluate(el=>el.getBoundingClientRect().top);
+ expect(top).toBeLessThan(720);
+ await expect(page.locator('#atkPackRows .atk-pack-row')).toHaveCount(6);
+ expect(await stored(page)).toEqual(original);
+ expect(await noHorizontalScroll(page)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
