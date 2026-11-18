@@ -152,7 +152,7 @@
         if (!root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
         const kit = state.active;
         const expected = snapshot;
-        const yes = await root.AtokoreConfirm.ask('持ち物を削除しますか？', item.name + 'をこのリストから削除します。在庫には影響しません。', '削除');
+        const yes = await root.AtokoreConfirm.ask('持ち物を削除しますか？', item.name + 'をこのセットから削除します。あとで「準備済みチェックをすべて外す」を押しても、削除した項目は戻りません。必要な場合は再追加してください。在庫と買い物リストは変わりません。', '削除');
         // A newer edit or another tab's update invalidates a decision made about old contents.
         if (yes && !locked && state.active === kit && snapshot === expected)
           edited(next => { next.lists[kit] = next.lists[kit].filter(x => x.id !== item.id); });
@@ -185,7 +185,7 @@
     if (locked || !root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
     const kit = state.active;
     const expected = snapshot;
-    const yes = await root.AtokoreConfirm.ask('チェックを戻しますか？', NAMES[kit] + 'のチェックだけをすべて外します。リストと在庫は残ります。', 'チェックを戻す');
+    const yes = await root.AtokoreConfirm.ask('チェックを戻しますか？', NAMES[kit] + 'の「準備済み」チェックだけをすべて外します。持ち物の項目は残り、削除済みの項目は復元されません。在庫と買い物リストは変わりません。', 'チェックを戻す');
     if (yes && !locked && state.active === kit && snapshot === expected)
       edited(next => { for (const item of next.lists[kit]) item.done = false; });
   });
