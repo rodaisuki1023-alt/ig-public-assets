@@ -234,3 +234,70 @@ test('v50 kit bridge: Safari quota write failure never claims an unsaved shoppin
  expect((await stored(page)).buys.filter(x=>x.name==='パンパース さらさらケア おむつ テープ M')).toHaveLength(1);
  expect(page.__dialogs).toEqual([]);
 });
+
+
+test('v50 repeat purchase remembers an explicitly chosen variant without buying or changing stock',async({page})=>{
+  const input=baseState();
+  input.items.push({id:4,name:'メリーズ おむつ パンツ L',cat:'ベビー',qty:0,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1});
+  await open(page,{[KEY]:input});
+  await go(page,'buy');
+  const diaper=page.locator('#atkPackRows .atk-pack-row').nth(2);
+  const picker=diaper.locator('select.atk-pack-stock-choice');
+  await picker.selectOption('4');
+  await expect(diaper.locator('select.atk-pack-stock-choice')).toHaveValue('4');
+  await expect(diaper.locator('.atk-pack-stock-hint')).toContainText('前回のサイズ・種類');
+  const packKey=await page.evaluate(()=>window.AtokorePackingChecklist.key);
+  const selected=await page.evaluate(k=>JSON.parse(localStorage.getItem(k)).lists.daycare[2].preferredStock,packKey);
+  expect(selected).toEqual({id:'4',name:'メリーズ おむつ パンツ L',unit:'袋'});
+  const unchanged=await stored(page);
+  expect(unchanged.items).toEqual(input.items);
+  expect(unchanged.buys).toEqual(input.buys);
+  await page.reload();
+  await go(page,'buy');
+  const after=page.locator('#atkPackRows .atk-pack-row').nth(2);
+  await expect(after.locator('select.atk-pack-stock-choice')).toHaveValue('4');
+  await after.locator('.atk-pack-to-buy').click();
+  const bought=await stored(page);
+  expect(bought.buys.find(x=>x.name==='メリーズ おむつ パンツ L')).toMatchObject({stockId:4,unit:'袋',qty:1});
+  expect(bought.items.find(x=>x.id===4).qty).toBe(0);
+  expect(page.__errors).toEqual([]);
+});
+
+test('v50 remembered variant is never auto-reused if its product identity changed',async({page})=>{
+  const input=baseState();
+  input.items.push({id:4,name:'メリーズ おむつ パンツ L',cat:'ベビー',qty:0,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1});
+  await open(page,{[KEY]:input});
+  await go(page,'buy');
+  await page.locator('#atkPackRows .atk-pack-row').nth(2).locator('select.atk-pack-stock-choice').selectOption('4');
+  const packKey=await page.evaluate(()=>window.AtokorePackingChecklist.key);
+  // Synthetic stock changes: reuse the same numerical ID for a different size.
+  await page.evaluate(key=>{
+    const state=JSON.parse(localStorage.getItem(key));
+    state.items.find(x=>x.id===4).name='メリーズ おむつ パンツ S';
+    localStorage.setItem(key,JSON.stringify(state));
+  },KEY);
+  await page.reload();
+  await go(page,'buy');
+  const diaper=page.locator('#atkPackRows .atk-pack-row').nth(2);
+  await expect(diaper.locator('select.atk-pack-stock-choice')).toHaveValue('');
+  await expect(diaper.locator('.atk-pack-to-buy')).toBeDisabled();
+  expect((await page.evaluate(k=>JSON.parse(localStorage.getItem(k)).lists.daycare[2].preferredStock,packKey)).name).toBe('メリーズ おむつ パンツ L');
+  expect((await stored(page)).buys).toEqual(input.buys);
+});
+
+test('v50 generic diaper confirmation cannot enqueue after another-tab checklist change',async({page})=>{
+  await open(page,{[KEY]:baseState({items:[],buys:[]})});
+  await go(page,'buy');
+  const action=page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy');
+  await action.click();
+  await expect(page.locator('#atkConfirmNote')).toContainText('サイズやメーカーを確認');
+  const packKey=await page.evaluate(()=>window.AtokorePackingChecklist.key);
+  await page.evaluate(key=>{
+    const state=JSON.parse(localStorage.getItem(key));
+    state.lists.daycare[2].done=true;
+    localStorage.setItem(key,JSON.stringify(state));
+  },packKey);
+  await appConfirm(page,true);
+  expect((await stored(page)).buys).toHaveLength(0);
+  await expect(page.locator('#atkPackError')).toContainText('別のタブ');
+});
