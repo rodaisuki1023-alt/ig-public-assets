@@ -185,7 +185,7 @@
     if (locked || !root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
     const kit = state.active;
     const expected = snapshot;
-    const yes = await root.AtokoreConfirm.ask('チェックを戻しますか？', NAMES[kit] + 'のチェックだけをすべて外します。リストと在庫は残ります。', 'チェックを戻す');
+    const yes = await root.AtokoreConfirm.ask('チェックを戻しますか？', NAMES[kit] + 'の「準備済み」チェックだけをすべて外します。持ち物の項目は残り、削除済みの項目は復元されません。在庫と買い物リストは変わりません。', 'チェックを戻す');
     if (yes && !locked && state.active === kit && snapshot === expected)
       edited(next => { for (const item of next.lists[kit]) item.done = false; });
   });
