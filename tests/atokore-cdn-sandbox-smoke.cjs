@@ -53,6 +53,20 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       assert.match(await page.locator('#atkSafeReviewBanner').textContent(), /合成データのみ/);
       assert.equal(await page.evaluate(() => window.ATOKORE_HOUSEHOLD_CONFIG), null, label + ' sharing disabled');
       await page.locator('button[data-p="buy"]').click();
+      const shortcut=page.locator('#pg-buy .atk-pack-jump');
+      await shortcut.waitFor({timeout:10_000});
+      assert.equal(await shortcut.getAttribute('href'),'#atkPackingMvp',label+' shortcut must target kit');
+      const jumpSize=await shortcut.boundingBox();
+      assert.ok(jumpSize?.height>=44,label+' shortcut has minimum 44px tap height');
+      await shortcut.click();
+      await page.waitForFunction(()=>document.querySelector('#atkPackingMvp')?.getBoundingClientRect().top<820);
+      // Text never falls back to the old 9px batch-selection label.
+      const batchFont=await page.evaluate(()=>{
+        const x=document.querySelector('#pg-buy .atk-bulk-pick span');
+        return x ? parseFloat(getComputedStyle(x).fontSize) : null;
+      });
+      // An empty synthetic shopping list may not render selection labels yet.
+      if(batchFont!==null)assert.ok(batchFont>=11,label+' selection caption is readable');
       await page.locator('#atkPackingMvp').waitFor({ timeout: 15_000 });
       assert.equal(await page.locator('#atkPackRows .atk-pack-row').count(), 6, label + ' initial daycare pack');
       const first = page.locator('#atkPackRows input[type="checkbox"]').first();
