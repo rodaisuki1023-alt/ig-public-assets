@@ -158,6 +158,68 @@
           edited(next => { next.lists[kit] = next.lists[kit].filter(x => x.id !== item.id); });
       });
       row.append(label, remove);
+      // Optional local packing → shopping bridge. It uses the existing shopping
+      // action owner to save, dedupe and synchronize purchases; a checklist
+      // checkmark never decrements stock or claims an item is packed automatically.
+      const bridge = root.AtokoreKitShoppingV50;
+      if (!locked && !item.done && bridge && typeof bridge.choices === 'function') {
+        const options = bridge.choices(item.name);
+        const helper = make('div', 'atk-pack-shopping-helper');
+        const statusLine = make('span', 'atk-pack-stock-hint');
+        if (!options.stocks.length) statusLine.textContent = 'ストック登録は未確認（不足確定ではありません）';
+        else if (options.stocks.length > 1) statusLine.textContent = '複数の商品あり：サイズ・種類を選んでください';
+        else statusLine.textContent = options.stocks[0].qty > 0
+          ? 'ストック登録：' + options.stocks[0].qty + options.stocks[0].unit
+          : '登録ストック：0' + options.stocks[0].unit;
+        helper.append(statusLine);
+        let picker = null;
+        if (options.stocks.length > 1) {
+          picker = make('select', 'atk-pack-stock-choice');
+          picker.setAttribute('aria-label', item.name + 'の買い物商品を選ぶ');
+          const empty = make('option', '', '商品・サイズを選ぶ');
+          empty.value = '';
+          picker.append(empty);
+          for (const product of options.stocks) {
+            const choice = make('option', '', product.name + '（' + product.qty + product.unit + '）');
+            choice.value = String(product.id);
+            picker.append(choice);
+          }
+          helper.append(picker);
+        }
+        const action = make('button', 'atk-pack-to-buy', '🛒 買い物へ');
+        action.type = 'button';
+        action.setAttribute('aria-label', item.name + 'を買い物リストへ追加');
+        const updateAction = () => {
+          const selected = picker ? options.stocks.find(x => String(x.id) === picker.value) : options.stocks[0];
+          const inBuy = selected ? selected.queued : options.queued.includes(item.name);
+          action.disabled = !!(picker && !selected) || inBuy;
+          action.textContent = inBuy ? '追加済み' : '🛒 買い物へ';
+        };
+        if (picker) picker.addEventListener('change', updateAction);
+        updateAction();
+        action.addEventListener('click', async () => {
+          if (locked || state.lists[state.active].find(x => x.id === item.id)?.done) return;
+          const chosen = picker ? picker.value : options.stocks[0]?.id;
+          // No registered variant: never silently invent a precise diaper size.
+          if (!options.stocks.length && (item.name === 'おむつ' || item.name === 'おしりふき')) {
+            if (!root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
+            const ok = await root.AtokoreConfirm.ask(
+              '商品名・サイズを確認してください',
+              'ストックに商品がありません。「' + item.name + '」という汎用の買い物メモを追加します。購入前にサイズやメーカーを確認してください。ストック数は変わりません。',
+              'メモとして追加'
+            );
+            if (!ok || locked) return;
+          }
+          const result = bridge.add(item.name, chosen);
+          if (result.status === 'failed') notice('買い物リストに保存できませんでした。端末の空き容量などをご確認ください。');
+          else if (result.status === 'choose') notice('商品名やサイズを選んでください。');
+          else if (result.status === 'invalid') notice('買い物商品の確認に失敗しました。もう一度お試しください。');
+          else notice('');
+          render();
+        });
+        helper.append(action);
+        row.append(helper);
+      }
       rows.append(row);
     }
     buttonAdd.disabled = locked || items.length >= 50;
@@ -193,6 +255,7 @@
   render();
   root.AtokorePackingChecklist = Object.freeze({
     key: KEY,
-    status: () => ({ active: state.active, items: state.lists[state.active].length, locked })
+    status: () => ({ active: state.active, items: state.lists[state.active].length, locked }),
+    refresh: () => { if (!locked) render(); }
   });
 })(typeof window !== 'undefined' ? window : globalThis);
