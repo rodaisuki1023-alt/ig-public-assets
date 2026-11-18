@@ -138,6 +138,22 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       const final=await page.evaluate(() => JSON.parse(localStorage.getItem('atokorePreviewTrialV19')));
       assert.equal(final.items.length,1,'draft final confirmation created one stock line');
       assert.equal(await page.evaluate(()=>localStorage.getItem('atokorePreviewQuickAddPendingV19')),null,'draft cleared after save');
+      // Muse P2: clearly explain an actively filtered stock view and let the
+      // user reveal all items without touching the stored records.
+      await page.evaluate(()=>window.go('stock'));
+      await page.locator('#stockSearch').fill('架空の未登録商品');
+      await page.locator('#atkStockFilterNotice').waitFor({timeout:10000});
+      const filterButton=page.locator('#atkStockFilterNotice button');
+      const filterBox=await filterButton.boundingBox();
+      assert.ok(filterBox?.height>=44,label+' stock filter reset has a 44px target');
+      const snapshotBefore=await page.evaluate(()=>localStorage.getItem('atokorePreviewTrialV19'));
+      await filterButton.click();
+      assert.equal(await page.locator('#stockSearch').inputValue(),'','reset clears search');
+      assert.equal(await page.locator('#atkStockFilterNotice').isHidden(),true,'filter hint hides after reset');
+      assert.match(await page.locator('#stockList').textContent(),/卵/,'saved stock is visible after reset');
+      const snapshotAfter=await page.evaluate(()=>localStorage.getItem('atokorePreviewTrialV19'));
+      assert.equal(snapshotAfter,snapshotBefore,'reset changes no stored data');
+
 
       assert.deepEqual(household, [], label + ' must not request real household backend');
       assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
