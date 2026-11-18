@@ -212,3 +212,25 @@ test('v50 kit bridge: no-size diaper memo requires consent, cancel does not writ
  expect(queued.buys[0]).toMatchObject({name:'おむつ',qty:1,cat:'ベビー'});
  expect(queued.items).toEqual([]);
 });
+
+test('v50 kit bridge: Safari quota write failure never claims an unsaved shopping item',async({page})=>{
+ await open(page,{[KEY]:baseState()});
+ await go(page,'buy');
+ const before=await stored(page);
+ await page.evaluate(key=>{
+   const original=Storage.prototype.setItem;
+   window.__restoreKitQuota=()=>{Storage.prototype.setItem=original};
+   Storage.prototype.setItem=function(k,v){
+     if(k===key)throw new DOMException('quota','QuotaExceededError');
+     return original.call(this,k,v);
+   };
+ },KEY);
+ const button=page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy');
+ await button.click();
+ await expect(page.locator('#atkPackError')).toContainText('保存できませんでした');
+ expect(await stored(page)).toEqual(before);
+ await page.evaluate(()=>window.__restoreKitQuota());
+ await button.click();
+ expect((await stored(page)).buys.filter(x=>x.name==='パンパース さらさらケア おむつ テープ M')).toHaveLength(1);
+ expect(page.__dialogs).toEqual([]);
+});
