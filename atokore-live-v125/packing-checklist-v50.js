@@ -250,6 +250,19 @@
           }
           if (locked || state.active !== kit || snapshot !== expected ||
               !state.lists[kit].some(x => x.id === item.id && !x.done)) return;
+          // Stocks may have changed since this row rendered (or while a
+          // confirmation was open). Do not turn a remembered size into a
+          // different product just because the numerical ID was reused.
+          const currentOptions = bridge.choices(item.name);
+          const chosenBefore = options.stocks.find(x => String(x.id) === String(chosen));
+          const chosenNow = currentOptions.stocks.find(x => String(x.id) === String(chosen));
+          if ((chosenBefore && (!chosenNow ||
+              chosenBefore.name !== chosenNow.name || chosenBefore.unit !== chosenNow.unit)) ||
+              (!options.stocks.length && currentOptions.stocks.length)) {
+            notice('商品名・サイズの情報が変わりました。もう一度確認して選択してください。');
+            render();
+            return;
+          }
           const result = bridge.add(item.name, chosen);
           if (result.status === 'failed') notice('買い物リストに保存できませんでした。端末の空き容量などをご確認ください。');
           else if (result.status === 'choose') notice('商品名やサイズを選んでください。');
