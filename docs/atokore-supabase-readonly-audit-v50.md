@@ -1,5 +1,18 @@
-# あとこれ v50｜Supabase実環境の「変更しない」安全性監査
+# あとこれ v50｜Supabase実環境の安全性監査と承認済み修正
 
+## 最新状況：2026-11-18 JST｜試用DBの承認済み修正を適用・検証済み
+
+オーナーによる**明示承認**を受け、試用プロジェクト `vzyxurodowpjltwbgbyc` の既存の2関数 **`public.hh_receipt_claim` と `public.hh_receipt_finish` のみ**に所属ロック修正を適用した。正式デプロイ、本番アプリ、その他のAuth/RLS/Storage/パスワード/データ行には変更を行っていない。
+
+- **適用済みマイグレーション**：`20261118135221 atokore_receipt_member_lock_v50`（Supabase `apply_migration` success、`list_migrations`に追加履歴確認）。GitHub側対応：[`supabase/migrations/20261118135221_atokore_receipt_member_lock_v50.sql`](../supabase/migrations/20261118135221_atokore_receipt_member_lock_v50.sql)。
+- **ロールバック準備**：変更直前の実DB `pg_get_functiondef` を2関数だけ[`scripts/receipt-audit/rollback-before-member-lock-20261118.sql`](../scripts/receipt-audit/rollback-before-member-lock-20261118.sql)としてDraftブランチに退避。関数定義のみで個人/家族データ行なし。**ロールバックは障害時に別途判断・承認**。
+- **適用後の`SELECT`確認**：両関数で `lock_member(v_user)=true`、旧 `my_household(v_user)=false`。関数所有者postgres、SECURITY DEFINER、`search_path=''`、デフォルト引数、`pg_proc.proacl`が適用前と同一。**anon EXECUTE=false、authenticated EXECUTE=true、service_role EXECUTE=true** を維持。
+- **Security Advisor再取得**：INFO 9件（内部表RLS policyなし）、WARN 15件（公開SECURITY DEFINER）、匿名サインイン絡み1件、漏えいパスワード保護無効1件。これらは今回の2関数修正では解消しない（変更範囲外）。
+- **実DBの家族共有・権限失効の動的再現は未実施**：現在のメタデータ検証と隔離PostgreSQL競合テストの合格は、実世帯や合成2端末での運用安全性の十分な証明ではない。実家族データ/写真をテストに利用しない。
+- **注意**：この下にある「未適用」等の記述は**適用前に取得した過去の監査スナップショット**。現在の状態は本節を正本とする。
+
+---
+## 修正適用前の読み取り監査履歴（2026-11-18）
 **最新（2026-11-18 JST）**：管理SQL接続は認証エラーから**読み取りが回復**し、以下の実DBのスキーマ・権限・適用履歴・Supabase Security Advisorを確認できた。実データ行は一件も取得していない。**実DBへの変更・データ書き込みは行っていない。** なお、実環境の家族共有・所属失効の拒否テストは未実施であり、コードのCI成功だけで公開安全と判定しない。
 
 ## 原則
@@ -27,14 +40,14 @@
 
 **追加静的照合（2026-11-18）**：公式Supabase管理DBの`pg_proc.prosrc`と、PR #106の[隔離PGで検証済み候補](../scripts/receipt-audit/candidate-member-lock.sql)を関数ごとに比較した。`hh_receipt_claim`と`hh_receipt_finish`の両方について、候補の`lock_member(v_user)`を元の`my_household(v_user)`に戻した本文が**実DBの現行関数本文と完全一致**。宣言・分岐・DML・例外処理などに他の文字差分はない。両関数の実シグネチャと`jsonb`戻り値、SECURITY DEFINER、`search_path`も候補と整合する。これは**静的な差分の一致**であって、実DBへの適用や権限失効の動的動作を証明するものではない。
 
-### 採用推奨の最小変更（**提案のみ・未実施**）
+### 修正適用前に検討した最小変更（現在はオーナー承認を得て適用済み）
 - 本番DBで一括実行するSQLやパスワード変更は**オーナーの別途明示承認前に実施しない**。
 - 対象は既存の`public.hh_receipt_claim`、`public.hh_receipt_finish`の2関数のみ。各関数の`v_hh uuid := atokore_private.my_household(v_user);` を`v_hh uuid := atokore_private.lock_member(v_user);`に置換する。
 - 実行前に現在の`pg_get_functiondef`を監査専用バックアップとして保存（SQL本文・権限情報のみ、個人データなし）。その後、[隔離テスト済み候補SQL](../scripts/receipt-audit/candidate-member-lock.sql)と実DB関数の差分が**上記2行に限られる**と照合し、既存関数のgrant／search_path／デフォルト引数を維持する安全な追加マイグレーションを準備。
 - 実DBに適用する場合は独立PGでの同じ並行実行回帰テストと、PostgREST経由の認証/認証なし/除外済み合成利用者の拒否テスト、Advisor再取得、意図せぬ権限変更の有無、ロールバック手順を条件にする。**合成2端末の家族共有テストは依然未実施**。
 - `receipt_imports`のRLS有効化や他の15 RPCの権限・Auth設定はこの2行修正に混ぜず、影響範囲を別途審査（予期せぬ既存機能停止を防ぐ）。
 
-### 管理上の判定
+### 修正適用前の管理上の判定（履歴）
 - **「Supabase管理DBに接続できない」は解消**。RLS/GRANT/Storage/RPC/履歴のメタデータ監査は完了。
 - **「実DBの安全性を受入れ済み」は未達**。レシートの2関数が旧実装、匿名/除外済み/他世帯の動的拒否検証未実施、Advisor WARNの個別評価未完。
 - PR #106とIssue #96のDraft品質ゲートを維持。実DB・本番・既存試用版には手を触れない。
