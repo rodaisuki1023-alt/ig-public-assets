@@ -6,6 +6,9 @@ on:
       - 'atokore-live-v125/onboarding-v39.js'
       - 'atokore-live-v125/onboarding-v39.css'
       - 'atokore-live-v125/quick-add.js'
+      - 'atokore-live-v125/baby-flow-v17.js'
+      - 'scripts/atokore/build-preview.py'
+      - 'tests/e2e-v19/quick-add-pending-v50.spec.cjs'
       - 'tests/e2e-v19/onboarding-v39.spec.cjs'
       - '.github/workflows/atokore-onboarding-guides-v50.yml'
 permissions:
@@ -47,4 +50,4 @@ jobs:
           assert 'atokorePreviewOnboardingV19' in onboarding
           PY
       - name: Independent first-run Playwright Chromium + WebKit 320-430px
-        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs onboarding-v39.spec.cjs
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs onboarding-v39.spec.cjs quick-add-pending-v50.spec.cjs
