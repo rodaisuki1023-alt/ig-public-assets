@@ -310,11 +310,14 @@ function install(){
  root.atkOpenAdd=function(destination){
   const selected=destination==='buy'?'buy':'stock';
   const category=activePage()==='stock'&&stockCategory()==='離乳食'?'離乳食':'ベビー';
+  const pending=!!root.AtokoreQuickAdd?.getTray?.().length;
   oldOpen?.();
-  root.AtokoreQuickAdd?.setCategory(category);
-  // Navigation must never silently switch the destination of a pending batch.
-  // An explicit destination button in the add/review screen can still change it.
-  if(!root.AtokoreQuickAdd?.getTray?.().length)root.AtokoreQuickAdd?.setDestination(selected);
+  // Keep both the chosen category and destination when returning to a draft.
+  // Only a new, empty add action follows the current tab's default destination.
+  if(!pending){
+   root.AtokoreQuickAdd?.setCategory(category);
+   root.AtokoreQuickAdd?.setDestination(selected);
+  }
   syncFab();
  };
  const oldRenderRoutines=root.renderRoutines;
