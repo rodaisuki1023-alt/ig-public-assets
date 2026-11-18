@@ -67,7 +67,12 @@ async function main() {
     create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
     grant usage on schema auth,public to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;`);
   const dir=path.resolve(__dirname,'../../supabase/migrations');
-  for(const f of fs.readdirSync(dir).filter(f=>f.endsWith('.sql')&&!f.includes('storage')).sort())await pool.query(fs.readFileSync(path.join(dir,f),'utf8'));
+  // Historical negative control: load the original migrations, explicitly excluding
+  // the new production fix. Otherwise the "vulnerable baseline" becomes fixed
+  // before the test starts and the intentionally blocked receipt waits forever.
+  const appliedFixFile='20261118135221_atokore_receipt_member_lock_v50.sql';
+  for(const f of fs.readdirSync(dir).filter(f=>f.endsWith('.sql')&&!f.includes('storage')&&f!==appliedFixFile).sort())
+    await pool.query(fs.readFileSync(path.join(dir,f),'utf8'));
   const household=await call(A,"select public.hh_create('Synthetic receipt audit','QA owner') r");
   const hh=household.household.id;
   const invite=await call(A,'select public.hh_invite_create() r');
@@ -84,7 +89,12 @@ async function main() {
   const definitions=reviewSql.match(/create or replace function public\.hh_receipt_[\s\S]*?end \$\$;/g);
   assert.equal(definitions?.length,2);
   assert.deepEqual(definitions,expectedDefinitions,'review SQL must only change two membership lookups');
-  await pool.query(definitions.join('\n'));
+  // Also verify the exact checked-in migration that was applied to trial Supabase.
+  const deployedSql=fs.readFileSync(path.join(dir,appliedFixFile),'utf8');
+  const deployedDefinitions=deployedSql.match(/create or replace function public\.hh_receipt_[\s\S]*?end \$\$;/g);
+  assert.equal(deployedDefinitions?.length,2);
+  assert.deepEqual(deployedDefinitions,definitions,'applied migration must match isolated race-tested candidate exactly');
+  await pool.query(deployedDefinitions.join('\n'));
   await scenario(hh,'candidate-household-lock',true);
 }
 main().then(()=>pool.end(),async e=>{console.error(e.stack);await pool.end();process.exitCode=1;});
