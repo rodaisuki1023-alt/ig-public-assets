@@ -63,7 +63,8 @@
     if(/薬|マスク|歯ブラシ|歯磨|ナプキン|消毒|絆創膏|湿布/.test(name))return '衛生・薬';
     if(/電池|電球|ケーブル|フィルター|カセットボンベ/.test(name))return '家電・生活用品';
     if(/非常|防災|簡易トイレ|アルファ米/.test(name))return '防災';
-    return '食料品';
+    // Unrecognized free-text shopping entries can be notes; never label them food by default.
+    return 'その他';
   }
 
   let lastSaveOk=true;
