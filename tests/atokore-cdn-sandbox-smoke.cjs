@@ -178,6 +178,21 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       assert.ok(await page.locator('#stockList .atk-row-cat').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize))>=11,'stock-order category label 11px');
       const sizeAfter=await page.evaluate(()=>({w:innerWidth,scroll:document.documentElement.scrollWidth}));
       assert.ok(sizeAfter.scroll<=sizeAfter.w+2,'stock cards do not horizontally overflow');
+      // Check the checklist reset does NOT restore a deleted item, with
+      // explicit wording so parents do not mistake 'reset' for 'undo deletion'.
+      await page.evaluate(()=>window.go('buy'));
+      await page.locator('#atkPackReset').waitFor({timeout:10000});
+      assert.equal(await page.locator('#atkPackReset').textContent(),'準備済みチェックをすべて外す');
+      await page.locator('#atkPackRows input[type=checkbox]').first().check();
+      await page.locator('#atkPackRows .atk-pack-remove').nth(1).click();
+      assert.match(await page.locator('#atkConfirmNote').textContent(),/削除した項目は戻りません/);
+      await page.locator('#atkConfirm .atk-confirm-primary').click();
+      assert.equal(await page.locator('#atkPackRows .atk-pack-row').count(),5);
+      await page.locator('#atkPackReset').click();
+      assert.match(await page.locator('#atkConfirmNote').textContent(),/削除済みの項目は復元されません/);
+      await page.locator('#atkConfirm .atk-confirm-primary').click();
+      assert.equal(await page.locator('#atkPackRows .atk-pack-row').count(),5);
+      assert.match(await page.locator('#atkPackProgress').textContent(),/0\/5/);
       assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
       console.log('PASS', label, 'URL', url);
     } finally {
