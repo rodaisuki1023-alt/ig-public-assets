@@ -264,3 +264,34 @@ test('reset confirmation cannot erase another tab newer checks', async () => {
   assert.match($('#atkPackProgress').textContent, /保育園セット：2\/6/);
   dom.window.close();
 });
+
+
+test('legacy checklist and a safe saved size preference remain backward compatible', () => {
+  const url='https://example.invalid/ig-public-assets/preview-baby-v19/';
+  const key='atokorePackingChecklistV1:/ig-public-assets/preview-baby-v19/';
+  const legacy={version:1,active:'daycare',lists:{daycare:[{id:'daycare-0',name:'おむつ',done:false}],outing:[]}};
+  const a=open(url,{[key]:JSON.stringify(legacy)});
+  assert.equal(a.w.AtokorePackingChecklist.status().locked,false);
+  assert.equal(a.w.localStorage.getItem(key),JSON.stringify(legacy),'reading must not rewrite legacy contents');
+  a.dom.window.close();
+
+  legacy.lists.daycare[0].preferredStock={id:'4',name:'メリーズ おむつ パンツ L',unit:'袋'};
+  const b=open(url,{[key]:JSON.stringify(legacy)});
+  assert.equal(b.w.AtokorePackingChecklist.status().locked,false);
+  assert.equal(b.w.localStorage.getItem(key),JSON.stringify(legacy));
+  b.dom.window.close();
+});
+
+test('malformed saved variant identity locks edits rather than silently guessing a size', () => {
+  const url='https://example.invalid/ig-public-assets/preview-baby-v19/';
+  const key='atokorePackingChecklistV1:/ig-public-assets/preview-baby-v19/';
+  const corrupted={version:1,active:'daycare',lists:{daycare:[
+    {id:'daycare-0',name:'おむつ',done:false,preferredStock:{id:'4',name:'メリーズ おむつ パンツ L'}}
+  ],outing:[]}};
+  const raw=JSON.stringify(corrupted);
+  const {dom,w,$}=open(url,{[key]:raw});
+  assert.equal(w.AtokorePackingChecklist.status().locked,true);
+  assert.equal($('#atkPackAddButton').disabled,true);
+  assert.equal(w.localStorage.getItem(key),raw);
+  dom.window.close();
+});
