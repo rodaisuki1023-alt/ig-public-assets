@@ -89,8 +89,44 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       await page.locator('#qaBabyFood').waitFor({ timeout: 12_000 });
       assert.match(await page.locator('#qaBabyFood').textContent(), /メーカー/);
       assert.equal(await page.evaluate(() => localStorage.getItem('atokorePreviewTrialV19')), null, 'guide navigation never saves');
+      // Muse P1: buying one item must not permanently hide stock onboarding.
+      await page.evaluate(() => window.go('home'));
+      await page.locator('[data-ob-pick="牛乳"]').click();
+      await page.locator('[data-ob-go]').click();
+      await page.locator('#qaTray [data-qa-dest="buy"]').click();
+      await page.click('#qaCommit');
+      await page.evaluate(() => window.go('home'));
+      await page.locator('#atkOnboarding').waitFor({timeout:10_000});
+      assert.equal(await page.locator('#atkOnboardingTip').count(),0,'buy-only must not complete stock guide');
+      const state=await page.evaluate(() => JSON.parse(localStorage.getItem('atokorePreviewTrialV19')));
+      assert.equal(state?.items.length,0,'buy-only never creates stock');
+      assert.equal(state?.buys.length,1,'buy-only result recorded');
+      // Explicit finish must be reversible from a small secondary home action.
+      await page.click('[data-ob-later]');
+      await page.locator('#atkObReopen').waitFor({timeout:10_000});
+      await page.click('#atkObReopen');
+      await page.locator('#atkOnboarding').waitFor({timeout:10_000});
+      // An unfinished stock draft must survive reload without being committed.
+      await page.evaluate(()=>window.atkOpenAdd('stock'));
+      await page.locator('[data-qa-cat="食料品"]').click();
+      await page.locator('[data-qa-pick="卵"]').click();
+      await page.evaluate(()=>window.go('buy'));
+      await page.evaluate(()=>window.atkOpenAdd('buy'));
+      assert.equal(await page.evaluate(()=>window.AtokoreQuickAdd.getDestination()),'stock','pending destination must not flip');
+      await page.reload({waitUntil:'domcontentloaded',timeout:60_000});
+      assert.equal((await page.evaluate(()=>window.AtokoreQuickAdd.getTray()))[0].name,'卵','draft restored');
+      assert.equal(await page.evaluate(()=>window.AtokoreQuickAdd.getDestination()),'stock','restored destination');
+      const afterReload=await page.evaluate(() => JSON.parse(localStorage.getItem('atokorePreviewTrialV19')));
+      assert.equal(afterReload.items.length,0,'restored draft does not write to stock');
+      await page.evaluate(()=>window.go('add'));
+      await page.locator('#qaBar').click();
+      await page.locator('#qaCommit').click();
+      const final=await page.evaluate(() => JSON.parse(localStorage.getItem('atokorePreviewTrialV19')));
+      assert.equal(final.items.length,1,'draft final confirmation created one stock line');
+      assert.equal(await page.evaluate(()=>localStorage.getItem('atokorePreviewQuickAddPendingV19')),null,'draft cleared after save');
+
       assert.deepEqual(household, [], label + ' must not request real household backend');
-            assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
+      assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
       console.log('PASS', label, 'URL', url);
     } finally {
       await context.close();
