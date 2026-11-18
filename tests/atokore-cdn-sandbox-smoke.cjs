@@ -193,6 +193,28 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       await page.locator('#atkConfirm .atk-confirm-primary').click();
       assert.equal(await page.locator('#atkPackRows .atk-pack-row').count(),5);
       assert.match(await page.locator('#atkPackProgress').textContent(),/0\/5/);
+      // Muse P2: all six product categories stay reachable on narrow iPhones.
+      await page.evaluate(()=>window.go('add'));
+      const categoryNav=page.locator('#qaTabs');
+      await categoryNav.waitFor({timeout:10000});
+      assert.match(await categoryNav.getAttribute('aria-label'), /左右にスクロール/);
+      assert.match(await page.locator('.qa-category-hint').textContent(), /左右にスワイプ/);
+      const lastCategory=page.locator('[data-qa-cat="その他"]');
+      await lastCategory.scrollIntoViewIfNeeded();
+      assert.equal(await lastCategory.isVisible(),true,label+' final category is reachable');
+      await lastCategory.click();
+      assert.match(await lastCategory.getAttribute('class'),/selected/);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),label+' category strip does not overflow page');
+
+      // Hand-entered notes do not get silently classified as food stock.
+      await page.evaluate(()=>window.go('buy'));
+      await page.locator('#buyName').fill('保育園のお迎えメモ');
+      await page.evaluate(()=>window.addBuy());
+      const manual=await page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewTrialV19')).buys.find(x=>x.name==='保育園のお迎えメモ'));
+      assert.ok(manual,label+' manual note exists in shopping list');
+      await page.evaluate(id=>window.buyOneToStockV125H(id),manual.id);
+      const stockEntry=await page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewTrialV19')).items.find(x=>x.name==='保育園のお迎えメモ'));
+      assert.equal(stockEntry?.cat,'その他',label+' unknown manual note uses その他 instead of 食料品');
       assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
       console.log('PASS', label, 'URL', url);
     } finally {
