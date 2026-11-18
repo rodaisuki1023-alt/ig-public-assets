@@ -132,3 +132,40 @@ for (const width of [320,393]) test('Muse P2: stock category and expiry helper t
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
  expect(page.__errors).toEqual([]);
 });
+
+for(const width of [320,393])test('Muse P2: category chips are accessible by horizontal scrolling at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:760});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'add');
+ const nav=page.locator('#qaTabs');
+ await expect(nav).toHaveAttribute('aria-label',/左右にスクロール/);
+ await expect(page.locator('.qa-category-hint')).toContainText('左右にスワイプ');
+ const metrics=await nav.evaluate(el=>({scroll:el.scrollWidth,view:el.clientWidth}));
+ expect(metrics.scroll).toBeGreaterThan(metrics.view);
+ const last=page.locator('[data-qa-cat="その他"]');
+ await last.scrollIntoViewIfNeeded();
+ await expect(last).toBeInViewport();
+ await last.click();
+ await expect(last).toHaveClass(/selected/);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
+
+test('Muse P2: unknown free-text shopping item is not silently assigned to food stock',async({page})=>{
+ await open(page,{[KEY]:baseState({items:[],buys:[]})});
+ await go(page,'buy');
+ await page.locator('#buyName').fill('保育園のお迎えメモ');
+ await page.evaluate(()=>window.addBuy());
+ const added=(await stored(page)).buys.find(x=>x.name==='保育園のお迎えメモ');
+ expect(added).toBeTruthy();
+ await page.evaluate(id=>window.buyOneToStockV125H(id),added.id);
+ const stock=(await stored(page)).items;
+ expect(stock).toHaveLength(1);
+ expect(stock[0]).toMatchObject({name:'保育園のお迎えメモ',cat:'その他'});
+ await page.locator('#buyName').fill('牛乳');
+ await page.evaluate(()=>window.addBuy());
+ const food=(await stored(page)).buys.find(x=>x.name==='牛乳');
+ await page.evaluate(id=>window.buyOneToStockV125H(id),food.id);
+ expect((await stored(page)).items.find(x=>x.name==='牛乳')?.cat).toBe('食料品');
+ expect(page.__errors).toEqual([]);
+});
