@@ -25,6 +25,8 @@
 | 商品写真 | バケット`atokore-product-photos` は`public=false`、JPEGのみ、上限81,920 bytes。Storage objectsに認証者向けSELECT/INSERT/DELETEの3ポリシーがあり`photo_allowed(name)`で所属・商品を確認 | 非公開バケットとポリシーを確認。UPDATEポリシーなし（上書きupsertが必要な実装なら別途検証）。ファイルや写真は取得していない |
 | Security Advisor | INFO: private9表で「RLS有効・policyなし」。WARN:認証者が呼べるSECURITY DEFINER 15件、匿名サインイン絡みの警告1件、漏えいパスワード保護オフ1件 | 自動警告をそのまま脆弱性確定とはしない。Googleログインのみ等の運用条件と関数定義で個別判定。**警告は未解消** |
 
+**追加静的照合（2026-11-18）**：公式Supabase管理DBの`pg_proc.prosrc`と、PR #106の[隔離PGで検証済み候補](../scripts/receipt-audit/candidate-member-lock.sql)を関数ごとに比較した。`hh_receipt_claim`と`hh_receipt_finish`の両方について、候補の`lock_member(v_user)`を元の`my_household(v_user)`に戻した本文が**実DBの現行関数本文と完全一致**。宣言・分岐・DML・例外処理などに他の文字差分はない。両関数の実シグネチャと`jsonb`戻り値、SECURITY DEFINER、`search_path`も候補と整合する。これは**静的な差分の一致**であって、実DBへの適用や権限失効の動的動作を証明するものではない。
+
 ### 採用推奨の最小変更（**提案のみ・未実施**）
 - 本番DBで一括実行するSQLやパスワード変更は**オーナーの別途明示承認前に実施しない**。
 - 対象は既存の`public.hh_receipt_claim`、`public.hh_receipt_finish`の2関数のみ。各関数の`v_hh uuid := atokore_private.my_household(v_user);` を`v_hh uuid := atokore_private.lock_member(v_user);`に置換する。
