@@ -822,7 +822,7 @@ function openGuidedProduct(kind,options={}){
  return true;
 }
 function setCategory(cat){state.cat=cat;state.group='すべて';state.query='';state.showAll=false;if($('qaSearch'))$('qaSearch').value='';renderAll()}
-const api=Object.freeze({prefillFree,openReview,closeReview,isReviewing(){return state.reviewing},kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openGuidedProduct,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
+const api=Object.freeze({prefillFree,openReview,closeReview,isReviewing(){return state.reviewing},kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openGuidedProduct,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getDestination(){return state.destination},getTray(){return state.tray.map(x=>({...x}))}});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreQuickAdd=api;
 if(doc&&typeof window!=='undefined')setup();
