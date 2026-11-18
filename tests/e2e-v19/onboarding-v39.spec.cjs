@@ -42,14 +42,17 @@ for (const [width, height] of [[320, 568], [375, 560], [390, 844], [430, 932]]) 
     expect(Object.values(added).every(x => x.qty === 1)).toBe(true);
     expect(added['トイレットペーパー'].minQty).toBe(2);
     expect('minQty' in added['牛乳']).toBe(false);
-    expect((await onboardingState(page)).doneAt).toBeTruthy();
+    expect((await onboardingState(page)).lastSavedAt).toBeTruthy();
     await go(page, 'home');
+    await expect(card(page)).toBeVisible();
+    await expect(page.locator('.atk-ob-success')).toContainText('続けて');
+    await page.click('[data-ob-later]');
     await expect(card(page)).toHaveCount(0);
-    await expect(page.locator('#atkOnboardingTip')).toBeVisible();
-    await page.click('[data-ob-tip-ok]');
-    await expect(page.locator('#atkOnboardingTip')).toHaveCount(0);
+    await expect(page.locator('#atkObReopen')).toBeVisible();
     await page.reload();
-    await expect(page.locator('#atkOnboarding, #atkOnboardingTip')).toHaveCount(0);
+    await expect(card(page)).toHaveCount(0);
+    await page.click('#atkObReopen');
+    await expect(card(page)).toBeVisible();
     expect(page.__errors).toEqual([]);
   });
 }
@@ -80,7 +83,7 @@ test('a failed save keeps the first-run card and sets no reorder line; retry wor
   await page.click('#qaCommit');
   await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
   expect(await stored(page)).toBeNull();
-  expect(await onboardingState(page)).toBeNull(); // not marked done
+  expect((await onboardingState(page))?.doneAt).toBeFalsy(); // not marked done
   await page.evaluate(() => window.__undo());
   await page.click('#qaCommit');
   await expect.poll(async () => (await stored(page))?.items.find(x => x.name === 'トイレットペーパー')?.minQty).toBe(3);
@@ -164,7 +167,7 @@ test('first-run guides open the existing detailed baby and food pickers without 
   expect(item.name).not.toBe('おむつ');
   expect(await onboardingState(page)).toMatchObject({guided: 'diaper', chosen: 1});
   await go(page, 'home');
-  await expect(card(page)).toHaveCount(0);
+  await expect(card(page)).toBeVisible();
   expect(await noHorizontalScroll(page)).toBe(true);
   expect(page.__errors).toEqual([]);
 });
@@ -204,7 +207,7 @@ test('leaving an empty first-run guide does not mark a later unrelated stock add
   await expect(page.locator('#qaBaby')).toBeVisible();
   await go(page, 'home');
   await expect(card(page)).toBeVisible();
-  expect(await onboardingState(page)).toBeNull();
+  expect((await onboardingState(page))?.doneAt).toBeFalsy();
   await page.evaluate(() => window.atkOpenAdd('stock'));
   await page.click('[data-qa-cat="食料品"]');
   await page.click('[data-qa-pick="卵"]');
@@ -212,7 +215,7 @@ test('leaving an empty first-run guide does not mark a later unrelated stock add
   await page.click('#qaCommit');
   await expect.poll(async () => (await stored(page))?.items.length).toBe(1);
   expect((await stored(page)).items[0].name).toBe('卵');
-  expect(await onboardingState(page)).toBeNull();
+  expect((await onboardingState(page))?.doneAt).toBeFalsy();
   expect(page.__errors).toEqual([]);
 });
 
@@ -228,7 +231,7 @@ test('switching guide save destination to shopping never claims stock onboarding
   await page.click('#qaCommit');
   await expect.poll(async () => (await stored(page))?.buys.length).toBe(1);
   expect((await stored(page)).items).toEqual([]);
-  expect(await onboardingState(page)).toBeNull();
+  expect((await onboardingState(page))?.doneAt).toBeFalsy();
   expect(page.__errors).toEqual([]);
 });
 
@@ -248,7 +251,7 @@ test('batch: switching the review destination to the shopping list never claims 
   const saved = await stored(page);
   expect(saved.items).toEqual([]); // nothing went to stock
   expect(saved.buys.some(x => 'minQty' in x)).toBe(false); // a stock reorder line is not copied to the list
-  expect(await onboardingState(page)).toBeNull(); // not "registered stock"
+  expect((await onboardingState(page))?.doneAt).toBeFalsy(); // not "registered stock"
   await go(page, 'home');
   await expect(page.locator('#atkOnboardingTip')).toHaveCount(0); // no "登録できました" stock tip
   expect(page.__errors).toEqual([]);
@@ -266,7 +269,7 @@ test('guided: a failed save is retried once without a second registration and on
   await page.click('#qaCommit');
   await expect(page.locator('#qaNotice')).toContainText('保存できませんでした');
   expect(await stored(page)).toBeNull();
-  expect(await onboardingState(page)).toBeNull();
+  expect((await onboardingState(page))?.doneAt).toBeFalsy();
   await expect(page.locator('#qaTray')).toBeVisible(); // pending line kept for the retry
   await page.evaluate(() => window.__undo());
   await page.click('#qaCommit');
@@ -287,13 +290,13 @@ test('guided: leaving midway keeps the pending product, saves nothing and does n
   await page.click('[data-qa-babyadd]');
   await go(page, 'home');
   expect(await stored(page)).toBeNull();
-  expect(await onboardingState(page)).toBeNull();
+  expect((await onboardingState(page))?.doneAt).toBeFalsy();
   await expect(card(page)).toBeVisible();
   // Another guide must not silently replace the product that is still pending.
   await page.click('[data-ob-guide="milk"]');
   await expect(page.locator('#atkObError')).toContainText('追加予定の商品');
   expect(await page.evaluate(() => window.AtokoreQuickAdd.getTray().length)).toBe(1);
   expect(await stored(page)).toBeNull();
-  expect(await onboardingState(page)).toBeNull();
+  expect((await onboardingState(page))?.doneAt).toBeFalsy();
   expect(page.__errors).toEqual([]);
 });
