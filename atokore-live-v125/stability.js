@@ -312,7 +312,16 @@
       const row={id:Core.uniqueId(),name,qty:1,unit,
         ...(selected?{stockId:selected.id,cat:selected.cat||inferCategory(name)}:{cat:inferCategory(name)})};
       buys.push(row);
-      if(!saveState()){
+      const saved=saveState();
+      // Legacy save() swallows quota exceptions and can return undefined even
+      // when writing failed. Never tell a parent an item was queued until the
+      // actual local record contains the new id.
+      let verified=false;
+      try{
+        const persisted=JSON.parse(localStorage.getItem('atokorePreviewTrialV19')||'null');
+        verified=Array.isArray(persisted?.buys)&&persisted.buys.some(x=>String(x.id)===String(row.id));
+      }catch(e){}
+      if(!saved||!verified){
         const index=buys.findIndex(x=>x.id===row.id);
         if(index>=0)buys.splice(index,1);
         lastSaveOk=true;
