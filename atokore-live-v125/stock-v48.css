@@ -11,3 +11,10 @@
 #stockList .bf-stock-count{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
 /* polish-v44.css (loaded later) caps the list-mode number at 65px; these selectors are more specific. */
 body.atk-v17 #pg-stock.atk-stock-list-mode #stockList .qty b,body.atk-v17 #pg-buy #buyList .stableBuyRow .qty b{max-width:none;min-width:max-content;overflow-wrap:normal}
+
+/* Muse P2: explain why a purchased item can be hidden by an existing filter. */
+.atk-stock-filter-notice{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0 12px;padding:10px 12px;border:1px solid #e3c9af;border-radius:12px;background:#fff9ed;color:#67513e;font-size:12px;line-height:1.5}
+.atk-stock-filter-notice[hidden]{display:none!important}
+.atk-stock-filter-notice span{flex:1 1 180px;min-width:0}
+.atk-stock-filter-notice button{min-width:100px;min-height:44px;border:1px solid #c18b69;border-radius:10px;background:#fff;color:#754930;font:inherit;font-weight:800;padding:7px 10px}
+.atk-stock-filter-notice button:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}
