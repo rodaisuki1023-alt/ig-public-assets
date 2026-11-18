@@ -94,7 +94,11 @@ function go(){
  error('');
  const chosen=picked.slice();
  // Saved only by the review screen's final button; the reorder lines are written right after.
- qa.openWithEntries(entries(chosen),'stock',{onSaved:({byLine,lines:saved})=>{
+ qa.openWithEntries(entries(chosen),'stock',{onSaved:({byLine,lines:saved,destination})=>{
+  // The review screen lets the person switch the destination to the shopping list.
+  // Products saved there are not stock: no reorder line is applied and the first-run
+  // stock setup is not recorded as done (same rule as the guided baby/food route).
+  if(destination!=='stock'){picked=[];mins={};return}
   saved.forEach((line,i)=>{
    const id=byLine[i],it=id==null?null:list('items').find(x=>String(x.id)===String(id));
    if(it&&Object.prototype.hasOwnProperty.call(lines,line.name)&&it.minQty==null)it.minQty=lines[line.name];

@@ -25,4 +25,4 @@
 .atk-ob-guide small{font-size:11px;line-height:1.4;color:#86695C;overflow-wrap:anywhere}
 .atk-ob-guide:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}
 .atk-ob-batch-label{margin-top:4px;font-weight:750;color:#624E45}
-@media(max-width:340px){.atk-ob-guide{padding:9px 7px}.atk-ob-guide strong{font-size:12px}.atk-ob-guide small{font-size:10px}}
+@media(max-width:340px){.atk-ob-guide{padding:9px 7px}.atk-ob-guide strong{font-size:12px}.atk-ob-guide small{font-size:11px}}
