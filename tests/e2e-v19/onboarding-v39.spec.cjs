@@ -129,12 +129,14 @@ test('brand-new users save only the products they chose, while returning househo
   await page.reload();
   expect((await stored(page)).items.map(x => x.name)).toEqual(['牛乳']);
 
-  const existing = await page.context().newPage();
+  // A returning household must use an independent localStorage origin/profile.
+  const existingContext = await page.context().browser().newContext();
+  const existing = await existingContext.newPage();
   const earlier = { items: [{ id: 31, name: '以前に登録したおむつ', qty: 5, unit: '袋', cat: 'ベビー' }], buys: [], routines: [] };
   await open(existing, { [KEY]: earlier });
   expect(await stored(existing)).toEqual(earlier);
   await expect(existing.locator('#atkOnboarding')).toHaveCount(0);
-  await existing.close();
+  await existingContext.close();
 });
 
 
