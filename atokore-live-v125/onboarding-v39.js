@@ -37,7 +37,8 @@ function eligible(){
  let saved=null;try{saved=root.localStorage.getItem(DATA_KEY)}catch(e){return false}
  // Once a person starts the guide, keep it accessible across saves and reloads.
  if(s.startedAt)return true;
- return saved===null||(list('items').length===0&&list('buys').length===0);
+ // Shopping-list-only households still have not completed stock setup.
+ return saved===null||list('items').length===0;
 }
 // Products already in stock are not offered again (adding them would add to the existing count).
 const same=s=>String(s||'').normalize('NFKC').replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/\s/g,'');
