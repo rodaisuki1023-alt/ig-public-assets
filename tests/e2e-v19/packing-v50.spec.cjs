@@ -138,3 +138,77 @@ for(const width of [320,393])test('Muse P2: delete and reset are distinguishable
  expect(await noHorizontalScroll(page)).toBe(true);
  expect(page.__errors).toEqual([]);
 });
+
+for (const width of [320,393,430]) test('v50 kit bridge: buying from packed list preserves stock/checks and avoids duplicate buys at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:780});
+ await open(page,{[KEY]:baseState()});
+ const initial=await stored(page);
+ await go(page,'buy');
+ const kit=page.locator('#atkPackRows .atk-pack-row').nth(2);
+ await expect(kit.locator('.atk-pack-label span')).toHaveText('おむつ');
+ await expect(kit.locator('.atk-pack-stock-hint')).toContainText('ストック登録：2袋');
+ const action=kit.locator('.atk-pack-to-buy');
+ await expect(action).toBeEnabled();
+ const box=await action.boundingBox();
+ expect(box.height).toBeGreaterThanOrEqual(44);
+ expect(await stored(page)).toEqual(initial);
+ await action.click();
+ const after=await stored(page);
+ expect(after.items).toEqual(initial.items);
+ expect(after.buys.filter(x=>x.name==='パンパース さらさらケア おむつ テープ M')).toHaveLength(1);
+ const picked=after.buys.find(x=>x.name==='パンパース さらさらケア おむつ テープ M');
+ expect(picked).toMatchObject({stockId:2,qty:1,unit:'袋',cat:'ベビー'});
+ await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy')).toHaveText('追加済み');
+ await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy')).toBeDisabled();
+ await page.reload();
+ await go(page,'buy');
+ await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy')).toBeDisabled();
+ await page.evaluate(id=>window.buyOneToStockV125H(id),picked.id);
+ const final=await stored(page);
+ expect(final.buys.some(x=>x.id===picked.id)).toBe(false);
+ expect(final.items.find(x=>x.id===2)?.qty).toBe(3);
+ await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-stock-hint')).toContainText('ストック登録：3袋');
+ await expect(page.locator('#atkPackRows input[type=checkbox]').nth(2)).not.toBeChecked();
+ expect(await noHorizontalScroll(page)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50 kit bridge: variant selection is explicit and missing stock is not automatically a shortage',async({page})=>{
+ const input=baseState();
+ input.items.push({id:4,name:'メリーズ おむつ パンツ L',cat:'ベビー',qty:0,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1});
+ await open(page,{[KEY]:input});
+ await go(page,'buy');
+ const diaper=page.locator('#atkPackRows .atk-pack-row').nth(2);
+ await expect(diaper.locator('.atk-pack-stock-hint')).toContainText('複数の商品あり');
+ const picker=diaper.locator('select.atk-pack-stock-choice');
+ await expect(picker.locator('option')).toHaveCount(3);
+ const action=diaper.locator('.atk-pack-to-buy');
+ await expect(action).toBeDisabled();
+ await picker.selectOption('4');
+ await action.click();
+ const after=await stored(page);
+ expect(after.buys.find(x=>x.name==='メリーズ おむつ パンツ L')).toMatchObject({qty:1,unit:'袋',stockId:4});
+ expect(after.items.find(x=>x.id===4)?.qty).toBe(0);
+ const towel=page.locator('#atkPackRows .atk-pack-row').nth(4);
+ await expect(towel.locator('.atk-pack-label span')).toHaveText('タオル');
+ await expect(towel.locator('.atk-pack-stock-hint')).toContainText('不足確定ではありません');
+ expect(page.__dialogs).toEqual([]);
+});
+
+test('v50 kit bridge: no-size diaper memo requires consent, cancel does not write any data',async({page})=>{
+ await open(page,{[KEY]:baseState({items:[],buys:[]})});
+ await go(page,'buy');
+ const kit=page.locator('#atkPackRows .atk-pack-row').nth(2);
+ await expect(kit.locator('.atk-pack-stock-hint')).toContainText('未確認');
+ const initial=await stored(page);
+ await kit.locator('.atk-pack-to-buy').click();
+ const warning=await appConfirm(page,false);
+ expect(warning).toContain('サイズやメーカーを確認');
+ expect(await stored(page)).toEqual(initial);
+ await page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy').click();
+ await appConfirm(page,true);
+ const queued=await stored(page);
+ expect(queued.buys).toHaveLength(1);
+ expect(queued.buys[0]).toMatchObject({name:'おむつ',qty:1,cat:'ベビー'});
+ expect(queued.items).toEqual([]);
+});
