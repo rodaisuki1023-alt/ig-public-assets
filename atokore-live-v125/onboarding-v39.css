@@ -25,4 +25,8 @@
 .atk-ob-guide small{font-size:11px;line-height:1.4;color:#86695C;overflow-wrap:anywhere}
 .atk-ob-guide:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}
 .atk-ob-batch-label{margin-top:4px;font-weight:750;color:#624E45}
-@media(max-width:340px){.atk-ob-guide{padding:9px 7px}.atk-ob-guide strong{font-size:12px}.atk-ob-guide small{font-size:10px}}
+@media(max-width:340px){.atk-ob-guide{padding:9px 7px}.atk-ob-guide strong{font-size:12px}.atk-ob-guide small{font-size:11px}}
+
+.atk-ob-success{margin:0;padding:9px 11px;border-radius:10px;background:#EAF4EA;color:#37583D;font-size:12px;line-height:1.5}
+.atk-ob-reopen{display:block;min-height:44px;margin:0 0 12px;padding:9px 12px;border:1px solid #E3CBBE;border-radius:12px;background:#FFF9F5;color:#61483D;font-size:12px;font-weight:750;text-align:left}
+.atk-ob-reopen:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}
