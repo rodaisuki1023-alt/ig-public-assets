@@ -89,3 +89,45 @@ for(const width of [320,393])test('Muse P2 purchased stock hidden by a saved cat
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  expect(page.__errors).toEqual([]);
 });
+
+for (const width of [320,393]) test('Muse P2: only one toast stays active and long text does not overflow at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:820});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ await page.evaluate(()=>{
+  const a=document.createElement('div');a.id='qaNotice';a.className='qa-notice';document.body.appendChild(a);
+  const b=document.createElement('div');b.id='stableToastV125h';b.className='stableToast';document.body.appendChild(b);
+  window.AtokoreNotices.show(a,150);
+  window.AtokoreNotices.show(b,1200);
+ });
+ const old=page.locator('#qaNotice'),current=page.locator('#stableToastV125h');
+ await expect(old).not.toHaveClass(/on/);
+ await expect(current).toHaveClass(/on/);
+ expect(await old.evaluate(el=>el._atkNoticeTimer)).toBeNull();
+ await page.waitForTimeout(220);
+ await expect(current).toHaveClass(/on/);
+ await page.evaluate(()=>window.notifyAtokoreV125H('登録された商品が見つからない場合は、カテゴリの絞り込みを解除してストック画面で再度確認してください。'));
+ const box=await current.boundingBox();
+ expect(box?.width).toBeLessThanOrEqual(width-16);
+ const style=await current.evaluate(el=>({whiteSpace:getComputedStyle(el).whiteSpace,wrap:getComputedStyle(el).overflowWrap}));
+ expect(style.whiteSpace).toBe('normal');
+ expect(style.wrap).toBe('anywhere');
+ await page.evaluate(()=>document.dispatchEvent(new CustomEvent('atokore-page-changed')));
+ await expect(current).not.toHaveClass(/on/);
+ expect(await current.evaluate(el=>el._atkNoticeTimer)).toBeNull();
+ expect(page.__errors).toEqual([]);
+});
+
+for (const width of [320,393]) test('Muse P2: stock category and expiry helper text is at least 11px without horizontal overflow at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:820});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ const category=page.locator('#stockList .stableCat').first();
+ const expiry=page.locator('#stockList .expiryBadge').first();
+ await expect(category).toBeVisible();
+ await expect(expiry).toBeVisible();
+ expect(await category.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(11);
+ expect(await expiry.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(11);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
