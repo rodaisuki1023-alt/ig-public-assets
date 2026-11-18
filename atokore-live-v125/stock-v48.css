@@ -3,7 +3,7 @@
 .atk-sort::after{content:'▾';position:absolute;right:13px;top:50%;transform:translateY(-50%);font-size:11px;pointer-events:none}
 .atk-sort select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
 .atk-sort:focus-within{outline:3px solid #b8735a66;outline-offset:2px}
-.atk-row-cat{display:inline-flex;align-self:flex-start;width:max-content;max-width:100%;margin-top:3px;padding:1px 7px;border-radius:999px;background:var(--cbg,#f3eee9);color:var(--cc,#6b5d55);border:1px solid var(--cbd,#e6ddd5);font-size:10px;font-weight:850;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atk-row-cat{display:inline-flex;align-self:flex-start;width:max-content;max-width:100%;margin-top:3px;padding:1px 7px;border-radius:999px;background:var(--cbg,#f3eee9);color:var(--cc,#6b5d55);border:1px solid var(--cbd,#e6ddd5);font-size:11px;font-weight:850;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .atk-row-brand.atk-row-generic:empty{min-width:0}
 /* Quantities are shown in full: the number never shrinks or hides behind −／＋. */
 #stockList .qty b,#buyList .qty b{flex:0 0 auto;min-width:max-content;white-space:nowrap;overflow:visible}
