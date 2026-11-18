@@ -122,7 +122,8 @@ for (const width of [320,393]) test('Muse P2: stock category and expiry helper t
  await page.setViewportSize({width,height:820});
  await open(page,{[KEY]:baseState()});
  await go(page,'stock');
- const category=page.locator('#stockList .stableCat').first();
+ // stock-order-v48 deliberately replaces .stableCat with one .atk-row-cat per row.
+ const category=page.locator('#stockList .atk-row-cat').first();
  const expiry=page.locator('#stockList .expiryBadge').first();
  await expect(category).toBeVisible();
  await expect(expiry).toBeVisible();
