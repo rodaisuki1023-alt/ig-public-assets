@@ -302,3 +302,18 @@ test('guided: leaving midway keeps the pending product, saves nothing and does n
   expect((await onboardingState(page))?.doneAt).toBeFalsy();
   expect(page.__errors).toEqual([]);
 });
+
+test('shopping-list-only households keep a stock setup entry until they explicitly finish',async({page})=>{
+ await open(page,{[KEY]:{items:[],buys:[{id:21,name:'牛乳',cat:'食料品',qty:1,unit:'本'}],routines:[]}});
+ await expect(card(page)).toBeVisible();
+ expect((await onboardingState(page))?.doneAt).toBeFalsy();
+ await page.reload();
+ await expect(card(page)).toBeVisible();
+ await page.click('[data-ob-later]');
+ await expect(card(page)).toHaveCount(0);
+ await expect(page.locator('#atkObReopen')).toBeVisible();
+ await page.click('#atkObReopen');
+ await expect(card(page)).toBeVisible();
+ expect((await stored(page)).buys).toHaveLength(1);
+ expect(page.__errors).toEqual([]);
+});
