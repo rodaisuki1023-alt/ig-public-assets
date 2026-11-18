@@ -301,3 +301,15 @@ test('v50 generic diaper confirmation cannot enqueue after another-tab checklist
   expect((await stored(page)).buys).toHaveLength(0);
   await expect(page.locator('#atkPackError')).toContainText('別のタブ');
 });
+
+
+test('v50 paid-feature preview is explicitly not a purchasable subscription',async({page})=>{
+  await open(page,{[KEY]:baseState()});
+  await go(page,'premium');
+  await expect(page.locator('#atkPremiumDisclosure')).toContainText('購入・契約・請求は発生しません');
+  await expect(page.locator('#pg-premium')).toContainText('機能プレビュー（無料・課金なし）');
+  await page.locator('#pg-premium .premium').nth(1).click();
+  await expect(page.locator('#sheet')).toContainText('補充の目安（試算）');
+  await expect(page.locator('#sheet')).toContainText('実際の不足日や購入時期を予測・保証するものではありません');
+  expect(page.__errors).toEqual([]);
+});
