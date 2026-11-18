@@ -101,6 +101,9 @@
     try{window.renderBuy()}catch(e){console.error('あとこれ: 買い物表示',e)}
     try{if(typeof window.renderRoutines==='function')window.renderRoutines()}catch(e){console.error('あとこれ: いつものリスト表示',e)}
     try{if(typeof window.renderHome==='function')window.renderHome()}catch(e){console.error('あとこれ: ホーム表示',e)}
+    // The local kit only reads stock/shopping for suggestions; refresh its
+    // labels after a confirmed purchase or inventory change without writing data.
+    try{window.AtokorePackingChecklist?.refresh?.()}catch(e){console.warn('あとこれ: 持ち物候補の更新',e)}
   }
   function finish({page,message}={}){renderAllViews();if(page)showPage(page);if(message&&lastSaveOk)toast(message);lastSaveOk=true}
 
