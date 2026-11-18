@@ -633,7 +633,7 @@ function setup(){
   addLine({name:raw,cat,qty:1,unit:defaultUnit(raw,cat)});$('qaFree').value='';
  }
  const oldGo=root.go;
- if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false,()=>root.go(page,...rest)))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
+ if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false,()=>root.go(page,...rest)))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}if(page!=='add'&&!state.tray.length&&!state.committing)state.afterSave=null;const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
  if(typeof oldStock==='function')root.renderStock=function(...a){const v=oldStock.apply(this,a);decorateRows('#stockList [data-stock-id]');return v};
  if(typeof oldBuy==='function')root.renderBuy=function(...a){const v=oldBuy.apply(this,a);decorateRows('#buyList [data-buy-id]');return v};
@@ -740,10 +740,11 @@ function openWithEntries(entries,destination='stock',options={}){
  openQuick();openReview();renderItems();
  if(skipped)notify(skipped+'件は内容を確認できなかったため読み込みませんでした');
 }
-// The first-run guide opens the existing detailed product picker; nothing is
-// saved until the standard review screen is explicitly confirmed.
+// The first-run guide opens the *existing* detailed product picker. It never
+// creates a generic 'おむつ' or '離乳食' row, and saving still requires review.
 function openGuidedProduct(kind,options={}){
  if(!['diaper','milk','wipes','food'].includes(kind)||!doc||!$('pg-add'))return false;
+ // Do not silently replace the pending list (or an in-progress routine edit).
  if(state.tray.length||state.routineTarget||state.committing)return false;
  state.afterSave=null;state.loadedSet=null;state.loadedSnapshot='';
  setReviewing(false);
