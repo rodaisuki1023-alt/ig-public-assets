@@ -37,3 +37,7 @@ body #pg-stock .btn,body #pg-buy .btn{min-height:44px}
 /* v48.2: shopping rows that may be the same product (notice only; nothing is merged or removed). */
 .atk-buy-dup-notice{margin:8px 0 10px;padding:10px 12px;border-radius:12px;background:#FFF4E5;color:#6B3A00;border:1px solid #F3C98B;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
 .atk-buy-dup-tag{display:inline-block;margin:2px 0 4px;padding:2px 8px;border-radius:999px;background:#FFF4E5;color:#6B3A00;border:1px solid #F3C98B;font-size:12px;line-height:1.5;white-space:nowrap}
+
+/* Muse P2: raise the previously 9px batch-select caption to legible 11px. */
+body #pg-buy .atk-bulk-pick{font-size:11px;line-height:1.35;flex-basis:48px;min-width:48px;overflow-wrap:anywhere}
+body #pg-buy .atk-bulk-pick span{font-size:inherit}
