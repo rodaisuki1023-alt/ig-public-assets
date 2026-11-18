@@ -276,6 +276,51 @@
     Core.addStockToBuy(buys,item,1);saveState();logHistory('買い物リストへ追加',`${item.name}を追加`,'buy','🛒',{refs:[ref(item)],change:'買い物リストに1'+(item.unit||'個')+'追加'});finish({message:`${item.name}を買い物へ追加しました`});
   };
 
+  // v50 value hypothesis: from a packing checklist to an actual shopping line.
+  // Only the existing stock/shopping action owner writes data; a checklist tick
+  // remains purely local and NEVER consumes stock. No billing or new DB columns.
+  function kitChoices(label){
+    const name=String(label||'').trim().slice(0,60),norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\\s+/g,'');
+    const target=norm(name);
+    const knownFamily=name==='おむつ'?/おむつ|オムツ/:name==='おしりふき'?/おしりふき/:null;
+    const matches=items.filter(x=>x&&typeof x.name==='string'&&
+      (norm(x.name)===target||(knownFamily&&knownFamily.test(x.name)))&&
+      typeof x.id!=='undefined').slice(0,16);
+    const queued=buys.filter(x=>x&&typeof x.name==='string'&&
+      (norm(x.name)===target||matches.some(m=>Core.sameProduct(x,m))));
+    return {stocks:matches.map(x=>({id:x.id,name:x.name,qty:Number(x.qty)||0,unit:x.unit||'個',queued:buys.some(b=>Core.sameProduct(b,x))})),
+      queued:queued.map(x=>x.name),name};
+  }
+  window.AtokoreKitShoppingV50=Object.freeze({
+    choices:kitChoices,
+    add(label,selectedStockId){
+      const options=kitChoices(label);
+      if(!options.name)return {status:'invalid'};
+      const hasSelection=selectedStockId!==undefined&&selectedStockId!==null&&selectedStockId!=='';
+      const stock=hasSelection?items.find(x=>String(x.id)===String(selectedStockId)&&
+        options.stocks.some(o=>String(o.id)===String(x.id))):null;
+      if(hasSelection&&!stock)return {status:'invalid'};
+      // Multiple real diaper/wipes variants must be explicitly selected. A
+      // generic "おむつ" stock row would lose the size/brand distinction.
+      if(options.stocks.length>1&&!stock)return {status:'choose'};
+      const selected=stock||(options.stocks.length===1?items.find(x=>String(x.id)===String(options.stocks[0].id)):null);
+      const name=selected?.name||options.name,unit=selected?.unit||unitOf(name);
+      if(buys.some(x=>x&&x.name===name&&(x.unit||'個')===unit))return {status:'already',name};
+      const row={id:Core.uniqueId(),name,qty:1,unit,
+        ...(selected?{stockId:selected.id,cat:selected.cat||inferCategory(name)}:{cat:inferCategory(name)})};
+      buys.push(row);
+      if(!saveState()){
+        const index=buys.findIndex(x=>x.id===row.id);
+        if(index>=0)buys.splice(index,1);
+        lastSaveOk=true;
+        return {status:'failed'};
+      }
+      logHistory('持ち物から買い物に追加',name+'を買い物リストへ追加','buy','🎒',{refs:[ref(row,'buy')],change:'持ち物チェックから買い物へ'});
+      finish({message:name+'を買い物リストへ追加しました'});
+      return {status:'added',name};
+    }
+  });
+
   window.goCatV11=category=>{filter=category;showPage('stock');window.renderStock()};
   window.render=renderAllViews;
   window.go=page=>{showPage(page);renderAllViews();if(page==='add'&&typeof window.renderCatalog==='function')window.renderCatalog()};
