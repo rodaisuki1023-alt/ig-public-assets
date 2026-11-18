@@ -280,7 +280,7 @@
   // Only the existing stock/shopping action owner writes data; a checklist tick
   // remains purely local and NEVER consumes stock. No billing or new DB columns.
   function kitChoices(label){
-    const name=String(label||'').trim().slice(0,60),norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\\s+/g,'');
+    const name=String(label||'').trim().slice(0,60),norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'');
     const target=norm(name);
     const knownFamily=name==='おむつ'?/おむつ|オムツ/:name==='おしりふき'?/おしりふき/:null;
     const matches=items.filter(x=>x&&typeof x.name==='string'&&
