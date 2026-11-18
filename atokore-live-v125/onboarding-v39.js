@@ -94,7 +94,11 @@ function go(){
  error('');
  const chosen=picked.slice();
  // Saved only by the review screen's final button; the reorder lines are written right after.
- qa.openWithEntries(entries(chosen),'stock',{onSaved:({byLine,lines:saved})=>{
+ qa.openWithEntries(entries(chosen),'stock',{onSaved:({byLine,lines:saved,destination})=>{
+  // The review screen lets the person switch the destination to the shopping list.
+  // Products saved there are not stock: no reorder line is applied and the first-run
+  // stock setup is not recorded as done (same rule as the guided baby/food route).
+  if(destination!=='stock'){picked=[];mins={};return}
   saved.forEach((line,i)=>{
    const id=byLine[i],it=id==null?null:list('items').find(x=>String(x.id)===String(id));
    if(it&&Object.prototype.hasOwnProperty.call(lines,line.name)&&it.minQty==null)it.minQty=lines[line.name];
@@ -110,8 +114,11 @@ function onClick(event){
   const kind=t.getAttribute('data-ob-guide');
   if(!GUIDES.some(x=>x[0]===kind))return;
   if(picked.length){error('選択中の日用品・食品がまだ保存されていません。先に「選んだ商品を確認する」から登録してください。');return}
-  const opened=root.AtokoreQuickAdd?.openGuidedProduct?.(kind,{onSaved:()=>{
-   writeState({doneAt:new Date().toISOString(),chosen:1,guided:kind});
+  const opened=root.AtokoreQuickAdd?.openGuidedProduct?.(kind,{onSaved:({destination,lines})=>{
+   // The first-run card introduces STOCK management. A deliberate change of
+   // destination to the shopping list must not be reported as stock onboarding.
+   if(destination!=='stock'||!Array.isArray(lines)||!lines.length)return;
+   writeState({doneAt:new Date().toISOString(),chosen:lines.length,guided:kind});
    picked=[];mins={};
   }});
   if(!opened){error('追加予定の商品がある場合は先に保存・取り消ししてください。その後もう一度お試しください。');return}
