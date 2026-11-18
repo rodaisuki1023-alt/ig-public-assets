@@ -312,7 +312,9 @@ function install(){
   const category=activePage()==='stock'&&stockCategory()==='離乳食'?'離乳食':'ベビー';
   oldOpen?.();
   root.AtokoreQuickAdd?.setCategory(category);
-  root.AtokoreQuickAdd?.setDestination(selected);
+  // Navigation must never silently switch the destination of a pending batch.
+  // An explicit destination button in the add/review screen can still change it.
+  if(!root.AtokoreQuickAdd?.getTray?.().length)root.AtokoreQuickAdd?.setDestination(selected);
   syncFab();
  };
  const oldRenderRoutines=root.renderRoutines;
