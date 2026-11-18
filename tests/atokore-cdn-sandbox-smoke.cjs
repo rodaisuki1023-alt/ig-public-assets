@@ -175,7 +175,7 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       await page.evaluate(()=>window.go('home'));
       assert.equal(await page.locator('#stableToastV125h').evaluate(n=>n.classList.contains('on')),false,'actual page switch hides old notice');
       await page.evaluate(()=>window.go('stock'));
-      assert.ok(await page.locator('#stockList .stableCat').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize))>=11,'stock category 11px');
+      assert.ok(await page.locator('#stockList .atk-row-cat').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize))>=11,'stock-order category label 11px');
       const sizeAfter=await page.evaluate(()=>({w:innerWidth,scroll:document.documentElement.scrollWidth}));
       assert.ok(sizeAfter.scroll<=sizeAfter.w+2,'stock cards do not horizontally overflow');
       assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
