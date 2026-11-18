@@ -132,6 +132,14 @@
     return items.filter(x=>(filter==='すべて'||x.cat===filter)&&(!query||hit(String(x.name),query)));
   };
   window.setFilter=category=>{filter=category;window.renderStock()};
+  // Keep the user's filtering choices. A contextual action explains why a newly
+  // purchased item may be present in storage but absent from the filtered view.
+  window.resetStockViewV50=()=>{
+    filter='すべて';
+    const search=document.getElementById('stockSearch');
+    if(search)search.value='';
+    window.renderStock();
+  };
   window.renderStock=function(){
     cleanSelections();
     const cats=['すべて',...new Set(items.map(x=>x.cat||'その他'))],chips=document.getElementById('catChips');
@@ -145,6 +153,8 @@
       const controls=stockSelectMode?`<div class="qty"><b>${esc(item.qty)}${esc(item.unit)}</b></div>`:`<div class="qty"><button class="icon" onclick="adj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="adj(${id},1)"${plusAttrs(item,1)}>＋</button></div><button class="icon stableStockBuy" onclick="addStockOneToBuyV125H(${id})" aria-label="買い物リストへ追加">🛒</button><button class="icon danger" onclick="delItem(${id})" aria-label="削除">🗑</button>`;
       return `<div class="row stableStockRow ${picked?'stableSelected':''} ${near?'expiryNear':''}" data-stock-id="${id}" style="${vars(item.cat)}" onclick="toggleStockRowV125H(event,${id})"><div style="width:4px"></div>${check}<div class="grow"><div class="name">${esc(item.name)}</div><span class="stableCat" style="background:${c[1]};color:${c[0]};border:1px solid ${c[2]}">${c[3]} ${esc(item.cat||'その他')}</span><div class="meta">${esc(item.place||'未設定')}${item.exp?'・'+esc(item.expType)+' '+esc(item.exp):''}</div>${item.exp?`<span class="expiryBadge ${left<0?'expiryExpired':''}">${esc(window.AtokoreDates.label(item.exp))}</span>`:''}</div>${controls}</div>`;
     }).join(''):'<div class="empty">該当なし</div>';
+    const hiddenNotice=document.getElementById('atkStockFilterNotice');
+    if(hiddenNotice)hiddenNotice.hidden=!(filter!=='すべて'||!!document.getElementById('stockSearch')?.value?.trim());
     updateStockBulkUI();
   };
   window.setStockPickV125H=(id,on)=>{
