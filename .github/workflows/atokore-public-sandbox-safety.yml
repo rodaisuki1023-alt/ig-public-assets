@@ -38,8 +38,10 @@ jobs:
           for key in ('atokoreTrialV4','atokoreHistoryV1','atokoreFamilySafeV2',
                       'atokoreHouseholdSyncV1','atokoreHouseholdSessionV1',
                       'atokoreHouseholdOAuthV1','atokoreHouseholdInviteV1',
-                      'atokoreReceiptHistoryV1','atokoreOnboardingV1'):
+                      'atokoreReceiptHistoryV1','atokoreOnboardingV1',
+                      'atokoreQuickAddPendingV1'):
             assert not re.search(r'\b'+key+r'\b',joined), 'unscoped key: '+key
+          assert 'atokorePreviewQuickAddPendingV19' in joined, 'draft key not isolated'
           for path in re.findall(r'<script[^>]+src="([^"]+)"',html)+re.findall(r'<link[^>]+href="([^"]+)"',html):
             name=path.split('?',1)[0].removeprefix('./')
             assert (src/name).is_file(), 'referenced file missing: '+name
