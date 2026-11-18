@@ -215,6 +215,36 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
       await page.evaluate(id=>window.buyOneToStockV125H(id),manual.id);
       const stockEntry=await page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewTrialV19')).items.find(x=>x.name==='保育園のお迎えメモ'));
       assert.equal(stockEntry?.cat,'その他',label+' unknown manual note uses その他 instead of 食料品');
+      // Research-driven S1: safe kit → buy → stock loop using synthetic diapers.
+      // Never touch real family credentials or the shared backend on RawGitHack.
+      await page.evaluate(()=>{
+        const key='atokorePreviewTrialV19';
+        const sample=JSON.parse(localStorage.getItem(key));
+        sample.items=sample.items.filter(x=>x.name!=='パンパース さらさらケア おむつ テープ M');
+        sample.items.push({id:777,name:'パンパース さらさらケア おむつ テープ M',cat:'ベビー',qty:2,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1});
+        localStorage.setItem(key,JSON.stringify(sample));
+      });
+      await page.reload({waitUntil:'domcontentloaded',timeout:60_000});
+      await page.evaluate(()=>window.go('buy'));
+      const diaperRow=page.locator('#atkPackRows .atk-pack-row').filter({has:page.locator('.atk-pack-label span', {hasText:'おむつ'})});
+      assert.equal(await diaperRow.count(),1,label+' diaper row is available');
+      assert.match(await diaperRow.locator('.atk-pack-stock-hint').textContent(),/ストック登録：2袋/);
+      const kitAction=diaperRow.locator('.atk-pack-to-buy');
+      assert.ok((await kitAction.boundingBox())?.height>=44,label+' kit action tap target');
+      const qtyBefore=await page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewTrialV19')).items.find(x=>x.id===777).qty);
+      await kitAction.click();
+      const queued=await page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewTrialV19')));
+      const diaperBuy=queued.buys.find(x=>x.name==='パンパース さらさらケア おむつ テープ M');
+      assert.ok(diaperBuy,label+' exact diaper variant queued');
+      assert.equal(diaperBuy.stockId,777,label+' remembers stock variant');
+      assert.equal(queued.items.find(x=>x.id===777).qty,qtyBefore,label+' packing never consumes stock');
+      assert.equal(await diaperRow.locator('.atk-pack-to-buy').isDisabled(),true,label+' duplicate queue prevented');
+      await page.evaluate(id=>window.buyOneToStockV125H(id),diaperBuy.id);
+      const refilled=await page.evaluate(()=>JSON.parse(localStorage.getItem('atokorePreviewTrialV19')));
+      assert.equal(refilled.items.find(x=>x.id===777)?.qty,3,label+' bought diaper refilled exact item');
+      assert.equal(refilled.buys.some(x=>x.id===diaperBuy.id),false,label+' completed purchase removed from queue');
+      assert.match(await diaperRow.locator('.atk-pack-stock-hint').textContent(),/ストック登録：3袋/);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),label+' kit bridge does not overflow page');
       assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
       console.log('PASS', label, 'URL', url);
     } finally {
