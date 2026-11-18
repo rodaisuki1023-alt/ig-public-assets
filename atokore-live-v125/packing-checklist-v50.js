@@ -32,7 +32,11 @@
     s.lists && typeof s.lists === 'object' &&
     ['daycare', 'outing'].every(id => Array.isArray(s.lists[id]) && s.lists[id].length <= 50 &&
       s.lists[id].every(x => x && typeof x.id === 'string' && x.id.length <= 100 &&
-        typeof x.name === 'string' && x.name.length <= 60 && typeof x.done === 'boolean') &&
+        typeof x.name === 'string' && x.name.length <= 60 && typeof x.done === 'boolean' &&
+        (x.preferredStock === undefined || (x.preferredStock &&
+          typeof x.preferredStock.id === 'string' && x.preferredStock.id.length <= 100 &&
+          typeof x.preferredStock.name === 'string' && x.preferredStock.name.length <= 150 &&
+          typeof x.preferredStock.unit === 'string' && x.preferredStock.unit.length <= 30))) &&
       new Set(s.lists[id].map(x => x.id)).size === s.lists[id].length);
 
   let state = initial();
@@ -164,10 +168,18 @@
       const bridge = root.AtokoreKitShoppingV50;
       if (!locked && !item.done && bridge && typeof bridge.choices === 'function') {
         const options = bridge.choices(item.name);
+        // A repeat purchase may reuse the parent's explicit last choice, but
+        // never trust only an ID: the row's name and unit must still match.
+        // This is optional local metadata; old saved v1 checklists stay valid.
+        const preferred = item.preferredStock && options.stocks.find(x =>
+          String(x.id) === item.preferredStock.id &&
+          x.name === item.preferredStock.name && x.unit === item.preferredStock.unit);
         const helper = make('div', 'atk-pack-shopping-helper');
         const statusLine = make('span', 'atk-pack-stock-hint');
         if (!options.stocks.length) statusLine.textContent = 'ストック登録は未確認（不足確定ではありません）';
-        else if (options.stocks.length > 1) statusLine.textContent = '複数の商品あり：サイズ・種類を選んでください';
+        else if (options.stocks.length > 1) statusLine.textContent = preferred
+          ? '前回のサイズ・種類を選択中（購入前に再確認）'
+          : '複数の商品あり：サイズ・種類を選んでください';
         else statusLine.textContent = options.stocks[0].qty > 0
           ? 'ストック登録：' + options.stocks[0].qty + options.stocks[0].unit
           : '登録ストック：0' + options.stocks[0].unit;
@@ -184,6 +196,7 @@
             choice.value = String(product.id);
             picker.append(choice);
           }
+          if (preferred) picker.value = String(preferred.id);
           helper.append(picker);
         }
         const action = make('button', 'atk-pack-to-buy', '🛒 買い物へ');
@@ -195,11 +208,25 @@
           action.disabled = !!(picker && !selected) || inBuy;
           action.textContent = inBuy ? '追加済み' : '🛒 買い物へ';
         };
-        if (picker) picker.addEventListener('change', updateAction);
+        if (picker) picker.addEventListener('change', () => {
+          const selected = options.stocks.find(x => String(x.id) === picker.value);
+          // Save *only* the preference: selecting a variant must never add a
+          // shopping row, decrement stock, or mark a packing item as ready.
+          // commit() checks for concurrent tab edits and verifies the write.
+          edited(next => {
+            const current = next.lists[next.active].find(x => x.id === item.id);
+            if (!current) return;
+            if (selected) current.preferredStock = {
+              id: String(selected.id), name: selected.name, unit: selected.unit
+            };
+            else delete current.preferredStock;
+          });
+        });
         updateAction();
         action.addEventListener('click', async () => {
           if (locked || state.lists[state.active].find(x => x.id === item.id)?.done) return;
           const chosen = picker ? picker.value : options.stocks[0]?.id;
+          const expected = snapshot, kit = state.active;
           // No registered variant: never silently invent a precise diaper size.
           if (!options.stocks.length && (item.name === 'おむつ' || item.name === 'おしりふき')) {
             if (!root.AtokoreConfirm || typeof root.AtokoreConfirm.ask !== 'function') return;
@@ -208,8 +235,21 @@
               'ストックに商品がありません。「' + item.name + '」という汎用の買い物メモを追加します。購入前にサイズやメーカーを確認してください。ストック数は変わりません。',
               'メモとして追加'
             );
-            if (!ok || locked) return;
+            if (!ok || locked || snapshot !== expected || state.active !== kit) return;
           }
+          // Asynchronous confirmations must not act on a checklist that was
+          // changed in another tab while the dialog was open.
+          try {
+            const current = store.getItem(KEY);
+            if (current !== snapshot) { reconcile(current); return; }
+          } catch (e) {
+            locked = true;
+            notice('保存状態を読み直せません。買い物への追加を停止しています。');
+            render();
+            return;
+          }
+          if (locked || state.active !== kit || snapshot !== expected ||
+              !state.lists[kit].some(x => x.id === item.id && !x.done)) return;
           const result = bridge.add(item.name, chosen);
           if (result.status === 'failed') notice('買い物リストに保存できませんでした。端末の空き容量などをご確認ください。');
           else if (result.status === 'choose') notice('商品名やサイズを選んでください。');
