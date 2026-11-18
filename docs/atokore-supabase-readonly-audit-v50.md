@@ -1,6 +1,6 @@
 # あとこれ v50｜Supabase実環境の「変更しない」安全性監査
 
-現状（2026-11-17）：管理APIの `list_projects` では試用プロジェクト `vzyxurodowpjltwbgbyc` が `ACTIVE_HEALTHY`。しかし `execute_sql` と `list_migrations` は **FATAL 28P01 password authentication failed for user postgres**、セキュリティアドバイザーは hibernated と応答する。**実DBの内容、RLS、適用済みSQLを確認できていない**。成功扱いは禁止。
+**最新（2026-11-18 JST）**：管理SQL接続は認証エラーから**読み取りが回復**し、以下の実DBのスキーマ・権限・適用履歴・Supabase Security Advisorを確認できた。実データ行は一件も取得していない。**実DBへの変更・データ書き込みは行っていない。** なお、実環境の家族共有・所属失効の拒否テストは未実施であり、コードのCI成功だけで公開安全と判定しない。
 
 ## 原則
 - 本文のクエリは **すべて SELECT のみ**。個人・世帯データの行は取得しない。アクセス可能になるまでは実行できない。
@@ -9,7 +9,35 @@
 - `Security Definer` の存在自体は問題確定ではない。公開`public.hh_*` RPCについて認証、世帯所属、権限チェックを関数定義と**許可/拒否の実動作テスト**で確認する。
 - `#98`から#106に移管した修正候補は、**本番DB未適用**。独立PostgreSQLでのみレース再現・修正効果を検証済み。
 
-## 認証が回復した後に実施する読み取り専用チェック
+
+## 2026-11-18｜実環境の読み取り専用監査結果（管理SQL復旧後）
+
+対象：Supabase Project `vzyxurodowpjltwbgbyc`（`atokore-family-trial`）のみ。SELECTで取得したのはシステムカタログ/権限定義・Supabase管理アドバイザーの結果のみ。**家族/認証/写真/買い物/在庫の実レコードは読んでいない**。前日に28P01が発生していた原因は不明。パスワードや設定の変更なしに同じ公式MCP管理接続でSELECTが成功した。
+
+| 監査項目 | 実環境で確認できた事実 | 判断 |
+|---|---|---|
+| migration履歴 | 8件。最後の適用は`20261104111127 atokore_receipt_imports_v49` | #106で隔離検証した所属ロック差分の実適用は未確認ではなく**未適用と確認** |
+| `public`の家族用テーブル | なし。内部の10テーブルは`atokore_private` | データAPIに直接出す想定ではない |
+| 家族用内部テーブル | 10表中9表でRLS有効。`atokore_private.receipt_imports`だけRLS無効 | **要設計レビュー**（ただし`anon`はスキーマUSAGE不可、`authenticated`も全10表に直接SELECT/INSERT権限なし）。RLS無効だけで直接漏えいとは断定しない |
+| 家族RPC | `public.hh_*` 15関数はSECURITY DEFINER、`anon`のEXECUTEなし、`authenticated`のEXECUTEあり | 仕様として認証者専用RPCだが権限委譲関数なので、全ての世帯所属/入力検証を動作試験で再確認する必要あり。アドバイザーにWARN 15件 |
+| `hh_receipt_claim` / `hh_receipt_finish` | **両方とも**`atokore_private.my_household(v_user)`を使用。`lock_member(v_user)`を使用していない | **公開前に修正要**。既存の隔離PostgreSQLレース再現は「除外完了と進行中のレシート確定」が競合することを証明済み。実DBのデータ事故は未確認 |
+| `hh_remove_member` / `lock_member` | 除外は`lock_member(v_user, true)`を使う。privateの`lock_member`は世帯行をFOR UPDATEしロック後にメンバー所属を再確認 | 候補の2関数変更と整合する。実DBでの許可/拒否の動的検証は未実施 |
+| 商品写真 | バケット`atokore-product-photos` は`public=false`、JPEGのみ、上限81,920 bytes。Storage objectsに認証者向けSELECT/INSERT/DELETEの3ポリシーがあり`photo_allowed(name)`で所属・商品を確認 | 非公開バケットとポリシーを確認。UPDATEポリシーなし（上書きupsertが必要な実装なら別途検証）。ファイルや写真は取得していない |
+| Security Advisor | INFO: private9表で「RLS有効・policyなし」。WARN:認証者が呼べるSECURITY DEFINER 15件、匿名サインイン絡みの警告1件、漏えいパスワード保護オフ1件 | 自動警告をそのまま脆弱性確定とはしない。Googleログインのみ等の運用条件と関数定義で個別判定。**警告は未解消** |
+
+### 採用推奨の最小変更（**提案のみ・未実施**）
+- 本番DBで一括実行するSQLやパスワード変更は**オーナーの別途明示承認前に実施しない**。
+- 対象は既存の`public.hh_receipt_claim`、`public.hh_receipt_finish`の2関数のみ。各関数の`v_hh uuid := atokore_private.my_household(v_user);` を`v_hh uuid := atokore_private.lock_member(v_user);`に置換する。
+- 実行前に現在の`pg_get_functiondef`を監査専用バックアップとして保存（SQL本文・権限情報のみ、個人データなし）。その後、[隔離テスト済み候補SQL](../scripts/receipt-audit/candidate-member-lock.sql)と実DB関数の差分が**上記2行に限られる**と照合し、既存関数のgrant／search_path／デフォルト引数を維持する安全な追加マイグレーションを準備。
+- 実DBに適用する場合は独立PGでの同じ並行実行回帰テストと、PostgREST経由の認証/認証なし/除外済み合成利用者の拒否テスト、Advisor再取得、意図せぬ権限変更の有無、ロールバック手順を条件にする。**合成2端末の家族共有テストは依然未実施**。
+- `receipt_imports`のRLS有効化や他の15 RPCの権限・Auth設定はこの2行修正に混ぜず、影響範囲を別途審査（予期せぬ既存機能停止を防ぐ）。
+
+### 管理上の判定
+- **「Supabase管理DBに接続できない」は解消**。RLS/GRANT/Storage/RPC/履歴のメタデータ監査は完了。
+- **「実DBの安全性を受入れ済み」は未達**。レシートの2関数が旧実装、匿名/除外済み/他世帯の動的拒否検証未実施、Advisor WARNの個別評価未完。
+- PR #106とIssue #96のDraft品質ゲートを維持。実DB・本番・既存試用版には手を触れない。
+
+## 再監査用の読み取り専用チェック
 
 **1. メタデータ：対象DB、実際に適用済みのマイグレーション**
 
