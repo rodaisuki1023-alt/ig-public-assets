@@ -156,6 +156,27 @@ const url = repo + '/' + sha + '/atokore-live-v125/index.html';
 
 
       assert.deepEqual(household, [], label + ' must not request real household backend');
+      // Muse P2: notification surfaces must not stack; leaving the page
+      // clears old notices, and long Japanese text must fit iPhone widths.
+      await page.evaluate(() => {
+        const qa=document.getElementById('qaNotice')||document.createElement('div');
+        qa.id='qaNotice';qa.className='qa-notice';if(!qa.isConnected)document.body.append(qa);
+        const toast=document.getElementById('stableToastV125h')||document.createElement('div');
+        toast.id='stableToastV125h';toast.className='stableToast';if(!toast.isConnected)document.body.append(toast);
+        AtokoreNotices.show(qa,80);
+        AtokoreNotices.show(toast,900);
+      });
+      assert.equal(await page.locator('#qaNotice').evaluate(n=>n._atkNoticeTimer),null,'prior timer cleared');
+      assert.equal(await page.locator('#qaNotice').evaluate(n=>n.classList.contains('on')),false,'old notice hidden');
+      assert.equal(await page.locator('#stableToastV125h').evaluate(n=>n.classList.contains('on')),true,'new notice shown');
+      await page.evaluate(()=>window.notifyAtokoreV125H('長い通知の文字が小さい画面からはみ出さず、途中で消えたり重なったりしないことを確認しています'));
+      const toastBox=await page.locator('#stableToastV125h').boundingBox();
+      assert.ok(toastBox?.width<=width-16,'long message wraps within viewport');
+      await page.evaluate(()=>window.go('stock'));
+      assert.equal(await page.locator('#stableToastV125h').evaluate(n=>n.classList.contains('on')),false,'page switch hides old notice');
+      assert.ok(await page.locator('#stockList .stableCat').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize))>=11,'stock category 11px');
+      const sizeAfter=await page.evaluate(()=>({w:innerWidth,scroll:document.documentElement.scrollWidth}));
+      assert.ok(sizeAfter.scroll<=sizeAfter.w+2,'stock cards do not horizontally overflow');
       assert.deepEqual(errors, [], label + ' must not throw JS runtime errors');
       console.log('PASS', label, 'URL', url);
     } finally {
