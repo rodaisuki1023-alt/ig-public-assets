@@ -1,5 +1,5 @@
 /* Atokore v39 first run: start with up to 5 everyday products, no account and no required fields.
- * Shown on the home screen only while stock, shopping list are empty and the person has not closed it.
+ * Shown on the home screen until explicitly dismissed; a single saved item never auto-finishes setup.
  * Saving goes through the shared review screen (AtokoreQuickAdd), so it is saved once, with the same
  * save-failure protection as every other add. An optional reorder line per product sets minQty.
  * Progress is remembered on this device only (never sent anywhere), and only after the person acts:
@@ -35,7 +35,10 @@ function eligible(){
  const s=readState();
  if(s.doneAt||s.dismissedAt||root.__atokoreStorageLock)return false;
  let saved=null;try{saved=root.localStorage.getItem(DATA_KEY)}catch(e){return false}
- return saved===null||(list('items').length===0&&list('buys').length===0);
+ // Once a person starts the guide, keep it accessible across saves and reloads.
+ if(s.startedAt)return true;
+ // Shopping-list-only households still have not completed stock setup.
+ return saved===null||list('items').length===0;
 }
 // Products already in stock are not offered again (adding them would add to the existing count).
 const same=s=>String(s||'').normalize('NFKC').replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/\s/g,'');
@@ -47,7 +50,8 @@ function reorderLine(v){const s=String(v??'').trim();if(s==='')return null;const
 function cardHTML(){
  const chips=available().map(([name,,unit,icon])=>{const on=picked.includes(name);return '<button type="button" class="atk-ob-chip'+(on?' on':'')+'" aria-pressed="'+on+'" data-ob-pick="'+esc(name)+'"><span aria-hidden="true">'+icon+'</span>'+esc(name)+'</button>'}).join('');
  const lines=picked.map(name=>{const unit=CHOICES.find(c=>c[0]===name)[2];return '<label class="atk-ob-line"><span>'+esc(name)+'</span><span class="atk-ob-line-input">残り<input type="number" min="0" max="9999" step="1" inputmode="numeric" placeholder="1" aria-label="'+esc(name)+'の補充の目安" data-ob-min="'+esc(name)+'" value="'+esc(mins[name]??'')+'">'+esc(unit)+'以下で知らせる</span></label>'}).join('');
- return '<section id="atkOnboarding" class="atk-ob" aria-labelledby="atkObTitle">'+
+ const progress=readState().lastSavedAt?'<p class="atk-ob-success">登録できました。続けて別の商品も登録できます。終わったら「案内を終了する」を押してください。</p>':'';
+ return '<section id="atkOnboarding" class="atk-ob" aria-labelledby="atkObTitle">'+progress+
   '<h3 id="atkObTitle">まずは、よく使うストックを登録しましょう</h3>'+
   '<p class="atk-ob-sub">おむつ・ミルク・おしりふき・離乳食は、メーカーやサイズまで選んで登録できます。商品を選ぶだけでは保存されません。</p>'+
   '<div class="atk-ob-guides" role="group" aria-label="メーカー・サイズから商品を選んで登録">'+GUIDES.map(([id,name,detail])=>'<button type="button" class="atk-ob-guide" data-ob-guide="'+esc(id)+'"><strong>'+esc(name)+'</strong><small>'+esc(detail)+'から選ぶ</small></button>').join('')+'</div>'+
@@ -56,7 +60,7 @@ function cardHTML(){
   (picked.length?'<details class="atk-ob-more"><summary>補充の目安を決める（任意）</summary><p class="atk-ob-note">空欄なら残り1以下で「要補充」に出ます。</p>'+lines+'</details>':'')+
   '<p id="atkObError" class="atk-ob-error" role="alert" hidden></p>'+
   '<div class="atk-ob-actions"><button type="button" class="atk-ob-primary" data-ob-go'+(picked.length?'':' disabled')+'>'+(picked.length?'選んだ'+picked.length+'つを確認する':'商品を選んでください')+'</button>'+
-  '<button type="button" class="atk-ob-later" data-ob-later>自分で登録する</button></div></section>';
+  '<button type="button" class="atk-ob-later" data-ob-later>'+(readState().lastSavedAt?'案内を終了する':'自分で登録する')+'</button></div></section>';
 }
 function tipHTML(){
  const share=!!root.AtokoreHousehold?.open;
@@ -69,10 +73,16 @@ function tipHTML(){
 }
 function paint(){
  const home=$('pg-home');if(!home)return;
- const old=$('atkOnboarding'),oldTip=$('atkOnboardingTip'),s=readState();
+ const old=$('atkOnboarding'),oldTip=$('atkOnboardingTip'),oldReopen=$('atkObReopen'),s=readState();
  const showCard=eligible(),showTip=!!s.doneAt&&!s.tipSeenAt;
  if(!showCard&&old)old.remove();
  if(!showTip&&oldTip)oldTip.remove();
+ if(showCard){oldReopen?.remove();}
+ else if((s.doneAt||s.dismissedAt)&&!oldReopen){
+  const link=doc.createElement('button');link.type='button';link.id='atkObReopen';link.className='atk-ob-reopen';link.dataset.obReopen='';link.textContent='商品登録ガイドをもう一度開く';
+  const at=home.querySelector('.atk-actions')||home.firstElementChild;
+  if(at)at.before(link);else home.prepend(link);
+ }
  const anchor=home.querySelector('.atk-actions')||home.firstElementChild;
  if(showCard){
   const wrap=doc.createElement('div');wrap.innerHTML=cardHTML();const card=wrap.firstElementChild;
@@ -104,12 +114,16 @@ function go(){
    if(it&&Object.prototype.hasOwnProperty.call(lines,line.name)&&it.minQty==null)it.minQty=lines[line.name];
   });
   if(Object.keys(lines).length&&typeof root.save==='function'&&root.save()===false)throw Error('reorder lines not saved');
-  writeState({doneAt:new Date().toISOString(),chosen:chosen.length,reorderLines:Object.keys(lines).length});
+  writeState({startedAt:readState().startedAt||new Date().toISOString(),lastSavedAt:new Date().toISOString(),chosen:chosen.length,reorderLines:Object.keys(lines).length});
   picked=[];mins={};
  }});
 }
 function onClick(event){
- const t=event.target.closest?.('[data-ob-guide],[data-ob-pick],[data-ob-go],[data-ob-later],[data-ob-tip-ok],[data-ob-share]');if(!t)return;
+ const t=event.target.closest?.('[data-ob-reopen],[data-ob-guide],[data-ob-pick],[data-ob-go],[data-ob-later],[data-ob-tip-ok],[data-ob-share]');if(!t)return;
+ if(t.hasAttribute('data-ob-reopen')){
+  writeState({startedAt:new Date().toISOString(),doneAt:null,dismissedAt:null,tipSeenAt:new Date().toISOString()});
+  paint();return;
+ }
  if(t.hasAttribute('data-ob-guide')){
   const kind=t.getAttribute('data-ob-guide');
   if(!GUIDES.some(x=>x[0]===kind))return;
@@ -118,10 +132,11 @@ function onClick(event){
    // The first-run card introduces STOCK management. A deliberate change of
    // destination to the shopping list must not be reported as stock onboarding.
    if(destination!=='stock'||!Array.isArray(lines)||!lines.length)return;
-   writeState({doneAt:new Date().toISOString(),chosen:lines.length,guided:kind});
+   writeState({startedAt:readState().startedAt||new Date().toISOString(),lastSavedAt:new Date().toISOString(),chosen:lines.length,guided:kind});
    picked=[];mins={};
   }});
   if(!opened){error('追加予定の商品がある場合は先に保存・取り消ししてください。その後もう一度お試しください。');return}
+  writeState({startedAt:readState().startedAt||new Date().toISOString()});
   error('');return;
  }
  if(t.hasAttribute('data-ob-pick')){
@@ -129,12 +144,16 @@ function onClick(event){
   if(picked.includes(name))picked=picked.filter(n=>n!==name);
   else if(picked.length>=MAX){error('最初は'+MAX+'つまでです。ほかの商品はあとから追加できます');return}
   else picked.push(name);
+  writeState({startedAt:readState().startedAt||new Date().toISOString()});
   error('');paint();
   doc.querySelector('[data-ob-pick="'+CSS.escape(name)+'"]')?.focus();
   return;
  }
  if(t.hasAttribute('data-ob-go'))return go();
- if(t.hasAttribute('data-ob-later')){writeState({dismissedAt:new Date().toISOString()});picked=[];paint();return}
+ if(t.hasAttribute('data-ob-later')){
+  const s=readState(),now=new Date().toISOString();
+  writeState(s.lastSavedAt?{doneAt:now,tipSeenAt:now}:{dismissedAt:now});picked=[];mins={};paint();return;
+ }
  if(t.hasAttribute('data-ob-tip-ok')){writeState({tipSeenAt:new Date().toISOString()});paint();return}
  if(t.hasAttribute('data-ob-share')){writeState({tipSeenAt:new Date().toISOString()});paint();root.AtokoreHousehold?.open?.();}
 }
