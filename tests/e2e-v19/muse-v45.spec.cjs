@@ -55,3 +55,37 @@ for(const width of [320,390,430])test(`P3-8 touch targets and layout ${width}`,a
  for(const el of await page.locator('#stockList .qty button').all()){const box=await el.boundingBox();expect(box.width).toBeGreaterThanOrEqual(44);expect(box.height).toBeGreaterThanOrEqual(44)}
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.click('[data-atk-view="list"]');await shot(page,info,'v45-stock-list-'+width);await go(page,'buy');await expect(page.locator('.stableBuyStock')).toBeVisible();const b=await page.locator('.stableBuyStock').boundingBox();expect(b.height).toBeGreaterThanOrEqual(44);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await shot(page,info,'v45-buy-'+width);expect(page.__errors).toEqual([]);
 });
+
+for(const width of [320,393])test('Muse P2 purchased stock hidden by a saved category filter can be revealed at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:820});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ await expect(page.locator('#atkStockFilterNotice')).toBeHidden();
+ await page.evaluate(()=>window.setFilter('食料品'));
+ await expect(page.locator('#atkStockFilterNotice')).toBeVisible();
+ await expect(page.locator('[data-stock-id="2"]')).toHaveCount(0);
+ await go(page,'buy');
+ await page.locator('[data-buy-id="10"]').getByRole('button',{name:/を買った$/}).click();
+ const after=await stored(page);
+ expect(after.buys).toHaveLength(0);
+ expect(after.items.find(i=>i.name==='おしりふき詰替')?.qty).toBe(1);
+ await go(page,'stock');
+ await expect(page.locator('#atkStockFilterNotice')).toBeVisible();
+ await expect(page.locator('#stockList')).not.toContainText('おしりふき詰替');
+ const action=page.locator('#atkStockFilterNotice button');
+ await expect(action).toHaveText('すべて表示');
+ const size=await action.boundingBox();
+ expect(size.width).toBeGreaterThanOrEqual(44);
+ expect(size.height).toBeGreaterThanOrEqual(44);
+ await action.click();
+ await expect(page.locator('#atkStockFilterNotice')).toBeHidden();
+ await expect(page.locator('#stockList')).toContainText('おしりふき詰替');
+ expect(await stored(page)).toEqual(after);
+ await page.locator('#stockSearch').fill('存在しない商品');
+ await expect(page.locator('#atkStockFilterNotice')).toBeVisible();
+ await page.locator('#atkStockFilterNotice button').click();
+ await expect(page.locator('#stockSearch')).toHaveValue('');
+ await expect(page.locator('#atkStockFilterNotice')).toBeHidden();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
