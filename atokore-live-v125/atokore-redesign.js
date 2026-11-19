@@ -95,7 +95,7 @@ function initNavigation(){
   if(t.dataset.p==='add'){t.style.display='none';return}
   const x=labels[t.dataset.p];if(x){t.innerHTML='<b>'+x[0]+'</b>'+x[1];t.setAttribute('aria-label',x[1])}
  });
- const premium=$('pg-premium');if(premium)premium.querySelector('.section').textContent='マイページ';
+ const premium=$('pg-premium');if(premium)premium.querySelector('.section').textContent='機能プレビュー（無料・課金なし）';
  const buyTitle=$('pg-buy')?.querySelector('.section');if(buyTitle)buyTitle.textContent='買い物リスト';
 }
 let manual=false;
