@@ -288,6 +288,9 @@ test('v50 remembered variant is never auto-reused if its product identity change
 test('v50 generic diaper confirmation cannot enqueue after another-tab checklist change',async({page})=>{
   await open(page,{[KEY]:baseState({items:[],buys:[]})});
   await go(page,'buy');
+  // Persist a real checklist snapshot before simulating the other tab's edit.
+  // An untouched checklist has no localStorage entry yet and must not be read as an object.
+  await page.locator('#atkPackRows input[type=checkbox]').first().check();
   const action=page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy');
   await action.click();
   await expect(page.locator('#atkConfirmNote')).toContainText('サイズやメーカーを確認');
