@@ -208,8 +208,11 @@ test('v50 family iPhone-sized contexts: corrected receipt name links the intende
   const product = 'パンパース さらさらケア おむつ テープ M';
   const misread = 'テストおむつOCR誤認';
   try {
-    expect((await stored(a.page)).items.find(x => x.id === 2).qty).toBe(2);
-    expect((await stored(b.page)).items.find(x => x.id === 2).qty).toBe(2);
+    // Shared households assign a different record ID on each device. Sync, then assert by product identity.
+    await a.page.evaluate(() => AtokoreHousehold.syncNow());
+    await b.page.evaluate(() => AtokoreHousehold.syncNow());
+    expect((await stored(a.page)).items.find(x => x.name === product).qty).toBe(2);
+    expect((await stored(b.page)).items.find(x => x.name === product).qty).toBe(2);
     await readTextOn(a.page, misread + ' ¥1280\n小計 1点 ¥1280');
     const row = a.page.locator('[data-receipt-row]').first();
     await expect(row.locator('.receiptLinked')).toHaveCount(0);
@@ -217,15 +220,15 @@ test('v50 family iPhone-sized contexts: corrected receipt name links the intende
     await row.locator('input[aria-label="商品名"]').fill(product);
     await row.locator('input[aria-label="商品名"]').press('Tab');
     await expect(row.locator('[data-receipt-merge-state="pending"]')).toContainText('似た名前のストックがあります');
-    expect((await stored(a.page)).items.find(x => x.id === 2).qty).toBe(2);
-    expect((await stored(b.page)).items.find(x => x.id === 2).qty).toBe(2);
+    expect((await stored(a.page)).items.find(x => x.name === product).qty).toBe(2);
+    expect((await stored(b.page)).items.find(x => x.name === product).qty).toBe(2);
 
     // The corrected name is only a candidate until the parent chooses the exact inventory ID.
     await row.locator('[data-receipt-merge-candidate="2"]').click();
     await expect(row.locator('.receiptLinked')).toContainText(product);
     await a.page.locator('#receiptApplyBtn').click();
     await expect(a.page.locator('#qaTrayList .qa-review-effect')).toContainText('2袋 → 3袋');
-    expect((await stored(a.page)).items.find(x => x.id === 2).qty).toBe(2);
+    expect((await stored(a.page)).items.find(x => x.name === product).qty).toBe(2);
     await a.page.locator('#qaCommit').dblclick();
     await expect(a.page.locator('#pg-stock')).toHaveClass(/on/);
 
@@ -235,9 +238,9 @@ test('v50 family iPhone-sized contexts: corrected receipt name links the intende
     }
     for (const p of [a.page, b.page]) {
       const s = await stored(p);
-      expect(s.items.find(x => x.id === 2).qty).toBe(3);
+      expect(s.items.find(x => x.name === product).qty).toBe(3);
       expect(s.items.filter(x => x.name === product)).toHaveLength(1);
-      expect(s.items.find(x => x.id === 2).receiptAliases || []).not.toContain(misread);
+      expect(s.items.find(x => x.name === product).receiptAliases || []).not.toContain(misread);
       expect(p.__errors).toEqual([]);
     }
   } finally {
