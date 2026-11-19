@@ -102,12 +102,46 @@ jobs:
           E2E_SCREEN_DIR: ${{ runner.temp }}/screens
         run: |
           # Check the critical shared-data/auth paths first, then all remaining tests once.
-          npx playwright test -c tests/e2e-v19/playwright.config.cjs household-google-v40 household-sync-v37
-          npx playwright test -c tests/e2e-v19/playwright.config.cjs --grep-invert 'household-(google-v40|sync-v37)\.spec\.cjs'
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium household-google-v40 household-sync-v37
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium --grep-invert 'household-(google-v40|sync-v37)\.spec\.cjs'
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: atokore-v19-screens
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: ignore
+
+  # The full suite contains 542 browser cases; running Chromium+WebKit serially
+  # on one runner hits the 25-minute timeout near its end (537/542 passed).
+  # Keep both browser gates, but execute them on isolated free public-repo runners.
+  # This adds no deployment, no credentials and no production database access.
+  test-webkit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+      options: --shm-size=1gb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser test tools
+        run: npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
+      - name: Real-browser tests (WebKit / iPhone simulator)
+        env:
+          E2E_SCREEN_DIR: ${{ runner.temp }}/screens
+        run: |
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=webkit household-google-v40 household-sync-v37
+          npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=webkit --grep-invert 'household-(google-v40|sync-v37)\.spec\.cjs'
+      - name: Upload WebKit screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atokore-v19-webkit-screens
           path: ${{ runner.temp }}/screens
           if-no-files-found: ignore
