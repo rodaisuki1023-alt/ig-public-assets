@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { APP, KEY } = require('./helpers.cjs');
+const { APP, KEY, open, go, stored, baseState } = require('./helpers.cjs');
 
 const PROD = '/ig-public-assets/';
 const PRODUCTION_KEYS = ['atokoreTrialV4', 'atokoreHistoryV1', 'atokoreDisplayPrefsV1', 'atokoreReceiptAliases', 'atokorePwaInstallDismissedAt'];
@@ -82,4 +82,40 @@ test('a new release is shown on the next load, and the app still opens offline',
     await context.setOffline(false);
     fs.writeFileSync(file, original);
   }
+});
+
+test('v50 offline daycare checklist remains local, persistent and stock-neutral after reconnect', async ({page, context, browserName}) => {
+  test.skip(browserName !== 'chromium', 'offline service-worker replay is checked in Chromium; WebKit is covered by packing E2E');
+  const initial = baseState();
+  await open(page, { [KEY]: initial });
+  await waitForWorker(page);
+  await go(page, 'buy');
+  await page.locator('#atkPackRows input[type=checkbox]').nth(2).check();
+  await expect(page.locator('#atkPackProgress')).toHaveText('保育園セット：1/6 準備済み');
+  const before = await stored(page);
+  expect(before).toEqual(initial);
+
+  await context.setOffline(true);
+  try {
+    await page.reload();
+    await expect(page.locator('#bfNavAdd')).toBeVisible();
+    await go(page, 'buy');
+    await expect(page.locator('#atkPackRows input[type=checkbox]').nth(2)).toBeChecked();
+    await page.locator('[data-pack=outing]').click();
+    await page.locator('#atkPackAddInput').fill('予備の水筒');
+    await page.locator('#atkPackAddButton').click();
+    await expect(page.locator('#atkPackRows')).toContainText('予備の水筒');
+    expect(await stored(page)).toEqual(before);
+    expect(await page.evaluate(() => navigator.onLine)).toBe(false);
+  } finally {
+    await context.setOffline(false);
+  }
+  await page.reload();
+  await go(page, 'buy');
+  await expect(page.locator('#atkPackRows')).toContainText('予備の水筒');
+  await page.locator('[data-pack=daycare]').click();
+  await expect(page.locator('#atkPackRows input[type=checkbox]').nth(2)).toBeChecked();
+  await expect(page.locator('#atkPackProgress')).toHaveText('保育園セット：1/6 準備済み');
+  expect(await stored(page)).toEqual(before);
+  expect(page.__errors).toEqual([]);
 });
