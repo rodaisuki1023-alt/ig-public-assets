@@ -22,9 +22,9 @@ test('a dated product: the review says "new row without a date", the confirmatio
   ], buys: [], routines: [] };
   await open(page, { [KEY]: initial });
   await readText(page, 'テスト牛乳 ¥218\nテストティッシュ ¥398\n小計 2点 ¥616');
-  await rowOf(page, 'テスト牛乳').locator(PICK).selectOption({ label: '登録済み：テスト牛乳' });
+  await rowOf(page, 'テスト牛乳').locator(PICK).selectOption('1');
   await expect(rowOf(page, 'テスト牛乳').locator('.receiptLotNote')).toContainText('期限が未設定の新しい行');
-  await rowOf(page, 'テストティッシュ').locator(PICK).selectOption({ label: '登録済み：テストティッシュ' });
+  await rowOf(page, 'テストティッシュ').locator(PICK).selectOption('2');
   await expect(rowOf(page, 'テストティッシュ').locator('.receiptLotNote')).toHaveCount(0);
   await page.locator('#receiptApplyBtn').click();
   const effects = await page.locator('#qaTrayList .qa-review-effect').allTextContents();
@@ -313,6 +313,55 @@ test('v50: editing a receipt product name invalidates a learned alias for the ol
  await page.locator('#qaCommit').click();
  const saved=await stored(page);
  expect(saved.items.find(x=>x.id===41).qty).toBe(3);
+ expect(saved.items.find(x=>x.name==='テストラーメン みそ味')?.qty).toBe(1);
+ expect(page.__errors).toEqual([]);
+});
+
+
+test('v50: correcting an unrecognized receipt name reveals existing stock and only confirmed merge changes quantity',async ({page})=>{
+ const original='テスト別商品の誤読',corrected='パンパース さらさらケア テープ M 60枚';
+ const initial={items:[{id:51,name:corrected,cat:'ベビー',qty:2,unit:'袋',exp:'',expType:'期限なし',usage:1}],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,original+' ¥1380\n小計 1点 ¥1380');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ const input=row.locator('input[aria-label="商品名"]');
+ await input.fill(corrected);
+ await input.press('Tab');
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toContainText('似た名前のストックがあります');
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ expect((await stored(page)).items[0].qty).toBe(2);
+ await row.locator('.receiptMergeActions button').first().click();
+ await expect(row.locator('.receiptLinked')).toContainText(corrected);
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('2袋 → 3袋');
+ expect((await stored(page)).items[0].qty).toBe(2);
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items).toHaveLength(1);
+ expect(saved.items[0].qty).toBe(3);
+ expect(saved.items[0].receiptAliases).not.toContain(original.replace(/\s/g,'').toLowerCase());
+ expect(saved.items[0].receiptAliases).toContain(corrected.replace(/\s/g,'').toLowerCase());
+ expect(page.__errors).toEqual([]);
+});
+test('v50: an automatically linked row remains editable and correction does not preserve the old link',async ({page})=>{
+ const original='テストラーメン しょうゆ味';
+ const initial={items:[{id:61,name:original,cat:'食料品',qty:2,unit:'個',exp:'',expType:'期限なし',usage:1}],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,original+' ¥120\n小計 1点 ¥120');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('.receiptLinked')).toBeVisible();
+ const input=row.locator('input[aria-label="商品名"]');
+ await expect(input).toBeVisible();
+ await input.fill('テストラーメン みそ味');
+ await input.press('Tab');
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ await page.locator('#receiptApplyBtn').click();
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===61).qty).toBe(2);
  expect(saved.items.find(x=>x.name==='テストラーメン みそ味')?.qty).toBe(1);
  expect(page.__errors).toEqual([]);
 });
