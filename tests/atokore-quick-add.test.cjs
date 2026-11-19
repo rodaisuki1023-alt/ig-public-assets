@@ -172,3 +172,11 @@ test('receipt choice: selected ID wins over an identically named stock row',()=>
  assert.throws(()=>quick.buildBatch(existing,[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:999}],1000),/追加先/);
  assert.throws(()=>quick.buildBatch([{...existing[1],exp:'2099-01-01',expType:'消費期限'}],[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:12}],1000),/追加先/);
 });
+
+test('receipt: same-name dated stock still becomes a distinct lot rather than changing its expiry',()=>{
+ const old=[{id:11,name:'テスト牛乳',cat:'食料品',unit:'本',qty:2,exp:'2099-01-01',expType:'消費期限'}];
+ const next=quick.buildBatch(old,[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptSeparate:true}],2000);
+ assert.equal(old[0].qty,2);assert.equal(next.length,2);
+ assert.equal(next[0].exp,'2099-01-01');assert.equal(next[0].qty,2);
+ assert.equal(next[1].exp,'');assert.equal(next[1].qty,1);
+});
