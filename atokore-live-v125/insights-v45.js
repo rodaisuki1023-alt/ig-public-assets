@@ -12,7 +12,7 @@ const oldShow=root.showPremium;
 root.showPremium=function(k){
  if(k==='predict'){
   const rows=all().map(x=>({x,...forecast(x)})).sort((a,b)=>a.priority-b.priority||a.qty-b.qty);
-  root.openM(close+'<h2>補充の目安（試算）</h2><p class="atk-insight-note">現在の登録数量と補充目安を比較した試算です。実際の不足日や購入時期を予測・保証するものではありません。消費ペースは計測していません。</p>'+rows.map(r=>'<div class="atk-insight-row"><strong>'+esc(r.x.name)+'：'+r.label+'</strong><p>根拠：'+esc(r.x.qtyBasis==='unopened'?'未開封の予備':'残り')+r.qty+esc(r.x.unit||'個')+' ／ 補充目安 '+r.min+esc(r.x.unit||'個')+'以下'+(r.x.purchase?' ／ 前回購入日 '+esc(r.x.purchase):' ／ 購入日未記録')+'</p><button class="btn" onclick="premiumBuy('+Number(r.x.id)+')">買い物リストに追加</button></div>').join('')+(!rows.length?'<p>ストックを登録すると表示されます。</p>':''));return;
+  root.openM(close+'<h2>補充の目安（試算）</h2><p class="atk-insight-note">現在の登録数量と補充目安を比較した試算です。実際の不足日や購入時期を予測・保証するものではありません。消費ペースはまだ計測していません。</p>'+rows.map(r=>'<div class="atk-insight-row"><strong>'+esc(r.x.name)+'：'+r.label+'</strong><p>根拠：'+esc(r.x.qtyBasis==='unopened'?'未開封の予備':'残り')+r.qty+esc(r.x.unit||'個')+' ／ 補充目安 '+r.min+esc(r.x.unit||'個')+'以下'+(r.x.purchase?' ／ 前回購入日 '+esc(r.x.purchase):' ／ 購入日未記録')+'</p><button class="btn" onclick="premiumBuy('+Number(r.x.id)+')">買い物リストに追加</button></div>').join('')+(!rows.length?'<p>ストックを登録すると表示されます。</p>':''));return;
  }
  if(k==='money'){
   // W2 item 7: products without a price say "価格未記録" (never ¥0); 0円 only when confirmed free.
