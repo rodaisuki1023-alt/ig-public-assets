@@ -291,3 +291,28 @@ test('v50: selecting second of identical stock rows adds only to that ID',async 
  expect(saved.items.find(x=>x.id===32).qty).toBe(3);
  expect(page.__errors).toEqual([]);
 });
+
+test('v50: editing a receipt product name invalidates a learned alias for the old flavor',async ({page})=>{
+ const initial={items:[{
+  id:41,name:'テストラーメン しょうゆ味',cat:'食料品',qty:3,unit:'個',exp:'',expType:'期限なし',usage:1,
+  receiptAliases:['テストラーメンしょうゆ味']
+ }],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テストラーメンしょうゆ味 ¥120\n小計 1点 ¥120');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('.receiptLinked')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ const input=row.locator('input[aria-label="商品名"]');
+ await input.fill('テストラーメン みそ味');
+ await input.press('Tab');
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('新しい行');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===41).qty).toBe(3);
+ expect(saved.items.find(x=>x.name==='テストラーメン みそ味')?.qty).toBe(1);
+ expect(page.__errors).toEqual([]);
+});
