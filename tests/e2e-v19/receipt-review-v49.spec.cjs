@@ -202,3 +202,31 @@ test('the attribution and licenses of the reading parts are reachable from the r
   await page.getByRole('button', { name: '戻る' }).click();
   await expect(page.locator('#receiptAnalyzeBtn')).toBeVisible();
 });
+
+
+test('v50: first exact receipt match previews an update; ambiguous duplicate stock stays manual', async ({ page }) => {
+  const initial = { items: [
+    { id: 11, name: 'パンパース さらさらケア テープ M 60枚', cat: 'ベビー', qty: 2, unit: '袋', expType: '期限なし', exp: '', usage: 1 },
+    { id: 12, name: 'パンパース さらさらケア テープ L 60枚', cat: 'ベビー', qty: 4, unit: '袋', expType: '期限なし', exp: '', usage: 1 },
+    { id: 13, name: 'テスト牛乳', cat: '食料品', qty: 1, unit: '本', expType: '消費期限', exp: '2099-01-01', usage: 1 },
+    { id: 14, name: 'テスト牛乳', cat: '食料品', qty: 2, unit: '本', expType: '消費期限', exp: '2099-01-02', usage: 1 },
+  ], buys: [], routines: [] };
+  await open(page, { [KEY]: initial });
+  await readText(page, 'パンパース さらさらケア テープ M 60枚 ¥1380\nテスト牛乳 ¥218\n小計 2点 ¥1598');
+  const diaper = rowOf(page, 'パンパース');
+  await expect(diaper.locator('.receiptLinked')).toContainText('自動照合・未保存');
+  const milk = rowOf(page, 'テスト牛乳');
+  await expect(milk.locator('.receiptLinked')).toHaveCount(0);
+  expect(await milk.locator(PICK).inputValue()).toBe('');
+  const before = await stored(page);
+  expect(before.items.find(x => x.id === 11).qty).toBe(2); // scanning does not write
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect').first()).toContainText('登録済みの在庫に合算');
+  await page.locator('#qaCommit').click();
+  const after = await stored(page);
+  expect(after.items.find(x => x.id === 11).qty).toBe(3);
+  expect(after.items.find(x => x.id === 12).qty).toBe(4);
+  expect(after.items.find(x => x.id === 13).qty).toBe(1);
+  expect(after.items.find(x => x.id === 14).qty).toBe(2);
+  expect(page.__errors).toEqual([]);
+});
