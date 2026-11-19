@@ -230,3 +230,64 @@ test('v50: first exact receipt match previews an update; ambiguous duplicate sto
   expect(after.items.find(x => x.id === 14).qty).toBe(2);
   expect(page.__errors).toEqual([]);
 });
+
+test('v50: a similar receipt name offers explicit add-to-stock or separate choices, and adds only after final confirmation', async ({page}) => {
+ const initial={items:[
+  {id:11,name:'パンパース さらさらケア テープ M 60枚',cat:'ベビー',qty:2,unit:'袋',exp:'',expType:'期限なし',usage:1},
+  {id:12,name:'パンパース さらさらケア テープ L 60枚',cat:'ベビー',qty:4,unit:'袋',exp:'',expType:'期限なし',usage:1}
+ ],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'パンパース さらさら テープ M 60枚 ¥1380\n小計 1点 ¥1380');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toContainText('似た名前のストックがあります。まとめますか？');
+ await expect(row.locator('.receiptMergeActions button')).toHaveCount(2);
+ await expect(row.locator('.receiptMergeActions button').first()).toContainText('パンパース さらさらケア テープ M');
+ const before=await stored(page);
+ expect(before.items.find(x=>x.id===11).qty).toBe(2);
+ await row.locator('.receiptMergeActions button').first().click();
+ await expect(page.locator('[data-receipt-merge-state="linked"]')).toContainText('購入分を追加する予定');
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('2袋 → 3袋');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===11).qty).toBe(3);
+ expect(saved.items.find(x=>x.id===12).qty).toBe(4);
+ expect(page.__errors).toEqual([]);
+});
+test('v50: two indistinguishable undated stock rows never silently merge when user chooses separate',async ({page})=>{
+ const initial={items:[
+  {id:21,name:'テストうどん',cat:'食料品',qty:2,unit:'個',exp:'',expType:'期限なし',usage:1},
+  {id:22,name:'テストうどん',cat:'食料品',qty:3,unit:'個',exp:'',expType:'期限なし',usage:1}
+ ],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テストうどん ¥110\n小計 1点 ¥110');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ await expect(page.locator('[data-receipt-merge-state="separate"]')).toBeVisible();
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('新しい行');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ const rows=saved.items.filter(x=>x.name==='テストうどん');
+ expect(rows.map(x=>x.qty).sort()).toEqual([1,2,3]);
+ expect(page.__errors).toEqual([]);
+});
+test('v50: selecting second of identical stock rows adds only to that ID',async ({page})=>{
+ const initial={items:[
+  {id:31,name:'テスト牛乳',cat:'食料品',qty:1,unit:'本',exp:'',expType:'期限なし',usage:1},
+  {id:32,name:'テスト牛乳',cat:'食料品',qty:2,unit:'本',exp:'',expType:'期限なし',usage:1}
+ ],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト牛乳 ¥218\n小計 1点 ¥218');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator(PICK).selectOption('32');
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('2本 → 3本');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===31).qty).toBe(1);
+ expect(saved.items.find(x=>x.id===32).qty).toBe(3);
+ expect(page.__errors).toEqual([]);
+});

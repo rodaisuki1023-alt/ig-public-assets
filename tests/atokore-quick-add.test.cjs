@@ -154,3 +154,21 @@ test('other-category custom entries remain categorized as other and details are 
  assert.match(css,/#pg-add\.qa-has-tray/);
  dom.window.close();
 });
+
+test('receipt choice: separate row stays separate even when exact name already exists',()=>{
+ const existing=[{id:11,name:'パンパース テープ M',cat:'ベビー',unit:'袋',qty:2,exp:'',expType:'期限なし'}];
+ const next=quick.buildBatch(existing,[{name:'パンパース テープ M',cat:'ベビー',unit:'袋',qty:1,receiptSeparate:true}],1000);
+ assert.equal(existing[0].qty,2);
+ assert.equal(next.length,2);assert.equal(next[0].qty,2);assert.equal(next[1].qty,1);
+});
+test('receipt choice: selected ID wins over an identically named stock row',()=>{
+ const existing=[
+  {id:11,name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,exp:'',expType:'期限なし'},
+  {id:12,name:'テスト牛乳',cat:'食料品',unit:'本',qty:2,exp:'',expType:'期限なし'}
+ ];
+ const next=quick.buildBatch(existing,[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:12}],1000);
+ assert.deepEqual(next.map(x=>x.qty),[1,3]);
+ assert.deepEqual(existing.map(x=>x.qty),[1,2]);
+ assert.throws(()=>quick.buildBatch(existing,[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:999}],1000),/追加先/);
+ assert.throws(()=>quick.buildBatch([{...existing[1],exp:'2099-01-01',expType:'消費期限'}],[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:12}],1000),/追加先/);
+});

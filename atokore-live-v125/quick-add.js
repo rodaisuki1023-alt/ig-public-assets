@@ -180,27 +180,40 @@ function validateLine(entry){
  if(!Number.isSafeInteger(entry.qty)||entry.qty<1||entry.qty>maxFor(entry.unit))throw Error('数量は1〜'+maxFor(entry.unit).toLocaleString('ja-JP')+'で指定してください');
  return {...entry,name:entry.name.trim()};
 }
-function buildBatch(existing,selected,time=Date.now()){
- const next=existing.map(x=>({...x})),ids=new Set(next.map(x=>Number(x.id)));
+function buildBatchDetailed(existing,selected,time=Date.now()){
+ const next=existing.map(x=>({...x})),ids=new Set(next.map(x=>Number(x.id))),byLine=[];
  let unique=Math.max(Number(time)||1,1);
  for(const raw of selected){
-  const v=validateLine(raw);
-  const match=batchMatch(next,v);
-  if(match){const qty=(Number(match.qty)||0)+v.qty;if(v.draftEdited){Object.assign(match,draftFields(v));if(!Object.prototype.hasOwnProperty.call(v,'minQty'))delete match.minQty}match.qty=qty;continue}
+  const v=validateLine(raw),match=batchMatch(next,v);
+  if(match){
+   const qty=(Number(match.qty)||0)+v.qty;
+   if(v.draftEdited){Object.assign(match,draftFields(v));if(!Object.prototype.hasOwnProperty.call(v,'minQty'))delete match.minQty}
+   match.qty=qty;byLine.push(match.id);continue;
+  }
   while(ids.has(unique))unique++;
   ids.add(unique);
-  next.push({id:unique++,name:v.name,cat:v.cat,qty:v.qty,unit:v.unit,expType:'期限なし',exp:'',purchase:'',price:0,store:'',place:v.cat==='食料品'?'冷蔵庫':'収納',memo:'',usage:1,...(v.draftEdited?draftFields(v):{})});
+  const created={id:unique++,name:v.name,cat:v.cat,qty:v.qty,unit:v.unit,expType:'期限なし',exp:'',purchase:'',price:0,store:'',place:v.cat==='食料品'?'冷蔵庫':'収納',memo:'',usage:1,...(v.draftEdited?draftFields(v):{})};
+  next.push(created);byLine.push(created.id);
  }
- return next;
+ return {next,byLine};
 }
+function buildBatch(existing,selected,time=Date.now()){return buildBatchDetailed(existing,selected,time).next}
 function draftFields(v){const out={};for(const k of ['place','exp','expType','memo','minQty','purchase','store','price','qtyBasis','inUse'])if(v[k]!==undefined)out[k]=v[k];return out}
-function batchMatch(list,v){return list.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(v.draftEdited?(x.exp||'')===(v.exp||''):(!x.exp||x.expType==='期限なし')))}
+function batchMatch(list,v){
+ if(v.receiptSeparate===true)return null;
+ if(v.receiptStockId!==undefined){
+  const hit=list.find(x=>String(x.id)===String(v.receiptStockId));
+  if(!hit||hit.name!==v.name||hit.cat!==v.cat||hit.unit!==v.unit||(hit.exp&&hit.expType!=='期限なし'))throw Error('レシートの追加先が変更されています。確認し直してください');
+  return hit;
+ }
+ return list.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(v.draftEdited?(x.exp||'')===(v.exp||''):(!x.exp||x.expType==='期限なし')));
+}
 const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,reviewing:false,pickScroll:0,afterSave:null,loadedSet:null,loadedSnapshot:'',routineTarget:null};
 const food={maker:'',series:'',month:'',query:'',limit:24,selected:'',qty:1,customBrand:'',customSeries:'',customName:'',customAge:'',customAmount:'',customFormat:''};
 /** Local-only unfinished selections: never sync them to household/stock or auto-commit. */
 const PENDING_KEY='atokoreQuickAddPendingV1';
 const PENDING_TTL=14*24*60*60*1000;
-const PENDING_FIELDS=['name','cat','unit','qty','place','exp','expType','memo','minQty','purchase','store','price','qtyBasis','inUse','draftEdited'];
+const PENDING_FIELDS=['name','cat','unit','qty','place','exp','expType','memo','minQty','purchase','store','price','qtyBasis','inUse','draftEdited','receiptStockId','receiptSeparate'];
 let pendingFingerprint=null;
 function pendingSafeLine(line){
  if(!line||typeof line!=='object'||Array.isArray(line))throw Error('invalid pending item');
@@ -460,7 +473,9 @@ function buyMatch(v){let list=[];try{list=Array.isArray(buys)?buys:[]}catch(e){}
 function lineEffect(v){
  if(state.routineTarget)return 'いつものリストに追加（在庫数は変わりません）';
  if(state.destination==='buy'){const found=buyMatch(v);return found?'買い物リストに登録済み：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit:'買い物リストに新しく追加'}
- const found=stockMatch(v);if(found)return '登録済みの在庫に合算：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit;
+ if(v.receiptSeparate===true)return '既存ストックと分けて新しい行として追加（数量は変えません）';
+ let found;try{found=stockMatch(v)}catch(e){return '追加先の在庫が変更されています。戻って確認してください'}
+ if(found)return '登録済みの在庫に合算：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit;
  // v49: the same product recorded with a best-before date is kept as its own lot; say so instead of "new".
  const dated=stockItems().find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&x.exp&&x.expType!=='期限なし');
  return dated?'期限つきの在庫とは別の行として登録（期限は未設定。今ある行は変わりません）':'新しい商品として登録';
@@ -541,12 +556,11 @@ function persist(tray){
   buys=nextBuys;
   return {merged,ids:[]};
  }
- const before=stockItems(),next=buildBatch(before,tray);
+ const before=stockItems(),{next,byLine}=buildBatchDetailed(before,tray);
  const raw=JSON.stringify({items:next,buys,routines});
  store.setItem(key,raw);if(store.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
  items=next;
  // Ids of every record this batch created or added to (one per line), so the list can show them.
- const byLine=tray.map(v=>batchMatch(next,v)?.id??null);
  return {merged:tray.length-(next.length-before.length),ids:byLine.filter(id=>id!=null),byLine};
 }
 // The list opens right under the finger after a save; a fast second tap on the final button must not
@@ -793,7 +807,7 @@ function openWithEntries(entries,destination='stock',options={}){
  const next=[];let skipped=0;
  for(const x of list){
   let v;try{v=validateLine(x)}catch(e){skipped++;continue}
-  const found=next.find(y=>modelKey(y)===modelKey(v));
+  const found=next.find(y=>modelKey(y)===modelKey(v)&&y.receiptStockId===v.receiptStockId&&!!y.receiptSeparate===!!v.receiptSeparate);
   if(found)found.qty=Math.min(maxFor(found.unit),found.qty+v.qty);else next.push(v);
  }
  state.tray=next;state.loadedSet=setId;state.loadedSnapshot=traySnapshot();
