@@ -21,7 +21,7 @@ test('evaluate.cjs --dry-run loads the current parser without OCR', () => {
   assert.ok(out.parsedRows > 0);
 });
 
-test('real-photos.cjs text mode: metrics, unmeasured fields, and pre-selection learned from earlier receipts only', () => {
+test('real-photos.cjs text mode: metrics, unmeasured fields, and pre-selection from a unique exact name or an earlier confirmed alias', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'receipt-eval-'));
   fs.mkdirSync(path.join(tmp, 'text'));
   // x1 then x2 (id order). The soda is on both; on x2 the tea is read with one extra character.
@@ -44,12 +44,12 @@ test('real-photos.cjs text mode: metrics, unmeasured fields, and pre-selection l
   assert.match(r.summary.ms, /未測定/);
   assert.match(r.summary.A_ocrReadable80, /未測定/);
   assert.match(r.summary.B_unreadPlaces, /未測定/);
-  assert.match(r.summary.D_autoLinked, /^0 \(no learned aliases/);
+  assert.match(r.summary.D_autoLinked, /^3 \(unique exact names/);
   // --learned: the OCR text of x1's confirmed rows is remembered after x1 and used for x2 only.
   run('real-photos.cjs', ['--split', 'all', '--text', '--learned', '--json', outFile], { RECEIPT_DIR: tmp });
   r = JSON.parse(fs.readFileSync(outFile, 'utf8'));
   const [x1, x2] = r.rows;
-  assert.equal(x1.lines[0].autoLinked, false, 'nothing is learned before the first receipt');
+  assert.equal(x1.lines[0].autoLinkedTo, 's1', 'an unambiguous exact name can link on its first receipt');
   assert.equal(x2.lines[0].autoLinkedTo, 's1', 'the exact text read on x1 pre-selects on x2');
   assert.equal(x2.lines[1].autoLinked, false, 'a near text is offered, never pre-selected');
   assert.equal(x2.lines[2].autoLinked, false);
