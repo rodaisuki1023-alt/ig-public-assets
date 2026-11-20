@@ -6,7 +6,7 @@
 -- but conflicts with the household FOR UPDATE held by removal/write RPCs.
 -- Recheck membership in a NEW statement after the lock wait (stale JWT safe).
 create or replace function atokore_private.read_member(p_user uuid) returns uuid
-language plpgsql volatile set search_path = '' as $
+language plpgsql volatile set search_path = '' as $$
 declare v_hh uuid := atokore_private.my_household(p_user);
 begin
   if v_hh is not null then
@@ -18,7 +18,7 @@ begin
     end if;
   end if;
   raise exception 'not_member' using errcode = '42501';
-end $;
+end $$;
 revoke all on function atokore_private.read_member(uuid) from public, anon, authenticated;
 
 create or replace function public.hh_pull(p_since bigint default 0, p_limit int default 500) returns jsonb
