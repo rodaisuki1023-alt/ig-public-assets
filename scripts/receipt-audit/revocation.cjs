@@ -134,6 +134,38 @@ async function main() {
   await readScenario(hh,'hh_pull',true);
   await readScenario(hh,'hh_changes',true);
 
+  // A second independent household must never see A's synthetic stock or history.
+  // The SAME receipt fingerprint is valid independently in each household.
+  const outsider=randomUUID();
+  const outsideHousehold=await call(outsider,"select public.hh_create('Isolated unrelated household','Other test owner') r");
+  assert.notEqual(outsideHousehold.household.id,hh,'two distinct synthetic households required');
+  const outsiderId='isolated_other_item_9';
+  const otherOp={op_id:randomUUID(),type:'create',kind:'item',id:outsiderId,
+    fields:{name:'Synthetic other household only'},qty:7,ts:Date.now()};
+  const otherPush=await call(outsider,"select public.hh_push($1::jsonb,'isolated-audit') r",[JSON.stringify([otherOp])]);
+  assert.equal(otherPush.results?.[0]?.status,'applied');
+  const firstRows=(await call(A,'select public.hh_pull(0,20) r')).records;
+  const otherRows=(await call(outsider,'select public.hh_pull(0,20) r')).records;
+  assert(firstRows.some(x=>x.id==='synthetic_read_item_1'));
+  assert(otherRows.some(x=>x.id===outsiderId));
+  assert(!firstRows.some(x=>x.id===outsiderId),'first household cannot read other records');
+  assert(!otherRows.some(x=>x.id==='synthetic_read_item_1'),'unrelated household cannot read first records');
+  const firstChanges=await call(A,'select public.hh_changes(20) r');
+  const otherChanges=await call(outsider,'select public.hh_changes(20) r');
+  assert(firstChanges.some(x=>x.record_id==='synthetic_read_item_1'));
+  assert(otherChanges.some(x=>x.record_id===outsiderId));
+  assert(!firstChanges.some(x=>x.record_id===outsiderId),'first household cannot read other change history');
+  assert(!otherChanges.some(x=>x.record_id==='synthetic_read_item_1'),'other household cannot read first change history');
+  const sameFingerprint=createHash('sha256').update('same barcode for independent synthetic households').digest('hex');
+  assert.equal((await call(A,'select public.hh_receipt_claim($1,false) r',[sameFingerprint])).claimed,true);
+  assert.equal((await call(outsider,'select public.hh_receipt_claim($1,false) r',[sameFingerprint])).claimed,true,
+    'receipt duplicate claims must be scoped to the current household');
+  const otherMemberDenied=await call(outsider,'select public.hh_remove_member($1) r',[B]);
+  assert.equal(otherMemberDenied.removed,0,'owner of household 2 cannot remove household 1 member');
+  console.log(JSON.stringify({test:'cross-household isolated authorization',households:2,
+    stockSeparated:true,historySeparated:true,sameReceiptFingerprintScoped:true,foreignRemovalDenied:true}));
+
+
 }
 
 /** Serialize a read against owner removal in disposable localhost atokore_ci. */
