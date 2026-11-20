@@ -25,3 +25,30 @@ test('photo resources are included offline and existing inventory storage remain
  assert.ok(js.includes('atokorePreviewProductPhotosV19'));
  assert.doesNotMatch(js,/localStorage\.setItem|fetch\(|XMLHttpRequest|readAsDataURL/);
 });
+
+
+// Dedicated regression for private family photos: an RLS policy alone is not
+// enough if a client starts serving permanent/public or signed/cached URLs.
+test('shared photo requests never expose a signed/public URL and recheck the intended scope',()=>{
+ const sync=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ const requestStart=sync.indexOf('async function photoRequest(');
+ const requestEnd=sync.indexOf('\nasync function fetchPhoto(',requestStart);
+ assert(requestStart>=0&&requestEnd>requestStart,'missing private photo transport');
+ const transport=sync.slice(requestStart,requestEnd);
+ assert.match(transport,/root\.fetch\(base\+'\/storage\/v1\/object\/'/);
+ assert.match(transport,/method==='GET'\?'authenticated\/':'/);
+ assert.match(transport,/Authorization:'Bearer '\+session\.access_token/);
+ assert.match(transport,/cache:'no-store'/);
+ assert.match(transport,/'cache-control':'no-cache'/);
+ assert.match(transport,/\?v='\+Date\.now\(\)/,'fresh authenticated GETs require a changing query token');
+ assert.doesNotMatch(transport,/createSignedUrl|createSignedUploadUrl|\/object\/public\/|getPublicUrl/);
+ const fetchStart=sync.indexOf('async function fetchPhoto(');
+ const fetchEnd=sync.indexOf('\nasync function sharePhoto(',fetchStart);
+ assert(fetchStart>=0&&fetchEnd>fetchStart);
+ const fetchBody=sync.slice(fetchStart,fetchEnd);
+ assert.match(fetchBody,/validPhotoPath\(path,scope\)/);
+ assert.match(fetchBody,/sameScope\(scope,photoScope\(id\)\)/,
+   'membership/household scope must be rechecked after the async request');
+ assert.match(fetchBody,/blob\.type!=='image\/jpeg'/);
+ assert.match(fetchBody,/blob\.size>81920/);
+});

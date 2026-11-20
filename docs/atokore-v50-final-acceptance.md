@@ -42,3 +42,11 @@
 - **公開OK**は、対象最新HEADのCI 7/7、実iPhoneでPWAとローカル保存、権限失効付き合成2端末実試験、Supabase Advisor重大懸念の個別評価、オーナーの公開承認が揃ってから。
 - **収益化Phase D**は[Issue #103](https://github.com/rodaisuki1023-alt/ig-public-assets/issues/103)の「競合を超える突破口・毎週使う理由・本当に払う理由・実質粗利」の評価を満たすまで価格/有料境界を決めない。月398円・年3,980円は未確定仮説。
 - **費用0円、ユーザー本人の操作は最後にまとめて提示**する。
+
+## 2026-11-20｜写真アクセス・除外後のキャッシュ（隔離試験と実サービスの区別）
+
+- **隔離テスト**：`scripts/receipt-audit/revocation.cjs` が `20261024111742_atokore_photo_storage_v44.sql` の**同一RLSポリシー定義**を使い捨てPostgreSQLで再現。合成2世帯・既存メンバー・除外後の旧認証セッション・他世帯の写真パス・存在しない商品ID・削除済み商品の写真を検査。 [隔離CI run #44734530242](https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/44734530242) はsuccess。これは**Supabase Storage HTTP/CDN/AuthセッションのE2Eではない**。
+- **クライアント回帰**：`tests/atokore-product-photos-v30.test.cjs` に、写真を認証付き`/storage/v1/object/authenticated/`から読み出し、Bearerトークン・`cache: no-store`・`cache-control: no-cache`・変動するクエリ値・ダウンロード後の世帯/商品ID再確認を失わないためのガードを追加。署名URLや公開URLへの変更を検出。
+- **重要な限界**：Supabase公式KBでは、private bucketのauthenticated GETが既存のCDN/ブラウザキャッシュを使う場合、メンバーのアクセスを取り消した後も古いJWTの期限まではキャッシュが返る可能性がある。キャッシュ破棄や短いtoken期限はサービス側の別運用で、アプリ側の`?v=`とno-storeだけで確実な即時失効を証明したことにはならない。すでに本人端末に取得済みのローカル写真は回収できない。
+- **本番受入の必要条件**：承認された実Supabaseの**合成アカウントのみ**を使い、別世帯アクセス拒否、除外前後のJWTでauthenticated GET/POST/DELETE、異なるURL・同じURLのCDN/ブラウザキャッシュを実測。写真も架空のJPEGのみとする。Auth/RLS/Storage変更、CDN purge、実世帯への影響は別途個別承認。**本人の今ある写真データや共有コードは使用しない**。
+- Supabase公式参考：[Storage Access Control](https://supabase.com/docs/guides/storage/security/access-control)、[Private bucketの失効後キャッシュ](https://supabase.com/kb/troubleshooting/storage-private-bucket-files-still-accessible-after-remove-access-or-logout)。
