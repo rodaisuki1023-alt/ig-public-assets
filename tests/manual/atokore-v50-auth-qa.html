@@ -15,7 +15,7 @@
 <script>
 (function(){
 'use strict';
-var REF='vzyxurodowpjltwbgbyc', COHORT='2b3c49445c', BASE='https://'+REF+'.supabase.co';
+var REF='vzyxurodowpjltwbgbyc', COHORT='d59b5fa73f', BASE='https://'+REF+'.supabase.co';
 var KEY="sb_publishable_26Owk0KT0uV4J0T64QZQyw_wIri_8Ui";
 var roles=['a','b','c'];
 var ids={a:'atokore-qa-a-'+COHORT+'@example.invalid',b:'atokore-qa-b-'+COHORT+'@example.invalid',c:'atokore-qa-c-'+COHORT+'@example.invalid'};
@@ -30,8 +30,11 @@ var password=document.createElement('input');password.type='password';password.i
 div.append(heading,label1,email,label2,password);container.append(div);
 });
 var button=document.getElementById('start'), status=document.getElementById('status'), output=document.getElementById('result');
+var runKey='atk_v50_qa_once_'+COHORT,alreadyStarted=false;
+function persistNonSecrets(){try{localStorage.setItem(runKey,output.textContent||'QA開始済み')}catch(e){}}
+try{var oldNonSecrets=localStorage.getItem(runKey);if(oldNonSecrets){output.textContent=oldNonSecrets;button.disabled=true;status.textContent='この合成テストは実行済みです。二重送信しません。'}}catch(e){}
 function emit(message){status.textContent=message}
-function resultLine(name,pass,extra){var old=output.textContent;output.textContent=old+name+' : '+(pass===true?'PASS':pass===false?'FAIL':'UNTESTED')+(extra?' ('+extra+')':'')+'\n'}
+function resultLine(name,pass,extra){var old=output.textContent;output.textContent=old+name+' : '+(pass===true?'PASS':pass===false?'FAIL':'UNTESTED')+(extra?' ('+extra+')':'')+'\n';persistNonSecrets()}
 function assert(v,name){if(!v)throw new Error(name)}
 function safeCode(response,parsed){return String(response.status)+(parsed&&typeof parsed.code==='string'?' '+parsed.code:'')}
 async function req(url,method,data,session,contentType){
@@ -55,7 +58,7 @@ async function rpc(user,name,body){
 return await req('/rest/v1/rpc/'+name,'POST',body,user);
 }
 function urlPath(path){return path.split('/').map(encodeURIComponent).join('/')}
-function outputInfo(meta){output.textContent+='\nSynthetic-only IDs for controlled database cleanup:\n'+JSON.stringify(meta,null,2)+'\n'}
+function outputInfo(meta){output.textContent+='\nSynthetic-only IDs for controlled database cleanup:\n'+JSON.stringify(meta,null,2)+'\n';persistNonSecrets()}
 function mkId(){return 'qa_'+COHORT+'_item'}
 async function sha(s){
 var bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
@@ -80,7 +83,10 @@ async function photoRemove(path,user){
 return await req('/storage/v1/object/atokore-product-photos','DELETE',{prefixes:[path]},user);
 }
 async function start(){
-button.disabled=true;output.textContent='';emit('テスト中');
+if(alreadyStarted){emit('再実行は禁止しています');return}
+try{if(localStorage.getItem(runKey)){button.disabled=true;emit('このテストは実行済みです');return}}catch(e){}
+alreadyStarted=true;
+button.disabled=true;output.textContent='';emit('テスト中');persistNonSecrets();
 var users={},aHh=null,cHh=null,photoPath=null,uploaded=false;
 var meta={cohort:COHORT,users:{},households:{},item:mkId(),photoPath:null};
 try{
@@ -92,6 +98,11 @@ users[role]=await signIn(email,pass);
 meta.users[role]=users[role].id;
 document.getElementById('password-'+role).value='';
 resultLine('実Authログイン '+role.toUpperCase(),true);
+}
+var prior=await rpc(users.a,'hh_my',{});
+if(prior.ok&&prior.data&&prior.data.household&&prior.data.household.id){
+ meta.households.a=prior.data.household.id;
+ throw new Error('既存の合成世帯が残っています。hh_createを二重送信しません');
 }
 var r=await rpc(users.a,'hh_create',{p_name:'ATK-QA-'+COHORT+'-A',p_display_name:'QA A'});
 assert(r.ok&&r.data&&r.data.household&&r.data.household.id,'A household '+r.error);
@@ -158,7 +169,7 @@ meta.photoApiRemoved=del.ok;
 }catch(e){meta.photoApiRemoved=false;resultLine('合成StorageオブジェクトのAPI削除',false,'要確認')}}
 outputInfo(meta);
 Object.keys(users).forEach(function(k){users[k].access_token=''});
-button.disabled=false;
+button.disabled=true;
 }}
 button.addEventListener('click',start);
 })();
