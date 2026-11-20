@@ -112,12 +112,25 @@ async function main() {
   const baselineChanges=(historyFile.match(/create or replace function public\.hh_changes\([\s\S]*?end \$\$;/g)||[])[0];
   assert(baselinePull&&baselineChanges);
   const hardenRead=s=>s.replace('language plpgsql stable security definer','language plpgsql volatile security definer')
-    .replace('atokore_private.my_household(v_user)','atokore_private.lock_member(v_user)');
+    .replace('atokore_private.my_household(v_user)','atokore_private.read_member(v_user)');
   const expectedRead=[hardenRead(baselinePull),hardenRead(baselineChanges)];
   const candidate=fs.readFileSync(path.join(__dirname,'candidate-read-member-lock.sql'),'utf8');
   const readDefinitions=candidate.match(/create or replace function public\.hh_(?:pull|changes)\([\s\S]*?end \$\$;/g);
-  assert.deepEqual(readDefinitions,expectedRead,'review SQL must change exactly one membership lookup and volatility per RPC');
-  await pool.query(readDefinitions.join('\n'));
+  assert.deepEqual(readDefinitions,expectedRead,'review SQL must change one membership lookup and volatility per RPC');
+  const sharedHelper=candidate.match(/create or replace function atokore_private\.read_member\([\s\S]*?end \$\$;/g);
+  assert.equal(sharedHelper?.length,1,'one internal read_member helper');
+  assert.match(sharedHelper[0],/for share\s*;/i,'readers must not take exclusive household row locks');
+  assert.match(candidate,/revoke all on function atokore_private\.read_member\(uuid\) from public, anon, authenticated/i);
+
+  // Negative control: the earlier FOR UPDATE candidate serialized unrelated readers.
+  const exclusiveRead=s=>s.replace('language plpgsql stable security definer','language plpgsql volatile security definer')
+    .replace('atokore_private.my_household(v_user)','atokore_private.lock_member(v_user)');
+  await pool.query([exclusiveRead(baselinePull),exclusiveRead(baselineChanges)].join('\n'));
+  await twoReaderScenario(hh,true);
+
+  // The actual proposed SQL is used for the acceptance test, not just an in-memory sketch.
+  await pool.query(candidate);
+  await twoReaderScenario(hh,false);
   await readScenario(hh,'hh_pull',true);
   await readScenario(hh,'hh_changes',true);
 
@@ -151,6 +164,53 @@ async function readScenario(hh, name, fixed) {
     await owner.query('rollback').catch(()=>{});
     await member.query('rollback').catch(()=>{});
     owner.release();member.release();
+  }
+}
+
+
+/** Both signed-in household members can read concurrently with FOR SHARE, while
+ * owner removal (FOR UPDATE) waits for any reader holding the household row.
+ * All clients/transactions/records are disposable synthetic localhost only.
+ */
+async function twoReaderScenario(hh, exclusive) {
+  await pool.query('update atokore_private.members set left_at=null where household_id=$1 and user_id=$2',[hh,B]);
+  const first=await begin(A),second=await begin(B);
+  try {
+    const one=await first.query('select public.hh_pull(0,20) r');
+    assert(one.rows[0]?.r?.records?.length>0,'first read must have synthetic fixtures');
+    const secondReading=run(second,'select public.hh_changes(20) r');
+    if(exclusive){
+      await waitForBlock(second.processID);
+      await first.query('commit');
+      const finished=await secondReading;
+      if(finished.error)throw finished.error;
+      assert(Array.isArray(finished.value)&&finished.value.length>0,'second reader results');
+    }else{
+      // The first authenticated reader deliberately retains its FOR SHARE
+      // transaction. An unrelated reader must finish without waiting for it.
+      const finished=await Promise.race([secondReading,delay(2500).then(()=>{throw Error('Two simple reads serialized on household lock')})]);
+      if(finished.error)throw finished.error;
+      assert(Array.isArray(finished.value)&&finished.value.length>0,'second reader results');
+      assert.equal(await blocked(second.processID),false,'second reader must not be blocked');
+      const owner=await begin(A);
+      try{
+        const removal=run(owner,'select public.hh_remove_member($1) r',[B]);
+        await waitForBlock(owner.processID);
+        await first.query('commit');
+        const complete=await removal;
+        if(complete.error)throw complete.error;
+        assert.equal(complete.value.removed,1);
+        await assert.rejects(call(B,'select public.hh_pull(0,20) r'),e=>e.code==='42501');
+      }finally{
+        await owner.query('rollback').catch(()=>{});
+        owner.release();
+      }
+    }
+    console.log(JSON.stringify({test:'two household readers',exclusive,secondReaderWaited:exclusive,removalBlockedBehindReader:!exclusive}));
+  }finally{
+    await first.query('rollback').catch(()=>{});
+    await second.query('rollback').catch(()=>{});
+    first.release();second.release();
   }
 }
 
