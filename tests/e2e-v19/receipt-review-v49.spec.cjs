@@ -406,3 +406,56 @@ test('v50: correcting a receipt name to an existing name with no candidates neve
   expect(saved.items.find(x => x.id !== 72 && x.name === existing.name)?.qty).toBe(1);
   expect(page.__errors).toEqual([]);
 });
+
+
+// A supplied receipt informed the *shape* only; every line here is invented.
+// No original photo, store, clerk, receipt number, account, date, or actual basket is committed.
+test('v50: 320px receipt with 20 grocery rows preserves 22 units through final review save', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await open(page, { [KEY]: { items: [], buys: [], routines: [] } });
+
+  const goods = [
+    ['テスト青菜A', 109], ['テスト野菜B', 258], ['テスト小松菜 2個束', 177],
+    ['テストキャベツ', 118], ['テストきゅうり', 188], ['テストなす', 167],
+    ['テストトマト', 259], ['テストさつまいも', 321], ['テスト魚介A', 439],
+    ['テスト鮭切身', 549], ['テストあさり', 319], ['テスト豚ブロック', 799],
+    ['テスト鶏むね肉', 619], ['テスト鶏もも肉', 999], ['テストひき肉', 639],
+    ['テストソーセージ', 199], ['テストミートボール2', 278],
+    ['テスト豆腐', 226], ['テストヨーグルト', 619], ['テスト卵M', 259]
+  ];
+  const lines = ['合成店舗（テスト専用）', '2026年10月04日(日) 12:54'];
+  goods.forEach(([name, amount], i) => {
+    lines.push('外8 ' + name + ' ¥' + amount + '外');
+    if (i === 1) lines.push('(2個 x @129)');
+    if (i === 17) lines.push('(2個 x @113)');
+  });
+  lines.push('P001)Mサイズ特売 -30', '小計 ¥7,511', '消費税8% ¥601',
+    '買上点数 22点', '合計 ¥8,112', 'お預り ¥10,000', 'お釣り ¥1,888');
+
+  await readText(page, lines.join('\n'));
+  const rows = page.locator('[data-receipt-row]');
+  await expect(rows).toHaveCount(20);
+  await expect(page.locator('#receiptCount')).toContainText('一致しています');
+  await expect(page.locator('#receiptSelectionCount')).toContainText('20/20件を選択');
+
+  const qtys = await rows.locator('input[type=number]').evaluateAll(nodes => nodes.map(n => +n.value));
+  expect(qtys.reduce((a, b) => a + b, 0)).toBe(22);
+  expect(qtys.filter(n => n === 2)).toHaveLength(2);
+  await expect(rows.filter({ hasText: 'テスト小松菜' }).locator('input[type=number]')).toHaveValue('1');
+  await expect(rows.filter({ hasText: 'テストミートボール2' }).locator('input[type=number]')).toHaveValue('1');
+  expect((await stored(page)).items).toHaveLength(0);
+
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect')).toHaveCount(20);
+  expect((await stored(page)).items).toHaveLength(0);
+  await page.locator('#qaCommit').click();
+
+  const saved = await stored(page);
+  expect(saved.items).toHaveLength(20);
+  expect(saved.items.reduce((sum, item) => sum + item.qty, 0)).toBe(22);
+  expect(saved.items.filter(item => item.qty === 2)).toHaveLength(2);
+  expect(saved.items.find(item => item.name.includes('小松菜'))?.qty).toBe(1);
+  expect(saved.items.find(item => item.name.includes('ミートボール2'))?.qty).toBe(1);
+  expect(saved.items.some(item => /小計|消費税|お預り|お釣り|特売|買上点数/.test(item.name))).toBe(false);
+  expect(page.__errors).toEqual([]);
+});
