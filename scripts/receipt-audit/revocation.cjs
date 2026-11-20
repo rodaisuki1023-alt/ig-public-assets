@@ -164,6 +164,7 @@ async function main() {
   assert.equal(otherMemberDenied.removed,0,'owner of household 2 cannot remove household 1 member');
   console.log(JSON.stringify({test:'cross-household isolated authorization',households:2,
     stockSeparated:true,historySeparated:true,sameReceiptFingerprintScoped:true,foreignRemovalDenied:true}));
+  await photoPolicyScenario({hh,outsider,otherHousehold:outsideHousehold.household.id,outsiderId});
 
 
 }
@@ -244,6 +245,77 @@ async function twoReaderScenario(hh, exclusive) {
     await second.query('rollback').catch(()=>{});
     first.release();second.release();
   }
+}
+
+
+/** Check the checked-in Supabase photo policy with real PostgreSQL RLS and
+ * synthetic role sessions in an isolated localhost DB. The small storage table
+ * stubs verify policy semantics only, not Storage HTTP, signed links or Auth.
+ */
+async function photoPolicyScenario({hh,outsider,otherHousehold,outsiderId}) {
+  await pool.query([
+    'create schema storage;',
+    'create table storage.buckets (id text primary key,name text not null,public boolean not null,file_size_limit bigint,allowed_mime_types text[]);',
+    'create table storage.objects (id uuid primary key,bucket_id text not null,name text not null);',
+    'alter table storage.objects enable row level security;',
+    'grant usage on schema storage to authenticated;',
+    'grant select,insert,delete on storage.objects to authenticated;'
+  ].join('\n'));
+  const migration=fs.readFileSync(path.join(__dirname,'../../supabase/migrations/20261024111742_atokore_photo_storage_v44.sql'),'utf8');
+  for (const policy of ['atokore_photo_read','atokore_photo_insert','atokore_photo_delete']) {
+    assert(migration.includes('create policy '+policy),'missing real Storage policy '+policy);
+  }
+  await pool.query(migration);
+
+  const bucket='atokore-product-photos';
+  const idA='synthetic_read_item_1';
+  const pathA=hh+'/'+idA+'/'+randomUUID()+'.jpg';
+  const pathB=otherHousehold+'/'+outsiderId+'/'+randomUUID()+'.jpg';
+  const count=async (uid,name)=>Number(await call(uid,
+    'select count(*)::integer r from storage.objects where bucket_id=$1 and name=$2',[bucket,name]));
+  await pool.query('update atokore_private.members set left_at=null where household_id=$1 and user_id=$2',[hh,B]);
+
+  const inserted=await call(A,'insert into storage.objects(id,bucket_id,name) values($1,$2,$3) returning name r',[randomUUID(),bucket,pathA]);
+  assert.equal(inserted,pathA);
+  assert.equal(await count(A,pathA),1);
+  assert.equal(await count(B,pathA),1);
+  assert.equal(await count(outsider,pathA),0,'other household cannot fetch private photo');
+  await call(outsider,'insert into storage.objects(id,bucket_id,name) values($1,$2,$3) returning name r',[randomUUID(),bucket,pathB]);
+  assert.equal(await count(outsider,pathB),1);
+  assert.equal(await count(A,pathB),0,'household A cannot fetch photo B');
+
+  for(const [b,name] of [
+    [bucket,hh+'/not_a_registered_product/'+randomUUID()+'.jpg'],
+    [bucket,hh+'/'+idA+'/'+randomUUID()+'.png'],
+    ['unrelated-bucket',hh+'/'+idA+'/'+randomUUID()+'.jpg'],
+    [bucket,pathB],
+  ])await assert.rejects(
+    call(A,'insert into storage.objects(id,bucket_id,name) values($1,$2,$3) returning name r',[randomUUID(),b,name]),
+    e=>e.code==='42501','invalid photo upload must fail with RLS');
+
+  // B remains authenticated with their original token, but is no longer a member.
+  await call(A,'select public.hh_remove_member($1) r',[B]);
+  assert.equal(await count(B,pathA),0,'removed member cannot read photo');
+  assert.equal(await count(A,pathA),1,'current owner retains photo access');
+  const removeByB=await call(B,'delete from storage.objects where bucket_id=$1 and name=$2 returning name r',[bucket,pathA]);
+  assert.equal(removeByB,undefined,'removed member cannot delete photo');
+  await assert.rejects(
+    call(B,'insert into storage.objects(id,bucket_id,name) values($1,$2,$3) returning name r',[randomUUID(),bucket,hh+'/'+idA+'/'+randomUUID()+'.jpg']),
+    e=>e.code==='42501','removed member cannot upload photo');
+
+  await pool.query("update atokore_private.records set deleted=true where household_id=$1 and kind='item' and id=$2",[hh,idA]);
+  assert.equal(await count(A,pathA),0,'deleted product photos cannot be read');
+  assert.equal(await count(outsider,pathB),1,'independent household remains available');
+  const names=(await pool.query("select policyname from pg_catalog.pg_policies where schemaname='storage' and tablename='objects' and policyname like 'atokore_photo_%' order by policyname")).rows.map(x=>x.policyname);
+  assert.deepEqual(names,['atokore_photo_delete','atokore_photo_insert','atokore_photo_read']);
+  const b=(await pool.query('select public,file_size_limit,allowed_mime_types from storage.buckets where id=$1',[bucket])).rows[0];
+  assert.equal(b.public,false);
+  assert.equal(Number(b.file_size_limit),81920);
+  assert.deepEqual(b.allowed_mime_types,['image/jpeg']);
+  console.log(JSON.stringify({test:'isolated-photo-rls',source:'checked-in migration',
+    twoHouseholds:true,privateBucket:true,mimeJpegOnly:true,limitBytes:81920,
+    familyReadBeforeRemoval:true,foreignReadDenied:true,removedMemberReadDenied:true,
+    removedMemberWriteDenied:true,deletedItemPhotoReadDenied:true,liveSupabaseChanged:false}));
 }
 
 main().then(()=>pool.end(),async e=>{console.error(e.stack);await pool.end();process.exitCode=1;});
