@@ -365,3 +365,44 @@ test('v50: an automatically linked row remains editable and correction does not 
  expect(saved.items.find(x=>x.name==='テストラーメン みそ味')?.qty).toBe(1);
  expect(page.__errors).toEqual([]);
 });
+
+
+test('v50: a receipt row with zero stock candidates never silently merges via the later name-only fallback', async ({ page }) => {
+  const existing = { id: 71, name: 'テストクッキー', cat: '食料品', unit: '個', qty: 2, exp: '', expType: '期限なし', usage: 1 };
+  await open(page, { [KEY]: { items: [existing], buys: [], routines: [] } });
+  // A matcher may be unavailable during loading or after a partial update. Never rely on name-only fallback.
+  await page.evaluate(() => { window.AtokoreReceiptMatch = null; });
+  await readText(page, 'テストクッキー ¥198\n小計 1点 ¥198');
+  const row = page.locator('[data-receipt-row]').first();
+  await expect(row.locator('.receiptLinked')).toHaveCount(0);
+  await expect(row.locator('.receiptMergeChoice')).toHaveCount(0);
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('既存ストックと分けて新しい行として追加');
+  expect((await stored(page)).items.find(x => x.id === 71).qty).toBe(2);
+  await page.locator('#qaCommit').click();
+  const s = await stored(page);
+  expect(s.items.filter(x => x.name === existing.name)).toHaveLength(2);
+  expect(s.items.find(x => x.id === 71).qty).toBe(2);
+  expect(s.items.find(x => x.id !== 71 && x.name === existing.name)?.qty).toBe(1);
+  expect(page.__errors).toEqual([]);
+});
+
+test('v50: correcting a receipt name to an existing name with no candidates never changes the existing row', async ({ page }) => {
+  const existing = { id: 72, name: 'テストクッキー', cat: '食料品', unit: '個', qty: 4, exp: '', expType: '期限なし', usage: 1 };
+  await open(page, { [KEY]: { items: [existing], buys: [], routines: [] } });
+  await page.evaluate(() => { window.AtokoreReceiptMatch = null; });
+  await readText(page, 'テスト商品誤読 ¥198\n小計 1点 ¥198');
+  const row = page.locator('[data-receipt-row]').first();
+  const input = row.locator('input[aria-label="商品名"]');
+  await input.fill('テストクッキー');
+  await input.press('Tab');
+  await expect(row.locator('[data-receipt-merge-state="none"]')).toContainText('一致するストックは見つかりませんでした');
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('既存ストックと分けて新しい行として追加');
+  await page.locator('#qaCommit').click();
+  const saved = await stored(page);
+  expect(saved.items.filter(x => x.name === existing.name)).toHaveLength(2);
+  expect(saved.items.find(x => x.id === 72).qty).toBe(4);
+  expect(saved.items.find(x => x.id !== 72 && x.name === existing.name)?.qty).toBe(1);
+  expect(page.__errors).toEqual([]);
+});

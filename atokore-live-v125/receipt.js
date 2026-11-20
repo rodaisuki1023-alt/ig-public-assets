@@ -346,7 +346,8 @@ window.receiptApplyV7=async()=>{
  if(rows.some(r=>r.matchId!=null&&!linked(r))){window.AtokoreConfirm?.tell?.('在庫を確認してください','追加先の在庫が更新・削除されています。画面を開き直して選んでください。');return}
  const entries=rows.map(r=>{
   const hit=linked(r),base=hit?{name:hit.name,cat:hit.cat||r.cat||cat(hit.name,r.raw),unit:hit.unit||r.unit||fixedUnit(hit.name),qty:Math.max(1,Math.round(+r.qty)||1)}:{name:String(r.name).trim().slice(0,120),cat:r.cat||cat(r.name,r.raw),unit:r.unit||fixedUnit(r.name),qty:Math.max(1,Math.round(+r.qty)||1)};
-  if(!hit)return {...base,...(r.cands?.length||r.manualSeparate?{receiptSeparate:true}:{})};
+  // Receipt imports never merge by a later name-only fallback: only the explicit target ID is mergeable.
+  if(!hit)return {...base,receiptSeparate:true};
   if(hit.exp&&hit.expType!=='期限なし')return {...base,receiptSeparate:true};
   const id=Number(hit.id);if(!Number.isSafeInteger(id))throw Error('追加先の在庫IDを確認できません');
   return {...base,receiptStockId:id};
