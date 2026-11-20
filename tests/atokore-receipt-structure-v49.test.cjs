@@ -294,3 +294,71 @@ test('v49 audit: learned texts pre-select only when exactly the same; near texts
   assert.equal(near.learned, false);
   assert.equal(near.near, true);
 });
+
+
+// A privately supplied grocery receipt established this *layout* only. Synthetic names,
+// no real store identifiers, cashier names, photo, registration number, or receipt ID.
+// The paper has 20 product rows but 22 purchased units (two separate '2個 x @price'
+// sublines), an egg discount, 8%-tax footer, cash tender, and change.
+test('v50 anonymized 20-line grocery receipt: 22 units, two quantity sublines, 50-yen discount, tax/payment never products', () => {
+  const text = [
+    '合成ストア（テスト専用）',
+    '2026年10月04日(日) 12:54',
+    'お会計券 #000005 R0001 12:53',
+    '外8 テスト長ねぎ 緑テープ ¥98外',
+    '外8 テストブロッコリー ¥236外',
+    '(2個 x @118)',
+    '外8 テスト小松菜 2個束 ¥158外',
+    '外8 テストキャベツ ¥98外',
+    '外8 テストきゅうり ¥168外',
+    '外8 テスト長なす 黄色テープ ¥158外',
+    '外8 テストミニトマト 黄色テープ ¥238外',
+    '外8 テスト紅はるか 水色テープ ¥298外',
+    '外8 テスト北海道たこ ¥420外',
+    '外8 テスト生鮭 ¥530外',
+    '外8 テストあさり ¥290外',
+    '外8 テスト豚バラブロック ¥777外',
+    '外8 テスト鶏むね肉 ¥599外',
+    '外8 テスト鶏もも肉 ¥983外',
+    '外8 テスト豚ひき肉 大 ¥584外',
+    '外8 テストソーセージ ¥178外',
+    '外8 テストミートボール2 ¥248外',
+    '外8 テスト豆腐 ¥216外',
+    '(2個 x @108)',
+    '外8 テストヨーグルト プレミ ¥598外',
+    '外8 テスト玉子M1 ¥238外',
+    'P001)Mサイズ特売 -50',
+    '小計 ¥7,063',
+    '消費税8% 8% ¥565',
+    '買上点数 22点',
+    '合計 ¥7,628',
+    'お預り ¥10,050',
+    'お釣り ¥2,422',
+    'ご来店ありがとうございました'
+  ].join('\n');
+  const structural = S.structure(text.split('\n'));
+  const result = parse(text);
+  assert.equal(result.date, '2026-10-04', 'receipt date is the purchase date, not a use-by date');
+  assert.equal(structural.products.length, 20, 'product rows are not purchase units');
+  assert.equal(result.items.length, 20, 'not a single printed code, discount, tax, or payment line becomes an item');
+  assert.equal(result.countedQty, 22, 'two 2-unit items make 22 pieces');
+  assert.equal(result.printedCount, 22);
+  assert.equal(result.countMatches, true);
+  assert.equal(result.boundary?.kind, 'subtotal');
+  assert.deepEqual(
+    result.items.filter(item => item.qty === 2).map(item => item.name).sort(),
+    ['テストブロッコリー', 'テスト豆腐'].sort()
+  );
+  assert.equal(result.items.find(item => item.name.includes('小松菜'))?.qty, 1,
+    '2個束 is a product descriptor, not two purchased bunches');
+  assert.equal(result.items.find(item => item.name.includes('ミートボール2'))?.qty, 1,
+    'a trailing model-size digit never changes purchase quantity');
+  assert.equal(structural.products.reduce((sum,item) => sum + item.price, 0), 7113);
+  const discount = S.priceTail('P001)Mサイズ特売 -50');
+  assert.deepEqual({ value: discount?.value, negative: discount?.negative }, { value: 50, negative: true });
+  assert.equal(7113 - discount.value, 7063, 'printed subtotal cross-check');
+  assert.equal(Math.round(7063 * 0.08), 565, 'tax is a validation figure and not a stock item');
+  assert.equal(7063 + 565, 7628, 'tender and change are never stock items');
+  assert.ok(!result.items.some(x => /特売|小計|買上点数|預り|釣り|消費税/.test(x.name)));
+  assert.ok(result.items.every(x => x.selected), 'synthetic clean lines are selectable only in review, not automatically saved');
+});
