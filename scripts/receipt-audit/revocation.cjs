@@ -115,9 +115,9 @@ async function main() {
     .replace('atokore_private.my_household(v_user)','atokore_private.lock_member(v_user)');
   const expectedRead=[hardenRead(baselinePull),hardenRead(baselineChanges)];
   const candidate=fs.readFileSync(path.join(__dirname,'candidate-read-member-lock.sql'),'utf8');
-  const definitions=candidate.match(/create or replace function public\.hh_(?:pull|changes)\([\s\S]*?end \$\$;/g);
-  assert.deepEqual(definitions,expectedRead,'review SQL must change exactly one membership lookup and volatility per RPC');
-  await pool.query(definitions.join('\n'));
+  const readDefinitions=candidate.match(/create or replace function public\.hh_(?:pull|changes)\([\s\S]*?end \$\$;/g);
+  assert.deepEqual(readDefinitions,expectedRead,'review SQL must change exactly one membership lookup and volatility per RPC');
+  await pool.query(readDefinitions.join('\n'));
   await readScenario(hh,'hh_pull',true);
   await readScenario(hh,'hh_changes',true);
 
