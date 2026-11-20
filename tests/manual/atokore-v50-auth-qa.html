@@ -85,10 +85,25 @@ var cvs=document.createElement('canvas');cvs.width=1;cvs.height=1;
 cvs.getContext('2d').fillRect(0,0,1,1);
 return new Promise(function(resolve,reject){cvs.toBlob(function(b){if(b&&b.type==='image/jpeg'&&b.size<81920)resolve(b);else reject(new Error('canvas jpeg unavailable'))},'image/jpeg',.75)});
 }
-async function photoFetch(path,user){
-var r=await fetch(BASE+'/storage/v1/object/authenticated/atokore-product-photos/'+urlPath(path)+'?qa='+crypto.randomUUID(),{
-method:'GET',headers:{apikey:KEY,Authorization:'Bearer '+user.access_token,'cache-control':'no-cache'},cache:'no-store',credentials:'omit'});
-return r.status;
+async function photoFetch(path,user,nonce,cacheMode){
+ try{
+  var url=BASE+'/storage/v1/object/authenticated/atokore-product-photos/'+urlPath(path)+'?qa='+nonce;
+  var r=await fetch(url,{method:'GET',
+   headers:{apikey:KEY,Authorization:'Bearer '+user.access_token,'cache-control':'no-cache'},
+   cache:cacheMode==='default'?'default':'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
+  var errorCode='';
+  if(!r.ok){
+   try{
+    if(String(r.headers.get('content-type')||'').includes('json')){
+     var e=await r.json();
+     errorCode=[e.code,e.error,e.statusCode,e.message].filter(Boolean).map(String).join('|').slice(0,180);
+    }
+   }catch(e){errorCode='unreadable-error'}
+  }
+  return {status:r.status,ok:r.ok,errorCode,
+   cacheControl:r.headers.get('cache-control'),age:r.headers.get('age'),
+   cdn:r.headers.get('cf-cache-status')||r.headers.get('x-cache'),network:false};
+ }catch(e){return {status:0,ok:false,errorCode:'network-error',network:true}}
 }
 async function photoUpload(path,user){
 var blob=await tinyJpeg();
@@ -169,10 +184,15 @@ try{
 var upl=await photoUpload(photoPath,users.a);
 uploaded=upl.ok;resultLine('合成JPEGを安全なStorageへ登録',upl.ok,upl.ok?'':upl.error);
 if(uploaded){
-var getB=await photoFetch(photoPath,users.b);
-var getC=await photoFetch(photoPath,users.c);
-resultLine('除外前Bによる写真GET',getB===200,'HTTP '+getB);
-resultLine('他世帯Cによる写真GET拒否',getC!==200,'HTTP '+getC);
+var fixedNonce='same-url-'+crypto.randomUUID();
+var getA=await photoFetch(photoPath,users.a,'owner-'+crypto.randomUUID(),'no-store');
+var getB=await photoFetch(photoPath,users.b,fixedNonce,'default');
+var getC=await photoFetch(photoPath,users.c,'other-'+crypto.randomUUID(),'no-store');
+resultLine('所有者Aの写真GET正常',getA.status===200,photoMeta(getA));
+resultLine('除外前Bの写真GET正常',getB.status===200,photoMeta(getB));
+var cVerdict=storageVerdict(getC,getA);
+resultLine('他世帯Cの写真GET非公開',cVerdict!=='unexpected',photoMeta(getC)+' ['+cVerdict+']');
+meta.fixedNonce=fixedNonce;
 }
 }catch(e){resultLine('写真HTTP試験',false,e.message.slice(0,90))}
 var rem=await rpc(users.a,'hh_remove_member',{p_user:users.b.id});
@@ -185,19 +205,35 @@ var deny=await rpc(users.b,n,body);
 resultLine('除外後の旧JWTで'+n+'拒否',rpcDenied(deny),'HTTP '+deny.status+' SQLSTATE '+String(deny.data?.code||'-'));
 }
 if(uploaded){
-var afterB=await photoFetch(photoPath,users.b);
-resultLine('除外後Bの新規写真HTTP GET拒否',afterB!==200,'HTTP '+afterB);
+var afterOwner=await photoFetch(photoPath,users.a,'owner-after-'+crypto.randomUUID(),'no-store');
+var afterB=await photoFetch(photoPath,users.b,'fresh-'+crypto.randomUUID(),'no-store');
+var sameB=await photoFetch(photoPath,users.b,meta.fixedNonce,'default');
+var freshVerdict=storageVerdict(afterB,afterOwner);
+var sameVerdict=storageVerdict(sameB,afterOwner);
+resultLine('除外後Aの写真アクセス正常',afterOwner.status===200,photoMeta(afterOwner));
+resultLine('除外後Bの新規URL取得拒否',freshVerdict!=='unexpected',photoMeta(afterB)+' ['+freshVerdict+']');
+resultLine('除外後Bの同一URLキャッシュ再取得',sameVerdict!=='unexpected',
+ photoMeta(sameB)+' ['+(sameB.status===200?'cached_or_replayed':sameVerdict)+']');
+if(sameB.status===200)meta.revocationCacheWarning='以前閲覧したURLは除外後も取得可能';
 }
 emit('検証終了。合成データの管理者削除が必要です。');
 }catch(e){resultLine('検証処理',false,(e.message||String(e)).slice(0,130));emit('エラー。合成データの管理者削除が必要です。')}
 finally{
 if(uploaded&&photoPath&&users.a){
 try{var del=await photoRemove(photoPath,users.a);
-resultLine('合成StorageオブジェクトのAPI削除',del.ok,del.error||'');
-meta.photoApiRemoved=del.ok;
+meta.photoApiRemoved=del.ok&&(del.status===200||del.status===204);
+resultLine('合成StorageオブジェクトのAPI削除',meta.photoApiRemoved,'HTTP '+del.status);
+if(meta.photoApiRemoved){
+ var afterDelete=await photoFetch(photoPath,users.a,'delete-check-'+crypto.randomUUID(),'no-store');
+ var removed=(afterDelete.status===400||afterDelete.status===404)&&
+  /(nosuchkey|not.found|object not found|404)/i.test(String(afterDelete.errorCode));
+ resultLine('削除後Aの新規URLで画像不存在',removed,photoMeta(afterDelete));
+ meta.photoGoneFromHttp=removed;
+}
 }catch(e){meta.photoApiRemoved=false;resultLine('合成StorageオブジェクトのAPI削除',false,'要確認')}}
 outputInfo(meta);
 Object.keys(users).forEach(function(k){users[k].access_token=''});
+roles.forEach(function(r){var field=document.getElementById('password-'+r);if(field)field.value=''});
 button.disabled=true;
 }}
 button.addEventListener('click',start);
