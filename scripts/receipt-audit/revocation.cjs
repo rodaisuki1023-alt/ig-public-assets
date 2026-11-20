@@ -96,5 +96,62 @@ async function main() {
   assert.deepEqual(deployedDefinitions,definitions,'applied migration must match isolated race-tested candidate exactly');
   await pool.query(deployedDefinitions.join('\n'));
   await scenario(hh,'candidate-household-lock',true);
+
+  // Additional conservative authorization ordering verification for READ RPCs.
+  // Only synthetic records in the disposable localhost database are used.
+  const createOp={op_id:randomUUID(),type:'create',kind:'item',id:'synthetic_read_item_1',
+    fields:{name:'Synthetic audit diapers'},qty:2,ts:Date.now()};
+  const result=await call(A,"select public.hh_push($1::jsonb,'isolated-audit') r",[JSON.stringify([createOp])]);
+  assert.equal(result.results?.[0]?.status,'applied','synthetic seed push must succeed');
+  await readScenario(hh,'hh_pull',false);
+  await readScenario(hh,'hh_changes',false);
+
+  const householdFile=fs.readFileSync(path.join(dir,'20261022000000_atokore_household.sql'),'utf8');
+  const historyFile=fs.readFileSync(path.join(dir,'20261025090000_atokore_history_w2.sql'),'utf8');
+  const baselinePull=(householdFile.match(/create or replace function public\.hh_pull\([\s\S]*?end \$\$;/g)||[])[0];
+  const baselineChanges=(historyFile.match(/create or replace function public\.hh_changes\([\s\S]*?end \$\$;/g)||[])[0];
+  assert(baselinePull&&baselineChanges);
+  const hardenRead=s=>s.replace('language plpgsql stable security definer','language plpgsql volatile security definer')
+    .replace('atokore_private.my_household(v_user)','atokore_private.lock_member(v_user)');
+  const expected=[hardenRead(baselinePull),hardenRead(baselineChanges)];
+  const candidate=fs.readFileSync(path.join(__dirname,'candidate-read-member-lock.sql'),'utf8');
+  const definitions=candidate.match(/create or replace function public\.hh_(?:pull|changes)\([\s\S]*?end \$\$;/g);
+  assert.deepEqual(definitions,expected,'review SQL must change exactly one membership lookup and volatility per RPC');
+  await pool.query(definitions.join('\n'));
+  await readScenario(hh,'hh_pull',true);
+  await readScenario(hh,'hh_changes',true);
+
 }
+
+/** Serialize a read against owner removal in disposable localhost atokore_ci. */
+async function readScenario(hh, name, fixed) {
+  await pool.query('update atokore_private.members set left_at=null where household_id=$1 and user_id=$2',[hh,B]);
+  const owner=await begin(A), member=await begin(B);
+  const sql=name==='hh_pull' ? 'select public.hh_pull(0,20) r' : 'select public.hh_changes(20) r';
+  try {
+    const removed=await owner.query('select public.hh_remove_member($1) r',[B]);
+    assert.equal(removed.rows[0]?.r?.removed,1);
+    // Owner has updated membership but holds the transaction and its row lock open.
+    const reading=run(member,sql);
+    if(fixed) {
+      await waitForBlock(member.processID);
+      await owner.query('commit');
+      const result=await reading;
+      assert.equal(result.error?.code,'42501',name+' read must reject after removal commit');
+    } else {
+      const result=await Promise.race([reading,delay(2000).then(()=>{throw Error(name+' baseline unexpectedly waited')})]);
+      if(result.error)throw result.error;
+      const entries=name==='hh_pull' ? result.value?.records : result.value;
+      assert(Array.isArray(entries)&&entries.length>0,name+' needs nonempty synthetic fixture');
+      await owner.query('commit');
+    }
+    await assert.rejects(call(B,sql),e=>e.code==='42501');
+    console.log(JSON.stringify({rpc:name,readWaitedForRemoval:fixed,removedJwtDenied:true}));
+  } finally {
+    await owner.query('rollback').catch(()=>{});
+    await member.query('rollback').catch(()=>{});
+    owner.release();member.release();
+  }
+}
+
 main().then(()=>pool.end(),async e=>{console.error(e.stack);await pool.end();process.exitCode=1;});
