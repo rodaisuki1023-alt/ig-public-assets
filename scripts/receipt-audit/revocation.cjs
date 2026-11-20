@@ -113,10 +113,10 @@ async function main() {
   assert(baselinePull&&baselineChanges);
   const hardenRead=s=>s.replace('language plpgsql stable security definer','language plpgsql volatile security definer')
     .replace('atokore_private.my_household(v_user)','atokore_private.lock_member(v_user)');
-  const expected=[hardenRead(baselinePull),hardenRead(baselineChanges)];
+  const expectedRead=[hardenRead(baselinePull),hardenRead(baselineChanges)];
   const candidate=fs.readFileSync(path.join(__dirname,'candidate-read-member-lock.sql'),'utf8');
   const definitions=candidate.match(/create or replace function public\.hh_(?:pull|changes)\([\s\S]*?end \$\$;/g);
-  assert.deepEqual(definitions,expected,'review SQL must change exactly one membership lookup and volatility per RPC');
+  assert.deepEqual(definitions,expectedRead,'review SQL must change exactly one membership lookup and volatility per RPC');
   await pool.query(definitions.join('\n'));
   await readScenario(hh,'hh_pull',true);
   await readScenario(hh,'hh_changes',true);
