@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>あとこれ v50 - 合成アカウント受入</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:light}body{margin:0;background:#f4f6f5;color:#162626}main{max-width:720px;margin:auto;padding:20px}h1{font-size:1.35rem}p,small{line-height:1.6}.info{border-left:4px solid #287d65;padding:12px;background:white}.account{background:white;border:1px solid #ccd9d4;border-radius:12px;margin:12px 0;padding:12px}.account label{display:block;margin-bottom:6px}input{width:100%;max-width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #aabbb4;margin:5px 0 12px}button{padding:13px 18px;background:#155c4e;color:white;border:0;border-radius:10px;font-size:1rem;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;border:1px solid #ccd9d4;border-radius:8px;padding:12px}.pass{color:#126a39}.fail{color:#ac2e30}.warn{color:#865d00}
+</style></head>
+<body><main><h1>あとこれ v50｜合成アカウント受入</h1>
+<p class="info">試用Supabase <strong>atokore-family-trial</strong> 専用。既存ユーザーのメールやパスワードを絶対に入力しないでください。<strong>example.invalid</strong> の今回作成した架空アカウント3件以外は実行できません。端末の実データ・写真を読み取りません。このページではアカウントを作成／削除しません。</p>
+<div id="accounts"></div>
+<button id="start" type="button">合成3アカウントで検証する</button>
+<p id="status">未実行</p><pre id="result" aria-live="polite"></pre>
+<p><small>実際のAuth・PostgREST RPC・Storage APIをブラウザから実行します。入力したパスワード・アクセストークンは保存／表示／送信ログに出力せず、処理終了後は破棄します。合成世帯データの削除は管理者による識別子限定の後片付けが別途必要です。</small></p>
+</main>
+<script>
+(function(){
+'use strict';
+var REF='vzyxurodowpjltwbgbyc', COHORT='2b3c49445c', BASE='https://'+REF+'.supabase.co';
+var KEY="sb_publishable_26Owk0KT0uV4J0T64QZQyw_wIri_8Ui";
+var roles=['a','b','c'];
+var ids={a:'atokore-qa-a-'+COHORT+'@example.invalid',b:'atokore-qa-b-'+COHORT+'@example.invalid',c:'atokore-qa-c-'+COHORT+'@example.invalid'};
+var container=document.getElementById('accounts');
+roles.forEach(function(r){
+var div=document.createElement('div'); div.className='account';
+var heading=document.createElement('strong');heading.textContent='合成アカウント '+r.toUpperCase();
+var label1=document.createElement('label');label1.textContent='メール';
+var email=document.createElement('input');email.type='email';email.id='email-'+r;email.autocomplete='off';email.value=ids[r];email.readOnly=true;
+var label2=document.createElement('label');label2.textContent='一時パスワード';
+var password=document.createElement('input');password.type='password';password.id='password-'+r;password.autocomplete='off';password.spellcheck=false;
+div.append(heading,label1,email,label2,password);container.append(div);
+});
+var button=document.getElementById('start'), status=document.getElementById('status'), output=document.getElementById('result');
+function emit(message){status.textContent=message}
+function resultLine(name,pass,extra){var old=output.textContent;output.textContent=old+name+' : '+(pass===true?'PASS':pass===false?'FAIL':'UNTESTED')+(extra?' ('+extra+')':'')+'\n'}
+function assert(v,name){if(!v)throw new Error(name)}
+function safeCode(response,parsed){return String(response.status)+(parsed&&typeof parsed.code==='string'?' '+parsed.code:'')}
+async function req(url,method,data,session,contentType){
+var headers={'apikey':KEY,'cache-control':'no-cache'};
+if(session)headers.Authorization='Bearer '+session.access_token;
+if(contentType!=='image/jpeg')headers['Content-Type']='application/json';
+else headers['Content-Type']='image/jpeg';
+var response=await fetch(BASE+url,{method:method,headers:headers,
+body:data===undefined?undefined:(contentType==='image/jpeg'?data:JSON.stringify(data)),cache:'no-store',credentials:'omit'});
+var parsed=null;
+if(contentType==='image/jpeg'&&method==='GET')return {ok:response.ok,status:response.status,body:await response.blob()};
+try{parsed=await response.json()}catch(e){parsed={}}
+return {ok:response.ok,status:response.status,data:parsed,error:safeCode(response,parsed)};
+}
+async function signIn(email,password){
+var r=await req('/auth/v1/token?grant_type=password','POST',{email:email,password:password},null);
+assert(r.ok&&r.data&&r.data.access_token&&r.data.user&&r.data.user.id,'Auth sign-in declined '+r.error);
+return {access_token:r.data.access_token,id:r.data.user.id};
+}
+async function rpc(user,name,body){
+return await req('/rest/v1/rpc/'+name,'POST',body,user);
+}
+function urlPath(path){return path.split('/').map(encodeURIComponent).join('/')}
+function outputInfo(meta){output.textContent+='\nSynthetic-only IDs for controlled database cleanup:\n'+JSON.stringify(meta,null,2)+'\n'}
+function mkId(){return 'qa_'+COHORT+'_item'}
+async function sha(s){
+var bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+return Array.from(new Uint8Array(bytes)).map(function(x){return x.toString(16).padStart(2,'0')}).join('');
+}
+function tinyJpeg(){
+var cvs=document.createElement('canvas');cvs.width=1;cvs.height=1;
+cvs.getContext('2d').fillRect(0,0,1,1);
+return new Promise(function(resolve,reject){cvs.toBlob(function(b){if(b&&b.type==='image/jpeg'&&b.size<81920)resolve(b);else reject(new Error('canvas jpeg unavailable'))},'image/jpeg',.75)});
+}
+async function photoFetch(path,user){
+var r=await fetch(BASE+'/storage/v1/object/authenticated/atokore-product-photos/'+urlPath(path)+'?qa='+crypto.randomUUID(),{
+method:'GET',headers:{apikey:KEY,Authorization:'Bearer '+user.access_token,'cache-control':'no-cache'},cache:'no-store',credentials:'omit'});
+return r.status;
+}
+async function photoUpload(path,user){
+var blob=await tinyJpeg();
+var r=await req('/storage/v1/object/atokore-product-photos/'+urlPath(path),'POST',blob,user,'image/jpeg');
+return r;
+}
+async function photoRemove(path,user){
+return await req('/storage/v1/object/atokore-product-photos','DELETE',{prefixes:[path]},user);
+}
+async function start(){
+button.disabled=true;output.textContent='';emit('テスト中');
+var users={},aHh=null,cHh=null,photoPath=null,uploaded=false;
+var meta={cohort:COHORT,users:{},households:{},item:mkId(),photoPath:null};
+try{
+for(var i=0;i<roles.length;i++){
+var role=roles[i],email=document.getElementById('email-'+role).value;
+var pass=document.getElementById('password-'+role).value;
+assert(email===ids[role]&&pass.length>=12,'only this cohort is allowed');
+users[role]=await signIn(email,pass);
+meta.users[role]=users[role].id;
+document.getElementById('password-'+role).value='';
+resultLine('実Authログイン '+role.toUpperCase(),true);
+}
+var r=await rpc(users.a,'hh_create',{p_name:'ATK-QA-'+COHORT+'-A',p_display_name:'QA A'});
+assert(r.ok&&r.data&&r.data.household&&r.data.household.id,'A household '+r.error);
+aHh=r.data.household.id;meta.households.a=aHh;resultLine('A世帯作成',true);
+var inv=await rpc(users.a,'hh_invite_create',{});
+assert(inv.ok&&inv.data.code,'A invite '+inv.error);
+var join=await rpc(users.b,'hh_join',{p_code:inv.data.code,p_display_name:'QA B'});
+resultLine('BがA家族に参加',join.ok&&join.data.household&&join.data.household.id===aHh);
+assert(join.ok&&join.data.household&&join.data.household.id===aHh,'join B failed');
+var op={op_id:crypto.randomUUID(),type:'create',kind:'item',id:mkId(),qty:2,fields:{name:'合成QAおむつ',unit:'袋'},ts:Date.now()};
+var push=await rpc(users.a,'hh_push',{p_ops:[op],p_device:'qa-'+COHORT});
+assert(push.ok&&push.data.results&&push.data.results[0]&&push.data.results[0].status==='applied','push A');
+var seen=await rpc(users.b,'hh_pull',{p_since:0,p_limit:20});
+var found=seen.ok&&seen.data.records.some(function(v){return v.id===mkId()&&v.qty===2});
+resultLine('Bから在庫2袋が見える',found);assert(found,'B shared stock');
+var h=await rpc(users.b,'hh_changes',{p_limit:20});
+resultLine('Bの履歴取得',h.ok&&Array.isArray(h.data));
+var fp=await sha('qa-'+COHORT);
+var ca=await rpc(users.a,'hh_receipt_claim',{p_fingerprint:fp,p_force:false});
+var cb=await rpc(users.b,'hh_receipt_claim',{p_fingerprint:fp,p_force:false});
+resultLine('同世帯レシート重複回避',ca.ok&&ca.data.claimed===true&&cb.ok&&cb.data.claimed===false);
+
+var newC=await rpc(users.c,'hh_create',{p_name:'ATK-QA-'+COHORT+'-C',p_display_name:'QA C'});
+assert(newC.ok&&newC.data.household&&newC.data.household.id,'C household');
+cHh=newC.data.household.id;meta.households.c=cHh;
+var cview=await rpc(users.c,'hh_pull',{p_since:0,p_limit:20});
+resultLine('別世帯からA在庫が見えない',cview.ok&&!cview.data.records.some(function(v){return v.id===mkId()}));
+var cfp=await rpc(users.c,'hh_receipt_claim',{p_fingerprint:fp,p_force:false});
+resultLine('別世帯のレシートは独立',cfp.ok&&cfp.data.claimed===true);
+var cr=await rpc(users.c,'hh_remove_member',{p_user:users.b.id});
+resultLine('他世帯がBを除外できない',cr.ok&&cr.data.removed===0);
+
+photoPath=aHh+'/'+mkId()+'/'+crypto.randomUUID()+'.jpg';meta.photoPath=photoPath;
+try{
+var upl=await photoUpload(photoPath,users.a);
+uploaded=upl.ok;resultLine('合成JPEGを安全なStorageへ登録',upl.ok,upl.ok?'':upl.error);
+if(uploaded){
+var getB=await photoFetch(photoPath,users.b);
+var getC=await photoFetch(photoPath,users.c);
+resultLine('除外前Bによる写真GET',getB===200,'HTTP '+getB);
+resultLine('他世帯Cによる写真GET拒否',getC!==200,'HTTP '+getC);
+}
+}catch(e){resultLine('写真HTTP試験',false,e.message.slice(0,90))}
+var rem=await rpc(users.a,'hh_remove_member',{p_user:users.b.id});
+resultLine('AがBを除外',rem.ok&&rem.data.removed===1);
+assert(rem.ok&&rem.data.removed===1,'remove B');
+for(var n of ['hh_pull','hh_changes','hh_push','hh_receipt_claim','hh_receipt_finish']){
+var body=n==='hh_pull'?{p_since:0,p_limit:20}:n==='hh_changes'?{p_limit:20}:
+n==='hh_push'?{p_ops:[],p_device:'qa-'+COHORT}:n==='hh_receipt_claim'?{p_fingerprint:fp,p_force:false}:{p_fingerprint:fp,p_done:true};
+var deny=await rpc(users.b,n,body);
+resultLine('除外後の旧JWTで'+n+'拒否',!deny.ok,'HTTP '+deny.status);
+}
+if(uploaded){
+var afterB=await photoFetch(photoPath,users.b);
+resultLine('除外後Bの新規写真HTTP GET拒否',afterB!==200,'HTTP '+afterB);
+}
+emit('検証終了。合成データの管理者削除が必要です。');
+}catch(e){resultLine('検証処理',false,(e.message||String(e)).slice(0,130));emit('エラー。合成データの管理者削除が必要です。')}
+finally{
+if(uploaded&&photoPath&&users.a){
+try{var del=await photoRemove(photoPath,users.a);
+resultLine('合成StorageオブジェクトのAPI削除',del.ok,del.error||'');
+meta.photoApiRemoved=del.ok;
+}catch(e){meta.photoApiRemoved=false;resultLine('合成StorageオブジェクトのAPI削除',false,'要確認')}}
+outputInfo(meta);
+Object.keys(users).forEach(function(k){users[k].access_token=''});
+button.disabled=false;
+}}
+button.addEventListener('click',start);
+})();
+</script>
+</body></html>
