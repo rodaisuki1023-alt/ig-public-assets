@@ -133,7 +133,7 @@ function structure(lines){
     p.qty=found.qty;p.qtyLine=s;p.qtyChecked=found.checked;p.structured=true;
     if(splitPrice){p.price=found.total;p.doubt.push('商品名と価格が別々の行です。内容と数量を確認してください')}
     if(!p.priced&&found.total)sum+=found.total;
-   }else rejected.push({text:s,reason:'数量・価格の行（対応する商品が不明）',area:line.area});
+   }else rejected.push({text:s,reason:splitPrice?'数量・価格の行（対応する商品が不明）':'数量の行（対応する商品が不明）',area:line.area});
    continue;
   }
   const club=clubLine(s);
