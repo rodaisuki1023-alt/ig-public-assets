@@ -70,10 +70,15 @@ function clubLine(raw){
  const AMT='(\\d{1,3}(?:[,.]\\d{3})+|\\d{1,7})';
  const m=s.match(new RegExp('^\\d{3,8}\\s+(\\d{1,2})\\s*[●•oOe@°]?\\s+'+AMT+'\\s+'+AMT+'\\s*(-)?\\s*-?\\s*[ET]?$','i'));
  if(!m)return null;
- const unit=+m[2].replace(/[,.]/g,''),total=+m[3].replace(/[,.]/g,'');let qty=+m[1];
+ const unit=+m[2].replace(/[,.]/g,''),total=+m[3].replace(/[,.]/g,'');
+ const printedQty=+m[1];let qty=printedQty;
  if(unit&&total){const r=total/unit;if(Number.isInteger(r)&&r>=1&&r<=30)qty=r}
  if(!(qty>=1&&qty<=30))qty=1;
- return {qty,unitPrice:unit,total,coupon:!!m[4],checked:unit*qty===total};
+ // Warehouse club OCR commonly reads a single-piece "1o" / "1°" as 10.
+ // Allow only that well-known glyph correction; other inconsistent printed
+ // multipliers require manual confirmation even when totals divide evenly.
+ const glyphCorrection=printedQty===10&&qty===1;
+ return {qty,unitPrice:unit,total,coupon:!!m[4],checked:unit*qty===total&&(printedQty===qty||glyphCorrection)};
 }
 // Large-print 計 is often read as two characters (言十, 叶十, 計十) or a lookalike: read back only right
 // after 小 or 合, never inside product names.
