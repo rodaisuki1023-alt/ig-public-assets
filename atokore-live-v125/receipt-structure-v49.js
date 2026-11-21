@@ -133,9 +133,26 @@ function structure(lines){
    if(p&&!p.qtyLine&&i-p.line===1&&!p.coupon&&(!splitPrice||!p.priced)){
     const found=q||splitPrice;
     p.qty=found.qty;p.qtyLine=s;p.qtyChecked=found.checked;p.structured=true;
+    // Arithmetic alone must never silently override a different multiplier
+    // printed in the source (a blurred digit may have been misread).
+    const written=s.match(/^(\d{1,2})\s*(?:コ|個|ケ|ヶ|点|本|袋|枚|箱|杯|皿|名|人|パック)?\s*[xX]/);
+    if(q&&written&&Number(written[1])!==q.qty)p.doubt.push('印字数量と単価・金額が食い違います。買った数を写真で確認してください');
+    if(q&&/[杯皿名人]/.test(s)&&!q.checked)p.doubt.push('杯数などの購入数量を金額で照合できません。写真で確認してください');
     if(splitPrice){p.price=found.total;p.doubt.push('商品名と価格が別々の行です。内容と数量を確認してください')}
     if(!p.priced&&found.total)sum+=found.total;
    }else rejected.push({text:s,reason:splitPrice?'数量・価格の行（対応する商品が不明）':'数量の行（対応する商品が不明）',area:line.area});
+   continue;
+  }
+  // The OCR may see a multiplier but lose the amount. Do not silently
+  // interpret the previous purchased product as one unit or make this line
+  // a separate product: preserve a visible review reason.
+  if(/^\d{1,2}\s*(?:コ|個|点|本|袋|枚|箱|杯|皿|名|人|パック)\s*[xX]/.test(s)){
+   const prior=products[products.length-1];
+   if(prior&&prior.line===i-1&&!prior.qtyLine&&!prior.coupon){
+    prior.structured=true;
+    prior.doubt.push('購入数量の行を正確に読み取れませんでした。写真の数量を手動で確認してください');
+   }
+   rejected.push({text:s,reason:'購入数量・単価の行を判定できません。前の商品と照合してください',area:line.area});
    continue;
   }
   const club=clubLine(s);
