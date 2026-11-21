@@ -176,10 +176,14 @@ function parse(source){
   // Preserve the printed designation and require human quantity confirmation
   // rather than silently showing quantity=1 as a trusted purchase.
   const ambiguousCount=!p.qtyLine&&prefix.text.match(/(?:^|\s)([2-9]|1\d|20)\s*(点|杯|皿|人|名)\s*$/);
-  const raw=nameText(ambiguousCount?prefix.text:q.text),signal=productSignal(raw);
+  const inlineQty=p.qtyLine?null:inlinePurchaseCount(p.source);
+  const printedName=nameText(ambiguousCount?prefix.text:q.text);
+  // Keep the multiplier in source for audit, but do not put a purchase
+  // calculation into the displayed product name.
+  const raw=inlineQty?(printedName.replace(/\s+\d{1,2}\s*(?:杯|皿|名|人|点|コ|個|本|袋|枚|箱|パック)\s*[xX]\s*(?:単(?:価)?|@)\s*[¥\\]?\s*\d[\d,.]*\s*$/,'').trim()||printedName):printedName,signal=productSignal(raw);
   // Warehouse clubs print English names ("TERIYAKI UDON"); the item-code line below confirms the row.
   if(!raw||noise(raw)||!(signal.ok||(p.club&&/[A-Za-z]{3,}/.test(raw)))){rejected.push({text:p.source,reason:'商品名として判定できない文字'});continue}
-  const name=canon(raw),inlineQty=p.qtyLine?null:inlinePurchaseCount(p.source),qty=inlineQty|| (p.qtyLine?p.qty:q.qty),score=signal.ok?signal.score:p.club&&p.qtyChecked?84:signal.score;
+  const name=canon(raw),qty=inlineQty|| (p.qtyLine?p.qty:q.qty),score=signal.ok?signal.score:p.club&&p.qtyChecked?84:signal.score;
   const conf=Number.isFinite(p.confidence)?Math.round(p.confidence):null,quality=conf===null?score:Math.round(score*.55+conf*.45);
   // Review needed (not pre-selected): unclear OCR, or a warehouse-club line whose unit price × quantity
   // does not add up to the printed total.
