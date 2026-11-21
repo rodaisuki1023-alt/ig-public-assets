@@ -45,8 +45,11 @@ test('purchase quantity lines in the four layouts, checked against unit price ×
   assert.equal(S.quantityLine('( 2個x 0108)').qty, 2); // @ read as 0
   assert.equal(S.quantityLine('(@160 × 2個)').qty, 2);
   assert.deepEqual(S.quantityLine('990@ × 4個 ¥3,960'), { qty: 4, unitPrice: 990, total: 3960, checked: true });
-  // A misread quantity digit loses to the printed amounts.
+  // Arithmetic can suggest 2, but printed 3 conflicts: no trusted preselection.
   assert.equal(S.quantityLine('3コ X 単68 ¥136').qty, 2);
+  assert.equal(S.quantityLine('3コ X 単68 ¥136').checked,false);
+  assert.equal(S.quantityLine('単68 x 3個 ¥136').checked,false);
+  assert.equal(S.quantityLine('2コ X 単98').checked,false);
   // Not purchase quantities: point multipliers, bundle prices, discount counters.
   for (const line of ['4900000000000 (P×5)', '(まとめ売り 3コデ ¥1,000)', '( 2点 1回 -18)']) assert.equal(S.quantityLine(line), null, line);
 });
@@ -359,7 +362,10 @@ test('v50 anonymized 20-line grocery receipt: 22 units, two quantity sublines, 5
   assert.equal(Math.round(7063 * 0.08), 565, 'tax is a validation figure and not a stock item');
   assert.equal(7063 + 565, 7628, 'tender and change are never stock items');
   assert.ok(!result.items.some(x => /特売|小計|買上点数|預り|釣り|消費税/.test(x.name)));
-  assert.ok(result.items.every(x => x.selected), 'synthetic clean lines are selectable only in review, not automatically saved');
+  assert.equal(result.items.filter(x=>!x.selected).length,2,
+    'two multiplier-only lines without extended totals must be reviewed by the user');
+  assert.ok(result.items.filter(x=>!x.selected).every(x=>x.low&&x.reasons.some(r=>/数量/.test(r))));
+  assert.equal(result.items.filter(x=>x.selected).length,18);
 });
 
 
@@ -501,7 +507,7 @@ test('P1: restaurant 3-cup price multiplication is purchase quantity, not a 1-it
  assert.equal(inconsistent.items.length,1);
  assert.equal(inconsistent.items[0].qty,2);
  assert.equal(inconsistent.items[0].selected,false);
- assert.ok(inconsistent.items[0].reasons.some(x=>x.includes('印字数量と単価・金額が食い違います')));
+ assert.ok(inconsistent.items[0].reasons.some(x=>x.includes('購入数量と単価・金額を照合できないか矛盾')));
  const inline=parse('テスト生ビール 3杯×単580 ¥1,740\n小計 3点 ¥1,740');
  assert.equal(inline.items.length,1);
  assert.equal(inline.items[0].qty,3);
@@ -530,4 +536,36 @@ test('P1: ambiguous two-piece label cannot silently count as one purchased unit'
  const pack=parse('テストおしりふき 60枚 ¥298\n小計 1点 ¥298');
  assert.equal(pack.items[0].qty,1);
  assert.equal(pack.items[0].selected,true);
+});
+
+test('P1 independent audit: all quantity conflicts stay unchecked, including reverse order and absent amounts',()=>{
+ const cases=[
+  ['テスト牛乳 ¥120','単価 120 x 3個 ¥240',2],
+  ['テスト牛乳 ¥120','3個 x 単120 ¥241',3],
+  ['テスト牛乳 ¥120','2個 x 単120',2],
+  ['テスト牛乳 ¥120','単価 120 x 2個',2],
+  ['テスト牛乳 ¥120','単価 x 3個',1]
+ ];
+ for(const [item,qtyLine,expected] of cases){
+  const p=parse([item,qtyLine,'小計 ¥500'].join('\n'));
+  assert.equal(p.items.length,1,qtyLine);
+  assert.equal(p.items[0].qty,expected,qtyLine);
+  assert.equal(p.items[0].selected,false,'quantity cannot be silently confirmed: '+qtyLine);
+  assert.ok(p.items[0].reasons.some(x=>x.includes('数量')),'reason required: '+qtyLine);
+ }
+ const safe=parse('テスト牛乳\n単120 x 3個 ¥360\n小計 3点 ¥360');
+ assert.equal(safe.items[0].qty,3);
+ assert.equal(safe.items[0].selected,true);
+});
+test('P1 independent audit: no-space item count needs individual review, tax-only summary cannot be stock',()=>{
+ for(const s of ['テスト洗濯ネット2点 ¥960','テストおやつ3点 ¥300']){
+  const p=parse(s+'\n小計 ¥960');
+  assert.equal(p.items.length,1,s);
+  assert.equal(p.items[0].selected,false,s);
+  assert.ok(p.items[0].reasons.some(r=>r.includes('セット内容か購入数量')),s);
+ }
+ const p=parse(['テスト飲料 ¥200','課税対象 ¥200','課税対象額 200','課税対像 200','税対象金額 ¥200','小計 ¥200'].join('\n'));
+ assert.deepEqual(p.items.map(x=>x.name),['テスト飲料']);
+ const fee=parse('会員入会金 ¥750\n小計 ¥750');
+ assert.deepEqual(fee.items.map(x=>x.name),['会員入会金']);
 });
