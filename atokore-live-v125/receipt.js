@@ -269,7 +269,7 @@ window.receiptWholeV49=d=>{if(!d.open)return;const img=d.querySelector('img');if
 // The receipt's own item count against what was read: the quickest way to notice a missed line.
 // A matching count is not proof that nothing was missed (a misread line can still count as one item).
 function countNote(){const n=R.parsed.reduce((sum,x)=>sum+(+x.qty||0),0);
- if(!Number.isFinite(R.printedCount))return `<div class="receiptStatus receiptCheckWarn" id="receiptCount" role="alert">要確認：レシートの印字点数を読み取れず、${n}点の検出結果が正しいか照合できていません。未検出の商品行があっても自動では分かりません。写真と商品一覧を1行ずつ照らし合わせてください。</div>`;
+ if(!Number.isFinite(R.printedCount))return `<div class="receiptStatus receiptCheckWarn" id="receiptCount" role="alert">要確認：レシートの印字点数を読み取れず、点数の照合はできていません。読み取った数量は${n}点です。未検出の商品行があっても自動では分かりません。写真と商品一覧を1行ずつ照らし合わせてください。</div>`;
  if(n===R.printedCount)return `<div class="receiptStatus" id="receiptCount">レシートの点数（${R.printedCount}点）と読み取った数量の合計が一致しています。点数が合っていても、読み違いや読み落としがないとは限りません。</div>`;
  const d=Math.abs(R.printedCount-n);
  return `<div class="receiptStatus receiptCheckWarn" id="receiptCount" role="alert">要確認：レシートの印字点数は${R.printedCount}点、読み取った数量は${n}点で、${d}点の差があります。${n<R.printedCount?'読み取れていない商品または数量がある可能性があります。':'誤って多く読み取った商品または数量がある可能性があります。'}写真と照合してから進んでください。</div>`}
