@@ -157,7 +157,7 @@ function openEditor(id){
  const save=element('button','atk-photo-save','この写真にする');save.type='button';save.disabled=true;
  const reset=element('button','atk-photo-reset','元のアイコンに戻す');reset.type='button';reset.hidden=true;
  const joined=!!root.AtokoreHousehold?.homeState?.().joined;
- const note=element('p','atk-photo-note',joined?'写真は家族と自動で共有されます（参加中の家族だけが見られます）。バックアップファイルにも含まれます。':'写真はこのブラウザ内に保存され、バックアップファイルにも含まれます。家族共有を始めると、自動で家族と共有されます。');
+ const note=element('p','atk-photo-note',joined?'写真は家族と自動で共有され、バックアップにも含まれます。参加者を外すと新しい取得は拒否されますが、以前に見たり保存した写真・バックアップのコピーは回収できません。':'写真はこの端末とバックアップに保存されます。家族共有を始めると写真も自動共有され、相手が取得・保存したコピーは後から回収できません。');
  panel.append(close,title,name,preview,pick,file,status,save,reset,note);sheet.append(panel);
  const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item)};editor=session;
  const active=()=>editor===session&&panel.isConnected;
