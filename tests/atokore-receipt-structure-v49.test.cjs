@@ -478,3 +478,41 @@ test('v50 holdout-format regression: a barcode after an unpriced line keeps a re
   const noCode=parse('テスト牛乳 ¥120\nテスト食材\nテスト豆腐 ¥130\n小計 ¥250');
   assert.equal(noCode.items.length,2);
 });
+
+test('P1: restaurant 3-cup price multiplication is purchase quantity, not a 1-item preselection', () => {
+ for(const v of ['3杯×単価580 ¥1,740','3杯×単580¥1740','3 杯 × 単580 ¥1,740']){
+  assert.equal(S.quantityLine(v)?.qty,3,v);
+ }
+ assert.equal(S.quantityLine('2名×単1,300 ¥2,600')?.qty,2);
+ const r=parse('テスト生ビール\n3杯×単価580 ¥1,740\n小計 3点 ¥1,740');
+ assert.equal(r.items.length,1);
+ assert.equal(r.items[0].qty,3);
+ assert.equal(r.countMatches,true);
+ assert.equal(r.items[0].selected,true,'clear unit/total arithmetic is safe for ordinary rows');
+ // If the OCR loses the amount, it cannot prove the quantity. Keep the row
+ // visible but leave the quantity to manual correction and individual review.
+ const uncertain=parse('テスト生ビール\n3杯×単価\n小計 3点 ¥1,740');
+ assert.equal(uncertain.items.length,1);
+ assert.equal(uncertain.items[0].selected,false);
+ assert.equal(uncertain.items[0].low,true);
+ assert.equal(uncertain.items[0].qty,1);
+ assert.equal(uncertain.countMatches,false);
+ assert.ok(uncertain.rejected.some(x=>/3杯/.test(x.text)));
+ const inconsistent=parse('テスト生ビール\n3杯×単580 ¥1,160\n小計 2点 ¥1,160');
+ assert.equal(inconsistent.items.length,1);
+ assert.equal(inconsistent.items[0].qty,2);
+ assert.equal(inconsistent.items[0].selected,false);
+ assert.ok(inconsistent.items[0].reasons.some(x=>x.includes('印字数量と単価・金額が食い違います')));
+ const inline=parse('テスト生ビール 3杯×単580 ¥1,740\n小計 3点 ¥1,740');
+ assert.equal(inline.items.length,1);
+ assert.equal(inline.items[0].qty,3);
+ assert.equal(inline.items[0].selected,false,'an inline quantity hint must be reviewed before registration');
+});
+
+test('P2: payable membership fee is a purchase; tax amount labels do not become merchandise',()=>{
+ const s=parse(['会員入会金 ¥750','テスト飲料 ¥200','税額 ¥16','8%課税対象金額 ¥200','小計 2点 ¥950'].join('\n'));
+ assert.deepEqual(s.items.map(x=>x.name),['会員入会金','テスト飲料']);
+ assert.equal(s.items.filter(x=>/税額|課税/.test(x.name)).length,0);
+ const meta=parse('会員番号 00001234\nテスト飲料 ¥200\n小計 1点 ¥200');
+ assert.equal(meta.items.length,1);
+});
