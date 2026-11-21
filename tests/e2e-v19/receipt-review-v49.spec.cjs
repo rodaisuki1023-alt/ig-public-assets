@@ -461,10 +461,10 @@ test('v50: 320px receipt with 20 grocery rows preserves 22 units through final r
 });
 
 test('v50 linked-stock names stay legible, not vertical, on 320px and 390px receipt review',async({page})=>{
- const initial={items:[{id:1,name:'テストごま油',cat:'食料品',qty:2,unit:'本',place:'パントリー',expType:'期限なし',exp:'',usage:1,receiptAliases:['テストごま油']}],buys:[],routines:[]};
+ const initial={items:[{id:11,name:'パンパース さらさらケア テープ M 60枚',cat:'ベビー',qty:2,unit:'袋',expType:'期限なし',exp:'',usage:1},{id:12,name:'パンパース さらさらケア テープ L 60枚',cat:'ベビー',qty:4,unit:'袋',expType:'期限なし',exp:'',usage:1}],buys:[],routines:[]};
  await page.setViewportSize({width:320,height:740});
  await open(page,{[KEY]:initial});
- await readText(page,'テストごま油 ¥288\n小計 1点 ¥288');
+ await readText(page,'パンパース さらさらケア テープ M 60枚 ¥1380\n小計 1点 ¥1380');
  const label=page.locator('[data-receipt-row] .receiptLinked').first();
  await expect(label).toBeVisible();
  for(const width of [320,390]){
