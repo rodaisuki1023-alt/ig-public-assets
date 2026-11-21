@@ -23,11 +23,15 @@ var container=document.getElementById('accounts');
 roles.forEach(function(r){
 var div=document.createElement('div'); div.className='account';
 var heading=document.createElement('strong');heading.textContent='合成アカウント '+r.toUpperCase();
-var label1=document.createElement('label');label1.textContent='メール';
+var label1=document.createElement('label');label1.textContent='メール';label1.htmlFor='email-'+r;
 var email=document.createElement('input');email.type='email';email.id='email-'+r;email.autocomplete='off';email.value=ids[r];email.readOnly=true;
-var label2=document.createElement('label');label2.textContent='一時パスワード';
+var label2=document.createElement('label');label2.textContent='一時パスワード';label2.htmlFor='password-'+r;
 var password=document.createElement('input');password.type='password';password.id='password-'+r;password.autocomplete='off';password.spellcheck=false;
-div.append(heading,label1,email,label2,password);container.append(div);
+password.setAttribute('aria-describedby','error-'+r);
+var error=document.createElement('p');error.id='error-'+r;error.className='fail';
+error.hidden=true;error.setAttribute('role','alert');error.setAttribute('aria-live','polite');
+password.addEventListener('input',function(){clearFieldError(r)});
+div.append(heading,label1,email,label2,password,error);container.append(div);
 });
 var button=document.getElementById('start'), status=document.getElementById('status'), output=document.getElementById('result');
 var runKey='atk_v50_qa_once_'+COHORT,alreadyStarted=false;
@@ -35,8 +39,56 @@ var allowedOrigin=location.origin==='https://rodaisuki1023-alt.github.io' &&
  location.pathname==='/ig-public-assets/tests/manual/atokore-v50-auth-qa.html';
 if(!allowedOrigin){button.disabled=true;status.textContent='このURLでは認証試験を実行できません。承認済み配信が必要です。';}
 function persistNonSecrets(){try{localStorage.setItem(runKey,output.textContent||'QA開始済み')}catch(e){}}
-try{var oldNonSecrets=localStorage.getItem(runKey);if(oldNonSecrets){output.textContent=oldNonSecrets;button.disabled=true;status.textContent='この合成テストは実行済みです。二重送信しません。'}}catch(e){}
+// The old QA prematurely persisted a marker for this one pre-network failure.
+// Never unlock after ANY sign-in or household action has begun.
+function onlyLegacyInputFailure(value){
+ return value.includes('検証処理 : FAIL (only this cohort is allowed)') &&
+ !value.includes('実Authログイン ') && !value.includes('A世帯作成') && !value.includes('HTTP ');
+}
+try{
+ var oldNonSecrets=localStorage.getItem(runKey);
+ if(oldNonSecrets&&onlyLegacyInputFailure(oldNonSecrets)){
+  localStorage.removeItem(runKey);
+  oldNonSecrets=null;
+ }
+ if(oldNonSecrets){output.textContent=oldNonSecrets;button.disabled=true;status.textContent='この合成テストは実行済みです。二重送信しません。'}
+}catch(e){}
 function emit(message){status.textContent=message}
+function clearFieldError(role){
+ var email=document.getElementById('email-'+role),password=document.getElementById('password-'+role),error=document.getElementById('error-'+role);
+ if(error){error.textContent='';error.hidden=true}
+ if(email)email.setAttribute('aria-invalid','false');
+ if(password)password.setAttribute('aria-invalid','false');
+}
+function validateInputs(){
+ var firstInvalid=null,credentials={};
+ for(var role of roles){
+  var email=document.getElementById('email-'+role);
+  var password=document.getElementById('password-'+role);
+  var error=document.getElementById('error-'+role);
+  var reason='';
+  if(!email||email.value!==ids[role])
+   reason='合成アカウント '+role.toUpperCase()+'：メールが今回の試験用アドレスと一致しません。';
+  else if(!password||password.value.length<12)
+   reason='合成アカウント '+role.toUpperCase()+'：一時パスワードは12文字以上入力してください。';
+  if(reason){
+   if(error){error.textContent=reason;error.hidden=false}
+   if(email)email.setAttribute('aria-invalid',email.value!==ids[role]?'true':'false');
+   if(password)password.setAttribute('aria-invalid','true');
+   if(!firstInvalid)firstInvalid=email&&email.value!==ids[role]?email:password;
+  }else{
+   clearFieldError(role);
+   credentials[role]=password.value;
+  }
+ }
+ if(firstInvalid){
+  emit('入力に問題があります。A・B・Cの該当欄を修正して再度実行してください。通信はしていません。');
+  firstInvalid.focus();
+  Object.keys(credentials).forEach(function(role){credentials[role]=null});
+  return null;
+ }
+ return credentials;
+}
 function resultLine(name,pass,extra){var old=output.textContent;output.textContent=old+name+' : '+(pass===true?'PASS':pass===false?'FAIL':'UNTESTED')+(extra?' ('+extra+')':'')+'\n';persistNonSecrets()}
 function assert(v,name){if(!v)throw new Error(name)}
 function rpcDenied(r){return !!r&&r.status===403&&r.data?.code==='42501'}
@@ -118,16 +170,18 @@ async function start(){
 if(!allowedOrigin){button.disabled=true;emit('第三者サイトでは認証情報を入力できません');return}
 if(alreadyStarted){emit('再実行は禁止しています');return}
 try{if(localStorage.getItem(runKey)){button.disabled=true;emit('このテストは実行済みです');return}}catch(e){}
+// Check A/B/C before marking this run used or making any Supabase request.
+var credentials=validateInputs();
+if(!credentials)return;
 alreadyStarted=true;
 button.disabled=true;output.textContent='';emit('テスト中');persistNonSecrets();
 var users={},aHh=null,cHh=null,photoPath=null,uploaded=false;
 var meta={cohort:COHORT,users:{},households:{},item:mkId(),photoPath:null};
 try{
 for(var i=0;i<roles.length;i++){
-var role=roles[i],email=document.getElementById('email-'+role).value;
-var pass=document.getElementById('password-'+role).value;
-assert(email===ids[role]&&pass.length>=12,'only this cohort is allowed');
-users[role]=await signIn(email,pass);
+var role=roles[i],pass=credentials[role];
+users[role]=await signIn(ids[role],pass);
+credentials[role]=null;
 meta.users[role]=users[role].id;
 document.getElementById('password-'+role).value='';
 resultLine('実Authログイン '+role.toUpperCase(),true);
@@ -234,6 +288,7 @@ if(meta.photoApiRemoved){
 }catch(e){meta.photoApiRemoved=false;resultLine('合成StorageオブジェクトのAPI削除',false,'要確認')}}
 outputInfo(meta);
 Object.keys(users).forEach(function(k){users[k].access_token=''});
+Object.keys(credentials).forEach(function(k){credentials[k]=null});
 roles.forEach(function(r){var field=document.getElementById('password-'+r);if(field)field.value=''});
 button.disabled=true;
 }}
