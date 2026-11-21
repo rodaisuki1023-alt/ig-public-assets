@@ -362,3 +362,30 @@ test('v50 anonymized 20-line grocery receipt: 22 units, two quantity sublines, 5
   assert.ok(!result.items.some(x => /特売|小計|買上点数|預り|釣り|消費税/.test(x.name)));
   assert.ok(result.items.every(x => x.selected), 'synthetic clean lines are selectable only in review, not automatically saved');
 });
+
+
+test('v50 Muse P2: two-line product + explicit quantity/yen total appears for manual review, never auto-add', () => {
+  const receipt='テストおむつ パンツ M 60枚\n1点 ¥1380\nテスト牛乳\n2点 ¥436\n小計 3点 ¥1816';
+  const r=parse(receipt);
+  assert.equal(r.items.length,2,'two product names with the total on the next line must not disappear');
+  assert.deepEqual(r.items.map(x=>x.qty),[1,2]);
+  assert.equal(r.countMatches,true);
+  for(const x of r.items){
+    assert.equal(x.selected,false,'uncertain split-layout rows must stay unchecked');
+    assert.equal(x.low,true);
+    assert.ok(x.reasons.includes('商品名と価格が別々の行です。内容と数量を確認してください'));
+  }
+  // Standard same-line receipts are still normal and selected as before.
+  const standard=parse('テスト牛乳 ¥218\n小計 1点 ¥218');
+  assert.equal(standard.items.length,1);
+  assert.equal(standard.items[0].selected,true);
+  // Orphan totals and misleading quantity-like summaries never auto-create stock rows.
+  const orphan=S.structure(['1点 ¥288','小計 1点 ¥288']);
+  assert.equal(orphan.products.length,0);
+  assert.ok(orphan.rejected.some(x=>x.text==='1点 ¥288'));
+  // A store heading can look like a product, but no split pair is trusted.
+  const header=parse('テスト店\n1点 ¥288\n小計 1点 ¥288');
+  assert.ok(header.items.every(x=>x.selected===false));
+  // Plain price without an explicit yen sign does not qualify for this uncertain pattern.
+  assert.equal(S.structure(['テスト牛乳','1点 288','小計 1点 ¥288']).products.length,0);
+});
