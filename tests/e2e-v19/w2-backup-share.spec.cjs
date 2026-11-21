@@ -92,6 +92,54 @@ test.describe('backup and restore', () => {
   });
 });
 
+
+test('v50 P1 regression: undo restores a different original photo after importing a photo backup', async ({ page }, info) => {
+  await open(page, { [KEY]: baseState() });
+  // First prepare a real backup containing only product B's photo.
+  await setPhoto(page, 3, 45);
+  await go(page, 'premium');
+  await page.click('#atkBackupCard');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('.atk-backup-primary')]);
+  const file = info.outputPath('photo-b.json');
+  await download.saveAs(file);
+  const backup = JSON.parse(fs.readFileSync(file, 'utf8'));
+  expect(backup.photos).toHaveLength(1);
+  expect(backup.photos[0].id).toBe('3');
+
+  // The current device now has A's photo and no B photo.
+  await go(page, 'stock');
+  await page.locator('#stockList [data-stock-id="3"] .name').click();
+  await page.click('.atk-photo-open');
+  await page.click('.atk-photo-reset');
+  await appConfirm(page, true);
+  await page.click('#sheet .close');
+  await setPhoto(page, 2, 215);
+  const before = await stored(page);
+  const photoA = await photoKeys(page);
+  expect(photoA).toHaveLength(1);
+  expect(photoA[0]).toContain('"2"');
+
+  // Restore photo B: A is staged as "beforeRestore:", not silently discarded.
+  await page.evaluate(() => window.atkOpenBackup());
+  await page.setInputFiles('.atk-backup-file', file);
+  await appConfirm(page, true);
+  await expect(page.locator('#atkSafetyBanner')).toContainText('復元しました');
+  await expect.poll(() => photoKeys(page)).toHaveLength(1);
+  const photoB = await photoKeys(page);
+  expect(photoB[0]).toContain('"3"');
+
+  // Undo must restore the *original* A photo and its inventory data.
+  await page.evaluate(() => window.atkOpenBackup());
+  await page.click('.atk-backup-undo');
+  await appConfirm(page, true);
+  await expect.poll(() => photoKeys(page)).toEqual(photoA);
+  expect(await stored(page)).toEqual(before);
+  await go(page, 'stock');
+  await expect(page.locator('#stockList [data-stock-id="2"] .atk-user-photo')).toBeVisible();
+  await expect(page.locator('#stockList [data-stock-id="3"] .atk-user-photo')).toHaveCount(0);
+  expect(page.__errors).toEqual([]);
+});
+
 test('sharing: restore is refused with guidance, the status matches on home and in the dialog, photos are shared automatically', async ({ browser, request }, info) => {
   test.setTimeout(120000);
   await request.post(EMU + '/__test/reset');
