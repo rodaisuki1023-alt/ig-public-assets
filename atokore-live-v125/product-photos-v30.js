@@ -64,21 +64,27 @@ async function load(k){
   .then(record=>cache.has(k)?cache.get(k):cacheBlob(k,recordBlob(record))).finally(()=>pending.delete(k));
  pending.set(k,task);return task;
 }
-const sharedCache=new Map(),sharedPending=new Map();let photoHousehold='';
-function scopeKey(){const s=root.AtokoreHousehold?.homeState?.();return s?.joined?root.AtokoreHousehold?.photoScope?.(readFirstId())?.household||'':''}
-function readFirstId(){try{return items[0]?.id}catch(_){return null}}
-function resetShared(){for(const url of sharedCache.values())if(url)root.URL.revokeObjectURL(url);sharedCache.clear();sharedPending.clear()}
+const sharedCache=new Map(),sharedPending=new Map();let photoHousehold='',sharedEpoch=0;
+function scopeKey(){const hh=root.AtokoreHousehold;return hh?.homeState?.().joined?hh.receiptScope?.()||'':''}
+function resetShared(){sharedEpoch++;for(const url of sharedCache.values())if(url)root.URL.revokeObjectURL(url);sharedCache.clear();sharedPending.clear()}
 async function loadFor(item){
  const hh=root.AtokoreHousehold,scope=hh?.photoScope?.(item.id);
  if(!scope||!item.photoPath)return load(key(item));
  const sk=scope.household+':'+scope.user+':'+item.photoPath;
  if(sharedCache.has(sk))return sharedCache.get(sk);
  if(sharedPending.has(sk))return sharedPending.get(sk);
- const task=hh.fetchPhoto(item.id,item.photoPath).then(async blob=>{
+ const epoch=sharedEpoch;
+ const stillActive=()=>{
   const current=readItem(item.id),now=hh.photoScope(item.id);
-  if(!blob||!validBlob(blob)||!current||current.photoPath!==item.photoPath||now?.household!==scope.household||now?.user!==scope.user)return null;
-  if(fileKind(new Uint8Array(await blob.slice(0,32).arrayBuffer()))!=='jpeg')return null;
-  const url=root.URL.createObjectURL(blob);sharedCache.set(sk,url);return url;
+  return epoch===sharedEpoch&&current?.photoPath===item.photoPath
+   &&now?.household===scope.household&&now?.user===scope.user&&now?.sid===scope.sid;
+ };
+ const task=hh.fetchPhoto(item.id,item.photoPath).then(async blob=>{
+  if(!blob||!validBlob(blob)||!stillActive())return null;
+  if(fileKind(new Uint8Array(await blob.slice(0,32).arrayBuffer()))!=='jpeg'||!stillActive())return null;
+  const url=root.URL.createObjectURL(blob);
+  if(!stillActive()){root.URL.revokeObjectURL(url);return null}
+  sharedCache.set(sk,url);return url;
  }).finally(()=>{if(sharedPending.get(sk)===task)sharedPending.delete(sk)});
  sharedPending.set(sk,task);return task;
 }
@@ -123,7 +129,8 @@ function decorate(){
   if(row.dataset.buyId){try{const buy=buys.find(x=>String(x.id)===row.dataset.buyId);item=items.find(x=>root.__atokoreCoreV125H.sameProduct(x,buy))}catch(_){}}
   if(!item)continue;
   const k=key(item),badge=row.querySelector('.atk-row-brand,.atk-brand');if(!badge)continue;
-  loadFor(item).then(url=>{if(row.isConnected&&key(readItem(item.id)||{})===k)picture(badge,url)}).catch(()=>picture(badge,null));
+  const epoch=sharedEpoch;
+  loadFor(item).then(url=>{if(epoch===sharedEpoch&&row.isConnected&&key(readItem(item.id)||{})===k)picture(badge,url)}).catch(()=>{if(epoch===sharedEpoch)picture(badge,null)});
  }
 }
 let editor=null;
@@ -135,8 +142,9 @@ function detailPhoto(){
   const button=element('button','atk-photo-open','写真を設定');button.type='button';
   button.addEventListener('click',()=>openEditor(item.id));head.append(button);
  }
+ const epoch=sharedEpoch;
  loadFor(item).then(url=>{
-  if(!head.isConnected)return;
+  if(epoch!==sharedEpoch||!head.isConnected)return;
   let image=head.querySelector('.atk-detail-photo');
   if(url){if(!image){image=element('img','atk-detail-photo');image.alt='商品の写真';head.prepend(image)}image.src=url}
   else image?.remove();
@@ -340,7 +348,7 @@ function install(){
   shareWaiting();
  });
  decorate();detailPhoto();
- root.addEventListener('pagehide',()=>{dispose();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
+ root.addEventListener('pagehide',()=>{dispose();resetShared();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
 }
 const api=Object.freeze({key,fileKind,validBlob,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});

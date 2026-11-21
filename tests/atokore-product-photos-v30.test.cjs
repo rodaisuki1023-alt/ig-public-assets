@@ -65,3 +65,44 @@ test('v50: family photo revocation limitations are visible before sharing and re
  assert.match(household,/相手が保存した写真のコピーは後から回収できません/);
  assert.match(household,/相手に保存された写真は後から回収できません/);
 });
+
+test('v50: an in-flight family photo cannot repopulate cache after membership scope is reset',async()=>{
+ const vm=require('node:vm');
+ const source=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
+ const hook='root.AtokoreProductPhotos=api;';
+ assert(source.includes(hook));
+ const item={id:77,name:'合成のテスト商品',unit:'個',photoPath:'synthetic/record/mock.jpg'};
+ let scope={household:'h1',user:'u1',sid:'record'},created=0;
+ const revoked=[];
+ let signatureStarted,finishSignature;
+ const entered=new Promise(resolve=>{signatureStarted=resolve});
+ const pendingBytes=new Promise(resolve=>{finishSignature=resolve});
+ const blob={type:'image/jpeg',size:4,slice(){signatureStarted();return {arrayBuffer:()=>pendingBytes}}};
+ const ctx={items:[item],Uint8Array,URL:{
+  createObjectURL(){return 'blob:synthetic-'+(++created)},
+  revokeObjectURL(url){revoked.push(url)}
+ }};
+ ctx.AtokoreHousehold={photoScope(){return scope},fetchPhoto:async()=>blob,homeState:()=>({joined:true}),receiptScope:()=>scope?scope.household+':'+scope.user:null};
+ vm.runInNewContext(source.replace(hook,'root.__photoRace={loadFor,resetShared,sharedCache,scopeKey};'+hook),ctx);
+ const active=ctx.__photoRace;
+ assert.equal(active.scopeKey(),'h1:u1');
+ const result=active.loadFor(item);
+ await entered;
+ scope=null;active.resetShared();
+ finishSignature(Uint8Array.from([255,216,255,224]).buffer);
+ assert.equal(await result,null);
+ assert.equal(created,0,'late photo bytes must never create an object URL for an old member');
+ assert.equal(active.sharedCache.size,0,'old household photo must not return to the shared cache');
+ assert.deepEqual(revoked,[]);
+});
+
+test('v50: family photo cache identity uses real household scope, even without an inventory mapping',()=>{
+ const vm=require('node:vm');
+ const source=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
+ const hook='root.AtokoreProductPhotos=api;';
+ const ctx={items:[],AtokoreHousehold:{
+  homeState:()=>({joined:true}),receiptScope:()=>'h2:u2',photoScope:()=>null
+ }};
+ vm.runInNewContext(source.replace(hook,'root.__photoRace={scopeKey};'+hook),ctx);
+ assert.equal(ctx.__photoRace.scopeKey(),'h2:u2');
+});
