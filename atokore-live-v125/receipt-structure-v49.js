@@ -41,7 +41,9 @@ function priceTail(s){
  if(/[xX]\)?$/.test(s)&&!/[¥\\]/.test(s.slice(Math.max(0,index-1),index+3)))return null;
  return {index,value,negative:!!(m[2]||m[4]),marked:!!marked};
 }
-const COUNT_WORD='(?:コ|個|ケ|ヶ|ヵ|カ|点|本|袋|パック|枚|入)';
+// Units following a multiplication sign are purchase units, not package contents.
+// Restaurant receipts use 杯・皿・名 as well as supermarket units.
+const COUNT_WORD='(?:コ|個|ケ|ヶ|ヵ|カ|点|本|袋|パック|枚|箱|杯|皿|名|人|入)';
 // Stage 3b: quantity lines. Returns the purchase quantity and, when both are printed, checks it
 // against unit price × quantity = line total (the arithmetic wins over a misread digit).
 function quantityLine(raw){
