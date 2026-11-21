@@ -492,12 +492,10 @@ test('v50 Muse round 3: rotating to a zero-product scan keeps previous rows and 
  });
  await page.evaluate(()=>{
   window.__v50ReceiptReads=0;
-  window.AtokoreReceiptImage.prepare=async()=>({found:true});
-  window.AtokoreReceiptOcr.ready=()=>true;
-  window.AtokoreReceiptOcr.cached=async()=>true;
-  window.AtokoreReceiptOcr.load=async()=>{};
-  window.AtokoreReceiptOcr.storage=()=>null;
-  window.AtokoreReceiptOcr.readReceipt=async()=>{
+  window.AtokoreReceiptImage={prepare:async()=>({found:true})};
+  window.AtokoreReceiptOcr={
+   ready:()=>true,cached:async()=>true,load:async()=>{},storage:()=>null,
+   readReceipt:async()=>{
    window.__v50ReceiptReads++;
    const text=window.__v50ReceiptReads===1
     ? ['テスト牛乳','1点 ¥218','テスト文字不鮮明','小計 1点 ¥218']
@@ -507,8 +505,8 @@ test('v50 Muse round 3: rotating to a zero-product scan keeps previous rows and 
    result.canvas=null;
    result.turn=window.__v50ReceiptReads===1?0:90;
    return result;
-  };
-  window.AtokoreReceiptLines.groupBoxes=got=>got.map(x=>({...x,confidence:x.score,minScore:x.score}));
+  }};
+  window.AtokoreReceiptLines={groupBoxes:got=>got.map(x=>({...x,confidence:x.score,minScore:x.score}))};
  });
  await page.click('#receiptAnalyzeBtn');
  await expect(page.getByRole('heading',{name:'🧾 読み取り結果の確認'})).toBeVisible();
@@ -519,7 +517,7 @@ test('v50 Muse round 3: rotating to a zero-product scan keeps previous rows and 
  await page.getByRole('button',{name:'向きを変えて読み直す'}).click();
  await expect(page.locator('#receiptRotateNotice')).toContainText('前回の読み取り結果を表示');
  await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
- await expect(page.locator('.receiptRejected')).toContainText(before);
+ await expect(page.locator('.receiptRejected')).toContainText('テスト文字不鮮明');
  await expect(page.locator('#receiptSelectionCount')).toContainText('0/1件');
  await expect(page.locator('.receiptRaw')).toContainText('テスト牛乳');
  expect(await page.evaluate(()=>window.__v50ReceiptReads)).toBe(2);
