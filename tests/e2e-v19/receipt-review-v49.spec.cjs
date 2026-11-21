@@ -459,3 +459,21 @@ test('v50: 320px receipt with 20 grocery rows preserves 22 units through final r
   expect(saved.items.some(item => /小計|消費税|お預り|お釣り|特売|買上点数/.test(item.name))).toBe(false);
   expect(page.__errors).toEqual([]);
 });
+
+test('v50 linked-stock names stay legible, not vertical, on 320px and 390px receipt review',async({page})=>{
+ const initial={items:[{id:1,name:'テストごま油',cat:'食料品',qty:2,unit:'本',place:'パントリー',expType:'期限なし',exp:'',usage:1,receiptAliases:['テストごま油']}],buys:[],routines:[]};
+ await page.setViewportSize({width:320,height:740});
+ await open(page,{[KEY]:initial});
+ await readText(page,'テストごま油 ¥288\n小計 1点 ¥288');
+ const label=page.locator('[data-receipt-row] .receiptLinked').first();
+ await expect(label).toBeVisible();
+ for(const width of [320,390]){
+  await page.setViewportSize({width,height:740});
+  const bounds=await label.boundingBox();
+  const rowBounds=await label.locator('..').boundingBox();
+  expect(bounds.width).toBeGreaterThan(rowBounds.width*0.85);
+  expect(await label.evaluate(el=>getComputedStyle(el).order)).toBe('-1');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(0);
+ }
+ expect(page.__errors).toEqual([]);
+});
