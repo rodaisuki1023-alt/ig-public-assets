@@ -229,6 +229,10 @@ function preselectId(x,cands){if(x.low)return null;const trusted=cands.filter(c=
 function prepareRows(){for(const x of R.parsed){if(x.cands)continue;x.cands=rowCandidates(x,stockList());
  if(x.matchId===undefined)x.matchId=x.userEditedName?null:preselectId(x,x.cands);x.autoLinked=x.matchId!=null&&!x.userEditedName}}
 function linked(x){return x.matchId==null?null:stockList().find(v=>String(v.id)===String(x.matchId))||null}
+function incompatibleLinkedStock(x,hit){
+ const m=matcher(),source=x.userEditedName?x.name:(x.raw||x.name);
+ return !!(hit&&m&&m.conflict(m.features(source),m.features(hit.name)));
+}
 function signature(){const m=matcher(),keys=R.parsed.map(x=>m?m.lineKey(x.raw||x.name):String(x.raw||x.name)).sort();return (R.date||'')+'|'+keys.join('|')}
 function history(){try{const v=JSON.parse(localStorage.getItem(RHIST)||'[]');return Array.isArray(v)?v:[]}catch(e){return []}}
 // Same picture or the same lines on the same date: probably registered before. Only a warning; a
@@ -411,6 +415,7 @@ window.receiptApplyV7=async()=>{
  if(R.applying)return;
  const rows=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0);if(!rows.length){alert('登録する商品を選んでください');return}
  if(rows.some(r=>r.matchId!=null&&!linked(r))){window.AtokoreConfirm?.tell?.('在庫を確認してください','追加先の在庫が更新・削除されています。画面を開き直して選んでください。');return}
+ if(rows.some(r=>r.matchId!=null&&incompatibleLinkedStock(r,linked(r)))){window.AtokoreConfirm?.tell?.('容量・サイズを再確認してください','追加先の在庫の商品名または容量・サイズが変わったため、安全に合算できません。選び直してください。');return}
  const entries=rows.map(r=>{
   const hit=linked(r),base=hit?{name:hit.name,cat:hit.cat||r.cat||cat(hit.name,r.raw),unit:hit.unit||r.unit||fixedUnit(hit.name),qty:Math.max(1,Math.round(+r.qty)||1)}:{name:String(r.name).trim().slice(0,120),cat:r.cat||cat(r.name,r.raw),unit:r.unit||fixedUnit(r.name),qty:Math.max(1,Math.round(+r.qty)||1)};
   // Receipt imports never merge by a later name-only fallback: only the explicit target ID is mergeable.
