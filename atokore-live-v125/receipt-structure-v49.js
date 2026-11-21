@@ -141,7 +141,18 @@ function structure(lines){
    // An item line whose name could not be read is still a purchase: shown so it is not silently lost.
    else if(!club.coupon&&!afterCpn&&!(i>0&&/^CPN$/i.test(L[i-2]?.text||'')))rejected.push({text:s,reason:'商品名を読めない行（'+club.qty+'点）',qty:club.qty,area:line.area});
    afterCpn=false;continue}
-  if(JAN.test(s)){continue}
+  if(JAN.test(s)){
+   // A barcode-only line immediately after an unpriced product name may be
+   // the only signal that a whole purchase row was printed there. Keep that
+   // name for MANUAL review, never selected, only after the list has started.
+   const last=products[products.length-1];
+   if(last&&last.line===i-1&&!last.structured&&!last.coupon&&
+      products.slice(0,-1).some(p=>p.structured&&!p.coupon)){
+    last.structured=true;
+    last.doubt.push('商品コードは読めましたが価格・数量が不明です。レシートと照合してください');
+   }
+   continue;
+  }
   // Warehouse clubs print the price on the next item-code line, not on the name.
   // Keep a bare trailing number such as a pack size; coupons stay discounts.
   const nextClub=i+1<L.length?clubLine(L[i+1].text):null;
