@@ -121,7 +121,21 @@ function structure(lines){
   if(/^CPN$/i.test(s)){afterCpn=true;continue}
   // A quantity line belongs to the line right above it; after a discount or another line it is not attached.
   const q=quantityLine(s);
-  if(q){const p=products[products.length-1];if(p&&!p.qtyLine&&i-p.line===1&&!p.coupon){p.qty=q.qty;p.qtyLine=s;p.qtyChecked=q.checked;p.structured=true;if(!p.priced&&q.total)sum+=q.total}else rejected.push({text:s,reason:'数量の行（対応する商品が不明）',area:line.area});continue}
+  // Two-line receipts sometimes put explicit purchase count + yen total on the next row.
+  // This may also be a store summary: ALWAYS mark it uncertain, never preselect it.
+  const split=s.match(/^([1-9]\d?)\s*(?:点|個|本|袋|枚|パック)\s+[¥\\]\s*(\d[\d,]*)\s*円?$/);
+  const splitQty=split?+split[1]:0,splitTotal=split?+split[2].replace(/,/g,''):0;
+  const splitPrice=!q&&splitQty<=30&&splitTotal>0&&splitTotal<=999999?{qty:splitQty,total:splitTotal,checked:false}:null;
+  if(q||splitPrice){
+   const p=products[products.length-1];
+   if(p&&!p.qtyLine&&i-p.line===1&&!p.coupon&&(!splitPrice||!p.priced)){
+    const found=q||splitPrice;
+    p.qty=found.qty;p.qtyLine=s;p.qtyChecked=found.checked;p.structured=true;
+    if(splitPrice){p.price=found.total;p.doubt.push('商品名と価格が別々の行です。内容と数量を確認してください')}
+    if(!p.priced&&found.total)sum+=found.total;
+   }else rejected.push({text:s,reason:'数量・価格の行（対応する商品が不明）',area:line.area});
+   continue;
+  }
   const club=clubLine(s);
   if(club){const p=products[products.length-1];if(p&&p.line===i-1&&!p.qtyLine){p.qty=club.qty;p.qtyLine=s;p.qtyChecked=club.checked;p.structured=true;p.club=true;if(club.coupon||p.coupon){products.pop();sum-=club.total||0}else sum+=club.total||0}
    // An item line whose name could not be read is still a purchase: shown so it is not silently lost.
