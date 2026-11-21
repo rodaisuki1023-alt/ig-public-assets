@@ -55,9 +55,12 @@ function quantityLine(raw){
  // "@160 x 2個", "990@ x 4個 ¥3,960", "単98 x 2コ"
  else if((m=s.match(new RegExp('^(?:単価?|@)?\\s*[¥\\\\]?\\s*(\\d[\\d,]*)\\s*@?\\s*[xX]\\s*(\\d{1,2})\\s*'+COUNT_WORD+'(?:(?:\\s+[¥\\\\]?|\\s*[¥\\\\])\\s*(\\d[\\d,]*))?\\s*[外内※*＊]?$'))))[unit,qty,total]=[+m[1].replace(/,/g,''),+m[2],m[3]?+m[3].replace(/,/g,''):null];
  if(qty===null)return null;
+ const printedQty=qty;
+ // When the printed multiplier differs from unitPrice * qty, keep the
+ // calculated value as a tentative display but NEVER mark it confirmed.
  if(unit&&total){const r=total/unit;if(Number.isInteger(r)&&r>=1&&r<=30)qty=r}
  if(!(qty>=1&&qty<=30))return null;
- return {qty,unitPrice:unit,total,checked:!!(unit&&total&&unit*qty===total)};
+ return {qty,unitPrice:unit,total,checked:!!(unit&&total&&unit*qty===total&&qty===printedQty)};
 }
 // Warehouse-club item line under the name: item code, quantity, unit price, total, tax letter.
 function clubLine(raw){
@@ -87,7 +90,13 @@ function printedCount(raw){
  return m?+m[1]:null;
 }
 const META=/合計|小計|税込|税抜|消費税|内税|外税|税率|お預|預り|お釣|釣銭|おつり|クレジット|電子マネー|ポイント|値引|割引|クーポン|レジ(?:No|番号|担当|係|\s|$|[:：#])|担当|責[:：]|セルフレジ|精算機|お会計券|TEL|電話|領収|商品点数|買上点数|点数|商品コード|商品番号|品番|現金|カード|支払|決済|対象額|対象金額|本体価格|お会計|レシート|取引|会員(?:番号|ID|情報|コード|ポイント|割引|値引|登録番号|証|種別)|税額|課税額|税区分|非課税|バーコード|JAN|登録番号|インボイス|営業時間|定休日|住所|郵便|毎度|ありがとう|返品|交換|伝票|発行日時|スキャンNo|ストアNo|承認|有効期限|累計|残高|ビザ|マスター|VISA|MASTER|様$|BOTTOM OF BASKET|ITEM COUNT|WHOLESALE|THANK YOU|売上$/i;
-function isMeta(s){return META.test(s)||/^(?:8|10)%\s*(?:対象|税額|課税|外税|内税)/.test(s.replace(/\s+/g,''))||/(?:20\d{2}|\b\d{2})\s*[\/\-.年]\s*\d{1,2}\s*[\/\-.月]\s*\d{1,2}|\b\d{1,2}:\d{2}(?::\d{2})?\b|〒\s*\d{3}[-ー]\d{4}|(?:^|\s)No\.?\s*\d{4,}|\d{2,4}-\d{2,4}-\d{3,4}/i.test(s)}
+// A tax aggregate has no purchased stock unit. The tax rate may be omitted,
+// and OCR often alters the last kanji of "対象"; do not treat such lines as goods.
+function taxAggregate(raw){
+ const s=hw(raw).replace(/[\s　]+/g,'').replace(/^[*＊※#＃:：()（）]+/,'');
+ return /^(?:課税(?:対象|対[像家]|額|金額)|税(?:対象|対[像家]|額|金額)|(?:軽減|標準)(?:税率)?(?:対象|課税|税額))(?=$|[¥\\Y￥:：\d%.,()（）])/i.test(s);
+}
+function isMeta(s){return taxAggregate(s)||META.test(s)||/^(?:8|10)%\s*(?:対象|税額|課税|外税|内税)/.test(s.replace(/\s+/g,''))||/(?:20\d{2}|\b\d{2})\s*[\/\-.年]\s*\d{1,2}\s*[\/\-.月]\s*\d{1,2}|\b\d{1,2}:\d{2}(?::\d{2})?\b|〒\s*\d{3}[-ー]\d{4}|(?:^|\s)No\.?\s*\d{4,}|\d{2,4}-\d{2,4}-\d{3,4}/i.test(s)}
 const DISCOUNT=/値引|割引|引き|クーポン|\bCPN\b|\bIRC\b|特売|まとめ売り|まとめ値引|ポイント値引|会員値引|見切/i;
 function letters(s){return (s.match(/[ぁ-んァ-ヶ一-龠々ーA-Za-z]/g)||[]).length}
 function jpLetters(s){return (s.match(/[ぁ-んァ-ヶ一-龠々]/g)||[]).length}
@@ -133,11 +142,10 @@ function structure(lines){
    if(p&&!p.qtyLine&&i-p.line===1&&!p.coupon&&(!splitPrice||!p.priced)){
     const found=q||splitPrice;
     p.qty=found.qty;p.qtyLine=s;p.qtyChecked=found.checked;p.structured=true;
-    // Arithmetic alone must never silently override a different multiplier
-    // printed in the source (a blurred digit may have been misread).
-    const written=s.match(/^(\d{1,2})\s*(?:コ|個|ケ|ヶ|点|本|袋|枚|箱|杯|皿|名|人|パック)?\s*[xX]/);
-    if(q&&written&&Number(written[1])!==q.qty)p.doubt.push('印字数量と単価・金額が食い違います。買った数を写真で確認してください');
-    if(q&&/[杯皿名人]/.test(s)&&!q.checked)p.doubt.push('杯数などの購入数量を金額で照合できません。写真で確認してください');
+    // A verified purchase quantity needs unit price, line total AND the
+    // printed multiplier to agree, regardless of product or word order.
+    // Missing totals and arithmetic contradictions must remain unchecked.
+    if(q&&!q.checked)p.doubt.push('購入数量と単価・金額を照合できないか矛盾しています。写真で買った数を確認してください');
     if(splitPrice){p.price=found.total;p.doubt.push('商品名と価格が別々の行です。内容と数量を確認してください')}
     if(!p.priced&&found.total)sum+=found.total;
    }else rejected.push({text:s,reason:splitPrice?'数量・価格の行（対応する商品が不明）':'数量の行（対応する商品が不明）',area:line.area});
@@ -146,7 +154,7 @@ function structure(lines){
   // The OCR may see a multiplier but lose the amount. Do not silently
   // interpret the previous purchased product as one unit or make this line
   // a separate product: preserve a visible review reason.
-  if(/^\d{1,2}\s*(?:コ|個|点|本|袋|枚|箱|杯|皿|名|人|パック)\s*[xX]/.test(s)){
+  if(/^(?:\d{1,2}\s*(?:コ|個|点|本|袋|枚|箱|杯|皿|名|人|パック)\s*[xX]|(?:単(?:価)?|@)\s*[¥\\]?\s*\d*[\d,]*\s*[xX]\s*\d{1,2}\s*(?:コ|個|点|本|袋|枚|箱|杯|皿|名|人|パック))/.test(s)){
    const prior=products[products.length-1];
    if(prior&&prior.line===i-1&&!prior.qtyLine&&!prior.coupon){
     prior.structured=true;
