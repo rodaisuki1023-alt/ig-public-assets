@@ -46,7 +46,12 @@ test('a receipt registered on one device and a partner change on another both co
     await expect(a.page.locator('#receiptCount')).toContainText('一致しています');
     const milkRow = a.page.locator('[data-receipt-row]').filter({ has: a.page.locator('select[aria-label$="に対応する商品"]') }).first();
     await expect(milkRow.locator('input[type=number]')).toHaveValue('2');
-    await milkRow.locator('select[aria-label$="に対応する商品"]').selectOption({ label: '登録済み：牛乳' });
+    // The displayed label includes a match-quality suffix like （商品名が一致）.
+    // Select the confirmed stock option's ID instead of an obsolete exact label.
+    const milkSelect=milkRow.locator('select[aria-label$="に対応する商品"]');
+    const milkOption=milkSelect.locator('option').filter({hasText:'登録済み：牛乳'}).first();
+    await expect(milkOption).toBeAttached();
+    await milkSelect.selectOption(await milkOption.getAttribute('value'));
     await a.page.locator('#receiptApplyBtn').click();
     await a.page.locator('#qaCommit').dblclick();
     await expect(a.page.locator('#pg-stock')).toHaveClass(/on/);
