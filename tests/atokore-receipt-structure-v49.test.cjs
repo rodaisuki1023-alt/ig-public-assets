@@ -569,3 +569,16 @@ test('P1 independent audit: no-space item count needs individual review, tax-onl
  const fee=parse('会員入会金 ¥750\n小計 ¥750');
  assert.deepEqual(fee.items.map(x=>x.name),['会員入会金']);
 });
+
+test('P1: warehouse-club arithmetic cannot silently override a different printed multiplier',()=>{
+ const correct=parse('※ TEST BULK PRODUCT\n91529 10 1.398 1,398 E\n**** 合計 1,398');
+ assert.equal(correct.items.length,1);
+ assert.equal(correct.items[0].qty,1);
+ assert.equal(correct.items[0].selected,true,'club OCR 1o to 1 must remain supported');
+ const inconsistent=parse('※ TEST BULK PRODUCT\n91529 3 200 400 E\n**** 合計 400');
+ assert.equal(inconsistent.items.length,1);
+ assert.equal(inconsistent.items[0].qty,2);
+ assert.equal(inconsistent.items[0].selected,false,'printed 3 must not be trusted as a confirmed 2');
+ assert.equal(inconsistent.items[0].low,true);
+ assert.ok(inconsistent.items[0].reasons.some(x=>x.includes('数量と金額')));
+});
