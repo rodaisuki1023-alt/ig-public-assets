@@ -477,3 +477,52 @@ test('v50 linked-stock names stay legible, not vertical, on 320px and 390px rece
  }
  expect(page.__errors).toEqual([]);
 });
+
+
+test('v50 Muse round 3: rotating to a zero-product scan keeps previous rows and rejected lines, with a warning', async ({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await go(page,'premium');
+ await page.locator('#pg-premium .premium').filter({hasText:'レシート一括補充'}).click();
+ // Fake OCR result arrays only: exercises the app's own parser and rotate/review UI.
+ // The file is synthetic and is never uploaded; no OCR model or external service is used.
+ await page.setInputFiles('#receiptFile',{
+  name:'synthetic-receipt.png',mimeType:'image/png',
+  buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4//8/AwAI/AL+2NSeGAAAAABJRU5ErkJggg==','base64'),
+ });
+ await page.evaluate(()=>{
+  window.__v50ReceiptReads=0;
+  window.AtokoreReceiptImage.prepare=async()=>({found:true});
+  window.AtokoreReceiptOcr.ready=()=>true;
+  window.AtokoreReceiptOcr.cached=async()=>true;
+  window.AtokoreReceiptOcr.load=async()=>{};
+  window.AtokoreReceiptOcr.storage=()=>null;
+  window.AtokoreReceiptOcr.readReceipt=async()=>{
+   window.__v50ReceiptReads++;
+   const text=window.__v50ReceiptReads===1
+    ? ['テスト牛乳','1点 ¥218','テスト文字不鮮明','小計 1点 ¥218']
+    : [];
+   const result=text.map((t,i)=>({text:t,score:95,top:i*40,bottom:i*40+25,left:10,right:300}));
+   result.dropped=[];
+   result.canvas=null;
+   result.turn=window.__v50ReceiptReads===1?0:90;
+   return result;
+  };
+  window.AtokoreReceiptLines.groupBoxes=got=>got.map(x=>({...x,confidence:x.score,minScore:x.score}));
+ });
+ await page.click('#receiptAnalyzeBtn');
+ await expect(page.getByRole('heading',{name:'🧾 読み取り結果の確認'})).toBeVisible();
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ await expect(page.locator('.receiptRejected')).toContainText('テスト文字不鮮明');
+ await expect(page.locator('#receiptSelectionCount')).toContainText('0/1件');
+ const before=await page.locator('.receiptRejected').innerText();
+ await page.getByRole('button',{name:'向きを変えて読み直す'}).click();
+ await expect(page.locator('#receiptRotateNotice')).toContainText('前回の読み取り結果を表示');
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ await expect(page.locator('.receiptRejected')).toContainText(before);
+ await expect(page.locator('#receiptSelectionCount')).toContainText('0/1件');
+ await expect(page.locator('.receiptRaw')).toContainText('テスト牛乳');
+ expect(await page.evaluate(()=>window.__v50ReceiptReads)).toBe(2);
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
