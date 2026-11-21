@@ -106,6 +106,9 @@ test('v50 P1 regression: undo restores a different original photo after importin
   expect(backup.photos).toHaveLength(1);
   expect(backup.photos[0].id).toBe('3');
 
+  // Close the backup sheet before clicking stock: the modal intercepts pointer input.
+  await page.evaluate(() => window.closeM());
+  await expect(page.locator('#modal')).not.toHaveClass(/on/);
   // The current device now has A's photo and no B photo.
   await go(page, 'stock');
   await page.locator('#stockList [data-stock-id="3"] .name').click();
