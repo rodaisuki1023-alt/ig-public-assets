@@ -515,3 +515,18 @@ test('P2: payable membership fee is a purchase; tax amount labels do not become 
  const meta=parse('会員番号 00001234\nテスト飲料 ¥200\n小計 1点 ¥200');
  assert.equal(meta.items.length,1);
 });
+
+test('P1: ambiguous two-piece label cannot silently count as one purchased unit',()=>{
+ const a=parse('テスト洗濯ネット 2点 ¥960\n小計 2点 ¥960');
+ assert.equal(a.items.length,1);
+ assert.equal(a.items[0].name,'テスト洗濯ネット 2点','the printed label is preserved for comparison');
+ assert.equal(a.items[0].qty,1,'the parser cannot assume that package size equals purchase count');
+ assert.equal(a.items[0].selected,false,'uncertain purchase count must not be preselected');
+ assert.equal(a.items[0].low,true);
+ assert.ok(a.items[0].reasons.some(x=>x.includes('セット内容か購入数量か判断できません')));
+ assert.equal(a.countMatches,false);
+ // A clear 2-pack content count without standalone 点 is a descriptor, not a purchase multiplier.
+ const pack=parse('テストおしりふき 60枚 ¥298\n小計 1点 ¥298');
+ assert.equal(pack.items[0].qty,1);
+ assert.equal(pack.items[0].selected,true);
+});
