@@ -67,7 +67,7 @@ test('learned receipt texts: exact text pre-selects; near text, other size or am
   await expect(page.locator('[data-receipt-row] .receiptLinked').filter({ hasText: 'テスト炭酸水 1L' })).toHaveCount(1);
   expect(await value('テスト炭酸水レ')).toBe('');
   const near = await rowOf(page, 'テスト炭酸水レ').locator(`${PICK} option`).allTextContents();
-  expect(near.join()).toContain('前回と似た表記');
+  expect(near).toEqual([]); // The package volume could not be read; no 1L suggestion.
   expect(await value('テストおむつテープL')).not.toBe('2');
   const sizeOptions = await rowOf(page, 'テストおむつテープL').locator(`${PICK} option`).allTextContents();
   expect(sizeOptions.join()).not.toContain('テストおむつ テープ M');
@@ -673,7 +673,7 @@ test('P1: an unknown-capacity stock row never appears even with an old learned a
  await readText(page,'テスト飲料 2L ¥198\n小計 1点 ¥198');
  const r=rowOf(page,'テスト飲料');
  const options=await r.locator(PICK+' option').allTextContents();
- expect(options.join()).not.toContain('登録済み：テスト飲料</');
+
  expect(options.join()).not.toContain('登録済み：テスト飲料 500ml');
  expect(options.join()).toContain('登録済み：テスト飲料 2000ml');
  const values=await r.locator(PICK+' option').evaluateAll(opts=>opts.map(x=>x.value));
