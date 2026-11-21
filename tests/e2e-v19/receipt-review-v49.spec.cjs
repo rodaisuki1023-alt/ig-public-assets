@@ -744,3 +744,41 @@ test('P1: tax-only target lines never produce a selected row or registered stock
  expect(saved.items.some(x=>/課税|税対象|税額/.test(x.name))).toBe(false);
  expect(page.__errors).toEqual([]);
 });
+
+test('P1: editing an item name or picking stock cannot approve an inconsistent purchased quantity',async({page})=>{
+ const initial={items:[{id:1,name:'テスト牛乳',qty:4,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1}],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト牛乳 ¥120\n単価 120 x 3個 ¥240\n小計 2点 ¥240');
+ const r=page.locator('[data-receipt-row]');
+ await expect(r.locator('.receiptCheck')).not.toBeChecked();
+ const choose=r.locator(PICK);
+ await expect(choose).toHaveValue('');
+ await choose.selectOption({label:'登録済み：テスト牛乳'});
+ await expect(r.locator('.receiptCheck')).not.toBeChecked();
+ await expect(r.locator('.receiptQuantityReview')).toContainText('数量');
+ await page.getByRole('button',{name:'通常行のみ全選択'}).click();
+ await expect(r.locator('.receiptCheck')).not.toBeChecked();
+ // Correcting the name is not a confirmation of the quantity.
+ await r.locator('.receiptNameInput').fill('テスト牛乳');
+ await r.locator('.receiptNameInput').dispatchEvent('change');
+ await expect(r.locator('.receiptCheck')).not.toBeChecked();
+ await expect(r.locator('.receiptQuality')).toContainText('要確認・未選択');
+ await r.locator('.receiptCheck').check();
+ await expect(r.locator('.receiptQuality')).toContainText('個別選択済み');
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('P1: a no-space item-count label is not included by safe bulk-selection',async({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト洗濯ネット2点 ¥960\n小計 2点 ¥960');
+ const row=page.locator('[data-receipt-row]');
+ await expect(row).toHaveCount(1);
+ await expect(row.locator('.receiptQuality')).toContainText('セット内容か購入数量か');
+ await expect(row.locator('.receiptCheck')).not.toBeChecked();
+ await page.getByRole('button',{name:'通常行のみ全選択'}).click();
+ await expect(row.locator('.receiptCheck')).not.toBeChecked();
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
