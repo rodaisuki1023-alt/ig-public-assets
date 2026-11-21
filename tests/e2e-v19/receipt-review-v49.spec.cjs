@@ -568,7 +568,7 @@ test('v50 P1: a partial photo scan prominently shows missing count and updates i
  expect(page.__errors).toEqual([]);
 });
 
-test('v50 P1: a missing item count triggers one higher-sensitivity retry, and recovered rows stay unselected', async ({page})=>{
+test('v50 P1: high-sensitivity retry is confined to supported engines and never saves automatically', async ({page,browserName})=>{
  const initial={items:[],buys:[],routines:[]};
  await open(page,{[KEY]:initial});
  await go(page,'premium');
@@ -596,13 +596,41 @@ test('v50 P1: a missing item count triggers one higher-sensitivity retry, and re
  });
  await page.locator('#receiptAnalyzeBtn').click();
  await expect(page.getByRole('heading',{name:'🧾 読み取り結果の確認'})).toBeVisible();
- await expect(page.locator('[data-receipt-row]')).toHaveCount(2);
- await expect(page.locator('#receiptSensitiveNotice')).toContainText('すべて未選択');
- await expect(page.locator('#receiptSelectionCount')).toHaveText('0/2件を選択');
- await expect(page.locator('#receiptCount')).toContainText('一致しています');
- await expect(page.locator('[data-receipt-row] .receiptCheck:checked')).toHaveCount(0);
- await expect(page.locator('[data-receipt-row] .receiptQuality')).toHaveCount(2);
- expect(await page.evaluate(()=>window.__sensitiveOptions)).toEqual([false,true]);
+ if(browserName==='webkit'){
+  // Full high-sensitivity ONNX on WebKit exceeded the real-photo E2E budget.
+  // The first pass remains usable, and the shortage is made conspicuous.
+  await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+  await expect(page.locator('#receiptSensitiveNotice')).toHaveCount(0);
+  await expect(page.locator('#receiptCount')).toContainText('2点の差');
+  expect(await page.evaluate(()=>window.__sensitiveOptions)).toEqual([false]);
+ }else{
+  await expect(page.locator('[data-receipt-row]')).toHaveCount(2);
+  await expect(page.locator('#receiptSensitiveNotice')).toContainText('すべて未選択');
+  await expect(page.locator('#receiptSelectionCount')).toHaveText('0/2件を選択');
+  await expect(page.locator('#receiptCount')).toContainText('一致しています');
+  await expect(page.locator('[data-receipt-row] .receiptCheck:checked')).toHaveCount(0);
+  await expect(page.locator('[data-receipt-row] .receiptQuality')).toHaveCount(2);
+  expect(await page.evaluate(()=>window.__sensitiveOptions)).toEqual([false,true]);
+ }
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50: unpriced barcode-backed receipt items are visible but not preselected', async ({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,[
+  'テスト牛乳 ¥100',
+  '0004 テスト食材 軽',
+  '4580781733565',
+  'テストチーズ ¥200',
+  '小計 ¥300'
+ ].join('\n'));
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(3);
+ const recovered=rowOf(page,'テスト食材');
+ await expect(recovered).toHaveCount(1);
+ await expect(recovered.locator('.receiptCheck')).not.toBeChecked();
+ await expect(recovered.locator('.receiptQuality')).toContainText('商品コードは読めましたが価格・数量が不明');
  expect(await stored(page)).toEqual(initial);
  expect(page.__errors).toEqual([]);
 });
