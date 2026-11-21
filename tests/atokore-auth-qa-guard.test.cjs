@@ -8,21 +8,34 @@ const html=fs.readFileSync(path.join(__dirname,'manual/atokore-v50-auth-qa.html'
 const js=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert(js,'QA inline script must exist');
 
-function load(origin='https://rodaisuki1023-alt.github.io',pathname='/ig-public-assets/tests/manual/atokore-v50-auth-qa.html'){
- const nodes={};
- for(const id of ['accounts','start','status','result'])nodes[id]={textContent:'',disabled:false,append(){},addEventListener(){}};
- const doc={getElementById(id){return nodes[id]||(nodes[id]={textContent:'',value:'',append(){}})},createElement(){return {append(){},value:'',readOnly:false}}};
- const state=new Map();
+function load(origin='https://rodaisuki1023-alt.github.io',pathname='/ig-public-assets/tests/manual/atokore-v50-auth-qa.html',seed=[]){
+ const nodes={},created=[],state=new Map(seed),requests=[];
+ const elt=()=>({
+  textContent:'',value:'',disabled:false,hidden:false,attributes:{},
+  append(){},addEventListener(){},
+  setAttribute(k,v){this.attributes[k]=v},
+  focus(){this.focused=true}
+ });
+ for(const id of ['accounts','start','status','result'])nodes[id]=elt();
+ const doc={
+  getElementById(id){return nodes[id]||created.find(x=>x.id===id)||null},
+  createElement(){const obj=elt();created.push(obj);return obj}
+ };
  const ctx={document:doc,location:{origin,pathname},console,
-  localStorage:{getItem(k){return state.get(k)||null},setItem(k,v){state.set(k,v)}},
-  fetch(){throw Error('No HTTP calls allowed in static QA verdict regression')}
+  localStorage:{
+   getItem(k){return state.get(k)||null},
+   setItem(k,v){state.set(k,v)},
+   removeItem(k){state.delete(k)}
+  },
+  fetch(url){requests.push(url);throw Error('No external HTTP calls allowed by QA unit tests')}
  };
  vm.createContext(ctx);
- const exposed=js.replace(/\}\)\(\);\s*$/, 'globalThis.__verdict={rpcDenied,storageVerdict,photoMeta};})();');
- assert.notEqual(exposed,js,'QA verdict injection point missing');
+ const exposed=js.replace(/\}\)\(\);\s*$/, 'globalThis.__verdict={rpcDenied,storageVerdict,photoMeta,validateInputs,start};})();');
+ assert.notEqual(exposed,js,'QA verdict injection point must exist');
  new vm.Script(exposed,{filename:'atokore-v50-auth-qa.html'}).runInContext(ctx);
- return {nodes,verdict:ctx.__verdict};
+ return {nodes,created,doc,state,requests,verdict:ctx.__verdict};
 }
+
 test('QA script parses, and third-party RawGithack is never allowed to collect test credentials',()=>{
  new vm.Script(js);
  const thirdParty=load('https://raw.githack.com','/rodaisuki1023-alt/ig-public-assets/test.html');
@@ -62,4 +75,53 @@ test('Review covers negative controls, separate histories, same-URL replay and c
  assert.match(html,/Content-Security-Policy/);
  assert.doesNotMatch(js,/createSignedUrl|getPublicUrl|service_role/);
  assert.doesNotMatch(js,/localStorage\.setItem\([^,\n]+,\s*.*access_token/);
+});
+
+test('A/B/C errors are field-specific and do not lock the QA or call Auth',async()=>{
+ const q=load(),key='atk_v50_qa_once_d59b5fa73f';
+ const errors=['a','b','c'].map(r=>q.doc.getElementById('error-'+r));
+ const passwords=['a','b','c'].map(r=>q.doc.getElementById('password-'+r));
+ const emails=['a','b','c'].map(r=>q.doc.getElementById('email-'+r));
+ assert(emails.every(e=>e.readOnly===true),'QA email inputs are fixed to the synthetic cohort');
+ await q.verdict.start();
+ assert.equal(q.nodes.start.disabled,false,'invalid inputs must leave button active');
+ assert.equal(q.state.has(key),false,'invalid preflight cannot set the irreversible run marker');
+ assert.equal(q.requests.length,0,'no Supabase Auth requests are allowed before preflight');
+ assert.match(q.nodes.status.textContent,/通信はしていません/);
+ for(let i=0;i<3;i++){
+  assert.equal(errors[i].hidden,false);
+  assert.match(errors[i].textContent,RegExp('合成アカウント '+['A','B','C'][i]));
+  assert.match(errors[i].textContent,/12文字以上/);
+  assert.equal(passwords[i].attributes['aria-invalid'],'true');
+ }
+ passwords.forEach((p,i)=>{p.value=['Correct-password-A','Correct-password-B','Correct-password-C'][i]});
+ emails[1].value='wrong@example.invalid';
+ await q.verdict.start();
+ assert.equal(q.requests.length,0);
+ assert.equal(q.state.has(key),false);
+ assert.match(errors[1].textContent,/メール/);
+ assert.equal(errors[0].hidden,true);
+ assert.equal(errors[2].hidden,true);
+ emails[1].value='atokore-qa-b-d59b5fa73f@example.invalid';
+ const valid=q.verdict.validateInputs();
+ assert.equal(valid.a,'Correct-password-A');
+ assert.equal(valid.b,'Correct-password-B');
+ assert.equal(valid.c,'Correct-password-C');
+ assert.equal(errors[1].hidden,true,'corrected credentials clear the error');
+ assert.equal(q.state.has(key),false,'read-only validation cannot set a run marker');
+ await q.verdict.start(); // fake fetch throws at first Auth call; never reaches real Supabase
+ assert.equal(q.requests.length,1,'one network attempt only AFTER all inputs are valid');
+ assert.equal(q.state.has(key),true,'real Auth attempt consumes one-shot run marker');
+ assert.equal(q.nodes.start.disabled,true);
+});
+test('only old pre-network validation errors are unlocked; real Auth progress stays locked',()=>{
+ const key='atk_v50_qa_once_d59b5fa73f';
+ const legacy=load(undefined,undefined,[[key,'検証処理 : FAIL (only this cohort is allowed)\nSynthetic-only IDs for controlled database cleanup:']]);
+ assert.equal(legacy.nodes.start.disabled,false);
+ assert.equal(legacy.state.has(key),false);
+ const begun=load(undefined,undefined,[[key,'実Authログイン A : PASS\n検証処理 : FAIL (only this cohort is allowed)']]);
+ assert.equal(begun.nodes.start.disabled,true);
+ assert.equal(begun.state.has(key),true);
+ const ambiguous=load(undefined,undefined,[[key,'QA開始済み']]);
+ assert.equal(ambiguous.nodes.start.disabled,true,'ambiguous prior runs remain locked');
 });
