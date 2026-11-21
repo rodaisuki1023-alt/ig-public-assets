@@ -123,7 +123,7 @@ function structure(lines){
   const q=quantityLine(s);
   // Two-line receipts sometimes put explicit purchase count + yen total on the next row.
   // This may also be a store summary: ALWAYS mark it uncertain, never preselect it.
-  const split=s.match(/^([1-9]\d?)\s*(?:点|個|本|袋|枚|パック)\s+[¥\\]\s*(\d[\d,]*)\s*円?$/);
+  const split=s.match(/^([1-9]\d?)\s*(?:点|個|本|袋|枚|パック)\s*[¥\\]\s*(\d[\d,]*)\s*円?$/);
   const splitQty=split?+split[1]:0,splitTotal=split?+split[2].replace(/,/g,''):0;
   const splitPrice=!q&&splitQty<=30&&splitTotal>0&&splitTotal<=999999?{qty:splitQty,total:splitTotal,checked:false}:null;
   if(q||splitPrice){
