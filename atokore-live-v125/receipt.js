@@ -171,7 +171,12 @@ function parse(source){
  const S=window.AtokoreReceiptStructure,lines=combinedLines(source),st=S.structure(lines),out=[],rejected=st.rejected.slice();
  for(const p of st.products){
   // Club names are printed with spaces and codes that matter ("COUNTRY MAAM 10PKS"): kept as printed.
-  const prefix=stripRetailPrefix(p.text),q=p.club?{text:prefix.text,qty:1,unit:''}:extractQuantity(nameText(prefix.text)),raw=nameText(q.text),signal=productSignal(raw);
+  const prefix=stripRetailPrefix(p.text),q=p.club?{text:prefix.text,qty:1,unit:''}:extractQuantity(nameText(prefix.text));
+  // "2点" on the NAME line could mean two bought, or a two-piece pack.
+  // Preserve the printed designation and require human quantity confirmation
+  // rather than silently showing quantity=1 as a trusted purchase.
+  const ambiguousCount=!p.qtyLine&&prefix.text.match(/(?:^|\s)([2-9]|1\d|20)\s*(点|杯|皿|人|名)\s*$/);
+  const raw=nameText(ambiguousCount?prefix.text:q.text),signal=productSignal(raw);
   // Warehouse clubs print English names ("TERIYAKI UDON"); the item-code line below confirms the row.
   if(!raw||noise(raw)||!(signal.ok||(p.club&&/[A-Za-z]{3,}/.test(raw)))){rejected.push({text:p.source,reason:'商品名として判定できない文字'});continue}
   const name=canon(raw),inlineQty=p.qtyLine?null:inlinePurchaseCount(p.source),qty=inlineQty|| (p.qtyLine?p.qty:q.qty),score=signal.ok?signal.score:p.club&&p.qtyChecked?84:signal.score;
@@ -180,6 +185,7 @@ function parse(source){
   // does not add up to the printed total.
   const reasons=[];
   if(inlineQty)reasons.push('同じ行に購入数量の掛け算があるため、買った数を確認してください');
+  if(ambiguousCount)reasons.push('商品名末尾の点数・人数がセット内容か購入数量か判断できません。買った数を写真で確認してください');
   if(conf!==null&&(conf<48||quality<58))reasons.push('文字が不鮮明');if(p.club&&!p.qtyChecked)reasons.push('数量と金額が合わない');
   // A voicing mark read as a separate symbol after ハ行 (ﾊﾞ or ﾊﾟ?) cannot be told apart: say so instead of guessing.
   const before=hw(prefix.text);
