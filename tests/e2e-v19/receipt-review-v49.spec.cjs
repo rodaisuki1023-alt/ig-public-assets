@@ -65,7 +65,7 @@ test('learned receipt texts: exact text pre-selects; near text, other size or am
   const value = async t => rowOf(page, t).locator(PICK).count().then(n => n ? rowOf(page, t).locator(PICK).inputValue() : null);
   // A row linked to a product shows the product name; the exact one is linked without the person choosing.
   await expect(page.locator('[data-receipt-row] .receiptLinked').filter({ hasText: 'テスト炭酸水 1L' })).toHaveCount(1);
-  expect(await value('テスト炭酸水レ')).toBe('');
+  expect(await value('テスト炭酸水レ')).toBeNull(); // no unsafe suggestion selector for unreadable capacity
   const near = await rowOf(page, 'テスト炭酸水レ').locator(`${PICK} option`).allTextContents();
   expect(near).toEqual([]); // The package volume could not be read; no 1L suggestion.
   expect(await value('テストおむつテープL')).not.toBe('2');
@@ -665,17 +665,17 @@ test('P1: bulk select never checks a barcode-recovered or uncertain-quantity row
 
 test('P1: an unknown-capacity stock row never appears even with an old learned alias',async({page})=>{
  const initial={items:[
-  {id:1,name:'テスト飲料',qty:3,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1,receiptAliases:['テスト飲料2l']},
-  {id:2,name:'テスト飲料 500ml',qty:6,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1},
-  {id:3,name:'テスト飲料 2000ml',qty:2,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1,receiptAliases:['テスト飲料2l']}
+  {id:1,name:'テスト炭酸水',qty:3,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1,receiptAliases:['テスト炭酸水2l']},
+  {id:2,name:'テスト炭酸水 500ml',qty:6,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1},
+  {id:3,name:'テスト炭酸水 2000ml',qty:2,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1,receiptAliases:['テスト炭酸水2l']}
  ],buys:[],routines:[]};
  await open(page,{[KEY]:initial});
- await readText(page,'テスト飲料 2L ¥198\n小計 1点 ¥198');
- const r=rowOf(page,'テスト飲料');
+ await readText(page,'テスト炭酸水 2L ¥198\n小計 1点 ¥198');
+ const r=rowOf(page,'テスト炭酸水');
  const options=await r.locator(PICK+' option').allTextContents();
 
- expect(options.join()).not.toContain('登録済み：テスト飲料 500ml');
- expect(options.join()).toContain('登録済み：テスト飲料 2000ml');
+ expect(options.join()).not.toContain('登録済み：テスト炭酸水 500ml');
+ expect(options.join()).toContain('登録済み：テスト炭酸水 2000ml');
  const values=await r.locator(PICK+' option').evaluateAll(opts=>opts.map(x=>x.value));
  expect(values).not.toContain('1');
  expect(values).not.toContain('2');
@@ -708,5 +708,39 @@ test('P1: unverified restaurant quantity is unchecked and excluded from bulk sel
  await expect(page.locator('#receiptCount')).toContainText('一致しています');
  await expect(r.locator('.receiptCheck')).not.toBeChecked();
  expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('P1: generic reversed-price multiplier mismatch cannot be bulk-selected or silently saved',async({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト牛乳 ¥120\n単価 120 x 3個 ¥240\n小計 2点 ¥240');
+ const row=page.locator('[data-receipt-row]');
+ await expect(row).toHaveCount(1);
+ await expect(row.locator('#receiptQty-0')).toHaveValue('2');
+ await expect(row.locator('.receiptQuality')).toContainText('数量');
+ await expect(row.locator('.receiptCheck')).not.toBeChecked();
+ await page.getByRole('button',{name:'通常行のみ全選択'}).click();
+ await expect(row.locator('.receiptCheck')).not.toBeChecked();
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTray')).toHaveCount(0);
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('P1: tax-only target lines never produce a selected row or registered stock',async({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト牛乳 ¥218\n課税対象 ¥218\n課税対像 218\n税対象金額 ¥218\n小計 1点 ¥218');
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ await expect(page.locator('[data-receipt-row] .receiptNameInput')).toHaveValue('テスト牛乳');
+ await page.getByRole('button',{name:'通常行のみ全選択'}).click();
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTray')).toBeVisible();
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items).toHaveLength(1);
+ expect(saved.items[0].name).toBe('テスト牛乳');
+ expect(saved.items.some(x=>/課税|税対象|税額/.test(x.name))).toBe(false);
  expect(page.__errors).toEqual([]);
 });
