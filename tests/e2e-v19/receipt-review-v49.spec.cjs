@@ -436,6 +436,15 @@ test('v50: 320px receipt with 20 grocery rows preserves 22 units through final r
   const rows = page.locator('[data-receipt-row]');
   await expect(rows).toHaveCount(20);
   await expect(page.locator('#receiptCount')).toContainText('一致しています');
+  // These two invented quantity lines have no printed LINE TOTAL. The numeric
+  // OCR is still displayed, but the user must confirm them one by one.
+  await expect(page.locator('#receiptSelectionCount')).toContainText('18/20件を選択');
+  for(const index of [1,17]){
+    const row=rows.nth(index);
+    await expect(row.locator('.receiptQuality')).toContainText('数量');
+    await expect(row.locator('.receiptCheck')).not.toBeChecked();
+  }
+  for(const index of [1,17])await rows.nth(index).locator('.receiptCheck').check();
   await expect(page.locator('#receiptSelectionCount')).toContainText('20/20件を選択');
 
   const qtys = await rows.locator('input[type=number]').evaluateAll(nodes => nodes.map(n => +n.value));
@@ -753,7 +762,8 @@ test('P1: editing an item name or picking stock cannot approve an inconsistent p
  await expect(r.locator('.receiptCheck')).not.toBeChecked();
  const choose=r.locator(PICK);
  await expect(choose).toHaveValue('');
- await choose.selectOption({label:'登録済み：テスト牛乳'});
+ await expect(choose.locator('option[value="1"]')).toContainText('登録済み：テスト牛乳');
+ await choose.selectOption('1');
  await expect(r.locator('.receiptCheck')).not.toBeChecked();
  await expect(r.locator('.receiptQuantityReview')).toContainText('数量');
  await page.getByRole('button',{name:'通常行のみ全選択'}).click();
