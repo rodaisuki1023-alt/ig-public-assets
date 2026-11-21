@@ -389,3 +389,29 @@ test('v50 Muse P2: two-line product + explicit quantity/yen total appears for ma
   // Plain price without an explicit yen sign does not qualify for this uncertain pattern.
   assert.equal(S.structure(['テスト牛乳','1点 288','小計 1点 ¥288']).products.length,0);
 });
+
+
+test('v50 Muse round 3: no-space 1点¥1,280 has a manual-review product, not a lost line',()=>{
+ const r=parse('パンパーステープM\n1点¥1,280\n小計 1点 ¥1,280');
+ assert.equal(r.items.length,1);
+ assert.equal(r.items[0].qty,1);
+ assert.equal(r.items[0].selected,false);
+ assert.equal(r.items[0].low,true);
+ assert.ok(r.items[0].reasons.includes('商品名と価格が別々の行です。内容と数量を確認してください'));
+ // The price line must not turn into an independent product.
+ assert.equal(r.items.filter(x=>/1点|1,280/.test(x.name)).length,0);
+ const normal=parse('テスト牛乳 ¥218\n小計 1点 ¥218');
+ assert.equal(normal.items.length,1);
+ assert.equal(normal.items[0].selected,true);
+});
+
+test('v50 Muse round 3: a carton of 10 eggs is one purchase unless separate quantity is explicit',()=>{
+ const packed=parse('タマゴ 10コ ¥258\n小計 1点 ¥258');
+ assert.equal(packed.items.length,1);
+ assert.equal(packed.items[0].qty,1,'10 eggs in a carton are not 10 cartons bought');
+ assert.equal(packed.countMatches,true);
+ // A true explicitly printed purchase quantity is still honored.
+ const two=parse('タマゴ 10コ\n2コ X 単258 ¥516\n小計 2点 ¥516');
+ assert.equal(two.items.length,1);
+ assert.equal(two.items[0].qty,2,'a separate quantity × unit-price row still wins');
+});
