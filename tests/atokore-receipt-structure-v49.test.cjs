@@ -415,3 +415,37 @@ test('v50 Muse round 3: a carton of 10 eggs is one purchase unless separate quan
  assert.equal(two.items.length,1);
  assert.equal(two.items[0].qty,2,'a separate quantity × unit-price row still wins');
 });
+
+test('v50 real-receipt follow-up: warehouse-club names keep trailing pack-size numerals', () => {
+  // Fictional items only. The following item-code line carries the price; the
+  // number at the end of the preceding name is NOT a price or purchase quantity.
+  const text=[
+    'テスト衛生用品 100',
+    '581695 1● 1,598 1,598 T',
+    'CPN',
+    'テスト衛生用品 100',
+    '9322 1● 320 320-T',
+    'テストヨーグルト 800',
+    '585967 1● 658 658 E',
+    '**** 合計 1,936',
+    '御買上げ点数 : 2'
+  ].join('\n');
+  const st=S.structure(text.split('\n'));
+  assert.deepEqual(st.products.map(x=>[x.text,x.qty]),[
+    ['テスト衛生用品 100',1],
+    ['テストヨーグルト 800',1],
+  ]);
+  const parsed=parse(text);
+  assert.equal(parsed.items.length,2);
+  assert.equal(parsed.items[0].qty,1);
+  assert.equal(parsed.items[1].qty,1);
+  assert.equal(parsed.printedCount,2);
+  assert.ok(parsed.items.some(x=>/衛生用品\s*100/.test(x.name)),
+    'the content amount stays in the candidate name');
+  assert.ok(parsed.items.some(x=>/ヨーグルト\s*800/.test(x.raw)),
+    'the amount stays in the printed raw name even when a generic display name is shown');
+  assert.ok(!parsed.items.some(x=>/CPN|IRC/.test(x.name)));
+  // Outside club receipts, terminal bare numerals retain existing price parsing.
+  const normal=S.structure(['テスト商品 ¥200','小計 1点 ¥200']);
+  assert.equal(normal.products[0].text,'テスト商品');
+});
