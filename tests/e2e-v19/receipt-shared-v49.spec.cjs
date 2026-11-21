@@ -9,7 +9,7 @@ const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
 const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false };
 const RECEIPT = `テストマート
 2026/10/27 12:54
-牛乳 1000ml
+牛乳
 2コ X 単218 ¥436
 テストクッキー ¥198
 値引 -20
