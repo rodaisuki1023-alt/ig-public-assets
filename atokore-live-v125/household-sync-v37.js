@@ -119,7 +119,7 @@ async function photoRequest(path,method='GET',blob){
  if(session.expires_at-60<Date.now()/1000)await refreshSession();
  const controller=new root.AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
  try{
-  const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path+(method==='GET'?'?v='+Date.now():''),{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'cache-control':'no-cache',...(blob?{'Content-Type':'image/jpeg'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
+  const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path+(method==='GET'?'?v='+(root.crypto?.randomUUID?.()||Date.now()):''),{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'cache-control':'no-cache',...(blob?{'Content-Type':'image/jpeg'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('写真を共有できませんでした。通信状態を確認してお試しください。');
   return method==='GET'?response.blob():null;
  }catch(e){if(e.name==='AbortError'||e instanceof TypeError)throw Error('通信できません。端末に保存済みの写真は残っています。つながってからお試しください。');throw e}finally{clearTimeout(timeout)}
@@ -498,7 +498,7 @@ async function dashboard(){
     engine.resolveRejected();await syncNow();dashboard();
    }),'atk-hh-link')]):null,
   readJSON(RECOVERY)?button('同期を再開する前の控えをファイルに保存',()=>downloadRecovery(true),'atk-hh-link'):null,
-  note('商品の写真も、在庫と同じように家族と自動で共有されます。共有を始める前に入れた写真も共有されます。'),
+  note('商品の写真は、共有開始前に登録した分も家族へ自動で共有されます。家族から外しても、相手がすでに見たり保存した写真・バックアップのコピーは回収できません。'),
   readJSON(BEFORE_SHARE)?button('共有前の控えをファイルに保存',downloadBackup,'atk-hh-link'):null,
   button('この世帯から抜ける（端末の在庫は残ります）',e=>busy(e.target,leave),'atk-hh-link'),
   button('ログアウト',()=>signOut(),'atk-hh-link')]);
@@ -510,7 +510,7 @@ async function dashboard(){
   members.replaceChildren(...my.members.map(m=>el('li',{},[
    el('span',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')}),
    my.me?.role==='owner'&&!m.is_me?button('外して再招待：'+m.display_name,e=>busy(e.target,async()=>{
-    if(!await ask(m.display_name+'さんの参加情報を外しますか？',m.display_name+'さんの以前の参加情報を外します。以前の端末は今後共有できなくなります。共有済みの在庫は残ります。その後、新しい招待コードを作ってください。続けますか？','外す'))return;
+    if(!await ask(m.display_name+'さんの参加情報を外しますか？',m.display_name+'さんの以前の参加情報を外します。以前の端末は今後共有できなくなります。共有済みの在庫は残ります。ただし相手がすでに見たり保存した写真・バックアップのコピーは消せません。その後、新しい招待コードを作ってください。続けますか？','外す'))return;
     await rpc('hh_remove_member',{p_user:m.user_id});await dashboard();
    }),'atk-hh-link'):null
   ])));
