@@ -116,7 +116,7 @@ function toTensor(pixels,w,h,data,offset,stride){
 }
 
 // Text detection: probability map → connected regions → boxes, expanded like DB's unclip.
-function boxesFromMap(prob,w,h,scaleX,scaleY,W,H){
+function boxesFromMap(prob,w,h,scaleX,scaleY,W,H,boxThreshold=BOX_THRESH){
  const bin=new Uint8Array(w*h);
  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const k=y*w+x;
   // 2×2 dilation of the thresholded map.
@@ -128,7 +128,7 @@ function boxesFromMap(prob,w,h,scaleX,scaleY,W,H){
    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;const yy=y+dy,xx=x+dx;if(yy<0||yy>=h||xx<0||xx>=w)continue;const q=yy*w+xx;if(bin[q]&&!seen[q]){seen[q]=1;stack[top++]=q}}}
   const bw=x1-x0,bh=y1-y0;if(Math.min(bw,bh)<3)continue;
   let sum=0,n=0;for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){sum+=prob[y*w+x];n++}
-  const score=sum/n;if(score<BOX_THRESH)continue;
+  const score=sum/n;if(score<boxThreshold)continue;
   const d=bw*bh*UNCLIP/(2*(bw+bh)),ex0=x0-d,ey0=y0-d,ex1=x1+d,ey1=y1+d;
   if(Math.min(ex1-ex0,ey1-ey0)<5)continue;
   const X0=Math.max(0,Math.min(W,Math.round(ex0*scaleX))),Y0=Math.max(0,Math.min(H,Math.round(ey0*scaleY))),X1=Math.max(0,Math.min(W,Math.round(ex1*scaleX))),Y1=Math.max(0,Math.min(H,Math.round(ey1*scaleY)));
@@ -155,13 +155,16 @@ async function recognize(source,opt={}){
  const work=r<1?resized(source,ow*r,oh*r):source,W=work.width,H=work.height;
  // Detection input: shorter side 736 (enlarged or reduced), both sides multiples of 32. Receipt print
  // stays well above the size the detector needs, and the larger input only costs time.
- const dr=DET_MIN_SIDE/Math.min(W,H);
+ // Higher sensitivity is ONLY requested after a parsed purchase-count mismatch.
+ // It costs an extra OCR pass, so ordinary receipts keep the existing settings.
+ const higher=opt.sensitive===true,minSide=higher?960:DET_MIN_SIDE;
+ const dr=minSide/Math.min(W,H);
  const dw=Math.max(32,Math.round(Math.floor(W*dr)/32)*32),dh=Math.max(32,Math.round(Math.floor(H*dr)/32)*32);
  const dc=resized(work,dw,dh),dpix=ctx(dc).getImageData(0,0,dw,dh).data,dt=new Float32Array(3*dw*dh);
  toTensor(dpix,dw,dh,dt,0,dw);
  const dOut=await S.det.run({[S.det.inputNames[0]]:new S.ort.Tensor('float32',dt,[1,3,dh,dw])});
  const prob=dOut[S.det.outputNames[0]].data;
- const boxes=boxesFromMap(prob,dw,dh,W/dw,H/dh,W,H).sort((a,b)=>(a.y+a.h/2)-(b.y+b.h/2)),t1=performance.now();
+ const boxes=boxesFromMap(prob,dw,dh,W/dw,H/dh,W,H,higher?0.4:BOX_THRESH).sort((a,b)=>(a.y+a.h/2)-(b.y+b.h/2)),t1=performance.now();
  // Text running top-to-bottom gives tall boxes: the picture is sideways. Reported before reading so the
  // caller can turn it (a short receipt can be about as wide as it is tall, so its shape does not tell).
  if(opt.rejectVertical){const tall=boxes.filter(b=>b.h>b.w*1.3).length,wide=boxes.filter(b=>b.w>b.h*1.3).length;
