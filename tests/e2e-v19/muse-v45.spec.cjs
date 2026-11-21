@@ -55,3 +55,117 @@ for(const width of [320,390,430])test(`P3-8 touch targets and layout ${width}`,a
  for(const el of await page.locator('#stockList .qty button').all()){const box=await el.boundingBox();expect(box.width).toBeGreaterThanOrEqual(44);expect(box.height).toBeGreaterThanOrEqual(44)}
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.click('[data-atk-view="list"]');await shot(page,info,'v45-stock-list-'+width);await go(page,'buy');await expect(page.locator('.stableBuyStock')).toBeVisible();const b=await page.locator('.stableBuyStock').boundingBox();expect(b.height).toBeGreaterThanOrEqual(44);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await shot(page,info,'v45-buy-'+width);expect(page.__errors).toEqual([]);
 });
+
+for(const width of [320,393])test('Muse P2 purchased stock hidden by a saved category filter can be revealed at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:820});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ await expect(page.locator('#atkStockFilterNotice')).toBeHidden();
+ await page.evaluate(()=>window.setFilter('食料品'));
+ await expect(page.locator('#atkStockFilterNotice')).toBeVisible();
+ await expect(page.locator('[data-stock-id="2"]')).toHaveCount(0);
+ await go(page,'buy');
+ await page.locator('[data-buy-id="10"]').getByRole('button',{name:/を買った$/}).click();
+ const after=await stored(page);
+ expect(after.buys).toHaveLength(0);
+ expect(after.items.find(i=>i.name==='おしりふき詰替')?.qty).toBe(1);
+ await go(page,'stock');
+ await expect(page.locator('#atkStockFilterNotice')).toBeVisible();
+ await expect(page.locator('#stockList')).not.toContainText('おしりふき詰替');
+ const action=page.locator('#atkStockFilterNotice button');
+ await expect(action).toHaveText('すべて表示');
+ const size=await action.boundingBox();
+ expect(size.width).toBeGreaterThanOrEqual(44);
+ expect(size.height).toBeGreaterThanOrEqual(44);
+ await action.click();
+ await expect(page.locator('#atkStockFilterNotice')).toBeHidden();
+ await expect(page.locator('#stockList')).toContainText('おしりふき詰替');
+ expect(await stored(page)).toEqual(after);
+ await page.locator('#stockSearch').fill('存在しない商品');
+ await expect(page.locator('#atkStockFilterNotice')).toBeVisible();
+ await page.locator('#atkStockFilterNotice button').click();
+ await expect(page.locator('#stockSearch')).toHaveValue('');
+ await expect(page.locator('#atkStockFilterNotice')).toBeHidden();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
+
+for (const width of [320,393]) test('Muse P2: only one toast stays active and long text does not overflow at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:820});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ await page.evaluate(()=>{
+  const a=document.createElement('div');a.id='qaNotice';a.className='qa-notice';document.body.appendChild(a);
+  const b=document.createElement('div');b.id='stableToastV125h';b.className='stableToast';document.body.appendChild(b);
+  window.AtokoreNotices.show(a,150);
+  window.AtokoreNotices.show(b,1200);
+ });
+ const old=page.locator('#qaNotice'),current=page.locator('#stableToastV125h');
+ await expect(old).not.toHaveClass(/on/);
+ await expect(current).toHaveClass(/on/);
+ expect(await old.evaluate(el=>el._atkNoticeTimer)).toBeNull();
+ await page.waitForTimeout(220);
+ await expect(current).toHaveClass(/on/);
+ await page.evaluate(()=>window.notifyAtokoreV125H('登録された商品が見つからない場合は、カテゴリの絞り込みを解除してストック画面で再度確認してください。'));
+ const box=await current.boundingBox();
+ expect(box?.width).toBeLessThanOrEqual(width-16);
+ const style=await current.evaluate(el=>({whiteSpace:getComputedStyle(el).whiteSpace,wrap:getComputedStyle(el).overflowWrap}));
+ expect(style.whiteSpace).toBe('normal');
+ expect(style.wrap).toBe('anywhere');
+ await page.evaluate(()=>document.dispatchEvent(new CustomEvent('atokore-page-changed')));
+ await expect(current).not.toHaveClass(/on/);
+ expect(await current.evaluate(el=>el._atkNoticeTimer)).toBeNull();
+ expect(page.__errors).toEqual([]);
+});
+
+for (const width of [320,393]) test('Muse P2: stock category and expiry helper text is at least 11px without horizontal overflow at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:820});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'stock');
+ // stock-order-v48 deliberately replaces .stableCat with one .atk-row-cat per row.
+ const category=page.locator('#stockList .atk-row-cat').first();
+ const expiry=page.locator('#stockList .expiryBadge').first();
+ await expect(category).toBeVisible();
+ await expect(expiry).toBeVisible();
+ expect(await category.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(11);
+ expect(await expiry.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(11);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
+
+for(const width of [320,393])test('Muse P2: category chips are accessible by horizontal scrolling at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:760});
+ await open(page,{[KEY]:baseState()});
+ await go(page,'add');
+ const nav=page.locator('#qaTabs');
+ await expect(nav).toHaveAttribute('aria-label',/左右にスクロール/);
+ await expect(page.locator('.qa-category-hint')).toContainText('左右にスワイプ');
+ const metrics=await nav.evaluate(el=>({scroll:el.scrollWidth,view:el.clientWidth}));
+ expect(metrics.scroll).toBeGreaterThan(metrics.view);
+ const last=page.locator('[data-qa-cat="その他"]');
+ await last.scrollIntoViewIfNeeded();
+ await expect(last).toBeInViewport();
+ await last.click();
+ await expect(last).toHaveClass(/selected/);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ expect(page.__errors).toEqual([]);
+});
+
+test('Muse P2: unknown free-text shopping item is not silently assigned to food stock',async({page})=>{
+ await open(page,{[KEY]:baseState({items:[],buys:[]})});
+ await go(page,'buy');
+ await page.locator('#buyName').fill('保育園のお迎えメモ');
+ await page.evaluate(()=>window.addBuy());
+ const added=(await stored(page)).buys.find(x=>x.name==='保育園のお迎えメモ');
+ expect(added).toBeTruthy();
+ await page.evaluate(id=>window.buyOneToStockV125H(id),added.id);
+ const stock=(await stored(page)).items;
+ expect(stock).toHaveLength(1);
+ expect(stock[0]).toMatchObject({name:'保育園のお迎えメモ',cat:'その他'});
+ await page.locator('#buyName').fill('牛乳');
+ await page.evaluate(()=>window.addBuy());
+ const food=(await stored(page)).buys.find(x=>x.name==='牛乳');
+ await page.evaluate(id=>window.buyOneToStockV125H(id),food.id);
+ expect((await stored(page)).items.find(x=>x.name==='牛乳')?.cat).toBe('食料品');
+ expect(page.__errors).toEqual([]);
+});

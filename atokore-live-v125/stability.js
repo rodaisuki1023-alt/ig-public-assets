@@ -46,7 +46,7 @@
   const style=document.createElement('style');
   style.id='atokore-actions-v125h';
   style.textContent=`
-    .stableManage{border:1px solid #d7e0eb;background:#f8fbff;border-radius:15px;padding:9px;margin:7px 0 9px}.stableManageHead{display:flex;align-items:center;justify-content:space-between;gap:8px}.stableManageTitle{font-weight:950}.stableManageBtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}.stableManageBtns .btn{min-width:0;padding:8px 5px;font-size:11px}.stableDanger{background:#fff0f0!important;color:#b42318!important}.stableDone{background:#eaf7ef!important;color:#23724d!important}.stableBuyActions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:7px}.stableBuyStock{width:48px;flex:0 0 48px;padding:0 4px;background:#eaf7ef!important;color:#23724d!important;border:1px solid #c9ead7!important;font-size:11px;font-weight:950}.stableStockBuy{background:#edf6ff!important;color:#1268b3!important;border:1px solid #cde2f7!important}.stableCat{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;font-size:9px;font-weight:900;margin-top:3px}.stableStockRow{border-left:4px solid var(--cc)!important}.stableSelected{box-shadow:0 0 0 2px #1677ff22 inset;border-color:#1677ff!important}.stableCheck{width:22px;height:22px;flex:0 0 auto}.stableEmptyManage{display:none}.stableToast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:#172033;color:#fff;padding:9px 13px;border-radius:999px;font-size:12px;font-weight:850;z-index:100;opacity:0;transition:opacity .16s;white-space:nowrap;pointer-events:none}.stableToast.on{opacity:1}body.atk-density-ultra .stableManage{padding:5px;border-radius:9px;margin:4px 0}.atk-density-ultra .stableManageBtns{gap:3px;margin-top:4px}.atk-density-ultra .stableManageBtns .btn{padding:5px 3px;font-size:9px}.atk-density-ultra .stableBuyActions{margin-top:4px}`;
+    .stableManage{border:1px solid #d7e0eb;background:#f8fbff;border-radius:15px;padding:9px;margin:7px 0 9px}.stableManageHead{display:flex;align-items:center;justify-content:space-between;gap:8px}.stableManageTitle{font-weight:950}.stableManageBtns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}.stableManageBtns .btn{min-width:0;padding:8px 5px;font-size:11px}.stableDanger{background:#fff0f0!important;color:#b42318!important}.stableDone{background:#eaf7ef!important;color:#23724d!important}.stableBuyActions{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:7px}.stableBuyStock{width:48px;flex:0 0 48px;padding:0 4px;background:#eaf7ef!important;color:#23724d!important;border:1px solid #c9ead7!important;font-size:11px;font-weight:950}.stableStockBuy{background:#edf6ff!important;color:#1268b3!important;border:1px solid #cde2f7!important}.stableCat{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;font-size:11px;line-height:1.35;font-weight:900;margin-top:3px;max-width:100%;overflow-wrap:anywhere}.stableStockRow{border-left:4px solid var(--cc)!important}.stableSelected{box-shadow:0 0 0 2px #1677ff22 inset;border-color:#1677ff!important}.stableCheck{width:22px;height:22px;flex:0 0 auto}.stableEmptyManage{display:none}.stableToast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:#172033;color:#fff;padding:9px 13px;border-radius:14px;font-size:12px;line-height:1.5;font-weight:850;z-index:100;opacity:0;transition:opacity .16s;max-width:calc(100vw - 24px);white-space:normal;overflow-wrap:anywhere;text-align:center;pointer-events:none}.stableToast.on{opacity:1}body.atk-density-ultra .stableManage{padding:5px;border-radius:9px;margin:4px 0}.atk-density-ultra .stableManageBtns{gap:3px;margin-top:4px}.atk-density-ultra .stableManageBtns .btn{padding:5px 3px;font-size:9px}.atk-density-ultra .stableBuyActions{margin-top:4px}`;
   style.textContent+=`.stableManageBtns.hide{display:none!important}.stableManageBtns .btn:disabled{opacity:.42;cursor:not-allowed;filter:grayscale(.2)}`;
   document.head.appendChild(style);
 
@@ -63,7 +63,8 @@
     if(/薬|マスク|歯ブラシ|歯磨|ナプキン|消毒|絆創膏|湿布/.test(name))return '衛生・薬';
     if(/電池|電球|ケーブル|フィルター|カセットボンベ/.test(name))return '家電・生活用品';
     if(/非常|防災|簡易トイレ|アルファ米/.test(name))return '防災';
-    return '食料品';
+    // Unrecognized free-text shopping entries can be notes; never label them food by default.
+    return 'その他';
   }
 
   let lastSaveOk=true;
@@ -100,6 +101,9 @@
     try{window.renderBuy()}catch(e){console.error('あとこれ: 買い物表示',e)}
     try{if(typeof window.renderRoutines==='function')window.renderRoutines()}catch(e){console.error('あとこれ: いつものリスト表示',e)}
     try{if(typeof window.renderHome==='function')window.renderHome()}catch(e){console.error('あとこれ: ホーム表示',e)}
+    // The local kit only reads stock/shopping for suggestions; refresh its
+    // labels after a confirmed purchase or inventory change without writing data.
+    try{window.AtokorePackingChecklist?.refresh?.()}catch(e){console.warn('あとこれ: 持ち物候補の更新',e)}
   }
   function finish({page,message}={}){renderAllViews();if(page)showPage(page);if(message&&lastSaveOk)toast(message);lastSaveOk=true}
 
@@ -132,6 +136,14 @@
     return items.filter(x=>(filter==='すべて'||x.cat===filter)&&(!query||hit(String(x.name),query)));
   };
   window.setFilter=category=>{filter=category;window.renderStock()};
+  // Keep the user's filtering choices. A contextual action explains why a newly
+  // purchased item may be present in storage but absent from the filtered view.
+  window.resetStockViewV50=()=>{
+    filter='すべて';
+    const search=document.getElementById('stockSearch');
+    if(search)search.value='';
+    window.renderStock();
+  };
   window.renderStock=function(){
     cleanSelections();
     const cats=['すべて',...new Set(items.map(x=>x.cat||'その他'))],chips=document.getElementById('catChips');
@@ -145,6 +157,8 @@
       const controls=stockSelectMode?`<div class="qty"><b>${esc(item.qty)}${esc(item.unit)}</b></div>`:`<div class="qty"><button class="icon" onclick="adj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="adj(${id},1)"${plusAttrs(item,1)}>＋</button></div><button class="icon stableStockBuy" onclick="addStockOneToBuyV125H(${id})" aria-label="買い物リストへ追加">🛒</button><button class="icon danger" onclick="delItem(${id})" aria-label="削除">🗑</button>`;
       return `<div class="row stableStockRow ${picked?'stableSelected':''} ${near?'expiryNear':''}" data-stock-id="${id}" style="${vars(item.cat)}" onclick="toggleStockRowV125H(event,${id})"><div style="width:4px"></div>${check}<div class="grow"><div class="name">${esc(item.name)}</div><span class="stableCat" style="background:${c[1]};color:${c[0]};border:1px solid ${c[2]}">${c[3]} ${esc(item.cat||'その他')}</span><div class="meta">${esc(item.place||'未設定')}${item.exp?'・'+esc(item.expType)+' '+esc(item.exp):''}</div>${item.exp?`<span class="expiryBadge ${left<0?'expiryExpired':''}">${esc(window.AtokoreDates.label(item.exp))}</span>`:''}</div>${controls}</div>`;
     }).join(''):'<div class="empty">該当なし</div>';
+    const hiddenNotice=document.getElementById('atkStockFilterNotice');
+    if(hiddenNotice)hiddenNotice.hidden=!(filter!=='すべて'||!!document.getElementById('stockSearch')?.value?.trim());
     updateStockBulkUI();
   };
   window.setStockPickV125H=(id,on)=>{
@@ -264,6 +278,60 @@
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
     Core.addStockToBuy(buys,item,1);saveState();logHistory('買い物リストへ追加',`${item.name}を追加`,'buy','🛒',{refs:[ref(item)],change:'買い物リストに1'+(item.unit||'個')+'追加'});finish({message:`${item.name}を買い物へ追加しました`});
   };
+
+  // v50 value hypothesis: from a packing checklist to an actual shopping line.
+  // Only the existing stock/shopping action owner writes data; a checklist tick
+  // remains purely local and NEVER consumes stock. No billing or new DB columns.
+  function kitChoices(label){
+    const name=String(label||'').trim().slice(0,60),norm=s=>String(s||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'');
+    const target=norm(name);
+    const knownFamily=name==='おむつ'?/おむつ|オムツ/:name==='おしりふき'?/おしりふき/:null;
+    const matches=items.filter(x=>x&&typeof x.name==='string'&&
+      (norm(x.name)===target||(knownFamily&&knownFamily.test(x.name)))&&
+      typeof x.id!=='undefined').slice(0,16);
+    const queued=buys.filter(x=>x&&typeof x.name==='string'&&
+      (norm(x.name)===target||matches.some(m=>Core.sameProduct(x,m))));
+    return {stocks:matches.map(x=>({id:x.id,name:x.name,qty:Number(x.qty)||0,unit:x.unit||'個',queued:buys.some(b=>Core.sameProduct(b,x))})),
+      queued:queued.map(x=>x.name),name};
+  }
+  window.AtokoreKitShoppingV50=Object.freeze({
+    choices:kitChoices,
+    add(label,selectedStockId){
+      const options=kitChoices(label);
+      if(!options.name)return {status:'invalid'};
+      const hasSelection=selectedStockId!==undefined&&selectedStockId!==null&&selectedStockId!=='';
+      const stock=hasSelection?items.find(x=>String(x.id)===String(selectedStockId)&&
+        options.stocks.some(o=>String(o.id)===String(x.id))):null;
+      if(hasSelection&&!stock)return {status:'invalid'};
+      // Multiple real diaper/wipes variants must be explicitly selected. A
+      // generic "おむつ" stock row would lose the size/brand distinction.
+      if(options.stocks.length>1&&!stock)return {status:'choose'};
+      const selected=stock||(options.stocks.length===1?items.find(x=>String(x.id)===String(options.stocks[0].id)):null);
+      const name=selected?.name||options.name,unit=selected?.unit||unitOf(name);
+      if(buys.some(x=>x&&x.name===name&&(x.unit||'個')===unit))return {status:'already',name};
+      const row={id:Core.uniqueId(),name,qty:1,unit,
+        ...(selected?{stockId:selected.id,cat:selected.cat||inferCategory(name)}:{cat:inferCategory(name)})};
+      buys.push(row);
+      const saved=saveState();
+      // Legacy save() swallows quota exceptions and can return undefined even
+      // when writing failed. Never tell a parent an item was queued until the
+      // actual local record contains the new id.
+      let verified=false;
+      try{
+        const persisted=JSON.parse(localStorage.getItem('atokoreTrialV4')||'null');
+        verified=Array.isArray(persisted?.buys)&&persisted.buys.some(x=>String(x.id)===String(row.id));
+      }catch(e){}
+      if(!saved||!verified){
+        const index=buys.findIndex(x=>x.id===row.id);
+        if(index>=0)buys.splice(index,1);
+        lastSaveOk=true;
+        return {status:'failed'};
+      }
+      logHistory('持ち物から買い物に追加',name+'を買い物リストへ追加','buy','🎒',{refs:[ref(row,'buy')],change:'持ち物チェックから買い物へ'});
+      finish({message:name+'を買い物リストへ追加しました'});
+      return {status:'added',name};
+    }
+  });
 
   window.goCatV11=category=>{filter=category;showPage('stock');window.renderStock()};
   window.render=renderAllViews;

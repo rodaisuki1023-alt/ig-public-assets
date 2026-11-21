@@ -325,6 +325,54 @@ test('the same purchase finished on both phones restocks once; delete beats a la
   await A.ctx.close(); await B.ctx.close();
 });
 
+// Owner-driven revocation: two independent phone-like browser contexts, synthetic users,
+// and the real migrations in a disposable PGlite process (NEVER the family Supabase DB).
+// This is stronger than a simple self-leave: the removed device still has a valid
+// auth session but must lose access to all household RPCs without losing local items.
+test('owner removes a second phone: local stock remains but stale token cannot pull, push or finalize a receipt',async({browser,request},info)=>{
+  const {A,B}=await sharedPair(browser,request,info);
+  const localBefore=await stored(B.page);
+  const ownerBefore=await stored(A.page);
+  const jwt=await B.page.evaluate(()=>{
+    const s=JSON.parse(localStorage.getItem('atokorePreviewHouseholdSessionV19')||'null');
+    return s?.access_token||null;
+  });
+  expect(jwt).toBeTruthy();
+  await go(A.page,'premium');
+  await A.page.click('#atkHouseholdCard');
+  const remove=A.page.getByRole('button',{name:'外して再招待：パパ'});
+  await expect(remove).toBeVisible();
+  await remove.click();
+  const warning=await appConfirm(A.page,true);
+  expect(warning).toContain('以前の端末は今後共有できなくなります');
+  await expect(A.page.getByRole('button',{name:'外して再招待：パパ'})).toHaveCount(0);
+
+  // A signed-in account is not enough: household membership must still be checked.
+  const fp='a'.repeat(64);
+  for(const [fn,payload] of [
+    ['hh_pull',{p_since:0,p_limit:20}],
+    ['hh_push',{p_ops:[],p_device:'synthetic-removed-phone'}],
+    ['hh_receipt_claim',{p_fingerprint:fp,p_force:false}],
+    ['hh_receipt_finish',{p_fingerprint:fp,p_done:true}],
+  ]){
+    const response=await request.post(EMU+'/rest/v1/rpc/'+fn,{
+      headers:{apikey:'emu-anon-key',Authorization:'Bearer '+jwt},
+      data:payload
+    });
+    const result=await response.json();
+    expect(response.status(),fn+' should refuse a removed member').toBe(403);
+    expect(result.code,fn+' should return access denied').toBe('42501');
+  }
+
+  await sync(B.page);
+  await expect.poll(()=>B.page.evaluate(()=>window.AtokoreHousehold.status().state)).toBe('removed');
+  expect(await stored(B.page)).toEqual(localBefore); // no surprise deletion of on-device items
+  await sync(A.page);
+  expect(await stored(A.page)).toEqual(ownerBefore);
+  expect([...A.page.__errors,...B.page.__errors]).toEqual([]);
+  await A.ctx.close();await B.ctx.close();
+});
+
 test('leave keeps the device data, re-join asks again; the free plan stops at two accounts', async ({ browser, request }, info) => {
   const { A, B } = await sharedPair(browser, request, info);
   await go(A.page, 'premium'); await A.page.click('#atkHouseholdCard');

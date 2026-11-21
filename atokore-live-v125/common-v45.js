@@ -12,10 +12,26 @@ function localDate(now=new Date()){return [now.getFullYear(),String(now.getMonth
 const dates=Object.freeze({remaining,label,localDate});root.AtokoreDates=dates;
 if(typeof module!=='undefined'&&module.exports)module.exports=dates;
 if(typeof document==='undefined')return;
+const NOTICE_SELECTOR='#qaNotice,#stableToastV125h';
 root.AtokoreNotices={
- hide(){document.querySelectorAll('#qaNotice,#stableToastV125h').forEach(n=>n.classList.remove('on'))},
- show(node,duration){this.hide();clearTimeout(node._atkNoticeTimer);const undo=document.getElementById('atkUndoBar');node.style.bottom=undo?(root.innerHeight-undo.getBoundingClientRect().top+8)+'px':'';node.classList.add('on');node._atkNoticeTimer=setTimeout(()=>node.classList.remove('on'),duration)}
+ hide(){
+  // Both notification surfaces share a single visible slot. Cancel older
+  // timers as well as hiding nodes, so a stale timeout cannot affect a later
+  // notification when the other surface is reused.
+  document.querySelectorAll(NOTICE_SELECTOR).forEach(n=>{
+   clearTimeout(n._atkNoticeTimer);n._atkNoticeTimer=null;n.classList.remove('on');
+  });
+ },
+ show(node,duration){
+  if(!node)return;
+  this.hide();
+  const undo=document.getElementById('atkUndoBar');
+  node.style.bottom=undo?(root.innerHeight-undo.getBoundingClientRect().top+8)+'px':'';
+  node.classList.add('on');
+  node._atkNoticeTimer=setTimeout(()=>{node.classList.remove('on');node._atkNoticeTimer=null},Math.max(0,Number(duration)||0));
+ }
 };
+document.addEventListener('atokore-page-changed',()=>root.AtokoreNotices.hide());
 // The app's own confirmation. Native confirm() is never used: some in-app browsers, embedded frames
 // and review tools suppress it without UI and it then returns false, so the action looks dead.
 root.AtokoreConfirm={open(title,description,action,onConfirm,onCancel){

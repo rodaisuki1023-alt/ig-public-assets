@@ -119,7 +119,7 @@ async function photoRequest(path,method='GET',blob){
  if(session.expires_at-60<Date.now()/1000)await refreshSession();
  const controller=new root.AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
  try{
-  const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path+(method==='GET'?'?v='+Date.now():''),{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'cache-control':'no-cache',...(blob?{'Content-Type':'image/jpeg'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
+  const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path+(method==='GET'?'?v='+(root.crypto?.randomUUID?.()||Date.now()):''),{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'cache-control':'no-cache',...(blob?{'Content-Type':'image/jpeg'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('写真を共有できませんでした。通信状態を確認してお試しください。');
   return method==='GET'?response.blob():null;
  }catch(e){if(e.name==='AbortError'||e instanceof TypeError)throw Error('通信できません。端末に保存済みの写真は残っています。つながってからお試しください。');throw e}finally{clearTimeout(timeout)}
@@ -356,7 +356,7 @@ function joinScreen(){
  const code=el('input',{id:'atkHhGuestCode',type:'text',maxlength:'12',autocapitalize:'characters',autocomplete:'off',placeholder:'8文字',value:inviteCode});
  const canJoin=!!session||cfg.guest===true;
  sheet('招待コードで家族に参加',[
-  note('名前と招待コードを入れて参加します。コードは発行から24時間・1回だけ使えます。開いただけで在庫が変わることはありません。'),
+  note('名前と招待コードを入れて参加します。コードは発行から24時間・1回だけ使えます。開いただけでは共有されません。参加すると在庫と商品写真が共有されます。相手が保存した写真のコピーは後から回収できません。'),
   field('家族に表示される名前',name),field('家族から届いた招待コード',code),
   canJoin?button(session?'共有に参加する':'Googleなしで共有に参加する',e=>busy(e.target,()=>joinWithCode(name.value,code.value))):note('この試用版では、Googleでログインしてから参加します。'),
   !session&&googleAuth?button('Googleで参加する（機種変更時に復旧しやすい）',e=>busy(e.target,()=>{
@@ -421,10 +421,10 @@ function chooseHousehold(){
  sheet('家族共有（限定テスト）',[
   field('家族に表示される名前',name),
   el('div',{class:'atk-hh-card'},[el('h3',{text:'世帯を作って家族を招待する'}),
-   note('この端末の'+counts(local)+'が、共有の最初のデータになります。共有を始める前に、この端末内に控えを保存します。'),
+   note('この端末の'+counts(local)+'と登録済みの商品写真が共有の最初のデータになります。相手が保存した写真のコピーは後から回収できません。共有前に端末内に控えを保存します。'),
    button('世帯を作る',e=>busy(e.target,async()=>{
     if(!name.value.trim())throw '名前を入れてください';
-    if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'を共有の最初のデータにします。','共有を始める'))return;
+    if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'と登録済みの写真を共有します。相手に保存された写真は後から回収できません。','共有を始める'))return;
     if(!backupDevice())throw '控えを保存できなかったため中止しました（何も変更していません）';
     const my=await rpc('hh_create',{p_name:'わが家',p_display_name:name.value.trim()});
     household={id:my.household.id,name:my.household.name};saveMeta({household,...since(household)});rememberMembers(my);
@@ -498,7 +498,7 @@ async function dashboard(){
     engine.resolveRejected();await syncNow();dashboard();
    }),'atk-hh-link')]):null,
   readJSON(RECOVERY)?button('同期を再開する前の控えをファイルに保存',()=>downloadRecovery(true),'atk-hh-link'):null,
-  note('商品の写真も、在庫と同じように家族と自動で共有されます。共有を始める前に入れた写真も共有されます。'),
+  note('商品の写真は、共有開始前に登録した分も家族へ自動で共有されます。家族から外しても、相手がすでに見たり保存した写真・バックアップのコピーは回収できません。'),
   readJSON(BEFORE_SHARE)?button('共有前の控えをファイルに保存',downloadBackup,'atk-hh-link'):null,
   button('この世帯から抜ける（端末の在庫は残ります）',e=>busy(e.target,leave),'atk-hh-link'),
   button('ログアウト',()=>signOut(),'atk-hh-link')]);
@@ -510,7 +510,7 @@ async function dashboard(){
   members.replaceChildren(...my.members.map(m=>el('li',{},[
    el('span',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')}),
    my.me?.role==='owner'&&!m.is_me?button('外して再招待：'+m.display_name,e=>busy(e.target,async()=>{
-    if(!await ask(m.display_name+'さんの参加情報を外しますか？',m.display_name+'さんの以前の参加情報を外します。以前の端末は今後共有できなくなります。共有済みの在庫は残ります。その後、新しい招待コードを作ってください。続けますか？','外す'))return;
+    if(!await ask(m.display_name+'さんの参加情報を外しますか？',m.display_name+'さんの以前の参加情報を外します。以前の端末は今後共有できなくなります。共有済みの在庫は残ります。ただし相手がすでに見たり保存した写真・バックアップのコピーは消せません。その後、新しい招待コードを作ってください。続けますか？','外す'))return;
     await rpc('hh_remove_member',{p_user:m.user_id});await dashboard();
    }),'atk-hh-link'):null
   ])));

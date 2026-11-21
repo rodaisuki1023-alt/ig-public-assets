@@ -103,9 +103,9 @@ test('advanced registration is replaced by later stock editing',()=>{
 test('PWA manifest, shell and legacy storage keep existing functionality',()=>{
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
  const sw=fs.readFileSync(path.join(root,'service-worker.js'),'utf8');
- assert.match(html,/quick-add\.js\?v=49/);assert.match(html,/quick-add\.css\?v=27/);
+ assert.match(html,/quick-add\.js\?v=50"/);assert.match(html,/quick-add\.css\?v=50"/);
  assert.match(sw,/\.\/quick-add.js/);assert.match(sw,/\.\/quick-add.css/);
- assert.match(sw,/atokore-pwa-v49\.1/);
+ assert.match(sw,/atokore-pwa-v50\.3/);
  assert.match(fs.readFileSync(path.join(root,'quick-add.js'),'utf8'),/atokoreTrialV4/);
 });
 
@@ -153,4 +153,30 @@ test('other-category custom entries remain categorized as other and details are 
  const css=fs.readFileSync(path.join(root,'quick-add.css'),'utf8');
  assert.match(css,/#pg-add\.qa-has-tray/);
  dom.window.close();
+});
+
+test('receipt choice: separate row stays separate even when exact name already exists',()=>{
+ const existing=[{id:11,name:'パンパース テープ M',cat:'ベビー',unit:'袋',qty:2,exp:'',expType:'期限なし'}];
+ const next=quick.buildBatch(existing,[{name:'パンパース テープ M',cat:'ベビー',unit:'袋',qty:1,receiptSeparate:true}],1000);
+ assert.equal(existing[0].qty,2);
+ assert.equal(next.length,2);assert.equal(next[0].qty,2);assert.equal(next[1].qty,1);
+});
+test('receipt choice: selected ID wins over an identically named stock row',()=>{
+ const existing=[
+  {id:11,name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,exp:'',expType:'期限なし'},
+  {id:12,name:'テスト牛乳',cat:'食料品',unit:'本',qty:2,exp:'',expType:'期限なし'}
+ ];
+ const next=quick.buildBatch(existing,[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:12}],1000);
+ assert.deepEqual(next.map(x=>x.qty),[1,3]);
+ assert.deepEqual(existing.map(x=>x.qty),[1,2]);
+ assert.throws(()=>quick.buildBatch(existing,[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:999}],1000),/追加先/);
+ assert.throws(()=>quick.buildBatch([{...existing[1],exp:'2099-01-01',expType:'消費期限'}],[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptStockId:12}],1000),/追加先/);
+});
+
+test('receipt: same-name dated stock still becomes a distinct lot rather than changing its expiry',()=>{
+ const old=[{id:11,name:'テスト牛乳',cat:'食料品',unit:'本',qty:2,exp:'2099-01-01',expType:'消費期限'}];
+ const next=quick.buildBatch(old,[{name:'テスト牛乳',cat:'食料品',unit:'本',qty:1,receiptSeparate:true}],2000);
+ assert.equal(old[0].qty,2);assert.equal(next.length,2);
+ assert.equal(next[0].exp,'2099-01-01');assert.equal(next[0].qty,2);
+ assert.equal(next[1].exp,'');assert.equal(next[1].qty,1);
 });

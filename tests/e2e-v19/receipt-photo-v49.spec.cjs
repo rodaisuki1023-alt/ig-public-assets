@@ -62,6 +62,38 @@ async function openReceipt(page, png) {
 // requests (WebKit also skips page.route() for pages with a worker): the worker is off in this file.
 test.use({ serviceWorkers: 'block' });
 
+// v50 real-photo P1 regression: a light background can split the paper into
+// disconnected high-whiteness regions. If only the lower strip survives,
+// do NOT crop away the whole item list above it. Purely synthetic pixels.
+test('v50 P1: partial narrow receipt keeps the full height, while complete paper remains tightly cropped', async ({page})=>{
+ await open(page,{[KEY]:{items:[],buys:[],routines:[]}});
+ const seen=await page.evaluate(async()=>{
+  async function prepared(split){
+   const c=document.createElement('canvas');c.width=900;c.height=1200;
+   const x=c.getContext('2d');x.fillStyle='#ddd';x.fillRect(0,0,900,1200);
+   x.fillStyle='#fff';
+   if(split){x.fillRect(320,70,220,290);x.fillRect(320,500,220,620)}
+   else{x.fillRect(320,70,220,1050)}
+   const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+   const file=new File([blob],split?'split.png':'whole.png',{type:'image/png'});
+   const out=await window.AtokoreReceiptImage.prepare(file);
+   return {box:out.box,found:out.found,sideways:out.sideways};
+  }
+  return {split:await prepared(true),whole:await prepared(false)};
+ });
+ expect(seen.split.found).toBe(true);
+ expect(seen.split.sideways).toBe(false);
+ expect(seen.split.box.extended).toBe(true);
+ expect(seen.split.box.y).toBe(0);
+ expect(seen.split.box.h).toBe(1200);
+ expect(seen.split.box.w).toBeLessThan(600);
+ expect(seen.whole.found).toBe(true);
+ expect(seen.whole.box.extended).toBeUndefined();
+ expect(seen.whole.box.y).toBeGreaterThan(20);
+ expect(seen.whole.box.h).toBeLessThan(1200);
+ expect(page.__errors).toEqual([]);
+});
+
 test.describe('receipt photo, on-device OCR', () => {
   test.skip(!ORT_DIST, 'onnxruntime-web is not installed (npm install --no-save onnxruntime-web@1.30.0)');
   test.setTimeout(240000);

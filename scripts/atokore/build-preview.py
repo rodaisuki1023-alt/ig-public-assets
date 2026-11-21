@@ -28,6 +28,7 @@ PRODUCTION_KEYS = {
     'atokoreOnboardingV1': 'atokorePreviewOnboardingV{v}',
     'atokoreReceiptOcrV49Ready': 'atokorePreviewReceiptOcrReadyV{v}',
     'atokoreReceiptClaimQueueV1': 'atokorePreviewReceiptClaimQueueV{v}',
+    'atokoreQuickAddPendingV1': 'atokorePreviewQuickAddPendingV{v}',
 }
 
 

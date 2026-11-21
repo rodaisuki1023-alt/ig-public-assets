@@ -71,3 +71,25 @@ test('a confirmed match is remembered on the product and comes first next time',
   for (let i = 0; i < 15; i++) m.remember(items[6], 'ﾅﾏｴ' + String.fromCharCode(65 + i));
   assert.equal(items[6].receiptAliases.length, 10);
 });
+
+
+test('v50: first-time identical product is marked exact, while similar or different sizes are not', () => {
+  const items = [
+    { id: 1, name: 'パンパース さらさらケア テープ M 60枚' },
+    { id: 2, name: 'パンパース さらさらケア テープ L 60枚' },
+    { id: 3, name: 'テストラーメン しょうゆ味' },
+  ];
+  const exact = m.candidates('パンパース さらさらケア テープ M 60枚', items);
+  assert.equal(exact[0].item.id, 1);
+  assert.equal(exact[0].exact, true);
+  assert.ok(!exact.some(c => c.item.id === 2));
+  assert.equal(m.candidates('テストラーメン みそ味', items).some(c => c.exact), false);
+});
+
+test('v50: printed package digits remain distinct, but standalone prices still normalize', () => {
+  assert.notEqual(m.lineKey('テスト商品6'), m.lineKey('テスト商品8'));
+  assert.equal(m.lineKey('ベビーワイプ 298'), m.lineKey('ベビーワイプ 318'));
+  const item = { id: 5, name: 'パンパース テープ M 60枚', receiptAliases: [m.lineKey('パンパース テープ M 60枚')] };
+  item.name = 'パンパース テープ L 60枚'; // item was edited after learning
+  assert.equal(m.candidates('パンパース テープ M 60枚', [item]).length, 0);
+});

@@ -294,3 +294,187 @@ test('v49 audit: learned texts pre-select only when exactly the same; near texts
   assert.equal(near.learned, false);
   assert.equal(near.near, true);
 });
+
+
+// A privately supplied grocery receipt established this *layout* only. Synthetic names,
+// no real store identifiers, cashier names, photo, registration number, or receipt ID.
+// The paper has 20 product rows but 22 purchased units (two separate '2個 x @price'
+// sublines), an egg discount, 8%-tax footer, cash tender, and change.
+test('v50 anonymized 20-line grocery receipt: 22 units, two quantity sublines, 50-yen discount, tax/payment never products', () => {
+  const text = [
+    '合成ストア（テスト専用）',
+    '2026年10月04日(日) 12:54',
+    'お会計券 #000005 R0001 12:53',
+    '外8 テスト長ねぎ 緑テープ ¥98外',
+    '外8 テストブロッコリー ¥236外',
+    '(2個 x @118)',
+    '外8 テスト小松菜 2個束 ¥158外',
+    '外8 テストキャベツ ¥98外',
+    '外8 テストきゅうり ¥168外',
+    '外8 テスト長なす 黄色テープ ¥158外',
+    '外8 テストミニトマト 黄色テープ ¥238外',
+    '外8 テスト紅はるか 水色テープ ¥298外',
+    '外8 テスト北海道たこ ¥420外',
+    '外8 テスト生鮭 ¥530外',
+    '外8 テストあさり ¥290外',
+    '外8 テスト豚バラブロック ¥777外',
+    '外8 テスト鶏むね肉 ¥599外',
+    '外8 テスト鶏もも肉 ¥983外',
+    '外8 テスト豚ひき肉 大 ¥584外',
+    '外8 テストソーセージ ¥178外',
+    '外8 テストミートボール2 ¥248外',
+    '外8 テスト豆腐 ¥216外',
+    '(2個 x @108)',
+    '外8 テストヨーグルト プレミ ¥598外',
+    '外8 テスト玉子M1 ¥238外',
+    'P001)Mサイズ特売 -50',
+    '小計 ¥7,063',
+    '消費税8% 8% ¥565',
+    '買上点数 22点',
+    '合計 ¥7,628',
+    'お預り ¥10,050',
+    'お釣り ¥2,422',
+    'ご来店ありがとうございました'
+  ].join('\n');
+  const structural = S.structure(text.split('\n'));
+  const result = parse(text);
+  assert.equal(result.date, '2026-10-04', 'receipt date is the purchase date, not a use-by date');
+  assert.equal(structural.products.length, 20, 'product rows are not purchase units');
+  assert.equal(result.items.length, 20, 'not a single printed code, discount, tax, or payment line becomes an item');
+  assert.equal(result.countedQty, 22, 'two 2-unit items make 22 pieces');
+  assert.equal(result.printedCount, 22);
+  assert.equal(result.countMatches, true);
+  assert.equal(result.boundary?.kind, 'subtotal');
+  assert.deepEqual(
+    result.items.filter(item => item.qty === 2).map(item => item.name).sort(),
+    ['テストブロッコリー', 'テスト豆腐'].sort()
+  );
+  assert.equal(result.items.find(item => item.name.includes('小松菜'))?.qty, 1,
+    '2個束 is a product descriptor, not two purchased bunches');
+  assert.equal(result.items.find(item => item.name.includes('ミートボール2'))?.qty, 1,
+    'a trailing model-size digit never changes purchase quantity');
+  assert.equal(structural.products.reduce((sum,item) => sum + item.price, 0), 7113);
+  const discount = S.priceTail('P001)Mサイズ特売 -50');
+  assert.deepEqual({ value: discount?.value, negative: discount?.negative }, { value: 50, negative: true });
+  assert.equal(7113 - discount.value, 7063, 'printed subtotal cross-check');
+  assert.equal(Math.round(7063 * 0.08), 565, 'tax is a validation figure and not a stock item');
+  assert.equal(7063 + 565, 7628, 'tender and change are never stock items');
+  assert.ok(!result.items.some(x => /特売|小計|買上点数|預り|釣り|消費税/.test(x.name)));
+  assert.ok(result.items.every(x => x.selected), 'synthetic clean lines are selectable only in review, not automatically saved');
+});
+
+
+test('v50 Muse P2: two-line product + explicit quantity/yen total appears for manual review, never auto-add', () => {
+  const receipt='テストおむつ パンツ M 60枚\n1点 ¥1380\nテスト牛乳\n2点 ¥436\n小計 3点 ¥1816';
+  const r=parse(receipt);
+  assert.equal(r.items.length,2,'two product names with the total on the next line must not disappear');
+  assert.deepEqual(r.items.map(x=>x.qty),[1,2]);
+  assert.equal(r.countMatches,true);
+  for(const x of r.items){
+    assert.equal(x.selected,false,'uncertain split-layout rows must stay unchecked');
+    assert.equal(x.low,true);
+    assert.ok(x.reasons.includes('商品名と価格が別々の行です。内容と数量を確認してください'));
+  }
+  // Standard same-line receipts are still normal and selected as before.
+  const standard=parse('テスト牛乳 ¥218\n小計 1点 ¥218');
+  assert.equal(standard.items.length,1);
+  assert.equal(standard.items[0].selected,true);
+  // Orphan totals and misleading quantity-like summaries never auto-create stock rows.
+  const orphan=S.structure(['1点 ¥288','小計 1点 ¥288']);
+  assert.equal(orphan.products.length,0);
+  assert.ok(orphan.rejected.some(x=>x.text==='1点 ¥288'));
+  // A store heading can look like a product, but no split pair is trusted.
+  const header=parse('テスト店\n1点 ¥288\n小計 1点 ¥288');
+  assert.ok(header.items.every(x=>x.selected===false));
+  // Plain price without an explicit yen sign does not qualify for this uncertain pattern.
+  assert.equal(S.structure(['テスト牛乳','1点 288','小計 1点 ¥288']).products.length,0);
+});
+
+
+test('v50 Muse round 3: no-space 1点¥1,280 has a manual-review product, not a lost line',()=>{
+ const r=parse('パンパーステープM\n1点¥1,280\n小計 1点 ¥1,280');
+ assert.equal(r.items.length,1);
+ assert.equal(r.items[0].qty,1);
+ assert.equal(r.items[0].selected,false);
+ assert.equal(r.items[0].low,true);
+ assert.ok(r.items[0].reasons.includes('商品名と価格が別々の行です。内容と数量を確認してください'));
+ // The price line must not turn into an independent product.
+ assert.equal(r.items.filter(x=>/1点|1,280/.test(x.name)).length,0);
+ const normal=parse('テスト牛乳 ¥218\n小計 1点 ¥218');
+ assert.equal(normal.items.length,1);
+ assert.equal(normal.items[0].selected,true);
+});
+
+test('v50 Muse round 3: a carton of 10 eggs is one purchase unless separate quantity is explicit',()=>{
+ const packed=parse('タマゴ 10コ ¥258\n小計 1点 ¥258');
+ assert.equal(packed.items.length,1);
+ assert.equal(packed.items[0].qty,1,'10 eggs in a carton are not 10 cartons bought');
+ assert.equal(packed.countMatches,true);
+ // A true explicitly printed purchase quantity is still honored.
+ const two=parse('タマゴ 10コ\n2コ X 単258 ¥516\n小計 2点 ¥516');
+ assert.equal(two.items.length,1);
+ assert.equal(two.items[0].qty,2,'a separate quantity × unit-price row still wins');
+});
+
+test('v50 real-receipt follow-up: warehouse-club names keep trailing pack-size numerals', () => {
+  // Fictional items only. The following item-code line carries the price; the
+  // number at the end of the preceding name is NOT a price or purchase quantity.
+  const text=[
+    'テスト衛生用品 100',
+    '581695 1● 1,598 1,598 T',
+    'CPN',
+    'テスト衛生用品 100',
+    '9322 1● 320 320-T',
+    'テストヨーグルト 800',
+    '585967 1● 658 658 E',
+    '**** 合計 1,936',
+    '御買上げ点数 : 2'
+  ].join('\n');
+  const st=S.structure(text.split('\n'));
+  assert.deepEqual(st.products.map(x=>[x.text,x.qty]),[
+    ['テスト衛生用品 100',1],
+    ['テストヨーグルト 800',1],
+  ]);
+  const parsed=parse(text);
+  assert.equal(parsed.items.length,2);
+  assert.equal(parsed.items[0].qty,1);
+  assert.equal(parsed.items[1].qty,1);
+  assert.equal(parsed.printedCount,2);
+  assert.ok(parsed.items.some(x=>/衛生用品\s*100/.test(x.name)),
+    'the content amount stays in the candidate name');
+  assert.ok(parsed.items.some(x=>/ヨーグルト\s*800/.test(x.raw)),
+    'the amount stays in the printed raw name even when a generic display name is shown');
+  assert.ok(!parsed.items.some(x=>/CPN|IRC/.test(x.name)));
+  // Outside club receipts, terminal bare numerals retain existing price parsing.
+  const normal=S.structure(['テスト商品 ¥200','小計 1点 ¥200']);
+  assert.equal(normal.products[0].text,'テスト商品');
+});
+
+test('v50 holdout-format regression: a barcode after an unpriced line keeps a review-only product', () => {
+  // Fictional receipt only. No private receipt images or item details are stored in GitHub.
+  const r=parse([
+    'テストストア',
+    'テスト商品甲 ¥354',
+    '0004 テスト食材 軽',
+    '4580781733565',
+    'テスト商品乙 ¥398',
+    '小計 ¥1,106'
+  ].join('\n'));
+  assert.equal(r.items.length,3,'an OCR price omission must not silently drop a product name');
+  assert.deepEqual(r.items.map(x=>x.qty),[1,1,1]);
+  const fixed=r.items[1];
+  assert.equal(fixed.selected,false,'a recovered unpriced item must not be preselected');
+  assert.equal(fixed.low,true);
+  assert.ok(fixed.reasons.some(x=>x.includes('商品コードは読めましたが価格・数量が不明')));
+  assert.equal(r.items[0].selected,true);
+  assert.equal(r.items[2].selected,true);
+  // A store name followed by a barcode BEFORE any confirmed product is not a purchase.
+  const head=parse('テスト店\n4901234567890\nテスト牛乳 ¥120\n小計 ¥120');
+  assert.equal(head.items.length,1);
+  // A coupon/barcode after the subtotal is never a purchase.
+  const end=parse('テスト牛乳 ¥120\n小計 ¥120\nテスト割引\n4901234567890');
+  assert.equal(end.items.length,1);
+  // Bare no-price names not followed by a code remain excluded.
+  const noCode=parse('テスト牛乳 ¥120\nテスト食材\nテスト豆腐 ¥130\n小計 ¥250');
+  assert.equal(noCode.items.length,2);
+});

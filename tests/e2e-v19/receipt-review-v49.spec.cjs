@@ -22,9 +22,9 @@ test('a dated product: the review says "new row without a date", the confirmatio
   ], buys: [], routines: [] };
   await open(page, { [KEY]: initial });
   await readText(page, 'テスト牛乳 ¥218\nテストティッシュ ¥398\n小計 2点 ¥616');
-  await rowOf(page, 'テスト牛乳').locator(PICK).selectOption({ label: '登録済み：テスト牛乳' });
+  await rowOf(page, 'テスト牛乳').locator(PICK).selectOption('1');
   await expect(rowOf(page, 'テスト牛乳').locator('.receiptLotNote')).toContainText('期限が未設定の新しい行');
-  await rowOf(page, 'テストティッシュ').locator(PICK).selectOption({ label: '登録済み：テストティッシュ' });
+  await rowOf(page, 'テストティッシュ').locator(PICK).selectOption('2');
   await expect(rowOf(page, 'テストティッシュ').locator('.receiptLotNote')).toHaveCount(0);
   await page.locator('#receiptApplyBtn').click();
   const effects = await page.locator('#qaTrayList .qa-review-effect').allTextContents();
@@ -201,4 +201,436 @@ test('the attribution and licenses of the reading parts are reachable from the r
   }
   await page.getByRole('button', { name: '戻る' }).click();
   await expect(page.locator('#receiptAnalyzeBtn')).toBeVisible();
+});
+
+
+test('v50: first exact receipt match previews an update; ambiguous duplicate stock stays manual', async ({ page }) => {
+  const initial = { items: [
+    { id: 11, name: 'パンパース さらさらケア テープ M 60枚', cat: 'ベビー', qty: 2, unit: '袋', expType: '期限なし', exp: '', usage: 1 },
+    { id: 12, name: 'パンパース さらさらケア テープ L 60枚', cat: 'ベビー', qty: 4, unit: '袋', expType: '期限なし', exp: '', usage: 1 },
+    { id: 13, name: 'テスト牛乳', cat: '食料品', qty: 1, unit: '本', expType: '消費期限', exp: '2099-01-01', usage: 1 },
+    { id: 14, name: 'テスト牛乳', cat: '食料品', qty: 2, unit: '本', expType: '消費期限', exp: '2099-01-02', usage: 1 },
+  ], buys: [], routines: [] };
+  await open(page, { [KEY]: initial });
+  await readText(page, 'パンパース さらさらケア テープ M 60枚 ¥1380\nテスト牛乳 ¥218\n小計 2点 ¥1598');
+  const diaper = rowOf(page, 'パンパース');
+  await expect(diaper.locator('.receiptLinked')).toContainText('自動照合・未保存');
+  const milk = rowOf(page, 'テスト牛乳');
+  await expect(milk.locator('.receiptLinked')).toHaveCount(0);
+  expect(await milk.locator(PICK).inputValue()).toBe('');
+  const before = await stored(page);
+  expect(before.items.find(x => x.id === 11).qty).toBe(2); // scanning does not write
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect').first()).toContainText('登録済みの在庫に合算');
+  await page.locator('#qaCommit').click();
+  const after = await stored(page);
+  expect(after.items.find(x => x.id === 11).qty).toBe(3);
+  expect(after.items.find(x => x.id === 12).qty).toBe(4);
+  expect(after.items.find(x => x.id === 13).qty).toBe(1);
+  expect(after.items.find(x => x.id === 14).qty).toBe(2);
+  expect(page.__errors).toEqual([]);
+});
+
+test('v50: a similar receipt name offers explicit add-to-stock or separate choices, and adds only after final confirmation', async ({page}) => {
+ const initial={items:[
+  {id:11,name:'パンパース さらさらケア テープ M 60枚',cat:'ベビー',qty:2,unit:'袋',exp:'',expType:'期限なし',usage:1},
+  {id:12,name:'パンパース さらさらケア テープ L 60枚',cat:'ベビー',qty:4,unit:'袋',exp:'',expType:'期限なし',usage:1}
+ ],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'パンパース さらさら テープ M 60枚 ¥1380\n小計 1点 ¥1380');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toContainText('似た名前のストックがあります。まとめますか？');
+ await expect(row.locator('.receiptMergeActions button')).toHaveCount(2);
+ await expect(row.locator('.receiptMergeActions button').first()).toContainText('パンパース さらさらケア テープ M');
+ const before=await stored(page);
+ expect(before.items.find(x=>x.id===11).qty).toBe(2);
+ await row.locator('.receiptMergeActions button').first().click();
+ await expect(page.locator('[data-receipt-merge-state="linked"]')).toContainText('購入分を追加する予定');
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('2袋 → 3袋');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===11).qty).toBe(3);
+ expect(saved.items.find(x=>x.id===12).qty).toBe(4);
+ expect(page.__errors).toEqual([]);
+});
+test('v50: two indistinguishable undated stock rows never silently merge when user chooses separate',async ({page})=>{
+ const initial={items:[
+  {id:21,name:'テストうどん',cat:'食料品',qty:2,unit:'個',exp:'',expType:'期限なし',usage:1},
+  {id:22,name:'テストうどん',cat:'食料品',qty:3,unit:'個',exp:'',expType:'期限なし',usage:1}
+ ],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テストうどん ¥110\n小計 1点 ¥110');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ await expect(page.locator('[data-receipt-merge-state="separate"]')).toBeVisible();
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('新しい行');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ const rows=saved.items.filter(x=>x.name==='テストうどん');
+ expect(rows.map(x=>x.qty).sort()).toEqual([1,2,3]);
+ expect(page.__errors).toEqual([]);
+});
+test('v50: selecting second of identical stock rows adds only to that ID',async ({page})=>{
+ const initial={items:[
+  {id:31,name:'テスト牛乳',cat:'食料品',qty:1,unit:'本',exp:'',expType:'期限なし',usage:1},
+  {id:32,name:'テスト牛乳',cat:'食料品',qty:2,unit:'本',exp:'',expType:'期限なし',usage:1}
+ ],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト牛乳 ¥218\n小計 1点 ¥218');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator(PICK).selectOption('32');
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('2本 → 3本');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===31).qty).toBe(1);
+ expect(saved.items.find(x=>x.id===32).qty).toBe(3);
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50: editing a receipt product name invalidates a learned alias for the old flavor',async ({page})=>{
+ const initial={items:[{
+  id:41,name:'テストラーメン しょうゆ味',cat:'食料品',qty:3,unit:'個',exp:'',expType:'期限なし',usage:1,
+  receiptAliases:['テストラーメンしょうゆ味']
+ }],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テストラーメンしょうゆ味 ¥120\n小計 1点 ¥120');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('.receiptLinked')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ const input=row.locator('input[aria-label="商品名"]');
+ await input.fill('テストラーメン みそ味');
+ await input.press('Tab');
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('新しい行');
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===41).qty).toBe(3);
+ expect(saved.items.find(x=>x.name==='テストラーメン みそ味')?.qty).toBe(1);
+ expect(page.__errors).toEqual([]);
+});
+
+
+test('v50: correcting an unrecognized receipt name reveals existing stock and only confirmed merge changes quantity',async ({page})=>{
+ const original='テスト別商品の誤読',corrected='パンパース さらさらケア テープ M 60枚';
+ const initial={items:[{id:51,name:corrected,cat:'ベビー',qty:2,unit:'袋',exp:'',expType:'期限なし',usage:1}],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,original+' ¥1380\n小計 1点 ¥1380');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ const input=row.locator('input[aria-label="商品名"]');
+ await input.fill(corrected);
+ await input.press('Tab');
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toContainText('似た名前のストックがあります');
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ expect((await stored(page)).items[0].qty).toBe(2);
+ await row.locator('.receiptMergeActions button').first().click();
+ await expect(row.locator('.receiptLinked')).toContainText(corrected);
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('2袋 → 3袋');
+ expect((await stored(page)).items[0].qty).toBe(2);
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items).toHaveLength(1);
+ expect(saved.items[0].qty).toBe(3);
+ expect(saved.items[0].receiptAliases).not.toContain(original.replace(/\s/g,'').toLowerCase());
+ expect(saved.items[0].receiptAliases).toContain(corrected.replace(/\s/g,'').toLowerCase());
+ expect(page.__errors).toEqual([]);
+});
+test('v50: an automatically linked row remains editable and correction does not preserve the old link',async ({page})=>{
+ const original='テストラーメン しょうゆ味';
+ const initial={items:[{id:61,name:original,cat:'食料品',qty:2,unit:'個',exp:'',expType:'期限なし',usage:1}],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,original+' ¥120\n小計 1点 ¥120');
+ const row=page.locator('[data-receipt-row]').first();
+ await expect(row.locator('.receiptLinked')).toBeVisible();
+ const input=row.locator('input[aria-label="商品名"]');
+ await expect(input).toBeVisible();
+ await input.fill('テストラーメン みそ味');
+ await input.press('Tab');
+ await expect(row.locator('.receiptLinked')).toHaveCount(0);
+ await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
+ await row.locator('.receiptMergeSeparate').click();
+ await page.locator('#receiptApplyBtn').click();
+ await page.locator('#qaCommit').click();
+ const saved=await stored(page);
+ expect(saved.items.find(x=>x.id===61).qty).toBe(2);
+ expect(saved.items.find(x=>x.name==='テストラーメン みそ味')?.qty).toBe(1);
+ expect(page.__errors).toEqual([]);
+});
+
+
+test('v50: a receipt row with zero stock candidates never silently merges via the later name-only fallback', async ({ page }) => {
+  const existing = { id: 71, name: 'テストクッキー', cat: '食料品', unit: '個', qty: 2, exp: '', expType: '期限なし', usage: 1 };
+  await open(page, { [KEY]: { items: [existing], buys: [], routines: [] } });
+  // A matcher may be unavailable during loading or after a partial update. Never rely on name-only fallback.
+  await page.evaluate(() => { window.AtokoreReceiptMatch = null; });
+  await readText(page, 'テストクッキー ¥198\n小計 1点 ¥198');
+  const row = page.locator('[data-receipt-row]').first();
+  await expect(row.locator('.receiptLinked')).toHaveCount(0);
+  await expect(row.locator('.receiptMergeChoice')).toHaveCount(0);
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('既存ストックと分けて新しい行として追加');
+  expect((await stored(page)).items.find(x => x.id === 71).qty).toBe(2);
+  await page.locator('#qaCommit').click();
+  const s = await stored(page);
+  expect(s.items.filter(x => x.name === existing.name)).toHaveLength(2);
+  expect(s.items.find(x => x.id === 71).qty).toBe(2);
+  expect(s.items.find(x => x.id !== 71 && x.name === existing.name)?.qty).toBe(1);
+  expect(page.__errors).toEqual([]);
+});
+
+test('v50: correcting a receipt name to an existing name with no candidates never changes the existing row', async ({ page }) => {
+  const existing = { id: 72, name: 'テストクッキー', cat: '食料品', unit: '個', qty: 4, exp: '', expType: '期限なし', usage: 1 };
+  await open(page, { [KEY]: { items: [existing], buys: [], routines: [] } });
+  await page.evaluate(() => { window.AtokoreReceiptMatch = null; });
+  await readText(page, 'テスト商品誤読 ¥198\n小計 1点 ¥198');
+  const row = page.locator('[data-receipt-row]').first();
+  const input = row.locator('input[aria-label="商品名"]');
+  await input.fill('テストクッキー');
+  await input.press('Tab');
+  await expect(row.locator('[data-receipt-merge-state="none"]')).toContainText('一致するストックは見つかりませんでした');
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('既存ストックと分けて新しい行として追加');
+  await page.locator('#qaCommit').click();
+  const saved = await stored(page);
+  expect(saved.items.filter(x => x.name === existing.name)).toHaveLength(2);
+  expect(saved.items.find(x => x.id === 72).qty).toBe(4);
+  expect(saved.items.find(x => x.id !== 72 && x.name === existing.name)?.qty).toBe(1);
+  expect(page.__errors).toEqual([]);
+});
+
+
+// A supplied receipt informed the *shape* only; every line here is invented.
+// No original photo, store, clerk, receipt number, account, date, or actual basket is committed.
+test('v50: 320px receipt with 20 grocery rows preserves 22 units through final review save', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await open(page, { [KEY]: { items: [], buys: [], routines: [] } });
+
+  const goods = [
+    ['テスト青菜A', 109], ['テスト野菜B', 258], ['テスト小松菜 2個束', 177],
+    ['テストキャベツ', 118], ['テストきゅうり', 188], ['テストなす', 167],
+    ['テストトマト', 259], ['テストさつまいも', 321], ['テスト魚介A', 439],
+    ['テスト鮭切身', 549], ['テストあさり', 319], ['テスト豚ブロック', 799],
+    ['テスト鶏むね肉', 619], ['テスト鶏もも肉', 999], ['テストひき肉', 639],
+    ['テストソーセージ', 199], ['テストミートボール2', 278],
+    ['テスト豆腐', 226], ['テストヨーグルト', 619], ['テスト卵M', 259]
+  ];
+  const lines = ['合成店舗（テスト専用）', '2026年10月04日(日) 12:54'];
+  goods.forEach(([name, amount], i) => {
+    lines.push('外8 ' + name + ' ¥' + amount + '外');
+    if (i === 1) lines.push('(2個 x @129)');
+    if (i === 17) lines.push('(2個 x @113)');
+  });
+  lines.push('P001)Mサイズ特売 -30', '小計 ¥7,511', '消費税8% ¥601',
+    '買上点数 22点', '合計 ¥8,112', 'お預り ¥10,000', 'お釣り ¥1,888');
+
+  await readText(page, lines.join('\n'));
+  const rows = page.locator('[data-receipt-row]');
+  await expect(rows).toHaveCount(20);
+  await expect(page.locator('#receiptCount')).toContainText('一致しています');
+  await expect(page.locator('#receiptSelectionCount')).toContainText('20/20件を選択');
+
+  const qtys = await rows.locator('input[type=number]').evaluateAll(nodes => nodes.map(n => +n.value));
+  expect(qtys.reduce((a, b) => a + b, 0)).toBe(22);
+  expect(qtys.filter(n => n === 2)).toHaveLength(2);
+  await expect(rows.filter({ hasText: 'テスト小松菜' }).locator('input[type=number]')).toHaveValue('1');
+  await expect(rows.filter({ hasText: 'テストミートボール2' }).locator('input[type=number]')).toHaveValue('1');
+  expect((await stored(page)).items).toHaveLength(0);
+
+  await page.locator('#receiptApplyBtn').click();
+  await expect(page.locator('#qaTrayList .qa-review-effect')).toHaveCount(20);
+  expect((await stored(page)).items).toHaveLength(0);
+  await page.locator('#qaCommit').click();
+
+  const saved = await stored(page);
+  expect(saved.items).toHaveLength(20);
+  expect(saved.items.reduce((sum, item) => sum + item.qty, 0)).toBe(22);
+  expect(saved.items.filter(item => item.qty === 2)).toHaveLength(2);
+  expect(saved.items.find(item => item.name.includes('小松菜'))?.qty).toBe(1);
+  expect(saved.items.find(item => item.name.includes('ミートボール2'))?.qty).toBe(1);
+  expect(saved.items.some(item => /小計|消費税|お預り|お釣り|特売|買上点数/.test(item.name))).toBe(false);
+  expect(page.__errors).toEqual([]);
+});
+
+test('v50 linked-stock names stay legible, not vertical, on 320px and 390px receipt review',async({page})=>{
+ const initial={items:[{id:11,name:'パンパース さらさらケア テープ M 60枚',cat:'ベビー',qty:2,unit:'袋',expType:'期限なし',exp:'',usage:1},{id:12,name:'パンパース さらさらケア テープ L 60枚',cat:'ベビー',qty:4,unit:'袋',expType:'期限なし',exp:'',usage:1}],buys:[],routines:[]};
+ await page.setViewportSize({width:320,height:740});
+ await open(page,{[KEY]:initial});
+ await readText(page,'パンパース さらさらケア テープ M 60枚 ¥1380\n小計 1点 ¥1380');
+ const label=page.locator('[data-receipt-row] .receiptLinked').first();
+ await expect(label).toBeVisible();
+ for(const width of [320,390]){
+  await page.setViewportSize({width,height:740});
+  const bounds=await label.boundingBox();
+  const rowBounds=await label.locator('..').boundingBox();
+  expect(bounds.width).toBeGreaterThan(rowBounds.width*0.85);
+  expect(await label.evaluate(el=>getComputedStyle(el).order)).toBe('-1');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(0);
+ }
+ expect(page.__errors).toEqual([]);
+});
+
+
+test('v50 Muse round 3: rotating to a zero-product scan keeps previous rows and rejected lines, with a warning', async ({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await go(page,'premium');
+ await page.locator('#pg-premium .premium').filter({hasText:'レシート一括補充'}).click();
+ // Fake OCR result arrays only: exercises the app's own parser and rotate/review UI.
+ // The file is synthetic and is never uploaded; no OCR model or external service is used.
+ await page.setInputFiles('#receiptFile',{
+  name:'synthetic-receipt.png',mimeType:'image/png',
+  buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4//8/AwAI/AL+2NSeGAAAAABJRU5ErkJggg==','base64'),
+ });
+ await page.evaluate(()=>{
+  window.__v50ReceiptReads=0;
+  window.AtokoreReceiptImage={prepare:async()=>({found:true})};
+  window.AtokoreReceiptOcr={
+   ready:()=>true,cached:async()=>true,load:async()=>{},storage:()=>null,
+   readReceipt:async()=>{
+   window.__v50ReceiptReads++;
+   const text=window.__v50ReceiptReads===1
+    ? ['テスト牛乳','1点 ¥218','テスト文字不鮮明','小計 1点 ¥218']
+    : [];
+   const result=text.map((t,i)=>({text:t,score:95,top:i*40,bottom:i*40+25,left:10,right:300}));
+   result.dropped=[];
+   result.canvas=null;
+   result.turn=window.__v50ReceiptReads===1?0:90;
+   return result;
+  }};
+  window.AtokoreReceiptLines={groupBoxes:got=>got.map(x=>({...x,confidence:x.score,minScore:x.score}))};
+ });
+ await page.click('#receiptAnalyzeBtn');
+ await expect(page.getByRole('heading',{name:'🧾 読み取り結果の確認'})).toBeVisible();
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ await expect(page.locator('.receiptRejected')).toContainText('テスト文字不鮮明');
+ await expect(page.locator('#receiptSelectionCount')).toContainText('0/1件');
+ const before=await page.locator('.receiptRejected').innerText();
+ await page.getByRole('button',{name:'向きを変えて読み直す'}).click();
+ await expect(page.locator('#receiptRotateNotice')).toContainText('前回の読み取り結果を表示');
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ await expect(page.locator('.receiptRejected')).toContainText('テスト文字不鮮明');
+ await expect(page.locator('#receiptSelectionCount')).toContainText('0/1件');
+ await expect(page.locator('.receiptRaw')).toContainText('テスト牛乳');
+ expect(await page.evaluate(()=>window.__v50ReceiptReads)).toBe(2);
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50 P1: photo scan with zero products strongly warns and offers reselect/manual recovery without saving', async ({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await readSynthetic(page,[['テスト店',10],['小計 9点 ¥900',290]],[]);
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(0);
+ await expect(page.locator('#receiptZeroAlert')).toBeVisible();
+ await expect(page.locator('#receiptZeroAlert')).toContainText('商品を1件も読み取れませんでした');
+ await expect(page.locator('#receiptZeroAlert')).toContainText('未読箇所の表示もすべての読み落としを検出できません');
+ await expect(page.locator('#receiptRetryPhotoBtn')).toBeVisible();
+ await expect(page.locator('#receiptManualAddBtn')).toBeVisible();
+ await expect(page.locator('#receiptCount')).toContainText('9点');
+ await expect(page.locator('#receiptCount')).toContainText('9点の差');
+ await page.locator('#receiptManualAddBtn').click();
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ await expect(page.locator('#receiptZeroAlert')).toHaveCount(0);
+ // Merely entering review does not mutate stock or create a purchase.
+ expect(await stored(page)).toEqual(initial);
+ await page.locator('#sheet .close').click();
+ await readSynthetic(page,[['テスト店',10],['小計 ¥900',290]],[]);
+ await expect(page.locator('#receiptZeroAlert')).toBeVisible();
+ await page.locator('#receiptRetryPhotoBtn').click();
+ await expect(page.getByRole('heading',{name:'🧾 レシート一括補充'})).toBeVisible();
+ await expect(page.locator('#receiptFile')).toHaveCount(1);
+ await expect(page.locator('#receiptAnalyzeBtn')).toBeDisabled();
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50 P1: a partial photo scan prominently shows missing count and updates it after quantity correction',async({page})=>{
+ await readSynthetic(page,[['テスト店',10],['テスト牛乳 ¥200',130],['小計 4点 ¥200',290]],[]);
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ const note=page.locator('#receiptCount');
+ await expect(note).toHaveAttribute('role','alert');
+ await expect(note).toContainText('4点');
+ await expect(note).toContainText('1点');
+ await expect(note).toContainText('3点の差');
+ // When the person adjusts quantity, the displayed discrepancy must be refreshed.
+ await page.locator('#receiptQty-0').fill('4');
+ await page.locator('#receiptQty-0').dispatchEvent('change');
+ await expect(note).toContainText('一致しています');
+ await expect(note).not.toContainText('3点の差');
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50 P1: high-sensitivity retry is confined to supported engines and never saves automatically', async ({page,browserName})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await go(page,'premium');
+ await page.locator('#pg-premium .premium').filter({hasText:'レシート一括補充'}).click();
+ await page.setInputFiles('#receiptFile',{
+  name:'fictional.png',mimeType:'image/png',
+  buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4//8/AwAI/AL+2NSeGAAAAABJRU5ErkJggg==','base64')
+ });
+ await page.evaluate(()=>{
+  window.__sensitiveOptions=[];
+  const primary=['テスト牛乳 ¥218','小計 3点 ¥518'];
+  const second=['テスト牛乳 ¥218','テスト豆腐 ¥150','2コ X 単150 ¥300','小計 3点 ¥518'];
+  window.AtokoreReceiptImage={prepare:async()=>({found:true})};
+  window.AtokoreReceiptOcr={
+   ready:()=>true,cached:async()=>true,load:async()=>{},storage:()=>null,
+   readReceipt:async(_prep,options)=>{
+    window.__sensitiveOptions.push(options?.sensitive===true);
+    const rows=(options?.sensitive?second:primary).map((text,i)=>({
+     text,score:0.95,top:i*42,bottom:i*42+28,left:10,right:340
+    }));
+    rows.dropped=[];rows.turn=0;rows.canvas=null;return rows;
+   }
+  };
+  window.AtokoreReceiptLines={groupBoxes:got=>got.map(x=>({...x,confidence:95,minScore:95}))};
+ });
+ await page.locator('#receiptAnalyzeBtn').click();
+ await expect(page.getByRole('heading',{name:'🧾 読み取り結果の確認'})).toBeVisible();
+ if(browserName==='webkit'){
+  // Full high-sensitivity ONNX on WebKit exceeded the real-photo E2E budget.
+  // The first pass remains usable, and the shortage is made conspicuous.
+  await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+  await expect(page.locator('#receiptSensitiveNotice')).toHaveCount(0);
+  await expect(page.locator('#receiptCount')).toContainText('2点の差');
+  expect(await page.evaluate(()=>window.__sensitiveOptions)).toEqual([false]);
+ }else{
+  await expect(page.locator('[data-receipt-row]')).toHaveCount(2);
+  await expect(page.locator('#receiptSensitiveNotice')).toContainText('すべて未選択');
+  await expect(page.locator('#receiptSelectionCount')).toHaveText('0/2件を選択');
+  await expect(page.locator('#receiptCount')).toContainText('一致しています');
+  await expect(page.locator('[data-receipt-row] .receiptCheck:checked')).toHaveCount(0);
+  await expect(page.locator('[data-receipt-row] .receiptQuality')).toHaveCount(2);
+  expect(await page.evaluate(()=>window.__sensitiveOptions)).toEqual([false,true]);
+ }
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50: unpriced barcode-backed receipt items are visible but not preselected', async ({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,[
+  'テスト牛乳 ¥100',
+  '0004 テスト食材 軽',
+  '4580781733565',
+  'テストチーズ ¥200',
+  '小計 ¥300'
+ ].join('\n'));
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(3);
+ const recovered=rowOf(page,'テスト食材');
+ await expect(recovered).toHaveCount(1);
+ await expect(recovered.locator('.receiptCheck')).not.toBeChecked();
+ await expect(recovered.locator('.receiptQuality')).toContainText('商品コードは読めましたが価格・数量が不明');
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
 });

@@ -78,7 +78,7 @@ for (const [width, height] of [[320, 568], [390, 844]]) {
       // The shared review screen shows what will happen; only its final button saves.
       await expect(page.locator('#qaTray')).toBeVisible();
       const effects = await page.locator('#qaTrayList .qa-review-effect').allTextContents();
-      expect(effects).toEqual(['登録済みの在庫に合算：1袋 → 2袋', '登録済みの在庫に合算：2パック → 3パック', '新しい商品として登録', '新しい商品として登録']);
+      expect(effects).toEqual(['登録済みの在庫に合算：1袋 → 2袋', '登録済みの在庫に合算：2パック → 3パック', '既存ストックと分けて新しい行として追加（数量は変えません）', '既存ストックと分けて新しい行として追加（数量は変えません）']);
       expect(await stored(page)).toEqual(initial);
       await page.locator('#qaCommit').click();
       await expect(page.locator('#pg-stock')).toHaveClass(/on/);
