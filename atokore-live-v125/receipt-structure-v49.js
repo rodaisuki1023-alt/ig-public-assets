@@ -142,7 +142,10 @@ function structure(lines){
    else if(!club.coupon&&!afterCpn&&!(i>0&&/^CPN$/i.test(L[i-2]?.text||'')))rejected.push({text:s,reason:'商品名を読めない行（'+club.qty+'点）',qty:club.qty,area:line.area});
    afterCpn=false;continue}
   if(JAN.test(s)){continue}
-  const price=priceTail(s);
+  // Warehouse clubs print the price on the next item-code line, not on the name.
+  // Keep a bare trailing number such as a pack size; coupons stay discounts.
+  const nextClub=i+1<L.length?clubLine(L[i+1].text):null;
+  const price=nextClub&&!nextClub.coupon?null:priceTail(s);
   if(price&&price.negative){sum-=price.value;afterCpn=false;continue}
   if(DISCOUNT.test(s)){if(afterCpn)afterCpn=false;continue}
   if(isMeta(s)){continue}
