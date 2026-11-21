@@ -40,7 +40,9 @@ test('shared photo requests never expose a signed/public URL and recheck the int
  assert.match(transport,/Authorization:'Bearer '\+session\.access_token/);
  assert.match(transport,/cache:'no-store'/);
  assert.match(transport,/'cache-control':'no-cache'/);
- assert.match(transport,/\?v='\+Date\.now\(\)/,'fresh authenticated GETs require a changing query token');
+ assert.match(transport,/\?v='\+/,'fresh authenticated GETs require a changing query token');
+ assert.match(transport,/root\.crypto\?\.randomUUID\?\.\(\)/,'prefer a unique per-request nonce instead of a time-only value');
+ assert.match(transport,/Date\.now\(\)/,'old Safari retains a nonce fallback');
  assert.doesNotMatch(transport,/createSignedUrl|createSignedUploadUrl|\/object\/public\/|getPublicUrl/);
  const fetchStart=sync.indexOf('async function fetchPhoto(');
  const fetchEnd=sync.indexOf('\nasync function sharePhoto(',fetchStart);
@@ -51,4 +53,13 @@ test('shared photo requests never expose a signed/public URL and recheck the int
    'membership/household scope must be rechecked after the async request');
  assert.match(fetchBody,/blob\.type!=='image\/jpeg'/);
  assert.match(fetchBody,/blob\.size>81920/);
+});
+
+test('v50: family photo revocation limitations are visible before sharing and removal',()=>{
+ const photos=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
+ const household=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ assert.match(photos,/以前に見たり保存した写真・バックアップのコピーは回収できません/);
+ assert.match(photos,/相手が取得・保存したコピーは後から回収できません/);
+ assert.match(household,/家族から外しても、相手がすでに見たり保存した写真・バックアップのコピーは回収できません/);
+ assert.match(household,/相手がすでに見たり保存した写真・バックアップのコピーは消せません/);
 });
