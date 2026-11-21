@@ -160,6 +160,13 @@ function codePriceCandidates(lines){
 }
 // v49: line structure comes from receipt-structure-v49.js (prices, quantity lines, coupons, the end of the
 // item list and the printed item count); this names each product and decides what needs review.
+// A multiplication printed on the SAME item row can survive OCR even if the
+// layout parser cannot isolate it as a separate quantity line. It is a hint,
+// not proof: show the number but leave the row unchecked until reviewed.
+function inlinePurchaseCount(raw){
+ const m=hw(raw).match(/(?:^|[\s（(])(\d{1,2})\s*(?:杯|皿|名|人|点|コ|個|本|袋|枚|箱|パック)\s*[xX]\s*(?:単(?:価)?|@)\s*[¥\\]?\s*\d/);
+ return m&&+m[1]>1&&+m[1]<=30?+m[1]:null;
+}
 function parse(source){
  const S=window.AtokoreReceiptStructure,lines=combinedLines(source),st=S.structure(lines),out=[],rejected=st.rejected.slice();
  for(const p of st.products){
@@ -167,11 +174,13 @@ function parse(source){
   const prefix=stripRetailPrefix(p.text),q=p.club?{text:prefix.text,qty:1,unit:''}:extractQuantity(nameText(prefix.text)),raw=nameText(q.text),signal=productSignal(raw);
   // Warehouse clubs print English names ("TERIYAKI UDON"); the item-code line below confirms the row.
   if(!raw||noise(raw)||!(signal.ok||(p.club&&/[A-Za-z]{3,}/.test(raw)))){rejected.push({text:p.source,reason:'商品名として判定できない文字'});continue}
-  const name=canon(raw),qty=p.qtyLine?p.qty:q.qty,score=signal.ok?signal.score:p.club&&p.qtyChecked?84:signal.score;
+  const name=canon(raw),inlineQty=p.qtyLine?null:inlinePurchaseCount(p.source),qty=inlineQty|| (p.qtyLine?p.qty:q.qty),score=signal.ok?signal.score:p.club&&p.qtyChecked?84:signal.score;
   const conf=Number.isFinite(p.confidence)?Math.round(p.confidence):null,quality=conf===null?score:Math.round(score*.55+conf*.45);
   // Review needed (not pre-selected): unclear OCR, or a warehouse-club line whose unit price × quantity
   // does not add up to the printed total.
-  const reasons=[];if(conf!==null&&(conf<48||quality<58))reasons.push('文字が不鮮明');if(p.club&&!p.qtyChecked)reasons.push('数量と金額が合わない');
+  const reasons=[];
+  if(inlineQty)reasons.push('同じ行に購入数量の掛け算があるため、買った数を確認してください');
+  if(conf!==null&&(conf<48||quality<58))reasons.push('文字が不鮮明');if(p.club&&!p.qtyChecked)reasons.push('数量と金額が合わない');
   // A voicing mark read as a separate symbol after ハ行 (ﾊﾞ or ﾊﾟ?) cannot be told apart: say so instead of guessing.
   const before=hw(prefix.text);
   if(/[ハヒフヘホパピプペポ][°゜º*゛"'”]/.test(before)||/[カキクケコサシスセソタチツテトハヒフヘホ]・(?=[ーァ-ヶ])/.test(before))reasons.push('濁点か半濁点か不確か');
