@@ -296,13 +296,23 @@ async function countPhotos(list){
 }
 const ASIDE='beforeRestore:';
 // Restore replaces the photos as well; the current ones are set aside so "復元前に戻す" brings them back.
+// Snapshot the cursor before writing "beforeRestore:" keys. Writing while scanning the
+// same store lets the cursor visit (and delete) newly inserted keys, losing undo photos.
+// Keep all deletion and writes in ONE readwrite transaction, so quota/errors roll back
+// both the original photos and the previous undo snapshot atomically.
 async function replaceAll(parsed){
  await transaction('readwrite',store=>{
-  const r=store.openCursor();
+  const current=[],r=store.openCursor();
   r.onsuccess=()=>{
-   const c=r.result;if(!c){for(const p of parsed)store.put({bytes:p.bytes},p.k);return}
-   if(typeof c.key==='string'){if(c.key.startsWith(ASIDE))c.delete();else{store.put(c.value,ASIDE+c.key);c.delete()}}
-   c.continue();
+   const c=r.result;
+   if(c){
+    if(typeof c.key==='string'&&!c.key.startsWith(ASIDE))current.push([c.key,c.value]);
+    c.continue();
+    return;
+   }
+   store.clear();
+   for(const [k,v] of current)store.put(v,ASIDE+k);
+   for(const p of parsed)store.put({bytes:p.bytes},p.k);
   };
  });
  for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear();
