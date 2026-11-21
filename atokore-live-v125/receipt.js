@@ -30,13 +30,13 @@ async function askDownload(){
  const ask=window.AtokoreConfirm?.ask;if(!ask)return true;
  return ask('読み取りの準備（初回のみ）',`レシートを読み取る部品（最大約${O.DOWNLOAD_MB}MB：文字認識のモデルと実行部品）をダウンロードします。部品はこの端末に保存し、次回からは保存したものを使います。ただし、保存できなかったときや、部品の破損・データの消去・アプリの更新があったときは、もう一度ダウンロードします。写真はこの端末の中で読み取り、外部には送りません。Wi-Fiでの利用をおすすめします。`,'ダウンロードして読み取る');
 }
-let reading=false;
+let reading=false,previousRotation=null;
 window.analyzeReceiptV7=async(turn)=>{
  if(!R.file){alert('レシートの写真または画像ファイルを選んでください');return}
  if(reading)return;
  const b=$r('receiptAnalyzeBtn'),I=window.AtokoreReceiptImage,O=window.AtokoreReceiptOcr,Lines=window.AtokoreReceiptLines,S=window.AtokoreReceiptStructure;
  if(!I||!O||!Lines||!S){failed();return}
- if(!await askDownload())return;
+ if(!await askDownload()){if(previousRotation){R=previousRotation;previousRotation=null;R.rotateNotice='読み直しを中止したため、前回の結果を表示しています。';review()}return}
  reading=true;if(b)b.disabled=true;
  try{
   progress('読み取りの準備をしています…',.02);
@@ -48,13 +48,29 @@ window.analyzeReceiptV7=async(turn)=>{
   const got=await O.readReceipt(prepared,{onProgress:x=>progress(`文字を読み取っています… ${Math.round(x*100)}%`,.35+x*.6),stopAfter:items=>S.itemListEnded(Lines.groupBoxes(items))});
   const lines=Lines.groupBoxes(got),scores=got.map(x=>x.score);
   R.turn=got.turn;R.sourceCanvas=got.canvas||null;crops.clear();R.paperFound=prepared.found;R.text=lines.map(l=>l.text).join('\n');R.confidence=scores.length?Math.round(100*scores.reduce((s,n)=>s+n,0)/scores.length):0;
-  const p=parse(lines);R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;R.facts=p.facts;R.unread=unreadAreas(lines,p,got.dropped);
+  const p=parse(lines);
+  if(previousRotation){
+   const prior=previousRotation;previousRotation=null;
+   if(p.items.length===0&&(prior.parsed?.length||prior.rejected?.length)){
+    // Never erase an actionable previous review just because rotating found no products.
+    // Restore the matching canvas/line coordinates with the data, not stale crop positions.
+    R=prior;R.rotateNotice='向きを変えた読み直しでは商品を検出できなかったため、前回の読み取り結果を表示しています。前回の内容を確認して続けるか、写真を選び直してください。';
+    progress('前回の読み取り結果を表示しています',1);setTimeout(review,150);return;
+   }
+  }
+  R.rotateNotice='';R.store=p.store;R.date=p.date;R.parsed=p.items;R.rejected=p.rejected;R.stoppedAtSubtotal=p.stoppedAtSubtotal;R.subtotalLine=p.subtotalLine;R.boundary=p.boundary;R.printedCount=p.printedCount;R.countedQty=p.countedQty;R.countMatches=p.countMatches;R.facts=p.facts;R.unread=unreadAreas(lines,p,got.dropped);
   progress('読み取りが終わりました',1);setTimeout(review,150);
- }catch(e){console.error(e);progress('読み取りに失敗しました',1);failed();if(b)b.disabled=false}
+ }catch(e){console.error(e);progress('読み取りに失敗しました',1);
+  if(previousRotation&&(previousRotation.parsed?.length||previousRotation.rejected?.length)){
+   R=previousRotation;previousRotation=null;R.rotateNotice='向きを変えた読み直しが失敗したため、前回の読み取り結果を表示しています。';setTimeout(review,150);
+  }else{previousRotation=null;failed()}
+  if(b)b.disabled=false}
  finally{reading=false}
 };
 // Read again with the picture turned by a quarter (wrong orientation, or the paper was not found).
-window.receiptRotateV49=()=>{if(!R.file||reading)return;const next=R.turn===90?-90:R.turn===-90?180:R.turn===180?0:90;openReceiptReading();window.analyzeReceiptV7(next)};
+window.receiptRotateV49=()=>{if(!R.file||reading)return;const next=R.turn===90?-90:R.turn===-90?180:R.turn===180?0:90;
+ // Save product rows, excluded rows and image coordinates until the new scan is actually usable.
+ previousRotation={...R};openReceiptReading();window.analyzeReceiptV7(next)};
 function openReceiptReading(){const keep=R;openReceipt();R=keep;const n=$r('receiptFileName');if(n&&R.file)n.textContent=R.file.name||'選んだ画像';const pv=$r('receiptPreview');if(pv&&R.previewUrl){pv.src=R.previewUrl;pv.classList.remove('hide')}}
 // Reading failed (no network for the OCR files, unsupported image…): offer the next steps in place.
 function failed(){const w=$r('receiptProgressWrap');if(!w)return;let box=$r('receiptFailed');if(!box){box=document.createElement('div');box.id='receiptFailed';box.className='receiptStatus receiptWarn';w.after(box)}box.innerHTML='読み取れませんでした。何も登録していません。<div class="receiptSourceGrid"><button class="btn ghost" onclick="document.getElementById(\'receiptCamera\').click()">撮り直す</button><button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button></div><div class="muted" style="margin-top:6px">文字をコピーできる場合は、下の「レシートの文字を貼って読み取る」も使えます。</div>'}
@@ -256,7 +272,7 @@ function countNote(){if(!Number.isFinite(R.printedCount))return `<div class="rec
  if(n===R.printedCount)return `<div class="receiptStatus" id="receiptCount">レシートの点数（${R.printedCount}点）と読み取った数量の合計が一致しています。点数が合っていても、読み違いや読み落としがないとは限りません。</div>`;
  return `<div class="receiptStatus receiptWarn" id="receiptCount">レシートには${R.printedCount}点とあり、読み取った数量の合計は${n}点です。${n<R.printedCount?'読み落とした商品や数量がないか確認してください。':'数量が多すぎないか確認してください。'}</div>`}
 function review(){prepareRows();const low=R.parsed.filter(x=>x.low).length,rejected=R.rejected||[],selected=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0).length,warn=low>0||(R.confidence&&R.confidence<65)||!R.stoppedAtSubtotal||!!(R.unread&&R.unread.places.length),boundary=R.stoppedAtSubtotal?'小計で読み取りを終えました。':'小計が見つからないため全体を確認してください。',dup=duplicateOf(),hard=R.parsed.length&&R.parsed.filter(x=>x.low).length>=R.parsed.length*0.6;
- openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 読み取り結果の確認</h2>${dup?`<div class="receiptStatus receiptWarn" id="receiptDuplicate">${new Date(dup.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}に登録したレシートと同じ可能性があります。二重に追加しないよう確認してください（別の買い物ならそのまま進めます）。</div>`:''}<div class="receiptStatus ${warn?'receiptWarn':''}">${R.parsed.length}行を商品として読み取りました。${low?`読み取りが不確かな${low}行は選択していません。`:''}${boundary}${R.date?` 購入日：${esc(R.date)}`:''}</div>${countNote()}${unreadNote()}${storageNote()}${hard?`<div class="receiptStatus receiptWarn">文字がうまく読めていません。明るい場所で真上から撮り直すか、<button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button>のほうが早いかもしれません。${R.file?'<button class="btn ghost" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`:''}${R.parsed.length?`<div class="receiptSelectionBar"><span id="receiptSelectionCount" class="receiptSelectionCount">${selected}/${R.parsed.length}件を選択</span><button class="btn ghost" onclick="receiptSelectAllV7(true)">全選択</button><button class="btn ghost" onclick="receiptSelectAllV7(false)">全解除</button></div>`:''}${R.parsed.length?R.parsed.map(row).join(''):`<div class="empty">商品名を読み取れませんでした。下の「商品を追加」か「読み取れなかった行」から追加できます。${R.file?'<br><button class="btn ghost" style="margin-top:8px" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`}<button class="btn ghost" style="width:100%;margin-top:8px" onclick="receiptAddV7()">＋ 商品を追加</button>${rejected.length?`<details class="detail receiptRejected" style="margin-top:12px" open><summary>読み取れなかった行（${rejected.length}行）</summary><div class="muted" style="margin:8px 0">商品名と判断できなかった行です。商品なら追加してください。</div>${rejected.map((x,k)=>`<div class="receiptExcluded"><span>${esc(x.text)}${x.reason?`<small class="receiptExcludedWhy">${esc(x.reason)}</small>`:''}${lineImage(x.area,'読み取れなかった行')}</span><button class="btn ghost" onclick="receiptPromoteV38(${k})">商品として追加</button></div>`).join('')}</details>`:''}<details class="detail" style="margin-top:12px"><summary>読み取った文字をすべて見る</summary><textarea class="receiptRaw" readonly>${esc(R.text)}</textarea></details><div class="receiptFoot"><label class="row"><input id="receiptRemoveBuy" type="checkbox" checked style="width:22px;height:22px"><div class="grow"><div class="name">買い物リストからも消す</div><div class="meta">追加した商品を買い物リストから消します</div></div></label><button id="receiptApplyBtn" class="btn" style="width:100%" onclick="receiptApplyV7()">確認画面へ進む</button></div>`);count()}
+ openM(`<button class="close" onclick="closeReceiptV7()">閉じる</button><h2>🧾 読み取り結果の確認</h2>${R.rotateNotice?`<div class="receiptStatus receiptWarn" id="receiptRotateNotice">${esc(R.rotateNotice)}</div>`:""}${dup?`<div class="receiptStatus receiptWarn" id="receiptDuplicate">${new Date(dup.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}に登録したレシートと同じ可能性があります。二重に追加しないよう確認してください（別の買い物ならそのまま進めます）。</div>`:''}<div class="receiptStatus ${warn?'receiptWarn':''}">${R.parsed.length}行を商品として読み取りました。${low?`読み取りが不確かな${low}行は選択していません。`:''}${boundary}${R.date?` 購入日：${esc(R.date)}`:''}</div>${countNote()}${unreadNote()}${storageNote()}${hard?`<div class="receiptStatus receiptWarn">文字がうまく読めていません。明るい場所で真上から撮り直すか、<button class="btn ghost" onclick="receiptManualPickV38()">商品を選んで追加</button>のほうが早いかもしれません。${R.file?'<button class="btn ghost" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`:''}${R.parsed.length?`<div class="receiptSelectionBar"><span id="receiptSelectionCount" class="receiptSelectionCount">${selected}/${R.parsed.length}件を選択</span><button class="btn ghost" onclick="receiptSelectAllV7(true)">全選択</button><button class="btn ghost" onclick="receiptSelectAllV7(false)">全解除</button></div>`:''}${R.parsed.length?R.parsed.map(row).join(''):`<div class="empty">商品名を読み取れませんでした。下の「商品を追加」か「読み取れなかった行」から追加できます。${R.file?'<br><button class="btn ghost" style="margin-top:8px" onclick="receiptRotateV49()">向きを変えて読み直す</button>':''}</div>`}<button class="btn ghost" style="width:100%;margin-top:8px" onclick="receiptAddV7()">＋ 商品を追加</button>${rejected.length?`<details class="detail receiptRejected" style="margin-top:12px" open><summary>読み取れなかった行（${rejected.length}行）</summary><div class="muted" style="margin:8px 0">商品名と判断できなかった行です。商品なら追加してください。</div>${rejected.map((x,k)=>`<div class="receiptExcluded"><span>${esc(x.text)}${x.reason?`<small class="receiptExcludedWhy">${esc(x.reason)}</small>`:''}${lineImage(x.area,'読み取れなかった行')}</span><button class="btn ghost" onclick="receiptPromoteV38(${k})">商品として追加</button></div>`).join('')}</details>`:''}<details class="detail" style="margin-top:12px"><summary>読み取った文字をすべて見る</summary><textarea class="receiptRaw" readonly>${esc(R.text)}</textarea></details><div class="receiptFoot"><label class="row"><input id="receiptRemoveBuy" type="checkbox" checked style="width:22px;height:22px"><div class="grow"><div class="name">買い物リストからも消す</div><div class="meta">追加した商品を買い物リストから消します</div></div></label><button id="receiptApplyBtn" class="btn" style="width:100%" onclick="receiptApplyV7()">確認画面へ進む</button></div>`);count()}
 function count(){const n=R.parsed.filter(x=>x.selected&&String(x.name||'').trim()&&+x.qty>0).length,b=$r('receiptApplyBtn'),c=$r('receiptSelectionCount');if(b)b.textContent=`選んだ${n}件を確認画面へ`;if(c)c.textContent=`${n}/${R.parsed.length}件を選択`}
 window.receiptManualPickV38=()=>{closeReceiptV7();try{window.atkOpenAdd?.('stock')}catch(e){}};
 // ---- v49 audit: the same receipt imported twice in the family. Before the confirmation screen the
