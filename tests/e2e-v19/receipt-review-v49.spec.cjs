@@ -524,3 +524,46 @@ test('v50 Muse round 3: rotating to a zero-product scan keeps previous rows and 
  expect(await stored(page)).toEqual(initial);
  expect(page.__errors).toEqual([]);
 });
+
+test('v50 P1: photo scan with zero products strongly warns and offers reselect/manual recovery without saving', async ({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await readSynthetic(page,[['テスト店',10],['小計 9点 ¥900',290]],[]);
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(0);
+ await expect(page.locator('#receiptZeroAlert')).toBeVisible();
+ await expect(page.locator('#receiptZeroAlert')).toContainText('商品を1件も読み取れませんでした');
+ await expect(page.locator('#receiptZeroAlert')).toContainText('未読箇所の表示もすべての読み落としを検出できません');
+ await expect(page.locator('#receiptRetryPhotoBtn')).toBeVisible();
+ await expect(page.locator('#receiptManualAddBtn')).toBeVisible();
+ await expect(page.locator('#receiptCount')).toContainText('9点');
+ await expect(page.locator('#receiptCount')).toContainText('9点の差');
+ await page.locator('#receiptManualAddBtn').click();
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ await expect(page.locator('#receiptZeroAlert')).toHaveCount(0);
+ // Merely entering review does not mutate stock or create a purchase.
+ expect(await stored(page)).toEqual(initial);
+ await page.locator('#sheet .close').click();
+ await readSynthetic(page,[['テスト店',10],['小計 ¥900',290]],[]);
+ await expect(page.locator('#receiptZeroAlert')).toBeVisible();
+ await page.locator('#receiptRetryPhotoBtn').click();
+ await expect(page.getByRole('heading',{name:'🧾 レシート一括補充'})).toBeVisible();
+ await expect(page.locator('#receiptFile')).toHaveCount(1);
+ await expect(page.locator('#receiptAnalyzeBtn')).toBeDisabled();
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('v50 P1: a partial photo scan prominently shows missing count and updates it after quantity correction',async({page})=>{
+ await readSynthetic(page,[['テスト店',10],['テスト牛乳 ¥200',130],['小計 4点 ¥200',290]],[]);
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ const note=page.locator('#receiptCount');
+ await expect(note).toHaveAttribute('role','alert');
+ await expect(note).toContainText('4点');
+ await expect(note).toContainText('1点');
+ await expect(note).toContainText('3点の差');
+ // When the person adjusts quantity, the displayed discrepancy must be refreshed.
+ await page.locator('#receiptQty-0').fill('4');
+ await page.locator('#receiptQty-0').dispatchEvent('change');
+ await expect(note).toContainText('一致しています');
+ await expect(note).not.toContainText('3点の差');
+ expect(page.__errors).toEqual([]);
+});
