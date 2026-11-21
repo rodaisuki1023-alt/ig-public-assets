@@ -62,4 +62,6 @@ test('v50: family photo revocation limitations are visible before sharing and re
  assert.match(photos,/相手が取得・保存したコピーは後から回収できません/);
  assert.match(household,/家族から外しても、相手がすでに見たり保存した写真・バックアップのコピーは回収できません/);
  assert.match(household,/相手がすでに見たり保存した写真・バックアップのコピーは消せません/);
+ assert.match(household,/相手が保存した写真のコピーは後から回収できません/);
+ assert.match(household,/相手に保存された写真は後から回収できません/);
 });

@@ -356,7 +356,7 @@ function joinScreen(){
  const code=el('input',{id:'atkHhGuestCode',type:'text',maxlength:'12',autocapitalize:'characters',autocomplete:'off',placeholder:'8文字',value:inviteCode});
  const canJoin=!!session||cfg.guest===true;
  sheet('招待コードで家族に参加',[
-  note('名前と招待コードを入れて参加します。コードは発行から24時間・1回だけ使えます。開いただけで在庫が変わることはありません。'),
+  note('名前と招待コードを入れて参加します。コードは発行から24時間・1回だけ使えます。開いただけでは共有されません。参加すると在庫と商品写真が共有されます。相手が保存した写真のコピーは後から回収できません。'),
   field('家族に表示される名前',name),field('家族から届いた招待コード',code),
   canJoin?button(session?'共有に参加する':'Googleなしで共有に参加する',e=>busy(e.target,()=>joinWithCode(name.value,code.value))):note('この試用版では、Googleでログインしてから参加します。'),
   !session&&googleAuth?button('Googleで参加する（機種変更時に復旧しやすい）',e=>busy(e.target,()=>{
@@ -421,10 +421,10 @@ function chooseHousehold(){
  sheet('家族共有（限定テスト）',[
   field('家族に表示される名前',name),
   el('div',{class:'atk-hh-card'},[el('h3',{text:'世帯を作って家族を招待する'}),
-   note('この端末の'+counts(local)+'が、共有の最初のデータになります。共有を始める前に、この端末内に控えを保存します。'),
+   note('この端末の'+counts(local)+'と登録済みの商品写真が共有の最初のデータになります。相手が保存した写真のコピーは後から回収できません。共有前に端末内に控えを保存します。'),
    button('世帯を作る',e=>busy(e.target,async()=>{
     if(!name.value.trim())throw '名前を入れてください';
-    if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'を共有の最初のデータにします。','共有を始める'))return;
+    if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'と登録済みの写真を共有します。相手に保存された写真は後から回収できません。','共有を始める'))return;
     if(!backupDevice())throw '控えを保存できなかったため中止しました（何も変更していません）';
     const my=await rpc('hh_create',{p_name:'わが家',p_display_name:name.value.trim()});
     household={id:my.household.id,name:my.household.name};saveMeta({household,...since(household)});rememberMembers(my);
