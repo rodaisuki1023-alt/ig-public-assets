@@ -287,12 +287,11 @@ test('v49 audit: a misread voicing mark still finds the registered product, size
   assert.deepEqual(M.candidates('テスト麦茶 650ml', [{ id: 1, name: 'テスト麦茶 2L' }]), []);
 });
 
-test('v49 audit: learned texts pre-select only when exactly the same; near texts are offered', () => {
+test('P1 audit: learned texts match only with compatible capacity; unreadable capacity is not suggested', () => {
   const stock = [{ id: 1, name: 'テスト炭酸水 1L', receiptAliases: [M.lineKey('テスト炭酸水1L')] }];
   assert.equal(M.candidates('テスト炭酸水1L', stock)[0].learned, true);
-  const near = M.candidates('テスト炭酸水レ', stock)[0];
-  assert.equal(near.learned, false);
-  assert.equal(near.near, true);
+  assert.deepEqual(M.candidates('テスト炭酸水レ', stock),[],
+    'when a 1L label becomes unreadable, never offer or preselect that stock volume');
 });
 
 
