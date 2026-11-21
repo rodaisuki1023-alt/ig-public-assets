@@ -164,7 +164,7 @@ function codePriceCandidates(lines){
 // layout parser cannot isolate it as a separate quantity line. It is a hint,
 // not proof: show the number but leave the row unchecked until reviewed.
 function inlinePurchaseCount(raw){
- const m=hw(raw).match(/(?:^|[\s（(])(\d{1,2})\s*(?:杯|皿|名|人|点|コ|個|本|袋|枚|箱|パック)\s*[xX]\s*(?:単(?:価)?|@)\s*[¥\\]?\s*\d/);
+ const m=hw(raw).match(/(?:^|[^\d])(\d{1,2})\s*(?:杯|皿|名|人|点|コ|個|本|袋|枚|箱|パック)\s*[xX]\s*(?:単(?:価)?|@)\s*[¥\\]?\s*\d/);
  return m&&+m[1]>1&&+m[1]<=30?+m[1]:null;
 }
 function parse(source){
@@ -175,12 +175,12 @@ function parse(source){
   // "2点" on the NAME line could mean two bought, or a two-piece pack.
   // Preserve the printed designation and require human quantity confirmation
   // rather than silently showing quantity=1 as a trusted purchase.
-  const ambiguousCount=!p.qtyLine&&prefix.text.match(/(?:^|\s)([2-9]|1\d|20)\s*(点|杯|皿|人|名)\s*$/);
+  const ambiguousCount=!p.qtyLine&&prefix.text.match(/(?:^|[^\d])([2-9]|1\d|20)\s*(点|杯|皿|人|名)\s*$/);
   const inlineQty=p.qtyLine?null:inlinePurchaseCount(p.source);
   const printedName=nameText(ambiguousCount?prefix.text:q.text);
   // Keep the multiplier in source for audit, but do not put a purchase
   // calculation into the displayed product name.
-  const raw=inlineQty?(printedName.replace(/\s+\d{1,2}\s*(?:杯|皿|名|人|点|コ|個|本|袋|枚|箱|パック)\s*[xX]\s*(?:単(?:価)?|@)\s*[¥\\]?\s*\d[\d,.]*\s*$/,'').trim()||printedName):printedName,signal=productSignal(raw);
+  const raw=inlineQty?(printedName.replace(/\d{1,2}\s*(?:杯|皿|名|人|点|コ|個|本|袋|枚|箱|パック)\s*[xX]\s*(?:単(?:価)?|@)\s*[¥\\]?\s*\d[\d,.]*\s*$/,'').trim()||printedName):printedName,signal=productSignal(raw);
   // Warehouse clubs print English names ("TERIYAKI UDON"); the item-code line below confirms the row.
   if(!raw||noise(raw)||!(signal.ok||(p.club&&/[A-Za-z]{3,}/.test(raw)))){rejected.push({text:p.source,reason:'商品名として判定できない文字'});continue}
   const name=canon(raw),qty=inlineQty|| (p.qtyLine?p.qty:q.qty),score=signal.ok?signal.score:p.club&&p.qtyChecked?84:signal.score;
@@ -206,7 +206,12 @@ function parse(source){
  return {store:'',date:receiptDate(lines)||window.AtokoreDates.localDate(),items:out.slice(0,60),rejected:rejected.slice(0,40),lineCount:lines.length,
   stoppedAtSubtotal:!!b&&b.kind==='subtotal',subtotalLine:b&&b.kind==='subtotal'?b.text:'',boundary:b,facts:S.receiptFacts?S.receiptFacts(lines):null,printedCount:st.printedCount,countedQty:counted,countMatches:st.printedCount===null?null:st.printedCount===counted}}
 function opts(cur,a){return a.map(v=>`<option ${v===cur?'selected':''}>${v}</option>`).join('')}
-window.receiptUpdateV7=(i,k,v)=>{const x=R.parsed[i];if(!x)return;if(k==='qty')v=Math.max(1,+v||1);x[k]=v;if(k==='name'){x.cat=cat(v,v);x.unit=fixedUnit(v);x.place=place(v,x.cat);x.low=false;x.selected=!!String(v).trim();x.userEditedName=true;x.cands=null;x.matchId=null;x.autoLinked=false;x.manualSeparate=false;review();return}count()};window.receiptToggleV7=(i,on)=>{if(R.parsed[i])R.parsed[i].selected=on;count()};window.receiptStepV7=(i,d)=>{const x=R.parsed[i];if(!x)return;x.qty=Math.max(1,(+x.qty||1)+d);const q=$r(`receiptQty-${i}`);if(q)q.value=x.qty;count()};// Bulk-selection is only for rows with no OCR or quantity doubts.
+window.receiptUpdateV7=(i,k,v)=>{const x=R.parsed[i];if(!x)return;if(k==='qty')v=Math.max(1,+v||1);x[k]=v;if(k==='name'){x.cat=cat(v,v);x.unit=fixedUnit(v);x.place=place(v,x.cat);x.low=false;x.selected=!!String(v).trim();x.userEditedName=true;x.cands=null;x.matchId=null;x.autoLinked=false;x.manualSeparate=false;review();return}count()};window.receiptToggleV7=(i,on)=>{const x=R.parsed[i];if(!x)return;x.selected=!!on;
+ // Update the visible warning without replacing the input being interacted with.
+ const row=document.querySelector('[data-receipt-row="'+i+'"]');
+ const badge=row?.querySelector('.receiptQuality');
+ if(badge&&x.low)badge.textContent=(x.selected?'要確認・個別選択済み':'要確認・未選択')+(x.reasons?.length?'：'+x.reasons.join('・'):'');
+ count()};window.receiptStepV7=(i,d)=>{const x=R.parsed[i];if(!x)return;x.qty=Math.max(1,(+x.qty||1)+d);const q=$r(`receiptQty-${i}`);if(q)q.value=x.qty;count()};// Bulk-selection is only for rows with no OCR or quantity doubts.
  // A low-confidence / reconstructed row is a purchase only after explicit
  // per-row selection. Never override a prior individual choice.
  window.receiptSelectAllV7=on=>{R.parsed.forEach(x=>{
