@@ -505,6 +505,7 @@ test('P1: restaurant 3-cup price multiplication is purchase quantity, not a 1-it
  const inline=parse('テスト生ビール 3杯×単580 ¥1,740\n小計 3点 ¥1,740');
  assert.equal(inline.items.length,1);
  assert.equal(inline.items[0].qty,3);
+ assert.equal(inline.items[0].name,'テスト生ビール','the multiplier is a purchase count, not part of the product name');
  assert.equal(inline.items[0].selected,false,'an inline quantity hint must be reviewed before registration');
 });
 
