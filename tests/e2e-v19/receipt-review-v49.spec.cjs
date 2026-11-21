@@ -634,3 +634,79 @@ test('v50: unpriced barcode-backed receipt items are visible but not preselected
  expect(await stored(page)).toEqual(initial);
  expect(page.__errors).toEqual([]);
 });
+
+test('P1: bulk select never checks a barcode-recovered or uncertain-quantity row',async({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,[
+  'テスト牛乳 ¥100',
+  '0004 テスト食材 軽',
+  '4580781733565',
+  'テストチーズ ¥200',
+  '小計 3点 ¥300'
+ ].join('\n'));
+ const unsure=rowOf(page,'テスト食材');
+ await expect(unsure.locator('.receiptQuality')).toContainText('要確認・未選択');
+ await expect(unsure.locator('.receiptCheck')).not.toBeChecked();
+ await page.getByRole('button',{name:'通常行のみ全選択'}).click();
+ await expect(unsure.locator('.receiptCheck')).not.toBeChecked();
+ await expect(page.locator('#receiptSelectionCount')).toHaveText('2/3件を選択');
+ // Explicitly reviewing a row and checking it one by one is allowed.
+ await unsure.locator('.receiptCheck').check();
+ await expect(unsure.locator('.receiptQuality')).toContainText('個別選択済み');
+ await expect(page.locator('#receiptSelectionCount')).toHaveText('3/3件を選択');
+ await page.getByRole('button',{name:'通常行のみ全選択'}).click();
+ await expect(unsure.locator('.receiptCheck')).toBeChecked();
+ await page.getByRole('button',{name:'全解除'}).click();
+ await expect(page.locator('[data-receipt-row] .receiptCheck:checked')).toHaveCount(0);
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
+
+test('P1: an unknown-capacity stock row never appears even with an old learned alias',async({page})=>{
+ const initial={items:[
+  {id:1,name:'テスト飲料',qty:3,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1,receiptAliases:['テスト飲料2l']},
+  {id:2,name:'テスト飲料 500ml',qty:6,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1},
+  {id:3,name:'テスト飲料 2000ml',qty:2,cat:'食料品',unit:'本',expType:'期限なし',exp:'',usage:1,receiptAliases:['テスト飲料2l']}
+ ],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト飲料 2L ¥198\n小計 1点 ¥198');
+ const r=rowOf(page,'テスト飲料');
+ const options=await r.locator(PICK+' option').allTextContents();
+ expect(options.join()).not.toContain('登録済み：テスト飲料</');
+ expect(options.join()).not.toContain('登録済み：テスト飲料 500ml');
+ expect(options.join()).toContain('登録済み：テスト飲料 2000ml');
+ const values=await r.locator(PICK+' option').evaluateAll(opts=>opts.map(x=>x.value));
+ expect(values).not.toContain('1');
+ expect(values).not.toContain('2');
+ expect(values).toContain('3');
+ await expect(r.locator(PICK)).toHaveValue('3');
+ await page.locator('#receiptApplyBtn').click();
+ await expect(page.locator('#qaTray')).toBeVisible();
+ expect(await stored(page)).toEqual(initial);
+ await page.locator('#qaCommit').click();
+ const after=await stored(page);
+ expect(after.items.find(x=>x.id===1).qty).toBe(3);
+ expect(after.items.find(x=>x.id===2).qty).toBe(6);
+ expect(after.items.find(x=>x.id===3).qty).toBe(3);
+ expect(page.__errors).toEqual([]);
+});
+
+test('P1: unverified restaurant quantity is unchecked and excluded from bulk selection',async({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await readText(page,'テスト生ビール\n3杯×単価\n小計 3点 ¥1,740');
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(1);
+ const r=page.locator('[data-receipt-row]');
+ await expect(r.locator('.receiptCheck')).not.toBeChecked();
+ await expect(r.locator('.receiptQuality')).toContainText('数量');
+ await page.getByRole('button',{name:'通常行のみ全選択'}).click();
+ await expect(r.locator('.receiptCheck')).not.toBeChecked();
+ await expect(page.locator('#receiptCount')).toContainText('2点の差');
+ await r.locator('#receiptQty-0').fill('3');
+ await r.locator('#receiptQty-0').dispatchEvent('change');
+ await expect(page.locator('#receiptCount')).toContainText('一致しています');
+ await expect(r.locator('.receiptCheck')).not.toBeChecked();
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
