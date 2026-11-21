@@ -449,3 +449,32 @@ test('v50 real-receipt follow-up: warehouse-club names keep trailing pack-size n
   const normal=S.structure(['テスト商品 ¥200','小計 1点 ¥200']);
   assert.equal(normal.products[0].text,'テスト商品');
 });
+
+test('v50 holdout-format regression: a barcode after an unpriced line keeps a review-only product', () => {
+  // Fictional receipt only. No private receipt images or item details are stored in GitHub.
+  const r=parse([
+    'テストストア',
+    'テスト商品甲 ¥354',
+    '0004 テスト食材 軽',
+    '4580781733565',
+    'テスト商品乙 ¥398',
+    '小計 ¥1,106'
+  ].join('\n'));
+  assert.equal(r.items.length,3,'an OCR price omission must not silently drop a product name');
+  assert.deepEqual(r.items.map(x=>x.qty),[1,1,1]);
+  const fixed=r.items[1];
+  assert.equal(fixed.selected,false,'a recovered unpriced item must not be preselected');
+  assert.equal(fixed.low,true);
+  assert.ok(fixed.reasons.some(x=>x.includes('商品コードは読めましたが価格・数量が不明')));
+  assert.equal(r.items[0].selected,true);
+  assert.equal(r.items[2].selected,true);
+  // A store name followed by a barcode BEFORE any confirmed product is not a purchase.
+  const head=parse('テスト店\n4901234567890\nテスト牛乳 ¥120\n小計 ¥120');
+  assert.equal(head.items.length,1);
+  // A coupon/barcode after the subtotal is never a purchase.
+  const end=parse('テスト牛乳 ¥120\n小計 ¥120\nテスト割引\n4901234567890');
+  assert.equal(end.items.length,1);
+  // Bare no-price names not followed by a code remain excluded.
+  const noCode=parse('テスト牛乳 ¥120\nテスト食材\nテスト豆腐 ¥130\n小計 ¥250');
+  assert.equal(noCode.items.length,2);
+});
