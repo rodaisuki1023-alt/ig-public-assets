@@ -124,9 +124,9 @@ test('v50 P1 regression: undo restores a different original photo after importin
   await page.setInputFiles('.atk-backup-file', file);
   await appConfirm(page, true);
   await expect(page.locator('#atkSafetyBanner')).toContainText('復元しました');
-  await expect.poll(() => photoKeys(page)).toHaveLength(1);
-  const photoB = await photoKeys(page);
-  expect(photoB[0]).toContain('"3"');
+  // The inventory save is synchronous but IndexedDB photo replacement is async.
+  // Wait for B itself, not merely "one photo" (A already makes that count pass).
+  await expect.poll(async () => (await photoKeys(page))[0]).toContain('"3"');
 
   // Undo must restore the *original* A photo and its inventory data.
   await page.evaluate(() => window.atkOpenBackup());
