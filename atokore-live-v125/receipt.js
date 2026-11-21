@@ -50,7 +50,13 @@ window.analyzeReceiptV7=async(turn)=>{
   // The first pass may have missed text boxes. Re-scan ONLY when a reliable
   // printed item count is larger than the purchased quantity we found.
   // An error never replaces the original review.
-  if(Number.isFinite(p.printedCount)&&p.printedCount>0&&p.countedQty<p.printedCount&&p.items.length<p.printedCount){
+  // Large detector retries are slow enough to exceed the WebKit CI review
+  // timeout. Until independently verified on real iPhone Safari, use the
+  // original OCR and clear item-count warning there. Android/desktop Chromium
+  // keeps the opt-in-by-shortfall second pass; no saved stock is changed here.
+  const ua=navigator.userAgent||'',slowWebKit=/AppleWebKit/.test(ua)&&!/(?:Chrome|Chromium|Edg)\//.test(ua);
+  const allowExtraScan=!slowWebKit&&!/iPhone|iPad|iPod/i.test(ua);
+  if(allowExtraScan&&Number.isFinite(p.printedCount)&&p.printedCount>0&&p.countedQty<p.printedCount&&p.items.length<p.printedCount){
    try{
     progress('不足している商品をもう一度確認しています…',.90);
     const extra=await O.readReceipt(prepared,{sensitive:true,stopAfter:items=>S.itemListEnded(Lines.groupBoxes(items))});
