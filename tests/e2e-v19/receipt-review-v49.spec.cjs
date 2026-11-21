@@ -567,3 +567,42 @@ test('v50 P1: a partial photo scan prominently shows missing count and updates i
  await expect(note).not.toContainText('3点の差');
  expect(page.__errors).toEqual([]);
 });
+
+test('v50 P1: a missing item count triggers one higher-sensitivity retry, and recovered rows stay unselected', async ({page})=>{
+ const initial={items:[],buys:[],routines:[]};
+ await open(page,{[KEY]:initial});
+ await go(page,'premium');
+ await page.locator('#pg-premium .premium').filter({hasText:'レシート一括補充'}).click();
+ await page.setInputFiles('#receiptFile',{
+  name:'fictional.png',mimeType:'image/png',
+  buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4//8/AwAI/AL+2NSeGAAAAABJRU5ErkJggg==','base64')
+ });
+ await page.evaluate(()=>{
+  window.__sensitiveOptions=[];
+  const primary=['テスト牛乳 ¥218','小計 3点 ¥518'];
+  const second=['テスト牛乳 ¥218','テスト豆腐 ¥150','2コ X 単150 ¥300','小計 3点 ¥518'];
+  window.AtokoreReceiptImage={prepare:async()=>({found:true})};
+  window.AtokoreReceiptOcr={
+   ready:()=>true,cached:async()=>true,load:async()=>{},storage:()=>null,
+   readReceipt:async(_prep,options)=>{
+    window.__sensitiveOptions.push(options?.sensitive===true);
+    const rows=(options?.sensitive?second:primary).map((text,i)=>({
+     text,score:0.95,top:i*42,bottom:i*42+28,left:10,right:340
+    }));
+    rows.dropped=[];rows.turn=0;rows.canvas=null;return rows;
+   }
+  };
+  window.AtokoreReceiptLines={groupBoxes:got=>got.map(x=>({...x,confidence:95,minScore:95}))};
+ });
+ await page.locator('#receiptAnalyzeBtn').click();
+ await expect(page.getByRole('heading',{name:'🧾 読み取り結果の確認'})).toBeVisible();
+ await expect(page.locator('[data-receipt-row]')).toHaveCount(2);
+ await expect(page.locator('#receiptSensitiveNotice')).toContainText('すべて未選択');
+ await expect(page.locator('#receiptSelectionCount')).toHaveText('0/2件を選択');
+ await expect(page.locator('#receiptCount')).toContainText('一致しています');
+ await expect(page.locator('[data-receipt-row] .receiptCheck:checked')).toHaveCount(0);
+ await expect(page.locator('[data-receipt-row] .receiptQuality')).toHaveCount(2);
+ expect(await page.evaluate(()=>window.__sensitiveOptions)).toEqual([false,true]);
+ expect(await stored(page)).toEqual(initial);
+ expect(page.__errors).toEqual([]);
+});
