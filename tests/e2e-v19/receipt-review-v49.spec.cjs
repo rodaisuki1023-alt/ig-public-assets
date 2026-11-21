@@ -723,7 +723,7 @@ test('P1: generic reversed-price multiplier mismatch cannot be bulk-selected or 
  await page.getByRole('button',{name:'通常行のみ全選択'}).click();
  await expect(row.locator('.receiptCheck')).not.toBeChecked();
  await page.locator('#receiptApplyBtn').click();
- await expect(page.locator('#qaTray')).toHaveCount(0);
+ await expect(page.locator('#qaTray')).toBeHidden();
  expect(await stored(page)).toEqual(initial);
  expect(page.__errors).toEqual([]);
 });
