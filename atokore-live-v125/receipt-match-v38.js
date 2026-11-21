@@ -64,7 +64,10 @@ function conflict(a,b){
  if(a.size&&b.size&&a.size!==b.size)return 'size';
  if(a.form&&b.form&&a.form!==b.form)return 'form';
  if(a.brand&&b.brand&&a.brand!==b.brand)return 'brand';
- if(a.amounts.length&&b.amounts.length&&a.amounts.join()!==b.amounts.join())return 'amount';
+ // An unspecified package capacity is NOT evidence of matching a known capacity.
+ // This must also invalidate old remembered aliases: never merge a 2L receipt
+ // into a stock row that omitted the volume, or the reverse.
+ if((a.amounts.length||b.amounts.length)&&a.amounts.join()!==b.amounts.join())return 'amount';
  return '';
 }
 /* candidates(raw, items) → [{item, score, learned, near}] best first, at most 3.
