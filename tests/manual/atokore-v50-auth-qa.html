@@ -101,8 +101,12 @@ function storageVerdict(r,owner){
  return 'unexpected';
 }
 function photoMeta(r){
- return 'HTTP '+r.status+'; Cache-Control='+String(r.cacheControl||'-').slice(0,70)+
- '; Age='+String(r.age||'-').slice(0,20)+'; CDN='+String(r.cdn||'-').slice(0,30);
+ return 'HTTP '+r.status+'; mode='+String(r.cacheMode||'-')+
+ '; Cache-Control='+String(r.cacheControl||'-').slice(0,70)+
+ '; Age='+String(r.age||'-').slice(0,20)+'; CDN='+String(r.cdn||'-').slice(0,30)+
+ '; bytes='+String(r.bytes===undefined?'-':r.bytes)+
+ '; SHA256='+String(r.bodyHash||'-').slice(0,64)+
+ '; source='+String(r.source||'unknown');
 }
 function safeCode(response,parsed){return String(response.status)+(parsed&&typeof parsed.code==='string'?' '+parsed.code:'')}
 async function req(url,method,data,session,contentType){
@@ -137,15 +141,27 @@ var cvs=document.createElement('canvas');cvs.width=1;cvs.height=1;
 cvs.getContext('2d').fillRect(0,0,1,1);
 return new Promise(function(resolve,reject){cvs.toBlob(function(b){if(b&&b.type==='image/jpeg'&&b.size<81920)resolve(b);else reject(new Error('canvas jpeg unavailable'))},'image/jpeg',.75)});
 }
+async function hashBytes(bytes){
+ var digest=await crypto.subtle.digest('SHA-256',bytes);
+ return Array.from(new Uint8Array(digest)).map(function(b){return b.toString(16).padStart(2,'0')}).join('');
+}
 async function photoFetch(path,user,nonce,cacheMode){
+ // A response for cache:default CANNOT be attributed to network or browser cache
+ // by ordinary cross-origin JavaScript alone. Recheck the exact same URL using
+ // cache:reload; use a separate fresh nonce + no-store for the decisive gate.
+ var mode=cacheMode==='default'?'default':cacheMode==='reload'?'reload':'no-store';
  try{
   var url=BASE+'/storage/v1/object/authenticated/atokore-product-photos/'+urlPath(path)+'?qa='+nonce;
   var r=await fetch(url,{method:'GET',
    headers:Object.assign({apikey:KEY,Authorization:'Bearer '+user.access_token},
-    cacheMode==='default'?{}:{'cache-control':'no-cache'}),
-   cache:cacheMode==='default'?'default':'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
-  var errorCode='';
-  if(!r.ok){
+    mode==='default'?{}:{'cache-control':'no-cache'}),
+   cache:mode,credentials:'omit',referrerPolicy:'no-referrer'});
+  var errorCode='',bodyHash='',bytes=0;
+  if(r.ok){
+   var body=await r.arrayBuffer();
+   bytes=body.byteLength;
+   bodyHash=await hashBytes(body);
+  }else{
    try{
     if(String(r.headers.get('content-type')||'').includes('json')){
      var e=await r.json();
@@ -153,14 +169,18 @@ async function photoFetch(path,user,nonce,cacheMode){
     }
    }catch(e){errorCode='unreadable-error'}
   }
-  return {status:r.status,ok:r.ok,errorCode,
+  return {status:r.status,ok:r.ok,errorCode,bodyHash,bytes,cacheMode:mode,
+   source:mode==='default'?'cache_or_network_undetermined':'cache_bypass_requested',
    cacheControl:r.headers.get('cache-control'),age:r.headers.get('age'),
    cdn:r.headers.get('cf-cache-status')||r.headers.get('x-cache'),network:false};
- }catch(e){return {status:0,ok:false,errorCode:'network-error',network:true}}
+ }catch(e){return {status:0,ok:false,errorCode:'network-error',cacheMode:mode,
+  source:'request_failed',network:true}}
 }
 async function photoUpload(path,user){
 var blob=await tinyJpeg();
+var expectedHash=await hashBytes(await blob.arrayBuffer());
 var r=await req('/storage/v1/object/atokore-product-photos/'+urlPath(path),'POST',blob,user,'image/jpeg');
+r.expectedHash=expectedHash;r.expectedBytes=blob.size;
 return r;
 }
 async function photoRemove(path,user){
@@ -176,6 +196,9 @@ if(!credentials)return;
 alreadyStarted=true;
 button.disabled=true;output.textContent='';emit('テスト中');persistNonSecrets();
 var users={},aHh=null,cHh=null,photoPath=null,uploaded=false;
+// The synthetic B password remains in this run's memory solely for a second Auth sign-in.
+// Never persist or log it; clear it in finally even after an error.
+var reauthBSecret=credentials.b;
 var meta={cohort:COHORT,users:{},households:{},item:mkId(),photoPath:null};
 try{
 for(var i=0;i<roles.length;i++){
@@ -245,6 +268,12 @@ var getB=await photoFetch(photoPath,users.b,fixedNonce,'default');
 var getC=await photoFetch(photoPath,users.c,'other-'+crypto.randomUUID(),'no-store');
 resultLine('所有者Aの写真GET正常',getA.status===200,photoMeta(getA));
 resultLine('除外前Bの写真GET正常',getB.status===200,photoMeta(getB));
+var imageHashesMatch=getA.status===200&&getB.status===200&&
+ getA.bodyHash===upl.expectedHash&&getB.bodyHash===upl.expectedHash&&
+ getA.bytes===upl.expectedBytes&&getB.bytes===upl.expectedBytes;
+resultLine('除外前A/B写真ハッシュがアップロードJPEGと一致',imageHashesMatch,
+ 'uploaded SHA256='+upl.expectedHash+' size='+upl.expectedBytes);
+assert(imageHashesMatch,'synthetic photo hash mismatch');
 var cVerdict=storageVerdict(getC,getA);
 resultLine('他世帯Cの写真GET非公開',cVerdict!=='unexpected',photoMeta(getC)+' ['+cVerdict+']');
 meta.fixedNonce=fixedNonce;
@@ -263,14 +292,40 @@ if(uploaded){
 var afterOwner=await photoFetch(photoPath,users.a,'owner-after-'+crypto.randomUUID(),'no-store');
 var afterB=await photoFetch(photoPath,users.b,'fresh-'+crypto.randomUUID(),'no-store');
 var sameB=await photoFetch(photoPath,users.b,meta.fixedNonce,'default');
+var forcedB=await photoFetch(photoPath,users.b,meta.fixedNonce,'reload');
 var freshVerdict=storageVerdict(afterB,afterOwner);
-var sameVerdict=storageVerdict(sameB,afterOwner);
-resultLine('除外後Aの写真アクセス正常',afterOwner.status===200,photoMeta(afterOwner));
-resultLine('除外後Bの新規URL取得拒否',freshVerdict!=='unexpected',photoMeta(afterB)+' ['+freshVerdict+']');
-resultLine('除外後Bの同一URLキャッシュ再取得',sameVerdict!=='unexpected',
- photoMeta(sameB)+' ['+(sameB.status===200?'cached_or_replayed':sameVerdict)+']');
-if(sameB.status===200)meta.revocationCacheWarning='以前閲覧したURLは除外後も取得可能';
+var forcedVerdict=storageVerdict(forcedB,afterOwner);
+resultLine('除外後Aの写真アクセス正常・SHA256同一',
+ afterOwner.status===200&&afterOwner.bodyHash===upl.expectedHash,photoMeta(afterOwner));
+resultLine('除外後Bの新規URL/no-store取得拒否',freshVerdict!=='unexpected',
+ photoMeta(afterB)+' ['+freshVerdict+']');
+resultLine('除外後Bの同一URL/cache:reload取得拒否',forcedVerdict!=='unexpected',
+ photoMeta(forcedB)+' ['+forcedVerdict+']');
+resultLine('除外後Bの同一URL/cache:default（取得元は未確定）',null,
+ photoMeta(sameB)+' [ブラウザキャッシュかネットワークかはHTTP 200だけでは判別不可]');
+if(sameB.status===200)meta.revocationCacheWarning='同一URLのcache:defaultは200。reloadと新規URLの結果を優先して評価し、DevTools Networkで出所確認';
 }
+// Reauthenticate B with the SAME synthetic user via Auth API; compare the new
+// access token's authorization separately from the old JWT's denial.
+try{
+var bReauthed=await signIn(ids.b,reauthBSecret);
+var sameUser=bReauthed.id===users.b.id;
+resultLine('Bが除外後にAuth再ログイン（同一UID）',sameUser);
+if(sameUser){
+ var postLoginRpc=await rpc(bReauthed,'hh_pull',{p_since:0,p_limit:20});
+ resultLine('除外後Bの新JWTで在庫RPC拒否',rpcDenied(postLoginRpc),
+  'HTTP '+postLoginRpc.status+' SQLSTATE '+String(postLoginRpc.data?.code||'-'));
+ if(uploaded){
+  var postLoginGet=await photoFetch(photoPath,bReauthed,'reauth-'+crypto.randomUUID(),'no-store');
+  var postLoginVerdict=storageVerdict(postLoginGet,afterOwner);
+  resultLine('除外後Bの新JWTで写真の新規GET拒否',postLoginVerdict!=='unexpected',
+   photoMeta(postLoginGet)+' ['+postLoginVerdict+']');
+ }
+}
+bReauthed.access_token='';
+}catch(e){resultLine('除外後Bの再ログイン検証',false,
+ String(e.message||e).slice(0,90))}
+finally{reauthBSecret=null;}
 emit('検証終了。合成データの管理者削除が必要です。');
 }catch(e){resultLine('検証処理',false,(e.message||String(e)).slice(0,130));emit('エラー。合成データの管理者削除が必要です。')}
 finally{
@@ -289,6 +344,7 @@ if(meta.photoApiRemoved){
 outputInfo(meta);
 Object.keys(users).forEach(function(k){users[k].access_token=''});
 Object.keys(credentials).forEach(function(k){credentials[k]=null});
+reauthBSecret=null;
 roles.forEach(function(r){var field=document.getElementById('password-'+r);if(field)field.value=''});
 button.disabled=true;
 }}
