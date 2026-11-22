@@ -27,3 +27,6 @@
 /* v50 feedback: concise preparation rows; preserve 44px targets. */
 .atk-pack-row{min-height:54px;flex-wrap:nowrap}
 .atk-pack-label{min-width:0}
+
+.atk-pack-label>span{min-width:0;overflow-wrap:anywhere}
+.atk-pack-stock-inline{margin-left:auto;max-width:43%;flex-shrink:0;font-size:11px;font-weight:650;color:#657183;text-align:right;line-height:1.4}
