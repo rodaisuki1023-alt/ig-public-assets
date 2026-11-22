@@ -3,6 +3,9 @@
 const { test, expect } = require('@playwright/test');
 const { open, go, stored, KEY, appConfirm, baseState } = require('./helpers.cjs');
 
+// Keep worker activation out of packing UI tests; pwa.spec.cjs covers worker behavior.
+test.use({ serviceWorkers: 'block' });
+
 const packKey = 'atokorePackingChecklistV1:/ig-public-assets/preview-baby-v19/';
 const noHorizontalScroll = page => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
 
