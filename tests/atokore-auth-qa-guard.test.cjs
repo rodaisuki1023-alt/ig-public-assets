@@ -70,7 +70,7 @@ test('Review covers negative controls, separate histories, same-URL replay and c
  assert.match(html,/別世帯CにAの商品履歴がない/);
  assert.match(html,/same-url-/);
  assert.match(html,/meta.fixedNonce,'default'/);
- assert.match(html,/除外後Bの新規URL取得拒否/);
+ assert.match(html,/除外後Bの新規URL\/no-store取得拒否/);
  assert.match(html,/削除後Aの新規URLで画像不存在/);
  assert.match(html,/referrer" content="no-referrer"/);
  assert.match(html,/Content-Security-Policy/);
