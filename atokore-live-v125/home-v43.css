@@ -78,3 +78,26 @@ body.atk-home-v43 .tabs [data-p="buy"] .navBadge{display:none!important}
 .atk-history-targets button{min-height:44px;width:100%;text-align:left;border:1px solid #E2CFC4;border-radius:12px;background:#fff;padding:8px 12px;font-weight:700}
 /* W2 item 7: reason labels on the attention cards. */
 .atk-home-flags{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+
+/* v50 owner feedback: keep the home attention area collapsed by default. */
+.atk-home-attention-details{border:1px solid #E9DAD3;border-radius:14px;background:#fffdfb;overflow:hidden}
+.atk-home-attention-toggle{display:flex;align-items:center;gap:10px;min-height:48px;padding:10px 14px;cursor:pointer;color:#704839;font-weight:800;list-style:none}
+.atk-home-attention-toggle::-webkit-details-marker{display:none}
+.atk-home-attention-toggle::marker{content:''}
+.atk-home-attention-toggle:focus-visible{outline:3px solid #6F8FCF;outline-offset:-3px}
+.atk-home-attention-action{margin-left:auto;font-size:12px;font-weight:750;color:#8A5747}
+.atk-home-attention-arrow{font-size:18px;line-height:1;transition:transform .15s ease}
+.atk-home-attention-details[open] .atk-home-attention-arrow{transform:rotate(180deg)}
+.atk-home-attention-details[open] .atk-home-attention-action{font-size:0}
+.atk-home-attention-details[open] .atk-home-attention-action::after{content:'閉じる';font-size:12px}
+.atk-home-attention-panel{padding:0 8px 10px}
+.atk-home-attention-panel>.atk-home-history-note{margin:0 5px 8px}
+.atk-home-attention-panel .atk-home-stock-list{border-radius:12px}
+.atk-home-attention-panel .atk-home-stock{grid-template-columns:36px minmax(0,1fr) 8px;gap:7px;padding:8px 9px;min-height:64px}
+.atk-home-attention-panel .atk-home-stock .atk-item-id,.atk-home-attention-panel .atk-home-stock .atk-brand{width:36px;max-width:36px;min-height:36px}
+.atk-home-attention-panel .atk-home-stock .bf-baby-icon img,.atk-home-attention-panel .atk-home-stock .bf-baby-icon{width:36px!important;height:36px!important;max-width:36px}
+.atk-home-attention-panel .atk-home-stock .atk-brand svg{width:34px;height:34px}
+.atk-home-attention-panel .atk-home-stock .atk-home-flags{grid-column:2/3;grid-row:2;display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;font-size:11px;text-align:left}
+.atk-home-attention-panel .atk-home-flags>span{padding:4px 7px}
+.atk-home-attention-panel .atk-home-stock-wrap>[data-atk-replenish]{min-height:44px;margin:2px 8px 6px auto;padding:6px 10px;font-size:12px}
+@media(max-width:350px){.atk-home-attention-panel .atk-home-stock{grid-template-columns:30px minmax(0,1fr) 7px;gap:6px}.atk-home-attention-panel .atk-home-stock .atk-item-id,.atk-home-attention-panel .atk-home-stock .atk-brand{width:30px;max-width:30px;min-height:30px}.atk-home-attention-panel .atk-home-stock .bf-baby-icon img,.atk-home-attention-panel .atk-home-stock .bf-baby-icon{width:30px!important;height:30px!important;max-width:30px}}
