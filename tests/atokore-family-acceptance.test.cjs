@@ -11,9 +11,7 @@ test.before(()=>{
  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'atk-family-'));
  for(const d of ['atokore-live-v125','scripts','tests/manual'])fs.cpSync(path.join(repo,d),path.join(tmp,d),{recursive:true});
  const run=args=>execFileSync('python3',['-I',...args],{cwd:tmp,encoding:'utf8'});
- run(['scripts/atokore/build-local-review.py','atokore-live-v125','_local_review','19']);
- run(['scripts/atokore/attach-synthetic-storage-qa.py','_local_review']);
- run(['scripts/atokore/attach-family-acceptance.py','atokore-live-v125','_local_review']);
+ run(['scripts/atokore/build-owner-review.py']);
  assert.match(run(['scripts/atokore/verify-iphone-review-build.py','_local_review']),/\/family\/ acceptance copy/);
  out=path.join(tmp,'_local_review');
 });
@@ -51,7 +49,11 @@ test('the acceptance copy ships no secret, warns against real data and keeps rec
 test('vercel.json builds the acceptance copy before the fail-closed verifier and fixes the bare /family path',()=>{
  const c=JSON.parse(fs.readFileSync(path.join(repo,'vercel.json'),'utf8'));
  const cmd=c.buildCommand;
- assert.ok(cmd.indexOf('attach-family-acceptance.py')>cmd.indexOf('build-local-review.py'));
- assert.ok(cmd.indexOf('attach-family-acceptance.py')<cmd.indexOf('verify-iphone-review-build.py'));
+ // Vercel's schema rejects a longer buildCommand and the whole deployment fails (seen on 4389ac6).
+ assert.ok(cmd.length<=256,String(cmd.length));
+ assert.equal(cmd,'python3 -I scripts/atokore/build-owner-review.py && python3 -I scripts/atokore/verify-iphone-review-build.py _local_review');
+ const steps=fs.readFileSync(path.join(repo,'scripts/atokore/build-owner-review.py'),'utf8');
+ const at=n=>steps.indexOf(n);
+ assert.ok(at('build-local-review.py')<at('attach-synthetic-storage-qa.py')&&at('attach-synthetic-storage-qa.py')<at('attach-family-acceptance.py'));
  assert.deepEqual(c.redirects,[{source:'/family',destination:'/family/',permanent:false}]);
 });

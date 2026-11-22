@@ -95,6 +95,14 @@ Vercel接続先チーム `rodaisuki1023-4199` はHobbyだが、`create_project` 
   - 2026-11-22 に未認証の GET で `/`・`/index.html`・`/service-worker.js`・`/qa/` が 302 で認証へ転送されることを確認した。
   - `/family/` は次のデプロイ後に同じ確認をする。
 
+### ビルド
+
+- `vercel.json` の `buildCommand` は、`scripts/atokore/build-owner-review.py` の後に検証を実行するだけにした。
+  - `build-owner-review.py` は、トップ・`/qa/`・`/family/` を順に作る。
+- 理由：Vercel のスキーマは `buildCommand` を256文字までと決めている。超えるとデプロイ全体が失敗する（4389ac6 で実際に発生）。
+  - 失敗している間は、直前の成功デプロイがそのまま表示され続ける。
+- CI とユニットテストで、文字数・手順の順番・Vercel と同じコマンドでのビルドを確認している。
+
 ### 開始前にオーナーが行うこと（無料）
 
 1. **Supabase の Redirect URLs を確認する**
