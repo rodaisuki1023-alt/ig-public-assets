@@ -93,6 +93,7 @@ for(const width of [320,393,430])test('public v50 hides unverified receipt OCR a
  await expect(page.locator('#pg-home [data-atk-receipt]')).toHaveCount(0);
  await expect(page.locator('#pg-home [data-atk-buy]')).toBeVisible();
  await expect(page.locator('#pg-premium [data-atk-experimental-receipt]')).toBeHidden();
+ await expect(page.locator('#premiumIntroV125m')).toContainText('消費予測');await expect(page.locator('#premiumIntroV125m')).not.toContainText('レシート');
  await page.evaluate(()=>showPremium('receipt'));
  await expect(page.locator('#modal')).not.toHaveClass(/on/);
  await page.locator('#pg-home [data-atk-buy]').click();
