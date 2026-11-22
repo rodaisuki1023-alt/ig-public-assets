@@ -45,3 +45,17 @@
 Vercel接続先チーム `rodaisuki1023-4199` はHobbyだが、`create_project` 操作が **403 Forbidden (You don't have permission to create the project)**。現在の接続からは新規プロジェクトの作成・デプロイができない。接続アカウントの変更またはWork内のオーナー認証を確認する必要がある。**受入URLは発行済みではない。**
 
 正式公開ゲートは引き続き Issue #96。
+
+## 2026-11-23｜既存Vercel検証サイト（作成済み）と実Storage試験の分離
+
+- 認証付きHTTPS：https://atokore-v50-owner-review-20261122.vercel.app
+- GitHub VercelデプロイのREADY成功と、Workによる未認証302→Vercel Authenticationを確認。設定のAll Deployments維持が前提。
+- **トップのiPhone用アプリは引き続き家族共有無効**で、端末内の架空データを操作するだけ。検証版が実家族アカウントに接続することはない。
+- 別の `/qa/atokore-v50-auth-qa.html` をQA専用としてビルドに同梱する。こちらに限り`atokore-family-trial` の公開可能なpublishableキーで合成Auth A/B/Cの実HTTPS RPC/Storageをテストできる。**ページを配信しただけではアカウントも世帯も写真も作成しない。**
+- QAの許可オリジンはVercelの上記正規ホストと固定の`/qa/atokore-v50-auth-qa.html`のみ。RawGitHack/GitHub Pages/別Vercelホストではボタンを無効にする。実家族データ、既存アカウント、実写真/実レシート、service_roleキーは使用しない。
+- **起動条件**：Vercel Deployment Protection / All Deployments をWorkブラウザで最新デプロイ含め再確認。未認証でルート・QAの両方が302で認証に転送されることを確認してから、合成Authアカウント作成・QAを進める。認証保護が検証できなければQAページを開いてもパスワードを入力しない。
+- 元のGitHub Pages版は`example.invalid` A/B/C 3件のAuth管理UIでの事前作成が必須。メール検証等で追加の有料サービスは使わない。アカウント未作成なら結果は**未実施**、無関係な認証ユーザーで代用しない。
+- 一度実行したら結果の合成UUID等で写真・世帯・Authを識別して削除し、後片付け0件を確かめる。削除は照合結果に基づき対象だけに限定し、既存家族や他ユーザーを削除しない。
+- 外部ストレージの**cache:default 200**と**新しいnonce + no-storeの新規通信**を区別して受け入れ評価する。古いコピーをすべて回収することはできない。
+- このQA導線は公開後の家族共有付き2台実機テストを意味しない。家族のSafari/PWA確認は別途行う。
+- レシートOCRは今回の正式版では非表示（再精度検証まで保留）。過去のOCR検証手順は製品の受入条件から外し、研究用のみ。
