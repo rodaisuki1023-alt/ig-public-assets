@@ -29,7 +29,7 @@ test('v44 review product opens draft editor, returns without saving stock, then 
 });
 test('v44 home replenishment is explicit, adds once and excludes expiry-only stock',async({page})=>{
  const s=baseState({items:[{id:1,name:'不足のミルク',cat:'ベビー',qty:1,unit:'缶'},{id:2,name:'期限の牛乳',cat:'食料品',qty:5,unit:'本',exp:'2020-01-01'}],buys:[],routines:[]});await open(page,{[KEY]:s});
- await expect(page.locator('[data-atk-replenish]')).toHaveCount(1);await page.locator('#atkTasks [data-atk-open="1"]').click();expect(await stored(page)).toEqual(s);await page.getByRole('button',{name:'閉じる',exact:true}).click();
+ await expect(page.locator('[data-atk-replenish]')).toHaveCount(1);await expect(page.locator('#atkHomeAttentionDetails')).not.toHaveAttribute('open');await page.locator('#atkHomeAttentionDetails summary').click();await page.locator('#atkTasks [data-atk-open="1"]').click();expect(await stored(page)).toEqual(s);await page.getByRole('button',{name:'閉じる',exact:true}).click();
  await page.click('[data-atk-replenish="1"]');await expect(page.locator('[data-atk-replenish="1"]')).toBeDisabled();
  await page.evaluate(()=>document.querySelector('[data-atk-replenish="1"]').click());expect((await stored(page)).buys).toHaveLength(1);expect((await stored(page)).buys[0].qty).toBe(1);
  await page.reload();await expect(page.locator('[data-atk-replenish="1"]')).toHaveText('買い物に追加済み');

@@ -47,9 +47,9 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await expect(page.locator('#atkHomeAttentionDetails')).not.toHaveAttribute('open');
    await page.locator('#atkHomeAttentionDetails summary').click();
    await expect(page.locator('#pg-home [data-atk-open="2"] .atk-user-photo')).toBeVisible();
-   const homeImageWidth=(await page.locator('#pg-home [data-atk-open="2"] .atk-user-photo').boundingBox()).width;
-   expect(homeImageWidth).toBeGreaterThanOrEqual(30);
-   expect(homeImageWidth).toBeLessThanOrEqual(48);
+   // The compact home list uses a 36px frame (30px under 350px); the photo must fit it and not cover the name.
+   const fit=await page.locator('#pg-home [data-atk-open="2"]').evaluate(card=>{const r=e=>e.getBoundingClientRect();const p=r(card.querySelector('.atk-user-photo')),f=r(card.querySelector('.atk-item-id')),n=r(card.querySelector('.atk-item-copy'));return {w:Math.round(p.width),frame:Math.round(f.width),inside:p.left>=f.left-0.5&&p.right<=f.right+0.5,clearOfName:p.right<=n.left+0.5}});
+   expect(fit.w).toBe(width<350?30:36);expect(fit.w).toBeLessThanOrEqual(fit.frame);expect(fit.inside).toBe(true);expect(fit.clearOfName).toBe(true);
    await page.reload();await go(page,'stock');
    const img=row(page).locator('.atk-user-photo');await expect(img).toBeVisible();await expect.poll(()=>img.evaluate(i=>i.naturalWidth)).toBe(256);
    await row(page).locator('.name').scrollIntoViewIfNeeded();await shot(page,info,`${width}-v32-product-photo`);
