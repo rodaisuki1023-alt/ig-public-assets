@@ -97,7 +97,9 @@ body.atk-home-v43 .tabs [data-p="buy"] .navBadge{display:none!important}
 .atk-home-attention-panel .atk-home-stock .atk-item-id,.atk-home-attention-panel .atk-home-stock .atk-brand{width:36px;max-width:36px;min-height:36px}
 .atk-home-attention-panel .atk-home-stock .bf-baby-icon img,.atk-home-attention-panel .atk-home-stock .bf-baby-icon{width:36px!important;height:36px!important;max-width:36px}
 .atk-home-attention-panel .atk-home-stock .atk-brand svg{width:34px;height:34px}
+/* A product photo (48px elsewhere) must stay inside the compact 36px frame, or it covers the name. */
+.atk-home-attention-panel .atk-home-stock .atk-user-photo{width:36px;height:36px}
 .atk-home-attention-panel .atk-home-stock .atk-home-flags{grid-column:2/3;grid-row:2;display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;font-size:11px;text-align:left}
 .atk-home-attention-panel .atk-home-flags>span{padding:4px 7px}
 .atk-home-attention-panel .atk-home-stock-wrap>[data-atk-replenish]{min-height:44px;margin:2px 8px 6px auto;padding:6px 10px;font-size:12px}
-@media(max-width:350px){.atk-home-attention-panel .atk-home-stock{grid-template-columns:30px minmax(0,1fr) 7px;gap:6px}.atk-home-attention-panel .atk-home-stock .atk-item-id,.atk-home-attention-panel .atk-home-stock .atk-brand{width:30px;max-width:30px;min-height:30px}.atk-home-attention-panel .atk-home-stock .bf-baby-icon img,.atk-home-attention-panel .atk-home-stock .bf-baby-icon{width:30px!important;height:30px!important;max-width:30px}}
+@media(max-width:350px){.atk-home-attention-panel .atk-home-stock{grid-template-columns:30px minmax(0,1fr) 7px;gap:6px}.atk-home-attention-panel .atk-home-stock .atk-user-photo{width:30px;height:30px}.atk-home-attention-panel .atk-home-stock .atk-brand svg{width:28px;height:28px}.atk-home-attention-panel .atk-home-stock .atk-item-id,.atk-home-attention-panel .atk-home-stock .atk-brand{width:30px;max-width:30px;min-height:30px}.atk-home-attention-panel .atk-home-stock .bf-baby-icon img,.atk-home-attention-panel .atk-home-stock .bf-baby-icon{width:30px!important;height:30px!important;max-width:30px}}
