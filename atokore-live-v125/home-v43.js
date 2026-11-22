@@ -129,7 +129,7 @@ function card(x){
  return '<div class="atk-home-stock-wrap"><button type="button" class="atk-item-card atk-home-stock" '+(Number.isSafeInteger(id)?'data-atk-open="'+id+'"':'disabled')+'><span class="atk-item-id"><span class="atk-brand bf-home-product">'+art+'</span></span><span class="atk-item-copy"><strong>'+esc(title)+'</strong><small>'+esc(sub)+'</small></span><span class="atk-home-flags">'+labels+'</span><span class="atk-chevron" aria-hidden="true">›</span></button>'+control+'</div>';
 }
 function html(){return '<div class="atk-home atk-home-v43">'+
- '<div class="atk-actions"><button type="button" data-atk-add class="atk-action atk-action-primary">'+icon('add')+'<span>ストック追加</span></button><button type="button" data-atk-receipt class="atk-action atk-action-peach">'+icon('receipt')+'<span>レシートで追加</span></button></div>'+
+ '<div class="atk-actions"><button type="button" data-atk-add class="atk-action atk-action-primary">'+icon('add')+'<span>ストック追加</span></button>'+(root.ATOKORE_RECEIPT_EXPERIMENTAL===true?'<button type="button" data-atk-receipt class="atk-action atk-action-peach">'+icon('receipt')+'<span>レシートで追加</span></button>':'<button type="button" data-atk-buy class="atk-action atk-action-peach">'+icon('buy')+'<span>買い物メモ</span></button>')+'</div>'+
  '<section id="atkHomeAttention" aria-labelledby="atkHomeAttentionTitle"><div class="atk-section-head"><h2 id="atkHomeAttentionTitle">補充・期限の確認</h2><button type="button" data-atk-nav="stock">ストックへ ›</button></div><p class="atk-home-history-note">補充目安以下の商品と、期限まで3日以内の商品。補充目安は商品編集で変更できます（未設定は数量1以下）。</p><div id="atkTasks" class="atk-home-stock-list"></div><button type="button" id="atkHomeMoreStock" class="atk-home-more" hidden></button></section>'+
  '<section aria-labelledby="atkHomeHistoryTitle"><div class="atk-section-head"><h2 id="atkHomeHistoryTitle">最近の変更</h2><button type="button" id="atkHomeAllChanges">すべて見る ›</button></div><p id="atkHomeHistoryNote" class="atk-home-history-note" role="status"></p><ol id="atkHomeActivity" class="atk-home-activity"></ol><button type="button" id="atkHomeHistoryRefresh" class="atk-home-more" hidden>履歴を再読み込み</button></section></div>'}
 function state(){try{return root.AtokoreHousehold?.homeState?.()||{joined:false}}catch(_){return {joined:false}}}
@@ -173,6 +173,7 @@ function install(){
  const add=$('bfNavAdd');if(add)add.innerHTML=icon('add')+'<span>追加</span>';
  doc.addEventListener('DOMContentLoaded',()=>{const add=$('bfNavAdd');if(add)add.innerHTML=icon('add')+'<span>追加</span>';root.renderHome?.()},{once:true});
  doc.addEventListener('click',e=>{
+  if(e.target.closest('[data-atk-buy]'))root.go?.('buy');
   if(e.target.closest('#atkHomeAllChanges'))openAll();
   const h=e.target.closest('[data-atk-history]');if(h&&opened.has(h.dataset.atkHistory)){openEntry(opened.get(h.dataset.atkHistory));return}
   const t=e.target.closest('[data-atk-history-item]');if(t){root.atkShowDetail?.(Number(t.dataset.atkHistoryItem));return}
