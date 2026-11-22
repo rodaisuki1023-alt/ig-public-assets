@@ -142,172 +142,44 @@ for(const width of [320,393])test('Muse P2: delete and reset are distinguishable
  expect(page.__errors).toEqual([]);
 });
 
-for (const width of [320,393,430]) test('v50 kit bridge: buying from packed list preserves stock/checks and avoids duplicate buys at '+width+'px',async({page})=>{
+for(const width of [320,393,430]) test('v50 owner review: packing rows stay compact without shopping actions at '+width+'px',async({page})=>{
  await page.setViewportSize({width,height:780});
- await open(page,{[KEY]:baseState()});
- const initial=await stored(page);
- await go(page,'buy');
- const kit=page.locator('#atkPackRows .atk-pack-row').nth(2);
- await expect(kit.locator('.atk-pack-label span')).toHaveText('おむつ');
- await expect(kit.locator('.atk-pack-stock-hint')).toContainText('ストック登録：2袋');
- const action=kit.locator('.atk-pack-to-buy');
- await expect(action).toBeEnabled();
- const box=await action.boundingBox();
- expect(box.height).toBeGreaterThanOrEqual(44);
+ const initial=baseState();
+ await open(page,{[KEY]:initial});await go(page,'buy');
+ const rows=page.locator('#atkPackRows .atk-pack-row');
+ await expect(rows).toHaveCount(6);
+ await expect(page.locator('#atkPackRows .atk-pack-to-buy,#atkPackRows .atk-pack-stock-choice,#atkPackRows .atk-pack-shopping-helper')).toHaveCount(0);
+ for(const row of await rows.all()){
+  const box=await row.boundingBox();expect(box.height).toBeLessThanOrEqual(72);
+ }
+ await rows.nth(2).locator('input[type=checkbox]').check();
+ await expect(rows.nth(2).locator('input[type=checkbox]')).toBeChecked();
  expect(await stored(page)).toEqual(initial);
- await action.click();
- const after=await stored(page);
- expect(after.items).toEqual(initial.items);
- expect(after.buys.filter(x=>x.name==='パンパース さらさらケア おむつ テープ M')).toHaveLength(1);
- const picked=after.buys.find(x=>x.name==='パンパース さらさらケア おむつ テープ M');
- expect(picked).toMatchObject({stockId:2,qty:1,unit:'袋',cat:'ベビー'});
- await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy')).toHaveText('追加済み');
- await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy')).toBeDisabled();
- await page.reload();
- await go(page,'buy');
- await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy')).toBeDisabled();
- await page.evaluate(id=>window.buyOneToStockV125H(id),picked.id);
- const final=await stored(page);
- expect(final.buys.some(x=>x.id===picked.id)).toBe(false);
- expect(final.items.find(x=>x.id===2)?.qty).toBe(3);
- await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-stock-hint')).toContainText('ストック登録：3袋');
- await expect(page.locator('#atkPackRows input[type=checkbox]').nth(2)).not.toBeChecked();
+ await page.reload();await go(page,'buy');
+ await expect(page.locator('#atkPackRows .atk-pack-row').nth(2).locator('input[type=checkbox]')).toBeChecked();
+ expect(await stored(page)).toEqual(initial);
  expect(await noHorizontalScroll(page)).toBe(true);
- expect(page.__errors).toEqual([]);
 });
 
-test('v50 kit bridge: variant selection is explicit and missing stock is not automatically a shortage',async({page})=>{
- const input=baseState();
- input.items.push({id:4,name:'メリーズ おむつ パンツ L',cat:'ベビー',qty:0,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1});
- await open(page,{[KEY]:input});
- await go(page,'buy');
- const diaper=page.locator('#atkPackRows .atk-pack-row').nth(2);
- await expect(diaper.locator('.atk-pack-stock-hint')).toContainText('複数の商品あり');
- const picker=diaper.locator('select.atk-pack-stock-choice');
- await expect(picker.locator('option')).toHaveCount(3);
- const action=diaper.locator('.atk-pack-to-buy');
- await expect(action).toBeDisabled();
- await picker.selectOption('4');
- await action.click();
- const after=await stored(page);
- expect(after.buys.find(x=>x.name==='メリーズ おむつ パンツ L')).toMatchObject({qty:1,unit:'袋',stockId:4});
- expect(after.items.find(x=>x.id===4)?.qty).toBe(0);
- const towel=page.locator('#atkPackRows .atk-pack-row').nth(4);
- await expect(towel.locator('.atk-pack-label span')).toHaveText('タオル');
- await expect(towel.locator('.atk-pack-stock-hint')).toContainText('不足確定ではありません');
- expect(page.__dialogs).toEqual([]);
-});
-
-test('v50 kit bridge: no-size diaper memo requires consent, cancel does not write any data',async({page})=>{
- await open(page,{[KEY]:baseState({items:[],buys:[]})});
- await go(page,'buy');
- const kit=page.locator('#atkPackRows .atk-pack-row').nth(2);
- await expect(kit.locator('.atk-pack-stock-hint')).toContainText('未確認');
- const initial=await stored(page);
- await kit.locator('.atk-pack-to-buy').click();
- const warning=await appConfirm(page,false);
- expect(warning).toContain('サイズやメーカーを確認');
+test('v50 compact packing preserves legacy preferred variant metadata but never buys automatically',async({page})=>{
+ const initial=baseState();
+ initial.items.push({id:4,name:'メリーズ おむつ パンツ L',cat:'ベビー',qty:0,unit:'袋'});
+ await open(page,{[KEY]:initial});await go(page,'buy');
+ const kitKey=await page.evaluate(()=>window.AtokorePackingChecklist.key);
+ await page.locator('#atkPackRows input[type=checkbox]').first().check();
+ await page.evaluate(k=>{
+  const v=JSON.parse(localStorage.getItem(k));
+  v.lists.daycare[2].preferredStock={id:'4',name:'メリーズ おむつ パンツ L',unit:'袋'};
+  localStorage.setItem(k,JSON.stringify(v));
+ },kitKey);
+ await page.reload();await go(page,'buy');
+ await expect(page.locator('#atkPackRows .atk-pack-to-buy,#atkPackRows .atk-pack-stock-choice')).toHaveCount(0);
  expect(await stored(page)).toEqual(initial);
- await page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy').click();
- await appConfirm(page,true);
- const queued=await stored(page);
- expect(queued.buys).toHaveLength(1);
- expect(queued.buys[0]).toMatchObject({name:'おむつ',qty:1,cat:'ベビー'});
- expect(queued.items).toEqual([]);
-});
-
-test('v50 kit bridge: Safari quota write failure never claims an unsaved shopping item',async({page})=>{
- await open(page,{[KEY]:baseState()});
- await go(page,'buy');
- const before=await stored(page);
- await page.evaluate(key=>{
-   const original=Storage.prototype.setItem;
-   window.__restoreKitQuota=()=>{Storage.prototype.setItem=original};
-   Storage.prototype.setItem=function(k,v){
-     if(k===key)throw new DOMException('quota','QuotaExceededError');
-     return original.call(this,k,v);
-   };
- },KEY);
- const button=page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy');
- await button.click();
- await expect(page.locator('#atkPackError')).toContainText('保存できませんでした');
- expect(await stored(page)).toEqual(before);
- await page.evaluate(()=>window.__restoreKitQuota());
- await button.click();
- expect((await stored(page)).buys.filter(x=>x.name==='パンパース さらさらケア おむつ テープ M')).toHaveLength(1);
+ await expect(page.locator('#atkPackRows input[type=checkbox]').first()).toBeChecked();
+ const saved=await page.evaluate(k=>JSON.parse(localStorage.getItem(k)).lists.daycare[2].preferredStock,kitKey);
+ expect(saved).toEqual({id:'4',name:'メリーズ おむつ パンツ L',unit:'袋'});
  expect(page.__dialogs).toEqual([]);
 });
-
-
-test('v50 repeat purchase remembers an explicitly chosen variant without buying or changing stock',async({page})=>{
-  const input=baseState();
-  input.items.push({id:4,name:'メリーズ おむつ パンツ L',cat:'ベビー',qty:0,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1});
-  await open(page,{[KEY]:input});
-  await go(page,'buy');
-  const diaper=page.locator('#atkPackRows .atk-pack-row').nth(2);
-  const picker=diaper.locator('select.atk-pack-stock-choice');
-  await picker.selectOption('4');
-  await expect(diaper.locator('select.atk-pack-stock-choice')).toHaveValue('4');
-  await expect(diaper.locator('.atk-pack-stock-hint')).toContainText('前回のサイズ・種類');
-  const packKey=await page.evaluate(()=>window.AtokorePackingChecklist.key);
-  const selected=await page.evaluate(k=>JSON.parse(localStorage.getItem(k)).lists.daycare[2].preferredStock,packKey);
-  expect(selected).toEqual({id:'4',name:'メリーズ おむつ パンツ L',unit:'袋'});
-  const unchanged=await stored(page);
-  expect(unchanged.items).toEqual(input.items);
-  expect(unchanged.buys).toEqual(input.buys);
-  await page.reload();
-  await go(page,'buy');
-  const after=page.locator('#atkPackRows .atk-pack-row').nth(2);
-  await expect(after.locator('select.atk-pack-stock-choice')).toHaveValue('4');
-  await after.locator('.atk-pack-to-buy').click();
-  const bought=await stored(page);
-  expect(bought.buys.find(x=>x.name==='メリーズ おむつ パンツ L')).toMatchObject({stockId:4,unit:'袋',qty:1});
-  expect(bought.items.find(x=>x.id===4).qty).toBe(0);
-  expect(page.__errors).toEqual([]);
-});
-
-test('v50 remembered variant is never auto-reused if its product identity changed',async({page})=>{
-  const input=baseState();
-  input.items.push({id:4,name:'メリーズ おむつ パンツ L',cat:'ベビー',qty:0,unit:'袋',place:'収納',expType:'期限なし',exp:'',usage:1});
-  await open(page,{[KEY]:input});
-  await go(page,'buy');
-  await page.locator('#atkPackRows .atk-pack-row').nth(2).locator('select.atk-pack-stock-choice').selectOption('4');
-  const packKey=await page.evaluate(()=>window.AtokorePackingChecklist.key);
-  // Synthetic stock changes: reuse the same numerical ID for a different size.
-  await page.evaluate(key=>{
-    const state=JSON.parse(localStorage.getItem(key));
-    state.items.find(x=>x.id===4).name='メリーズ おむつ パンツ S';
-    localStorage.setItem(key,JSON.stringify(state));
-  },KEY);
-  await page.reload();
-  await go(page,'buy');
-  const diaper=page.locator('#atkPackRows .atk-pack-row').nth(2);
-  await expect(diaper.locator('select.atk-pack-stock-choice')).toHaveValue('');
-  await expect(diaper.locator('.atk-pack-to-buy')).toBeDisabled();
-  expect((await page.evaluate(k=>JSON.parse(localStorage.getItem(k)).lists.daycare[2].preferredStock,packKey)).name).toBe('メリーズ おむつ パンツ L');
-  expect((await stored(page)).buys).toEqual(input.buys);
-});
-
-test('v50 generic diaper confirmation cannot enqueue after another-tab checklist change',async({page})=>{
-  await open(page,{[KEY]:baseState({items:[],buys:[]})});
-  await go(page,'buy');
-  // Persist a real checklist snapshot before simulating the other tab's edit.
-  // An untouched checklist has no localStorage entry yet and must not be read as an object.
-  await page.locator('#atkPackRows input[type=checkbox]').first().check();
-  const action=page.locator('#atkPackRows .atk-pack-row').nth(2).locator('.atk-pack-to-buy');
-  await action.click();
-  await expect(page.locator('#atkConfirmNote')).toContainText('サイズやメーカーを確認');
-  const packKey=await page.evaluate(()=>window.AtokorePackingChecklist.key);
-  await page.evaluate(key=>{
-    const state=JSON.parse(localStorage.getItem(key));
-    state.lists.daycare[2].done=true;
-    localStorage.setItem(key,JSON.stringify(state));
-  },packKey);
-  await appConfirm(page,true);
-  expect((await stored(page)).buys).toHaveLength(0);
-  await expect(page.locator('#atkPackError')).toContainText('別のタブ');
-});
-
 
 test('v50 paid-feature preview is explicitly not a purchasable subscription',async({page})=>{
   await open(page,{[KEY]:baseState()});
