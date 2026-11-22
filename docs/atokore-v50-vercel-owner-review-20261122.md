@@ -1,9 +1,9 @@
-# あとこれ v50｜iPhone実機受入用・独立Vercelサイト構成（未デプロイ）
+# あとこれ v50｜認証付きiPhone受入サイトと合成Storage QA（試用限定）
 
 - 基準アプリ: Draft PR #106 HEAD `b82add14b2f75f17db78dc378961d04a1a98e1b8`
 - 本ブランチ: `chatgpt/atokore-v50-iphone-acceptance-site-20261122`。PR #106 / main / 本番・既存試用版は不変更。
-- サイトの性質: **家族共有無効・Googleログイン無効・端末内のみ**の合成データ検証用。
-- **実Supabase Storageの失効・2端末家族共有の検証には使えない。**
+- サイトの性質: **トップの通常アプリは家族共有無効・Googleログイン無効・端末内のみ**。独立した /qa/ はテスト専用で実Supabaseに合成A/B/Cのみ接続する。
+- **トップのアプリ単体では実Supabase Storage失効・家族2端末同期を検証できない。** /qa/ページは別の実HTTP認可試験専用で、実iPhone2台同期の代替にはならない。
 - 費用: Vercel Hobby無料枠のみ。有料Password Protection、Pro、外部有料監視・新ドメインは禁止。
 - 配信: オーナーの承認を得たときだけ。Vercel認証 **All Deployments** を先に有効化。レビューサイトに実家族情報を入力しない。
 
@@ -27,7 +27,7 @@
 4. VercelのBuild Logsで `PASS: private review output is isolated...` を確認し、Review URLとデプロイのGit SHAを記録。
 5. オーナーで認証していないブラウザから静的ファイルを取得できないことを確認。サービスワーカー、PWAアイコンやモデルファイルも含めて保護されること。既存本番/試用URLが変わっていないことを確認。
 6. iPhoneのSafariで認証後、ホーム画面に追加して同一URLでPWAを起動。架空の20商品・持ち物チェック・レシートの合成画像・写真選択を試験。Safari/PWA別のブラウザ保存領域を混同しない。
-7. Safari/PWAでそれぞれオフライン再起動・数量更新・復帰後の保持、バックアップ/復元、画面幅・横スクロール、OCR処理時間とメモリ落ちを実測。**デプロイメント保護を有効にしたままPWAオフライン動作が可能か要測定**。
+7. Safari/PWAでそれぞれオフライン再起動・数量更新・復帰後の保持、バックアップ/復元、画面幅・横スクロールを実測。レシートOCRは正式提供保留のため通常の受入画面から除外。**デプロイメント保護を有効にしたままPWAオフライン動作が可能か要測定**。
 
 ### できないこと
 
@@ -40,9 +40,9 @@
 - 旧オリジンとのIndexedDB/localStorage競合を避けるため、新しい独立オリジン以外には配信しない。
 - 本番/既存試用/PR #106のマージ・Supabase Auth/RLS/Storage変更・課金は別承認が必要。
 
-## 2026-11-22 現時点の障害
+## 2026-11-22 過去の権限エラー（2026-11-23には解消済み）
 
-Vercel接続先チーム `rodaisuki1023-4199` はHobbyだが、`create_project` 操作が **403 Forbidden (You don't have permission to create the project)**。現在の接続からは新規プロジェクトの作成・デプロイができない。接続アカウントの変更またはWork内のオーナー認証を確認する必要がある。**受入URLは発行済みではない。**
+Vercel接続先チーム `rodaisuki1023-4199` はHobbyだが、`create_project` 操作が **403 Forbidden (You don't have permission to create the project)**。現在の接続からは新規プロジェクトの作成・デプロイができない。接続アカウントの変更またはWork内のオーナー認証を確認する必要がある。**当時は受入URL未発行だったが、その後Vercel本人操作で発行・保護済み。**
 
 正式公開ゲートは引き続き Issue #96。
 
