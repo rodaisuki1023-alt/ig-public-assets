@@ -56,7 +56,7 @@
  function enhancePremiumV125M(){
   const page=document.getElementById('pg-premium');if(!page)return;
   if(!document.getElementById('premiumIntroV125m')){
-   const intro=document.createElement('div');intro.id='premiumIntroV125m';intro.className='premiumIntroV125m';intro.innerHTML='<strong>試用版では、すべて無料で体験できます</strong><p>正式版では、レシート高精度解析・消費予測・レポートなどをPremiumとして提供予定です。</p><span class="premiumStatusV125m">現在は無料体験中</span>';
+   const intro=document.createElement('div');intro.id='premiumIntroV125m';intro.className='premiumIntroV125m';intro.innerHTML='<strong>試用版では、すべて無料で体験できます</strong><p>正式版では、'+(window.ATOKORE_RECEIPT_EXPERIMENTAL===true?'レシート高精度解析・':'')+'消費予測・レポートなどのPremium機能を検討しています。</p><span class="premiumStatusV125m">現在は無料体験中</span>';
    const section=page.querySelector('.section');section?.insertAdjacentElement('afterend',intro);
   }
   page.querySelectorAll('.premium').forEach(card=>{card.setAttribute('role','button');card.tabIndex=0;if(!card.__atokoreKeyV125m){card.__atokoreKeyV125m=true;card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();card.click()}})}});
