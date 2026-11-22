@@ -147,6 +147,15 @@
       }));
       const name = make('span', item.done ? 'atk-pack-done' : '', item.name);
       label.append(check, name);
+      // Inline read-only stock hint, not an extra shopping action or row.
+      // Never alter inventory or buy list when checking a packing item.
+      const stockChoices = root.AtokoreKitShoppingV50?.choices?.(item.name);
+      if (stockChoices?.stocks?.length) {
+        const hint = make('small', 'atk-pack-stock-inline');
+        hint.textContent = stockChoices.stocks.length > 1
+          ? '在庫：複数登録' : '在庫：' + stockChoices.stocks[0].qty + stockChoices.stocks[0].unit;
+        label.append(hint);
+      }
       const remove = make('button', 'atk-pack-remove', '削除');
       remove.type = 'button';
       remove.disabled = locked;
