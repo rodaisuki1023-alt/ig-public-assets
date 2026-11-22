@@ -5,6 +5,8 @@ on:
     paths:
       - vercel.json
       - scripts/atokore/verify-iphone-review-build.py
+      - scripts/atokore/attach-synthetic-storage-qa.py
+      - tests/manual/atokore-v50-auth-qa.html
       - docs/atokore-v50-vercel-owner-review-20261122.md
       - .github/workflows/atokore-v50-iphone-review-config.yml
 
@@ -32,10 +34,12 @@ jobs:
           assert c['outputDirectory']=='_local_review'
           assert c['buildCommand'].endswith('python3 -I scripts/atokore/verify-iphone-review-build.py _local_review')
           assert 'build-local-review.py' in c['buildCommand']
+          assert 'attach-synthetic-storage-qa.py' in c['buildCommand']
           assert 'X-Robots-Tag' in [x['key'] for h in c.get('headers',[]) for x in h['headers']]
           print('Vercel build configuration is local-only')
           PY
           python3 -I scripts/atokore/build-local-review.py atokore-live-v125 _local_review 19
+          python3 -I scripts/atokore/attach-synthetic-storage-qa.py _local_review
           python3 -I scripts/atokore/verify-iphone-review-build.py _local_review
           python3 -m compileall -q scripts/atokore/verify-iphone-review-build.py
       - name: Confirm no deployment took place
