@@ -56,6 +56,8 @@ test('legacy infant-food photo survives home/stock decorations and reload withou
  await page.locator('#atkPhotoEditor input[type=file]').setInputFiles({name:'handmade.png',mimeType:'image/png',buffer:Buffer.from(buffer)});
  await expect(page.locator('.atk-photo-save')).toBeEnabled();await page.click('.atk-photo-save');await expect(page.locator('.atk-detail-photo')).toBeVisible();await page.click('#sheet .close');
  await expect(row.locator('.atk-user-photo')).toBeVisible();await go(page,'home');
+ await expect(page.locator('#atkHomeAttentionDetails')).not.toHaveAttribute('open');
+ await page.locator('#atkHomeAttentionDetails summary').click();
  await expect(page.locator('#pg-home [data-atk-open="4"] .atk-user-photo')).toBeVisible();await go(page,'stock');
  await expect(row.locator('.atk-user-photo')).toBeVisible();await page.reload();await go(page,'stock');await category(page,'離乳食');
  await expect(row.locator('.atk-user-photo')).toBeVisible();expect(await stored(page)).toEqual(initial);expect(page.__errors).toEqual([]);
