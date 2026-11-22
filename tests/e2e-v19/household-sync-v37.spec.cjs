@@ -325,6 +325,89 @@ test('the same purchase finished on both phones restocks once; delete beats a la
   await A.ctx.close(); await B.ctx.close();
 });
 
+// Owner-driven revocation: two independent phone-like browser contexts, synthetic users,
+// and the real migrations in a disposable PGlite process (NEVER the family Supabase DB).
+// This is stronger than a simple self-leave: the removed device still has a valid
+// auth session but must lose access to all household RPCs without losing local items.
+test('owner removes a second phone: local stock remains but stale token cannot pull, push or finalize a receipt',async({browser,request},info)=>{
+  const {A,B}=await sharedPair(browser,request,info);
+  const localBefore=await stored(B.page);
+  const ownerBefore=await stored(A.page);
+  const jwt=await B.page.evaluate(()=>{
+    const s=JSON.parse(localStorage.getItem('atokorePreviewHouseholdSessionV19')||'null');
+    return s?.access_token||null;
+  });
+  expect(jwt).toBeTruthy();
+  await go(A.page,'premium');
+  await A.page.click('#atkHouseholdCard');
+  const remove=A.page.getByRole('button',{name:'外して再招待：パパ'});
+  await expect(remove).toBeVisible();
+  await remove.click();
+  const warning=await appConfirm(A.page,true);
+  expect(warning).toContain('以前の端末は今後共有できなくなります');
+  await expect(A.page.getByRole('button',{name:'外して再招待：パパ'})).toHaveCount(0);
+
+  // A signed-in account is not enough: household membership must still be checked.
+  const fp='a'.repeat(64);
+  for(const [fn,payload] of [
+    ['hh_pull',{p_since:0,p_limit:20}],
+    ['hh_push',{p_ops:[],p_device:'synthetic-removed-phone'}],
+    ['hh_receipt_claim',{p_fingerprint:fp,p_force:false}],
+    ['hh_receipt_finish',{p_fingerprint:fp,p_done:true}],
+  ]){
+    const response=await request.post(EMU+'/rest/v1/rpc/'+fn,{
+      headers:{apikey:'emu-anon-key',Authorization:'Bearer '+jwt},
+      data:payload
+    });
+    const result=await response.json();
+    expect(response.status(),fn+' should refuse a removed member').toBe(403);
+    expect(result.code,fn+' should return access denied').toBe('42501');
+  }
+
+  await sync(B.page);
+  await expect.poll(()=>B.page.evaluate(()=>window.AtokoreHousehold.status().state)).toBe('removed');
+  expect(await stored(B.page)).toEqual(localBefore); // no surprise deletion of on-device items
+  await sync(A.page);
+  expect(await stored(A.page)).toEqual(ownerBefore);
+  expect([...A.page.__errors,...B.page.__errors]).toEqual([]);
+  await A.ctx.close();await B.ctx.close();
+});
+
+test('revoking a member clears the shared photo already shown in the open editor',async({browser,request},info)=>{
+ const { A, B } = await sharedPair(browser,request,info);
+ try{
+  // Generate a small fictional photo in the browser. No account or image leaves the local emulator.
+  const photo=await A.page.evaluate(()=>{
+   const c=document.createElement('canvas');c.width=32;c.height=32;
+   const g=c.getContext('2d');g.fillStyle='#395b80';g.fillRect(0,0,32,32);
+   return c.toDataURL('image/jpeg').split(',')[1];
+  });
+  const ownerId=await idOf(A.page,diaper);
+  await A.page.evaluate(async({id,jpeg})=>{
+   const bytes=Uint8Array.from(atob(jpeg),c=>c.charCodeAt(0));
+   await window.AtokoreHousehold.sharePhoto(id,new Blob([bytes],{type:'image/jpeg'}));
+  },{id:ownerId,jpeg:photo});
+  await sync(A.page);await sync(B.page);
+  const memberId=await idOf(B.page,diaper);
+  await go(B.page,'stock');
+  await B.page.locator(`#stockList [data-stock-id="${memberId}"] .name`).click();
+  await B.page.locator('.atk-photo-open').click();
+  const preview=B.page.locator('#atkPhotoEditor .atk-photo-preview');
+  await expect(preview).toBeVisible();
+  await expect.poll(()=>preview.evaluate(img=>img.naturalWidth)).toBe(32);
+  await go(A.page,'premium');await A.page.click('#atkHouseholdCard');
+  await A.page.getByRole('button',{name:'外して再招待：パパ'}).click();await appConfirm(A.page,true);
+  await expect(A.page.getByRole('button',{name:'外して再招待：パパ'})).toHaveCount(0);
+  await sync(B.page);
+  await expect.poll(()=>B.page.evaluate(()=>window.AtokoreHousehold.status().state)).toBe('removed');
+  await expect(B.page.locator('#atkPhotoEditor')).toBeVisible();
+  await expect(preview).toBeHidden();
+  expect(await preview.getAttribute('src')).toBeNull();
+ }finally{
+  await A.ctx.close();await B.ctx.close();
+ }
+});
+
 test('leave keeps the device data, re-join asks again; the free plan stops at two accounts', async ({ browser, request }, info) => {
   const { A, B } = await sharedPair(browser, request, info);
   await go(A.page, 'premium'); await A.page.click('#atkHouseholdCard');

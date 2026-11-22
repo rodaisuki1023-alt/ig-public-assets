@@ -19,17 +19,17 @@ const names = (raw, items = stock) => m.candidates(raw, items).map(c => c.item.n
 
 test('abbreviated receipt names suggest the registered product of the same size and form', () => {
   assert.equal(names('ﾊﾟﾝﾊﾟｰｽ ｻﾗｻﾗｹｱ ﾃｰﾌﾟM')[0], 'パンパース さらさらケア おむつ テープ M');
-  assert.equal(names('パンパース サラサラ テープ L 54枚')[0], 'パンパース さらさらケア おむつ テープ L');
+  assert.deepEqual(names('パンパース サラサラ テープ L 54枚'), [], 'stock without a printed 54-sheet pack size must not be offered');
   assert.equal(names('ﾒﾘｰｽﾞ ﾃｰﾌﾟM')[0], 'メリーズ ずっと肌さら おむつ テープ M');
   assert.equal(names('ﾎﾎｴﾐ 800G')[0], '明治 ほほえみ 粉ミルク 缶 800g');
   assert.equal(names('ﾘｺ ｵｼﾘﾌｷ')[0], 'Rico おしりふき', 'half-width kana is compared as kana');
-  assert.equal(names('リコオシリフキ 80マイX3')[0], 'Rico おしりふき', 'pack contents and bundle counts do not hide the name');
+  assert.deepEqual(names('リコオシリフキ 80マイX3'), [], 'unknown stock pack size is unsafe even with a similar name');
   assert.deepEqual(names('ﾍﾞﾋﾞｰﾜｲﾌﾟ'), [], 'no similar product: no guess');
   assert.equal(names('RICO おしりふき')[0], 'Rico おしりふき');
-  assert.equal(names('牛乳 1000ml')[0], '牛乳');
+  assert.deepEqual(names('牛乳 1000ml'), [], 'known 1000ml must not be suggested against unspecified stock capacity');
   // Kana on the receipt, kanji in the product name.
   assert.equal(names('ﾒｲｼﾞ ﾎﾎｴﾐ ｶﾝ 800G')[0], '明治 ほほえみ 粉ミルク 缶 800g');
-  assert.equal(names('ﾀﾏｺﾞ 10ｺｲﾘ', [{ id: 1, name: '卵' }, { id: 2, name: '牛乳' }])[0], '卵');
+  assert.deepEqual(names('ﾀﾏｺﾞ 10ｺｲﾘ', [{ id: 1, name: '卵' }, { id: 2, name: '牛乳' }]), [], 'unknown pack count must not be suggested');
 });
 
 test('different size, form, brand or content amount is never suggested', () => {
@@ -40,7 +40,7 @@ test('different size, form, brand or content amount is never suggested', () => {
   assert.deepEqual(m.conflict(m.features('グーン テープ S'), m.features('グーン テープ M')), 'size');
   // The receipt parser removes spaces: the size is still found after the form word.
   assert.ok(!names('パンパースサラサラケアテープM64マイ').includes('パンパース さらさらケア おむつ テープ L'));
-  assert.equal(names('パンパースサラサラケアテープM64マイ')[0], 'パンパース さらさらケア おむつ テープ M');
+  assert.deepEqual(names('パンパースサラサラケアテープM64マイ'), [], 'a printed pack count requires a known matching stock count');
   assert.equal(m.features('ムーニーマンパンツL44マイ').size, 'l');
   assert.equal(m.features('グーンテープXL').size, 'xl');
   assert.equal(m.features('メリーズテープSS').size, 'ss');
@@ -70,4 +70,41 @@ test('a confirmed match is remembered on the product and comes first next time',
   assert.ok(!m.candidates('ﾊﾟﾝﾊﾟｰｽ ｻﾗｻﾗ ﾃｰﾌﾟL', tapes).some(c => c.item.id === 1));
   for (let i = 0; i < 15; i++) m.remember(items[6], 'ﾅﾏｴ' + String.fromCharCode(65 + i));
   assert.equal(items[6].receiptAliases.length, 10);
+});
+
+
+test('v50: first-time identical product is marked exact, while similar or different sizes are not', () => {
+  const items = [
+    { id: 1, name: 'パンパース さらさらケア テープ M 60枚' },
+    { id: 2, name: 'パンパース さらさらケア テープ L 60枚' },
+    { id: 3, name: 'テストラーメン しょうゆ味' },
+  ];
+  const exact = m.candidates('パンパース さらさらケア テープ M 60枚', items);
+  assert.equal(exact[0].item.id, 1);
+  assert.equal(exact[0].exact, true);
+  assert.ok(!exact.some(c => c.item.id === 2));
+  assert.equal(m.candidates('テストラーメン みそ味', items).some(c => c.exact), false);
+});
+
+test('v50: printed package digits remain distinct, but standalone prices still normalize', () => {
+  assert.notEqual(m.lineKey('テスト商品6'), m.lineKey('テスト商品8'));
+  assert.equal(m.lineKey('ベビーワイプ 298'), m.lineKey('ベビーワイプ 318'));
+  const item = { id: 5, name: 'パンパース テープ M 60枚', receiptAliases: [m.lineKey('パンパース テープ M 60枚')] };
+  item.name = 'パンパース テープ L 60枚'; // item was edited after learning
+  assert.equal(m.candidates('パンパース テープ M 60枚', [item]).length, 0);
+});
+
+test('P1: capacity must be explicitly comparable, including for learned aliases', () => {
+ const candidates=[
+  {id:1,name:'テスト飲料',receiptAliases:[m.lineKey('テスト飲料 2L')]},
+  {id:2,name:'テスト飲料 500ml',receiptAliases:[m.lineKey('テスト飲料 2L')]},
+  {id:3,name:'テスト飲料 2000ml',receiptAliases:[m.lineKey('テスト飲料 2L')]}
+ ];
+ const got=m.candidates('テスト飲料 2L',candidates);
+ assert.deepEqual(got.map(x=>x.item.id),[3]);
+ assert.equal(got[0].learned,true);
+ assert.equal(m.conflict(m.features('テスト飲料 2L'),m.features('テスト飲料')),'amount');
+ assert.equal(m.conflict(m.features('テスト飲料'),m.features('テスト飲料 2L')),'amount');
+ assert.equal(m.conflict(m.features('テスト飲料 2L'),m.features('テスト飲料 2000ml')),'');
+ assert.equal(m.candidates('テスト飲料',candidates).some(x=>x.item.id===3),false);
 });

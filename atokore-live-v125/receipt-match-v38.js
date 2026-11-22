@@ -12,7 +12,10 @@ const BRANDS=['パンパース','グーン','マミーポコ','ムーニー','�
 function nfkc(s){return String(s??'').normalize('NFKC')}
 function hira(s){return s.replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60))}
 // Key used to remember a receipt line: the same printed text maps to the same key.
-function lineKey(raw){return nfkc(raw).toLowerCase().replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\]/g,'').replace(/[¥￥]?\d[\d,]*円?$/,'')}
+function strictKey(raw){return nfkc(raw).toLowerCase().replace(/[\s\-‐‑–—・･_*＊※#＃()（）\[\]【】「」『』:：.．,，/\\]/g,'')}
+// Keep trailing package digits (商品6 vs 商品8); strip only explicit currency
+// or standalone 3+-digit receipt prices for backwards-compatible learned aliases.
+function lineKey(raw){const s=nfkc(raw).toLowerCase().replace(/(?:[¥￥]\s*\d[\d,]*\s*円?|\s+\d{3,}\s*円?)\s*$/,'');return strictKey(s)}
 // OCR of receipt fonts often confuses small and large kana, doubles them, or drops the long-vowel
 // mark, so comparisons ignore those differences.
 const SMALL={'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ'};
@@ -61,7 +64,10 @@ function conflict(a,b){
  if(a.size&&b.size&&a.size!==b.size)return 'size';
  if(a.form&&b.form&&a.form!==b.form)return 'form';
  if(a.brand&&b.brand&&a.brand!==b.brand)return 'brand';
- if(a.amounts.length&&b.amounts.length&&a.amounts.join()!==b.amounts.join())return 'amount';
+ // An unspecified package capacity is NOT evidence of matching a known capacity.
+ // This must also invalidate old remembered aliases: never merge a 2L receipt
+ // into a stock row that omitted the volume, or the reverse.
+ if((a.amounts.length||b.amounts.length)&&a.amounts.join()!==b.amounts.join())return 'amount';
  return '';
 }
 /* candidates(raw, items) → [{item, score, learned, near}] best first, at most 3.
@@ -70,8 +76,11 @@ function candidates(raw,items,{limit=3,min=0.5}={}){
  const key=lineKey(raw),f=features(raw),out=[];
  for(const item of Array.isArray(items)?items:[]){
   if(!item||typeof item.name!=='string')continue;
-  if(Array.isArray(item.receiptAliases)&&item.receiptAliases.includes(key)){out.push({item,score:1,learned:true});continue}
   const g=features(item.name);if(conflict(f,g))continue;
+  const exact=!!strictKey(raw)&&strictKey(raw)===strictKey(item.name);
+  // An old learned alias must not override a changed size, form, amount or brand.
+  if(Array.isArray(item.receiptAliases)&&item.receiptAliases.includes(key)){out.push({item,score:1,learned:true,exact});continue}
+  if(exact){out.push({item,score:0.995,learned:false,exact:true});continue}
   // The same printed name is rarely read identically twice: a close match to a confirmed name counts too.
   const near=Array.isArray(item.receiptAliases)?Math.max(0,...item.receiptAliases.map(a=>dice(a,key))):0;
   // Only offered (never pre-selected): a near match to a confirmed name may be another product that OCR read
@@ -93,7 +102,7 @@ function remember(item,raw){
  list.push(key);item.receiptAliases=list.slice(-10);
  return true;
 }
-const api=Object.freeze({candidates,remember,features,lineKey,amounts,conflict});
+const api=Object.freeze({candidates,remember,features,lineKey,strictKey,amounts,conflict});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreReceiptMatch=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

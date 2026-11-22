@@ -181,7 +181,7 @@ function summary(rows, learnedMode) {
     D_knownTopCorrect: pct(known.filter(l => l.top === l.truthStock).length, known.length),
     D_wrongTopForKnown: known.filter(l => l.top && l.top !== l.truthStock).length,
     D_newWithStockSuggested: `${fresh.filter(l => l.top).length} of ${fresh.length}`,
-    D_autoLinked: learnedMode ? `${auto.length} (aliases learned from the OCR text of EARLIER receipts only; ${Math.max(0, ...rows.map(r => r.learnedAliases || 0))} aliases learned before the last receipt)` : `${auto.length} (no learned aliases: pre-selection cannot happen)`,
+    D_autoLinked: learnedMode ? `${auto.length} (unique exact names or aliases learned from EARLIER receipts; ${Math.max(0, ...rows.map(r => r.learnedAliases || 0))} aliases learned before the last receipt)` : `${auto.length} (unique exact names and any provided prior aliases; no sequential learning)`,
     D_learnedLaterOccurrences: learnedMode ? L.filter(l => l.learnedBefore).length : '未測定（--learned なし）',
     D_autoLinkedWrong: auto.filter(l => l.truthStock === null || (typeof l.truthStock === 'string' && l.truthStock !== 'any' && l.autoLinkedTo !== l.truthStock)).length,
     D_autoLinkedUnknown: auto.filter(l => l.truthStock === 'any').length,

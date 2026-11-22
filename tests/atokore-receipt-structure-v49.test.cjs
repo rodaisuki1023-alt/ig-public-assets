@@ -45,8 +45,11 @@ test('purchase quantity lines in the four layouts, checked against unit price ×
   assert.equal(S.quantityLine('( 2個x 0108)').qty, 2); // @ read as 0
   assert.equal(S.quantityLine('(@160 × 2個)').qty, 2);
   assert.deepEqual(S.quantityLine('990@ × 4個 ¥3,960'), { qty: 4, unitPrice: 990, total: 3960, checked: true });
-  // A misread quantity digit loses to the printed amounts.
+  // Arithmetic can suggest 2, but printed 3 conflicts: no trusted preselection.
   assert.equal(S.quantityLine('3コ X 単68 ¥136').qty, 2);
+  assert.equal(S.quantityLine('3コ X 単68 ¥136').checked,false);
+  assert.equal(S.quantityLine('単68 x 3個 ¥136').checked,false);
+  assert.equal(S.quantityLine('2コ X 単98').checked,false);
   // Not purchase quantities: point multipliers, bundle prices, discount counters.
   for (const line of ['4900000000000 (P×5)', '(まとめ売り 3コデ ¥1,000)', '( 2点 1回 -18)']) assert.equal(S.quantityLine(line), null, line);
 });
@@ -287,10 +290,302 @@ test('v49 audit: a misread voicing mark still finds the registered product, size
   assert.deepEqual(M.candidates('テスト麦茶 650ml', [{ id: 1, name: 'テスト麦茶 2L' }]), []);
 });
 
-test('v49 audit: learned texts pre-select only when exactly the same; near texts are offered', () => {
+test('P1 audit: learned texts match only with compatible capacity; unreadable capacity is not suggested', () => {
   const stock = [{ id: 1, name: 'テスト炭酸水 1L', receiptAliases: [M.lineKey('テスト炭酸水1L')] }];
   assert.equal(M.candidates('テスト炭酸水1L', stock)[0].learned, true);
-  const near = M.candidates('テスト炭酸水レ', stock)[0];
-  assert.equal(near.learned, false);
-  assert.equal(near.near, true);
+  assert.deepEqual(M.candidates('テスト炭酸水レ', stock),[],
+    'when a 1L label becomes unreadable, never offer or preselect that stock volume');
+});
+
+
+// A privately supplied grocery receipt established this *layout* only. Synthetic names,
+// no real store identifiers, cashier names, photo, registration number, or receipt ID.
+// The paper has 20 product rows but 22 purchased units (two separate '2個 x @price'
+// sublines), an egg discount, 8%-tax footer, cash tender, and change.
+test('v50 anonymized 20-line grocery receipt: 22 units, two quantity sublines, 50-yen discount, tax/payment never products', () => {
+  const text = [
+    '合成ストア（テスト専用）',
+    '2026年10月04日(日) 12:54',
+    'お会計券 #000005 R0001 12:53',
+    '外8 テスト長ねぎ 緑テープ ¥98外',
+    '外8 テストブロッコリー ¥236外',
+    '(2個 x @118)',
+    '外8 テスト小松菜 2個束 ¥158外',
+    '外8 テストキャベツ ¥98外',
+    '外8 テストきゅうり ¥168外',
+    '外8 テスト長なす 黄色テープ ¥158外',
+    '外8 テストミニトマト 黄色テープ ¥238外',
+    '外8 テスト紅はるか 水色テープ ¥298外',
+    '外8 テスト北海道たこ ¥420外',
+    '外8 テスト生鮭 ¥530外',
+    '外8 テストあさり ¥290外',
+    '外8 テスト豚バラブロック ¥777外',
+    '外8 テスト鶏むね肉 ¥599外',
+    '外8 テスト鶏もも肉 ¥983外',
+    '外8 テスト豚ひき肉 大 ¥584外',
+    '外8 テストソーセージ ¥178外',
+    '外8 テストミートボール2 ¥248外',
+    '外8 テスト豆腐 ¥216外',
+    '(2個 x @108)',
+    '外8 テストヨーグルト プレミ ¥598外',
+    '外8 テスト玉子M1 ¥238外',
+    'P001)Mサイズ特売 -50',
+    '小計 ¥7,063',
+    '消費税8% 8% ¥565',
+    '買上点数 22点',
+    '合計 ¥7,628',
+    'お預り ¥10,050',
+    'お釣り ¥2,422',
+    'ご来店ありがとうございました'
+  ].join('\n');
+  const structural = S.structure(text.split('\n'));
+  const result = parse(text);
+  assert.equal(result.date, '2026-10-04', 'receipt date is the purchase date, not a use-by date');
+  assert.equal(structural.products.length, 20, 'product rows are not purchase units');
+  assert.equal(result.items.length, 20, 'not a single printed code, discount, tax, or payment line becomes an item');
+  assert.equal(result.countedQty, 22, 'two 2-unit items make 22 pieces');
+  assert.equal(result.printedCount, 22);
+  assert.equal(result.countMatches, true);
+  assert.equal(result.boundary?.kind, 'subtotal');
+  assert.deepEqual(
+    result.items.filter(item => item.qty === 2).map(item => item.name).sort(),
+    ['テストブロッコリー', 'テスト豆腐'].sort()
+  );
+  assert.equal(result.items.find(item => item.name.includes('小松菜'))?.qty, 1,
+    '2個束 is a product descriptor, not two purchased bunches');
+  assert.equal(result.items.find(item => item.name.includes('ミートボール2'))?.qty, 1,
+    'a trailing model-size digit never changes purchase quantity');
+  assert.equal(structural.products.reduce((sum,item) => sum + item.price, 0), 7113);
+  const discount = S.priceTail('P001)Mサイズ特売 -50');
+  assert.deepEqual({ value: discount?.value, negative: discount?.negative }, { value: 50, negative: true });
+  assert.equal(7113 - discount.value, 7063, 'printed subtotal cross-check');
+  assert.equal(Math.round(7063 * 0.08), 565, 'tax is a validation figure and not a stock item');
+  assert.equal(7063 + 565, 7628, 'tender and change are never stock items');
+  assert.ok(!result.items.some(x => /特売|小計|買上点数|預り|釣り|消費税/.test(x.name)));
+  assert.equal(result.items.filter(x=>!x.selected).length,2,
+    'two multiplier-only lines without extended totals must be reviewed by the user');
+  assert.ok(result.items.filter(x=>!x.selected).every(x=>x.low&&x.reasons.some(r=>/数量/.test(r))));
+  assert.equal(result.items.filter(x=>x.selected).length,18);
+});
+
+
+test('v50 Muse P2: two-line product + explicit quantity/yen total appears for manual review, never auto-add', () => {
+  const receipt='テストおむつ パンツ M 60枚\n1点 ¥1380\nテスト牛乳\n2点 ¥436\n小計 3点 ¥1816';
+  const r=parse(receipt);
+  assert.equal(r.items.length,2,'two product names with the total on the next line must not disappear');
+  assert.deepEqual(r.items.map(x=>x.qty),[1,2]);
+  assert.equal(r.countMatches,true);
+  for(const x of r.items){
+    assert.equal(x.selected,false,'uncertain split-layout rows must stay unchecked');
+    assert.equal(x.low,true);
+    assert.ok(x.reasons.includes('商品名と価格が別々の行です。内容と数量を確認してください'));
+  }
+  // Standard same-line receipts are still normal and selected as before.
+  const standard=parse('テスト牛乳 ¥218\n小計 1点 ¥218');
+  assert.equal(standard.items.length,1);
+  assert.equal(standard.items[0].selected,true);
+  // Orphan totals and misleading quantity-like summaries never auto-create stock rows.
+  const orphan=S.structure(['1点 ¥288','小計 1点 ¥288']);
+  assert.equal(orphan.products.length,0);
+  assert.ok(orphan.rejected.some(x=>x.text==='1点 ¥288'));
+  // A store heading can look like a product, but no split pair is trusted.
+  const header=parse('テスト店\n1点 ¥288\n小計 1点 ¥288');
+  assert.ok(header.items.every(x=>x.selected===false));
+  // Plain price without an explicit yen sign does not qualify for this uncertain pattern.
+  assert.equal(S.structure(['テスト牛乳','1点 288','小計 1点 ¥288']).products.length,0);
+});
+
+
+test('v50 Muse round 3: no-space 1点¥1,280 has a manual-review product, not a lost line',()=>{
+ const r=parse('パンパーステープM\n1点¥1,280\n小計 1点 ¥1,280');
+ assert.equal(r.items.length,1);
+ assert.equal(r.items[0].qty,1);
+ assert.equal(r.items[0].selected,false);
+ assert.equal(r.items[0].low,true);
+ assert.ok(r.items[0].reasons.includes('商品名と価格が別々の行です。内容と数量を確認してください'));
+ // The price line must not turn into an independent product.
+ assert.equal(r.items.filter(x=>/1点|1,280/.test(x.name)).length,0);
+ const normal=parse('テスト牛乳 ¥218\n小計 1点 ¥218');
+ assert.equal(normal.items.length,1);
+ assert.equal(normal.items[0].selected,true);
+});
+
+test('v50 Muse round 3: a carton of 10 eggs is one purchase unless separate quantity is explicit',()=>{
+ const packed=parse('タマゴ 10コ ¥258\n小計 1点 ¥258');
+ assert.equal(packed.items.length,1);
+ assert.equal(packed.items[0].qty,1,'10 eggs in a carton are not 10 cartons bought');
+ assert.equal(packed.countMatches,true);
+ // A true explicitly printed purchase quantity is still honored.
+ const two=parse('タマゴ 10コ\n2コ X 単258 ¥516\n小計 2点 ¥516');
+ assert.equal(two.items.length,1);
+ assert.equal(two.items[0].qty,2,'a separate quantity × unit-price row still wins');
+});
+
+test('v50 real-receipt follow-up: warehouse-club names keep trailing pack-size numerals', () => {
+  // Fictional items only. The following item-code line carries the price; the
+  // number at the end of the preceding name is NOT a price or purchase quantity.
+  const text=[
+    'テスト衛生用品 100',
+    '581695 1● 1,598 1,598 T',
+    'CPN',
+    'テスト衛生用品 100',
+    '9322 1● 320 320-T',
+    'テストヨーグルト 800',
+    '585967 1● 658 658 E',
+    '**** 合計 1,936',
+    '御買上げ点数 : 2'
+  ].join('\n');
+  const st=S.structure(text.split('\n'));
+  assert.deepEqual(st.products.map(x=>[x.text,x.qty]),[
+    ['テスト衛生用品 100',1],
+    ['テストヨーグルト 800',1],
+  ]);
+  const parsed=parse(text);
+  assert.equal(parsed.items.length,2);
+  assert.equal(parsed.items[0].qty,1);
+  assert.equal(parsed.items[1].qty,1);
+  assert.equal(parsed.printedCount,2);
+  assert.ok(parsed.items.some(x=>/衛生用品\s*100/.test(x.name)),
+    'the content amount stays in the candidate name');
+  assert.ok(parsed.items.some(x=>/ヨーグルト\s*800/.test(x.raw)),
+    'the amount stays in the printed raw name even when a generic display name is shown');
+  assert.ok(!parsed.items.some(x=>/CPN|IRC/.test(x.name)));
+  // Outside club receipts, terminal bare numerals retain existing price parsing.
+  const normal=S.structure(['テスト商品 ¥200','小計 1点 ¥200']);
+  assert.equal(normal.products[0].text,'テスト商品');
+});
+
+test('v50 holdout-format regression: a barcode after an unpriced line keeps a review-only product', () => {
+  // Fictional receipt only. No private receipt images or item details are stored in GitHub.
+  const r=parse([
+    'テストストア',
+    'テスト商品甲 ¥354',
+    '0004 テスト食材 軽',
+    '4580781733565',
+    'テスト商品乙 ¥398',
+    '小計 ¥1,106'
+  ].join('\n'));
+  assert.equal(r.items.length,3,'an OCR price omission must not silently drop a product name');
+  assert.deepEqual(r.items.map(x=>x.qty),[1,1,1]);
+  const fixed=r.items[1];
+  assert.equal(fixed.selected,false,'a recovered unpriced item must not be preselected');
+  assert.equal(fixed.low,true);
+  assert.ok(fixed.reasons.some(x=>x.includes('商品コードは読めましたが価格・数量が不明')));
+  assert.equal(r.items[0].selected,true);
+  assert.equal(r.items[2].selected,true);
+  // A store name followed by a barcode BEFORE any confirmed product is not a purchase.
+  const head=parse('テスト店\n4901234567890\nテスト牛乳 ¥120\n小計 ¥120');
+  assert.equal(head.items.length,1);
+  // A coupon/barcode after the subtotal is never a purchase.
+  const end=parse('テスト牛乳 ¥120\n小計 ¥120\nテスト割引\n4901234567890');
+  assert.equal(end.items.length,1);
+  // Bare no-price names not followed by a code remain excluded.
+  const noCode=parse('テスト牛乳 ¥120\nテスト食材\nテスト豆腐 ¥130\n小計 ¥250');
+  assert.equal(noCode.items.length,2);
+});
+
+test('P1: restaurant 3-cup price multiplication is purchase quantity, not a 1-item preselection', () => {
+ for(const v of ['3杯×単価580 ¥1,740','3杯×単580¥1740','3 杯 × 単580 ¥1,740']){
+  assert.equal(S.quantityLine(v)?.qty,3,v);
+ }
+ assert.equal(S.quantityLine('2名×単1,300 ¥2,600')?.qty,2);
+ const r=parse('テスト生ビール\n3杯×単価580 ¥1,740\n小計 3点 ¥1,740');
+ assert.equal(r.items.length,1);
+ assert.equal(r.items[0].qty,3);
+ assert.equal(r.countMatches,true);
+ assert.equal(r.items[0].selected,true,'clear unit/total arithmetic is safe for ordinary rows');
+ // If the OCR loses the amount, it cannot prove the quantity. Keep the row
+ // visible but leave the quantity to manual correction and individual review.
+ const uncertain=parse('テスト生ビール\n3杯×単価\n小計 3点 ¥1,740');
+ assert.equal(uncertain.items.length,1);
+ assert.equal(uncertain.items[0].selected,false);
+ assert.equal(uncertain.items[0].low,true);
+ assert.equal(uncertain.items[0].qty,1);
+ assert.equal(uncertain.countMatches,false);
+ assert.ok(uncertain.rejected.some(x=>/3杯/.test(x.text)));
+ const inconsistent=parse('テスト生ビール\n3杯×単580 ¥1,160\n小計 2点 ¥1,160');
+ assert.equal(inconsistent.items.length,1);
+ assert.equal(inconsistent.items[0].qty,2);
+ assert.equal(inconsistent.items[0].selected,false);
+ assert.ok(inconsistent.items[0].reasons.some(x=>x.includes('購入数量と単価・金額を照合できないか矛盾')));
+ const inline=parse('テスト生ビール 3杯×単580 ¥1,740\n小計 3点 ¥1,740');
+ assert.equal(inline.items.length,1);
+ assert.equal(inline.items[0].qty,3);
+ assert.equal(inline.items[0].name,'テスト生ビール','the multiplier is a purchase count, not part of the product name');
+ assert.equal(inline.items[0].selected,false,'an inline quantity hint must be reviewed before registration');
+});
+
+test('P2: payable membership fee is a purchase; tax amount labels do not become merchandise',()=>{
+ const s=parse(['会員入会金 ¥750','テスト飲料 ¥200','税額 ¥16','8%課税対象金額 ¥200','小計 2点 ¥950'].join('\n'));
+ assert.deepEqual(s.items.map(x=>x.name),['会員入会金','テスト飲料']);
+ assert.equal(s.items.filter(x=>/税額|課税/.test(x.name)).length,0);
+ const meta=parse('会員番号 00001234\nテスト飲料 ¥200\n小計 1点 ¥200');
+ assert.equal(meta.items.length,1);
+});
+
+test('P1: ambiguous two-piece label cannot silently count as one purchased unit',()=>{
+ const a=parse('テスト洗濯ネット 2点 ¥960\n小計 2点 ¥960');
+ assert.equal(a.items.length,1);
+ assert.equal(a.items[0].name,'テスト洗濯ネット 2点','the printed label is preserved for comparison');
+ assert.equal(a.items[0].qty,1,'the parser cannot assume that package size equals purchase count');
+ assert.equal(a.items[0].selected,false,'uncertain purchase count must not be preselected');
+ assert.equal(a.items[0].low,true);
+ assert.ok(a.items[0].reasons.some(x=>x.includes('セット内容か購入数量か判断できません')));
+ assert.equal(a.countMatches,false);
+ // A clear 2-pack content count without standalone 点 is a descriptor, not a purchase multiplier.
+ const pack=parse('テストおしりふき 60枚 ¥298\n小計 1点 ¥298');
+ assert.equal(pack.items[0].qty,1);
+ assert.equal(pack.items[0].selected,true);
+});
+
+test('P1 independent audit: all quantity conflicts stay unchecked, including reverse order and absent amounts',()=>{
+ const cases=[
+  ['テスト牛乳 ¥120','単価 120 x 3個 ¥240',2],
+  ['テスト牛乳 ¥120','3個 x 単120 ¥241',3],
+  ['テスト牛乳 ¥120','2個 x 単120',2],
+  ['テスト牛乳 ¥120','単価 120 x 2個',2],
+  ['テスト牛乳 ¥120','単価 x 3個',1]
+ ];
+ for(const [item,qtyLine,expected] of cases){
+  const p=parse([item,qtyLine,'小計 ¥500'].join('\n'));
+  assert.equal(p.items.length,1,qtyLine);
+  assert.equal(p.items[0].qty,expected,qtyLine);
+  assert.equal(p.items[0].selected,false,'quantity cannot be silently confirmed: '+qtyLine);
+  assert.ok(p.items[0].reasons.some(x=>x.includes('数量')),'reason required: '+qtyLine);
+ }
+ const safe=parse('テスト牛乳\n単120 x 3個 ¥360\n小計 3点 ¥360');
+ assert.equal(safe.items[0].qty,3);
+ assert.equal(safe.items[0].selected,true);
+});
+test('P1 independent audit: no-space item count needs individual review, tax-only summary cannot be stock',()=>{
+ for(const s of ['テスト洗濯ネット2点 ¥960','テストおやつ3点 ¥300']){
+  const p=parse(s+'\n小計 ¥960');
+  assert.equal(p.items.length,1,s);
+  assert.equal(p.items[0].selected,false,s);
+  assert.ok(p.items[0].reasons.some(r=>r.includes('セット内容か購入数量')),s);
+ }
+ const p=parse(['テスト飲料 ¥200','課税対象 ¥200','課税対象額 200','課税対像 200','税対象金額 ¥200','小計 ¥200'].join('\n'));
+ assert.deepEqual(p.items.map(x=>x.name),['テスト飲料']);
+ const fee=parse('会員入会金 ¥750\n小計 ¥750');
+ assert.deepEqual(fee.items.map(x=>x.name),['会員入会金']);
+});
+
+test('a misread tax-rate aggregate stays outside stock while real percentage-marked goods remain',()=>{
+ const r=parse(['会員入会金 ¥750','テスト飲料 ¥200','１０％ 対块額 ¥200','８％対块金額 ¥300',
+  '10%増量テスト洗剤 ¥420','小計 ¥1370'].join('\n'));
+ assert.deepEqual(r.items.map(x=>x.name),['会員入会金','テスト飲料','10%増量テスト洗剤']);
+ assert.equal(r.rejected.some(x=>x.text.includes('対块')),false);
+});
+
+test('P1: warehouse-club arithmetic cannot silently override a different printed multiplier',()=>{
+ const correct=parse('※ TEST BULK PRODUCT\n91529 10 1.398 1,398 E\n**** 合計 1,398');
+ assert.equal(correct.items.length,1);
+ assert.equal(correct.items[0].qty,1);
+ assert.equal(correct.items[0].selected,true,'club OCR 1o to 1 must remain supported');
+ const inconsistent=parse('※ TEST BULK PRODUCT\n91529 3 200 400 E\n**** 合計 400');
+ assert.equal(inconsistent.items.length,1);
+ assert.equal(inconsistent.items[0].qty,2);
+ assert.equal(inconsistent.items[0].selected,false,'printed 3 must not be trusted as a confirmed 2');
+ assert.equal(inconsistent.items[0].low,true);
+ assert.ok(inconsistent.items[0].reasons.some(x=>x.includes('数量と金額')));
 });

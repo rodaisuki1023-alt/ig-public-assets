@@ -17,3 +17,16 @@
 .atk-ob-primary[disabled]{background:#E3CFC4;color:#7E6A60}
 .atk-ob-later{flex:0 1 auto;min-height:48px;padding:0 14px;border-radius:14px;border:1px solid #E3CBBE;background:transparent;color:#6F5A4F;font-weight:750;font-size:13px}
 .atk-ob-tip{background:#F3F8F1;border-color:#D5E5CF}
+
+/* Specialist first-run choices reuse the standard detailed add screen. */
+.atk-ob-guides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:0}
+.atk-ob-guide{min-width:0;min-height:64px;padding:10px 9px;border:1px solid #D9B6A5;border-radius:13px;background:#fff;color:#61483D;text-align:left;display:flex;flex-direction:column;gap:3px;justify-content:center;cursor:pointer}
+.atk-ob-guide strong{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.atk-ob-guide small{font-size:11px;line-height:1.4;color:#86695C;overflow-wrap:anywhere}
+.atk-ob-guide:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}
+.atk-ob-batch-label{margin-top:4px;font-weight:750;color:#624E45}
+@media(max-width:340px){.atk-ob-guide{padding:9px 7px}.atk-ob-guide strong{font-size:12px}.atk-ob-guide small{font-size:11px}}
+
+.atk-ob-success{margin:0;padding:9px 11px;border-radius:10px;background:#EAF4EA;color:#37583D;font-size:12px;line-height:1.5}
+.atk-ob-reopen{display:block;min-height:44px;margin:0 0 12px;padding:9px 12px;border:1px solid #E3CBBE;border-radius:12px;background:#FFF9F5;color:#61483D;font-size:12px;font-weight:750;text-align:left}
+.atk-ob-reopen:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}

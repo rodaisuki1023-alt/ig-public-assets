@@ -4,15 +4,15 @@
 const { test, expect } = require('@playwright/test');
 const { open, go, stored, KEY, shot } = require('./helpers.cjs');
 
-const M = 'パンパース さらさらケア おむつ テープ M', L = 'パンパース さらさらケア おむつ テープ L';
+const M = 'パンパース さらさらケア おむつ テープ M 64枚', L = 'パンパース さらさらケア おむつ テープ L 64枚';
 const seedState = () => ({
   items: [
     { id: 1, name: M, cat: 'ベビー', qty: 1, unit: '袋', place: '収納', expType: '期限なし', exp: '', usage: 1 },
     { id: 2, name: L, cat: 'ベビー', qty: 1, unit: '袋', place: '収納', expType: '期限なし', exp: '', usage: 1 },
-    { id: 3, name: 'Rico おしりふき', cat: 'ベビー', qty: 2, unit: 'パック', place: '収納', expType: '期限なし', exp: '', usage: 1 },
+    { id: 3, name: 'Rico おしりふき 80枚X3', cat: 'ベビー', qty: 2, unit: 'パック', place: '収納', expType: '期限なし', exp: '', usage: 1 },
     { id: 4, name: '牛乳', cat: '食料品', qty: 1, unit: '本', place: '冷蔵庫', expType: '消費期限', exp: '2099-01-01', usage: 1 },
   ],
-  buys: [{ id: 20, name: 'Rico おしりふき', qty: 1, unit: 'パック', cat: 'ベビー' }],
+  buys: [{ id: 20, name: 'Rico おしりふき 80枚X3', qty: 1, unit: 'パック', cat: 'ベビー' }],
   routines: [],
 });
 const RECEIPT = `イオン 上尾店
@@ -61,7 +61,7 @@ for (const [width, height] of [[320, 568], [390, 844]]) {
       expect(options.join()).not.toContain(L);
       await pick.selectOption({ label: '登録済み：' + M });
       await expect(page.locator('[data-receipt-row]').nth(0)).toContainText('レシート：');
-      await page.locator('[data-receipt-row]').nth(1).locator(PICK).selectOption({ label: '登録済み：Rico おしりふき' });
+      await page.locator('[data-receipt-row]').nth(1).locator(PICK).selectOption({ label: '登録済み：Rico おしりふき 80枚X3' });
       // The line that could not be read is listed and can be added.
       const rejected = page.locator('.receiptRejected');
       await expect(rejected).toContainText('MRMI-2');
@@ -78,7 +78,7 @@ for (const [width, height] of [[320, 568], [390, 844]]) {
       // The shared review screen shows what will happen; only its final button saves.
       await expect(page.locator('#qaTray')).toBeVisible();
       const effects = await page.locator('#qaTrayList .qa-review-effect').allTextContents();
-      expect(effects).toEqual(['登録済みの在庫に合算：1袋 → 2袋', '登録済みの在庫に合算：2パック → 3パック', '新しい商品として登録', '新しい商品として登録']);
+      expect(effects).toEqual(['登録済みの在庫に合算：1袋 → 2袋', '登録済みの在庫に合算：2パック → 3パック', '既存ストックと分けて新しい行として追加（数量は変えません）', '既存ストックと分けて新しい行として追加（数量は変えません）']);
       expect(await stored(page)).toEqual(initial);
       await page.locator('#qaCommit').click();
       await expect(page.locator('#pg-stock')).toHaveClass(/on/);

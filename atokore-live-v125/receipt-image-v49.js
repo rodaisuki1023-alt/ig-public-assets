@@ -89,7 +89,18 @@ function render(src,box,turn){
 async function prepare(file,opt={}){
  const im=await loadImage(file),w=im.naturalWidth||im.width,h=im.naturalHeight||im.height;
  if(!w||!h)throw new Error('画像サイズを取得できません');
- const found=paperBox(im,w,h),box=found||{x:0,y:0,w,h,share:1};
+ let found=paperBox(im,w,h);
+ // On a nearly white surface, only the lower (or upper) part of a thin receipt
+ // can form a separate white region. Cropping to that fragment loses ALL items
+ // outside it. If a narrow portrait strip touches a frame end but covers under
+ // 72% of its height, keep its horizontal bounds and scan the whole height.
+ // Never infer missing product rows from the photograph: OCR still decides.
+ if(found&&h>w*1.25&&found.w<w*.65&&found.h<h*.72&&
+    (found.y<h*.08||found.y+found.h>h*.92)){
+  const margin=Math.round(w*.024),left=Math.max(0,found.x-margin),right=Math.min(w,found.x+found.w+margin);
+  found={...found,x:left,y:0,w:right-left,h,extended:true};
+ }
+ const box=found||{x:0,y:0,w,h,share:1};
  const turn=Number(opt.turn)||0;
  const sideways=!opt.turn&&box.w>box.h*1.15;
  const turns=opt.turn!==undefined&&opt.turn!==null?[turn]:sideways?[90,-90]:[0];

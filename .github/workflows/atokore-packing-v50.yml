@@ -1,0 +1,48 @@
+name: Atokore Packing Checklist Trial Checks
+
+on:
+  pull_request:
+    paths:
+      - 'atokore-live-v125/packing-checklist-v50.js'
+      - 'atokore-live-v125/packing-checklist-v50.css'
+      - 'atokore-live-v125/index.html'
+      - 'atokore-live-v125/service-worker.js'
+      - 'tests/atokore-packing-v50.test.cjs'
+      - '.github/workflows/atokore-packing-v50.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test-only jsdom
+        run: npm install --no-save --ignore-scripts jsdom@26.1.0
+      - name: Syntax and local-only user interaction tests
+        run: |
+          node --check atokore-live-v125/packing-checklist-v50.js
+          node --test tests/atokore-packing-v50.test.cjs
+      - name: Trial build must include checklist assets without production storage keys
+        run: |
+          python3 -I scripts/atokore/build-preview.py atokore-live-v125 _packing_preview 19
+          node --check _packing_preview/packing-checklist-v50.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path('_packing_preview')
+          js=(root/'packing-checklist-v50.js').read_text()
+          html=(root/'index.html').read_text()
+          assert 'atokorePackingChecklistV1:' in js
+          assert 'root.location.pathname' in js
+          assert 'packing-checklist-v50.js?v=50' in html
+          assert 'packing-checklist-v50.css?v=50' in html
+          assert not re.search(r'\batokoreTrialV4\b', html)
+          PY

@@ -7,3 +7,5 @@ body.atk-v19 .receiptRejected .receiptExcluded{display:flex;align-items:center;j
 body.atk-v19 .receiptRejected .receiptExcluded .btn{flex:0 0 auto;min-height:40px;padding:6px 10px;font-size:12px}
 body.atk-v19 #receiptDuplicate{font-weight:800}
 body.atk-v19 .receiptQty button{min-width:40px;min-height:40px}
+/* v50 receipt linked-name row wrapping: never squeeze confirmed stock labels into vertical letters. */
+body.atk-v19 .receiptCompactTop .receiptLinked{order:-1;flex:0 0 100%;width:100%;min-width:0;overflow-wrap:anywhere;word-break:normal}

@@ -9,7 +9,7 @@ const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
 const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false };
 const RECEIPT = `テストマート
 2026/10/27 12:54
-牛乳 1000ml
+牛乳
 2コ X 単218 ¥436
 テストクッキー ¥198
 値引 -20
@@ -46,7 +46,12 @@ test('a receipt registered on one device and a partner change on another both co
     await expect(a.page.locator('#receiptCount')).toContainText('一致しています');
     const milkRow = a.page.locator('[data-receipt-row]').filter({ has: a.page.locator('select[aria-label$="に対応する商品"]') }).first();
     await expect(milkRow.locator('input[type=number]')).toHaveValue('2');
-    await milkRow.locator('select[aria-label$="に対応する商品"]').selectOption({ label: '登録済み：牛乳' });
+    // The displayed label includes a match-quality suffix like （商品名が一致）.
+    // Select the confirmed stock option's ID instead of an obsolete exact label.
+    const milkSelect=milkRow.locator('select[aria-label$="に対応する商品"]');
+    const milkOption=milkSelect.locator('option').filter({hasText:'登録済み：牛乳'}).first();
+    await expect(milkOption).toBeAttached();
+    await milkSelect.selectOption(await milkOption.getAttribute('value'));
     await a.page.locator('#receiptApplyBtn').click();
     await a.page.locator('#qaCommit').dblclick();
     await expect(a.page.locator('#pg-stock')).toHaveClass(/on/);
@@ -199,4 +204,52 @@ test('family: a shared server without the receipt functions (not applied yet) is
     expect(await senbei(a.page)).toBe(1);
     expect(a.page.__errors).toEqual([]);
   } finally { await a.ctx.close(); await b.ctx.close(); }
+});
+
+
+test('v50 family iPhone-sized contexts: corrected receipt name links the intended diaper stock once and synchronizes to partner', async ({ browser, request }, info) => {
+  test.setTimeout(150000);
+  const { a, b } = await pair(browser, request, info);
+  const product = 'パンパース さらさらケア おむつ テープ M';
+  const misread = 'テストおむつOCR誤認';
+  try {
+    // Shared households assign a different record ID on each device. Sync, then assert by product identity.
+    await a.page.evaluate(() => AtokoreHousehold.syncNow());
+    await b.page.evaluate(() => AtokoreHousehold.syncNow());
+    expect((await stored(a.page)).items.find(x => x.name === product).qty).toBe(2);
+    expect((await stored(b.page)).items.find(x => x.name === product).qty).toBe(2);
+    await readTextOn(a.page, misread + ' ¥1280\n小計 1点 ¥1280');
+    const row = a.page.locator('[data-receipt-row]').first();
+    await expect(row.locator('.receiptLinked')).toHaveCount(0);
+
+    await row.locator('input[aria-label="商品名"]').fill(product);
+    await row.locator('input[aria-label="商品名"]').press('Tab');
+    await expect(row.locator('[data-receipt-merge-state="pending"]')).toContainText('似た名前のストックがあります');
+    expect((await stored(a.page)).items.find(x => x.name === product).qty).toBe(2);
+    expect((await stored(b.page)).items.find(x => x.name === product).qty).toBe(2);
+
+    // The corrected name is only a candidate until the parent chooses the exact inventory ID.
+    await row.locator('[data-receipt-merge-candidate="2"]').click();
+    await expect(row.locator('.receiptLinked')).toContainText(product);
+    await a.page.locator('#receiptApplyBtn').click();
+    await expect(a.page.locator('#qaTrayList .qa-review-effect')).toContainText('2袋 → 3袋');
+    expect((await stored(a.page)).items.find(x => x.name === product).qty).toBe(2);
+    await a.page.locator('#qaCommit').dblclick();
+    await expect(a.page.locator('#pg-stock')).toHaveClass(/on/);
+
+    for (let i = 0; i < 2; i++) {
+      await a.page.evaluate(() => AtokoreHousehold.syncNow());
+      await b.page.evaluate(() => AtokoreHousehold.syncNow());
+    }
+    for (const p of [a.page, b.page]) {
+      const s = await stored(p);
+      expect(s.items.find(x => x.name === product).qty).toBe(3);
+      expect(s.items.filter(x => x.name === product)).toHaveLength(1);
+      expect(s.items.find(x => x.name === product).receiptAliases || []).not.toContain(misread);
+      expect(p.__errors).toEqual([]);
+    }
+  } finally {
+    await a.ctx.close();
+    await b.ctx.close();
+  }
 });

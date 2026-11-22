@@ -33,7 +33,7 @@ test('receipt review respects text size, saves once and retains manual age in th
   await page.evaluate(() => closeReceiptV7());
   const large = await reviewAtSize('large');
   expect(large).toBeGreaterThan(small);
-  await page.locator('select[aria-label$="に対応する商品"]').selectOption({ label: '登録済み：テストスープ' });
+  await page.locator('select[aria-label$="に対応する商品"]').selectOption('1');
   await page.locator('#receiptApplyBtn').click();
   expect(await stored(page)).toEqual(initial);
   await page.locator('#qaCommit').dblclick();

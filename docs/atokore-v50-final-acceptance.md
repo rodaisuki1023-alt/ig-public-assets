@@ -1,0 +1,52 @@
+# あとこれ v50｜最終受入・公開ゲート（2026-11-18 JST）
+
+対象：[統合Draft PR #106](https://github.com/rodaisuki1023-alt/ig-public-assets/pull/106) / [品質Issue #96](https://github.com/rodaisuki1023-alt/ig-public-assets/issues/96)。
+
+## 監査で確認できたこと／未確認のこと
+
+| 領域 | 確認方法 | 現在の判定 |
+|---|---|---|
+| 在庫・買い物・初回登録・下書き復元・持ち物セット | Chromium/WebKitのE2E（架空データ） | 専用CI成功。最新HEAD全体E2Eは毎回要確認 |
+| 家族2端末の招待・同期・離脱・オフライン操作 | 独立した2つのブラウザコンテキスト＋ローカルPGlite（実DBと同じmigration SQL） | **エミュレーター環境で検証済み**。リアルSupabase／2台のiPhone動作は未証明 |
+| 作成者が第2端末を除外した後の失効 | 上記2端末＋除外後の`hh_pull`/`hh_push`/レシート2RPCの拒否、ローカル在庫保全の追加回帰 | `tests/e2e-v19/household-sync-v37.spec.cjs`へ追加、**CI結果待ち** |
+| レシート確定とメンバー除外の並行動作 | 使い捨てPostgres17、2接続の実行ロックと除外 | [隔離raceテスト](https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/44319473676) success |
+| 実Supabaseの2RPC | オーナー承認→最小migration→実DBカタログ、ACL、migrations | **適用・静的監査成功**。実環境での認証拒否試験は未実施 |
+| 実SupabaseのAuth、RLS、Storage | 管理SELECT／Advisor | 非公開表・private bucket等の定義確認。Advisor WARN／認証者の動的許可/拒否テストは未完了 |
+| 実機Safari／ホーム画面PWA | iPhone本人の実機操作 | 未実施のため**正式公開不可** |
+| 現存のRawGitHack一時URL | 共有/Googleログイン無効、保存キー隔離、Chromium/WebKit公開先スモーク | 合成データのみで安全確認済み。**実家族共有やPWAの最終評価には使えない** |
+
+## iPhone Safariで、本人の操作が必要になった場合の最小チェック（架空データのみ）
+
+**第三者のRawGitHackは一時レビュー専用**。実家族情報、実写真、招待コード、実バックアップの使用禁止。家庭の本番利用に切り替えない。
+
+- [ ] 初回の案内で「日用品→買い物リスト」へ牛乳を1件保存しても、**ストック登録ガイドが消えない**。
+- [ ] おむつをブランド・種類・サイズまで選び、詳細が残った状態でストックに確定できる。最後の確定ボタンが分かりやすい。
+- [ ] ミルクを追加予定に入れ、**タブを移動→戻る**と追加予定と保存先が維持される。**再読み込み後も下書きが戻る**。未確定の間はストックに入らない。
+- [ ] 買い物を「買った」にしてストックへ移したあと、ストックのカテゴリで隠れていても「すべて表示」で確認できる。数量は一致する。
+- [ ] 買い物画面上部から「🎒 持ち物チェックへ」で直行できる。チェック・ページ再読み込み・「準備済みチェックをすべて外す」の後に、削除した項目が復活しない。
+- [ ] 320〜430px相当でも横スクロールが出ず、カテゴリ末尾に到達でき、ボタンのタップが難しくない。画面の重さ・フォントの読みにくさを記録。
+- [ ] 上記の間に古い通知が積み重なって残らない。複数操作後も画面がスムーズ。
+
+**PWAのオフライン・ホーム画面起動・端末変更・共有／本物のバックアップ**はRawGitHackでは採点しない。自社管理の承認済み独立試用オリジンで、家族テスト専用の合成アカウント・ストレージ、誤送信しないデータリセット手順を整えた後に評価する。
+
+## 合成2端末の実Supabase受入に必要な安全条件
+
+1. オーナーが、試用Supabaseに架空アカウントを作成し、架空世帯・在庫の試験書込みを行う範囲を**別途明示承認**する。今回の承認はレシート2関数の修正のみであり、試験用アカウント作成を意味しない。
+2. 既存の本人・家族アカウントを利用しない。新規のテストIDと架空の商品を識別し、操作前に対象プロジェクト・既存データへの非干渉を再確認する。
+3. 参加→A/Bで同期→作成者からB除外→Bの既存アクセストークンで`hh_pull/push/receipt_claim/finish`が403/42501→Bのローカルコピー保全→Aの共有在庫不変、という順に記録する。
+4. 失敗時には公開・ユーザー招待を停止し、リスクをIssue #96に記録。検証完了後の試験データ削除も**別の承認のある操作範囲**で実施する。
+5. Auth・Storage・RLS・その他RPCの警告を変更するときは別審査とし、レシート2関数の既承認を流用しない。
+
+## 公開・課金への進行判定
+
+- **公開OK**は、対象最新HEADのCI 7/7、実iPhoneでPWAとローカル保存、権限失効付き合成2端末実試験、Supabase Advisor重大懸念の個別評価、オーナーの公開承認が揃ってから。
+- **収益化Phase D**は[Issue #103](https://github.com/rodaisuki1023-alt/ig-public-assets/issues/103)の「競合を超える突破口・毎週使う理由・本当に払う理由・実質粗利」の評価を満たすまで価格/有料境界を決めない。月398円・年3,980円は未確定仮説。
+- **費用0円、ユーザー本人の操作は最後にまとめて提示**する。
+
+## 2026-11-20｜写真アクセス・除外後のキャッシュ（隔離試験と実サービスの区別）
+
+- **隔離テスト**：`scripts/receipt-audit/revocation.cjs` が `20261024111742_atokore_photo_storage_v44.sql` の**同一RLSポリシー定義**を使い捨てPostgreSQLで再現。合成2世帯・既存メンバー・除外後の旧認証セッション・他世帯の写真パス・存在しない商品ID・削除済み商品の写真を検査。 [隔離CI run #44734530242](https://github.com/rodaisuki1023-alt/ig-public-assets/actions/runs/44734530242) はsuccess。これは**Supabase Storage HTTP/CDN/AuthセッションのE2Eではない**。
+- **クライアント回帰**：`tests/atokore-product-photos-v30.test.cjs` に、写真を認証付き`/storage/v1/object/authenticated/`から読み出し、Bearerトークン・`cache: no-store`・`cache-control: no-cache`・変動するクエリ値・ダウンロード後の世帯/商品ID再確認を失わないためのガードを追加。署名URLや公開URLへの変更を検出。
+- **重要な限界**：Supabase公式KBでは、private bucketのauthenticated GETが既存のCDN/ブラウザキャッシュを使う場合、メンバーのアクセスを取り消した後も古いJWTの期限まではキャッシュが返る可能性がある。キャッシュ破棄や短いtoken期限はサービス側の別運用で、アプリ側の`?v=`とno-storeだけで確実な即時失効を証明したことにはならない。すでに本人端末に取得済みのローカル写真は回収できない。
+- **本番受入の必要条件**：承認された実Supabaseの**合成アカウントのみ**を使い、別世帯アクセス拒否、除外前後のJWTでauthenticated GET/POST/DELETE、異なるURL・同じURLのCDN/ブラウザキャッシュを実測。写真も架空のJPEGのみとする。Auth/RLS/Storage変更、CDN purge、実世帯への影響は別途個別承認。**本人の今ある写真データや共有コードは使用しない**。
+- Supabase公式参考：[Storage Access Control](https://supabase.com/docs/guides/storage/security/access-control)、[Private bucketの失効後キャッシュ](https://supabase.com/kb/troubleshooting/storage-private-bucket-files-still-accessible-after-remove-access-or-logout)。

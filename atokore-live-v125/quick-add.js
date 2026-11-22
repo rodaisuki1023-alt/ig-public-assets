@@ -180,23 +180,94 @@ function validateLine(entry){
  if(!Number.isSafeInteger(entry.qty)||entry.qty<1||entry.qty>maxFor(entry.unit))throw Error('数量は1〜'+maxFor(entry.unit).toLocaleString('ja-JP')+'で指定してください');
  return {...entry,name:entry.name.trim()};
 }
-function buildBatch(existing,selected,time=Date.now()){
- const next=existing.map(x=>({...x})),ids=new Set(next.map(x=>Number(x.id)));
+function buildBatchDetailed(existing,selected,time=Date.now()){
+ const next=existing.map(x=>({...x})),ids=new Set(next.map(x=>Number(x.id))),byLine=[];
  let unique=Math.max(Number(time)||1,1);
  for(const raw of selected){
-  const v=validateLine(raw);
-  const match=batchMatch(next,v);
-  if(match){const qty=(Number(match.qty)||0)+v.qty;if(v.draftEdited){Object.assign(match,draftFields(v));if(!Object.prototype.hasOwnProperty.call(v,'minQty'))delete match.minQty}match.qty=qty;continue}
+  const v=validateLine(raw),match=batchMatch(next,v);
+  if(match){
+   const qty=(Number(match.qty)||0)+v.qty;
+   if(v.draftEdited){Object.assign(match,draftFields(v));if(!Object.prototype.hasOwnProperty.call(v,'minQty'))delete match.minQty}
+   match.qty=qty;byLine.push(match.id);continue;
+  }
   while(ids.has(unique))unique++;
   ids.add(unique);
-  next.push({id:unique++,name:v.name,cat:v.cat,qty:v.qty,unit:v.unit,expType:'期限なし',exp:'',purchase:'',price:0,store:'',place:v.cat==='食料品'?'冷蔵庫':'収納',memo:'',usage:1,...(v.draftEdited?draftFields(v):{})});
+  const created={id:unique++,name:v.name,cat:v.cat,qty:v.qty,unit:v.unit,expType:'期限なし',exp:'',purchase:'',price:0,store:'',place:v.cat==='食料品'?'冷蔵庫':'収納',memo:'',usage:1,...(v.draftEdited?draftFields(v):{})};
+  next.push(created);byLine.push(created.id);
  }
- return next;
+ return {next,byLine};
 }
+function buildBatch(existing,selected,time=Date.now()){return buildBatchDetailed(existing,selected,time).next}
 function draftFields(v){const out={};for(const k of ['place','exp','expType','memo','minQty','purchase','store','price','qtyBasis','inUse'])if(v[k]!==undefined)out[k]=v[k];return out}
-function batchMatch(list,v){return list.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(v.draftEdited?(x.exp||'')===(v.exp||''):(!x.exp||x.expType==='期限なし')))}
+function batchMatch(list,v){
+ if(v.receiptSeparate===true)return null;
+ if(v.receiptStockId!==undefined){
+  const hit=list.find(x=>String(x.id)===String(v.receiptStockId));
+  if(!hit||hit.name!==v.name||hit.cat!==v.cat||hit.unit!==v.unit||(hit.exp&&hit.expType!=='期限なし'))throw Error('レシートの追加先が変更されています。確認し直してください');
+  return hit;
+ }
+ return list.find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&(v.draftEdited?(x.exp||'')===(v.exp||''):(!x.exp||x.expType==='期限なし')));
+}
 const state={destination:'stock',cat:'ベビー',group:'すべて',query:'',showAll:false,view:'quick',tray:[],kind:'diaper',brand:'',type:'',size:'',series:'',customBrand:'',customType:'',customSize:'',customSeries:'',customUnit:'個',qty:1,committing:false,reviewing:false,pickScroll:0,afterSave:null,loadedSet:null,loadedSnapshot:'',routineTarget:null};
 const food={maker:'',series:'',month:'',query:'',limit:24,selected:'',qty:1,customBrand:'',customSeries:'',customName:'',customAge:'',customAmount:'',customFormat:''};
+/** Local-only unfinished selections: never sync them to household/stock or auto-commit. */
+const PENDING_KEY='atokoreQuickAddPendingV1';
+const PENDING_TTL=14*24*60*60*1000;
+const PENDING_FIELDS=['name','cat','unit','qty','place','exp','expType','memo','minQty','purchase','store','price','qtyBasis','inUse','draftEdited','receiptStockId','receiptSeparate'];
+let pendingFingerprint=null;
+function pendingSafeLine(line){
+ if(!line||typeof line!=='object'||Array.isArray(line))throw Error('invalid pending item');
+ const safe={};
+ for(const k of PENDING_FIELDS)if(Object.prototype.hasOwnProperty.call(line,k)){
+  const v=line[k];
+  if(typeof v==='string'&&v.length<=500)safe[k]=v;
+  else if(typeof v==='number'&&Number.isFinite(v)&&Math.abs(v)<1e10)safe[k]=v;
+  else if(typeof v==='boolean')safe[k]=v;
+ }
+ if(typeof safe.cat!=='string'||safe.cat.length>40||typeof safe.unit!=='string'||safe.unit.length>30)throw Error('invalid pending category');
+ return validateLine(safe);
+}
+function pendingPayload(){return {destination:state.destination,cat:state.cat,tray:state.tray.map(pendingSafeLine)}}
+function syncPendingDraft(){
+ if(!doc)return;
+ let store;try{store=root.localStorage}catch(e){state.pendingNotSaved=!!state.tray.length;return}
+ if(state.routineTarget||!state.tray.length){
+  try{if(store.getItem(PENDING_KEY)!==null)store.removeItem(PENDING_KEY);pendingFingerprint=null;state.pendingNotSaved=false}catch(e){state.pendingNotSaved=true}
+  return;
+ }
+ let payload;
+ try{payload=pendingPayload();if(payload.tray.length>40)throw Error('too many pending items')}catch(e){state.pendingNotSaved=true;return}
+ const fp=JSON.stringify(payload);
+ if(fp===pendingFingerprint&&!state.pendingNotSaved)return;
+ const raw=JSON.stringify({v:1,savedAt:Date.now(),...payload});
+ if(raw.length>40000){state.pendingNotSaved=true;return}
+ try{
+  store.setItem(PENDING_KEY,raw);
+  if(store.getItem(PENDING_KEY)!==raw)throw Error('draft not saved');
+  pendingFingerprint=fp;state.pendingNotSaved=false;
+ }catch(e){state.pendingNotSaved=true}
+}
+function restorePendingDraft(){
+ if(!doc)return;
+ let raw;
+ try{raw=root.localStorage.getItem(PENDING_KEY)}catch(e){return}
+ if(!raw)return;
+ try{
+  if(raw.length>40000)throw Error('oversized draft');
+  const saved=JSON.parse(raw);
+  if(saved?.v!==1||!Number.isFinite(saved.savedAt)||Date.now()-saved.savedAt>PENDING_TTL||saved.savedAt>Date.now()+60000||!Array.isArray(saved.tray)||!saved.tray.length||saved.tray.length>40||!['stock','buy'].includes(saved.destination))throw Error('invalid draft');
+  const lines=saved.tray.map(pendingSafeLine);
+  state.tray=lines;
+  state.destination=saved.destination;
+  if(['ベビー','離乳食','食料品','日用品','衛生・薬','その他'].includes(saved.cat))state.cat=saved.cat;
+  pendingFingerprint=JSON.stringify({destination:state.destination,cat:state.cat,tray:lines});
+  state.restoredDraft=true;
+ }catch(e){
+  // Malformed/expired records must never turn into stock; do not crash startup.
+  try{root.localStorage.removeItem(PENDING_KEY)}catch(ignore){}
+ }
+}
+
 function syncFoodInputs(){for(const field of ['Brand','Series','Name','Age','Amount','Format']){const input=$('qaFood'+field);if(input)food['custom'+field]=input.value}}
 function foodInput(field,label,limit=45){return '<label>'+safe(label)+'<input id="qaFood'+field+'" maxlength="'+limit+'" value="'+safe(food['custom'+field])+'" autocomplete="off"></label>'}
 function renderFood(){
@@ -402,7 +473,9 @@ function buyMatch(v){let list=[];try{list=Array.isArray(buys)?buys:[]}catch(e){}
 function lineEffect(v){
  if(state.routineTarget)return 'いつものリストに追加（在庫数は変わりません）';
  if(state.destination==='buy'){const found=buyMatch(v);return found?'買い物リストに登録済み：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit:'買い物リストに新しく追加'}
- const found=stockMatch(v);if(found)return '登録済みの在庫に合算：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit;
+ if(v.receiptSeparate===true){const dated=stockItems().some(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&x.exp&&x.expType!=='期限なし');return dated?'期限つきの在庫とは別の行として登録（期限は未設定。今ある行は変わりません）':'既存ストックと分けて新しい行として追加（数量は変えません）'}
+ let found;try{found=stockMatch(v)}catch(e){return '追加先の在庫が変更されています。戻って確認してください'}
+ if(found)return '登録済みの在庫に合算：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit;
  // v49: the same product recorded with a best-before date is kept as its own lot; say so instead of "new".
  const dated=stockItems().find(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&x.exp&&x.expType!=='期限なし');
  return dated?'期限つきの在庫とは別の行として登録（期限は未設定。今ある行は変わりません）':'新しい商品として登録';
@@ -419,8 +492,9 @@ function renderTray(){
  if(!box||!list)return;
  const lines=state.tray,count=lines.length;
  if(!count&&state.reviewing)setReviewing(false);
+ syncPendingDraft();
  // While choosing products only a compact bar is shown; the list and the final button live in the review screen.
- if(bar){bar.hidden=!count||state.reviewing;const label=$('qaBarCount');if(label)label.textContent='追加予定 '+lines.length+'商品・合計'+lines.reduce((sum,x)=>sum+x.qty,0)+'点'}
+ if(bar){bar.hidden=!count||state.reviewing;const label=$('qaBarCount');if(label)label.textContent=(state.restoredDraft?'前回の':'')+'追加予定 '+lines.length+'商品・合計'+lines.reduce((sum,x)=>sum+x.qty,0)+'点'+(state.pendingNotSaved?'（端末に下書きを保存できません）':'')}
  box.hidden=!count||!state.reviewing;
  n.textContent=pendingSummary(lines);
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
@@ -482,12 +556,11 @@ function persist(tray){
   buys=nextBuys;
   return {merged,ids:[]};
  }
- const before=stockItems(),next=buildBatch(before,tray);
+ const before=stockItems(),{next,byLine}=buildBatchDetailed(before,tray);
  const raw=JSON.stringify({items:next,buys,routines});
  store.setItem(key,raw);if(store.getItem(key)!==raw)throw Error('保存結果を確認できませんでした');
  items=next;
  // Ids of every record this batch created or added to (one per line), so the list can show them.
- const byLine=tray.map(v=>batchMatch(next,v)?.id??null);
  return {merged:tray.length-(next.length-before.length),ids:byLine.filter(id=>id!=null),byLine};
 }
 // The list opens right under the finger after a save; a fast second tap on the final button must not
@@ -520,7 +593,7 @@ function commit(origin){
  const afterSave=state.afterSave;
  try{root.AtokoreHistory?.add(target?'いつものリストに商品を追加':dest==='buy'?'買い物リストへ追加':'ストックに商品を追加',tray.slice(0,2).map(x=>x.name).join('、')+(tray.length>2?' ほか'+(tray.length-2)+'商品':''),target?'routine':dest==='buy'?'buy':'stock','＋',
   target?undefined:{refs:tray.map((x,i)=>({id:result?.byLine?.[i]??null,kind:dest==='buy'?'buy':'item',name:x.name,unit:x.unit})),change:tray.length===1?(dest==='buy'?'買い物リストに':'ストックに')+tray[0].qty+(tray[0].unit||'個')+'追加':undefined})}catch(e){root.console?.warn?.('あとこれ: 操作履歴を表示できませんでした',e)}
- state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;
+ state.tray=[];state.committing=false;state.loadedSet=null;state.loadedSnapshot='';state.afterSave=null;state.restoredDraft=false;
  if(target)state.routineTarget=null;
  let displayFailed=false;
  const step=fn=>{try{fn()}catch(e){displayFailed=true;root.console?.error?.('あとこれ: 保存後の表示更新に失敗',e)}};
@@ -567,14 +640,15 @@ function setup(){
  pane.innerHTML='<div class="qa-routine-pick-head" id="qaRoutinePicker" hidden><button type="button" data-qa-routine-back>← いつものリストに戻る</button><strong>いつものリストに商品を追加</strong><p>選んだ商品はストック数を増やさず、このリストだけに保存します。</p></div>'+
  '<div class="qa-heading"><strong>商品を選んで、まとめて追加</strong><span>おむつ・ミルク・おしりふきをかんたん登録。食品・日用品も使えます</span></div>'+ 
  '<div class="bf-destination" id="bfDestination"><button type="button" data-qa-dest="stock">ストックに追加</button><button type="button" data-qa-dest="buy">買い物リストに追加</button></div>'+ 
- '<section id="qaFreeTop" class="qa-free-top" aria-labelledby="qaFreeTitle"><h3 id="qaFreeTitle">商品名を入力して追加</h3><p id="qaFreeDest" class="qa-free-dest"></p><div class="qa-free"><input id="qaFree" placeholder="例：ベビー綿棒 200本" maxlength="120" aria-labelledby="qaFreeTitle"><button type="button" data-qa-free>追加予定に入れる</button></div><p class="qa-free-note">最後の「保存」ボタンを押すまで登録されません。</p></section>'+
- '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs"></div>'+
+ '<section id="qaFreeTop" class="qa-free-top" aria-labelledby="qaFreeTitle"><h3 id="qaFreeTitle">商品名を入力して追加</h3><p id="qaFreeDest" class="qa-free-dest"></p><div class="qa-free"><input id="qaFree" placeholder="例：ベビー綿棒 200本" maxlength="120" aria-labelledby="qaFreeTitle"><button type="button" data-qa-free>追加予定に入れる</button></div><p class="qa-free-note" id="qaFreeNote">追加予定に入れた後、確認画面で保存できます。</p></section>'+
+ '<div class="qa-main"><div id="qaTabs" class="qa-category-tabs" tabindex="0" aria-label="商品カテゴリー。左右にスクロールできます"></div><div class="qa-category-hint">カテゴリーは左右にスワイプできます</div>'+
  '<div id="qaCatalogSection"><div class="qa-search"><span>⌕</span><input id="qaSearch" type="search" placeholder="商品名を検索" autocomplete="off" aria-label="商品名を検索"></div><div id="qaGroups" class="qa-group-tabs"></div><div class="qa-subtitle">タップすると追加予定に入ります</div><div id="qaTiles" class="qa-tiles"></div><button id="qaMore" data-qa-more class="qa-more" hidden type="button">さらに表示</button></div>'+
  '<div id="qaBaby" class="qa-baby"></div><div id="qaBabyFood" class="qa-babyfood"></div><div id="qaRecent"></div></div>'+
  '<button type="button" id="qaBar" class="qa-bar" data-qa-review hidden><span class="qa-bar-open">追加した商品を確認する</span><span class="qa-bar-count" id="qaBarCount"></span></button>';
  const heading=p.querySelector('.atk-page-title');
  if(heading)heading.insertAdjacentElement('afterend',pane);else p.prepend(pane);
  p.classList.add('qa-quick-mode');
+ restorePendingDraft();
  // Review screen: replaces the product picker (which stays in the DOM, so search and choices are kept).
  const tray=doc.createElement('section');tray.id='qaTray';tray.className='qa-review';tray.hidden=true;tray.setAttribute('aria-labelledby','qaReviewTitle');
  tray.innerHTML='<button type="button" class="qa-review-back" data-qa-review-back>← 商品選びに戻る</button><h2 id="qaReviewTitle" tabindex="-1">追加する商品の確認</h2><p id="qaTotal" class="qa-review-total"></p>'+
@@ -624,7 +698,7 @@ function setup(){
   if(btn.hasAttribute('data-qa-zero-add')){prefillFree(state.query);return}
   if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(1,Math.min(maxFor(v.unit),v.qty+Number(btn.dataset.step)));renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
-  if(btn.hasAttribute('data-qa-clear')){root.AtokoreConfirm.open('追加予定をすべて取り消しますか？','保存済みのストック・買い物リストは変わりません。','全部取り消す',()=>{state.tray=[];state.afterSave=null;closeReview();renderAll();notify('追加予定をすべて取り消しました');return true});return}
+  if(btn.hasAttribute('data-qa-clear')){root.AtokoreConfirm.open('追加予定をすべて取り消しますか？','保存済みのストック・買い物リストは変わりません。','全部取り消す',()=>{state.tray=[];state.afterSave=null;state.restoredDraft=false;closeReview();renderAll();notify('追加予定をすべて取り消しました');return true});return}
   if(btn.hasAttribute('data-qa-commit')){commit(e)}
  });
  function addFree(){
@@ -633,7 +707,7 @@ function setup(){
   addLine({name:raw,cat,qty:1,unit:defaultUnit(raw,cat)});$('qaFree').value='';
  }
  const oldGo=root.go;
- if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false,()=>root.go(page,...rest)))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
+ if(typeof oldGo==='function')root.go=function(page,...rest){if(page!=='add'&&state.routineTarget&&!cancelRoutinePicker(false,()=>root.go(page,...rest)))return false;if(page!=='add'&&state.reviewing){setReviewing(false);renderTray()}if(page!=='add'&&!state.tray.length&&!state.committing)state.afterSave=null;const result=oldGo.call(this,page,...rest);if(page==='add'){if(state.view==='quick')p.classList.remove('qa-details-mode');renderAll()}return result};
  const oldStock=root.renderStock,oldBuy=root.renderBuy,oldHome=root.renderHome;
  if(typeof oldStock==='function')root.renderStock=function(...a){const v=oldStock.apply(this,a);decorateRows('#stockList [data-stock-id]');return v};
  if(typeof oldBuy==='function')root.renderBuy=function(...a){const v=oldBuy.apply(this,a);decorateRows('#buyList [data-buy-id]');return v};
@@ -677,10 +751,12 @@ function renderDestination(){
  const button=$('qaCommit');if(button)button.textContent=commitLabel();
  const baby=$('qaBaby')?.querySelector('[data-qa-babyadd]');
  if(baby)baby.textContent='＋ 追加予定に入れる';
+ const freeNote=$('qaFreeNote');if(freeNote)freeNote.textContent='「追加した商品を確認する」→「'+commitLabel()+'」で保存されます。';
  const note=$('qaBabySaveNote');
  if(note)note.textContent='まだ保存されません。「追加した商品を確認する」で内容を確かめ、最後に「'+commitLabel()+'」を押すと保存されます。';
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
  const review=$('qaReviewNote');if(review)review.textContent='「'+commitLabel()+'」を押すまで保存されません。'+(routine?'ストック数・買い物リストは変わりません。':'');
+ if(review&&state.restoredDraft)review.textContent='前回の追加予定を復元しました。保存先と商品・数量を確認してから「'+commitLabel()+'」を押してください。';
 }
 // Returns true when finished at once. When unsaved products need confirming it returns false and,
 // only if the person confirms in the app dialog, finishes and then calls onDone.
@@ -731,7 +807,7 @@ function openWithEntries(entries,destination='stock',options={}){
  const next=[];let skipped=0;
  for(const x of list){
   let v;try{v=validateLine(x)}catch(e){skipped++;continue}
-  const found=next.find(y=>modelKey(y)===modelKey(v));
+  const found=next.find(y=>modelKey(y)===modelKey(v)&&y.receiptStockId===v.receiptStockId&&!!y.receiptSeparate===!!v.receiptSeparate);
   if(found)found.qty=Math.min(maxFor(found.unit),found.qty+v.qty);else next.push(v);
  }
  state.tray=next;state.loadedSet=setId;state.loadedSnapshot=traySnapshot();
@@ -740,8 +816,28 @@ function openWithEntries(entries,destination='stock',options={}){
  openQuick();openReview();renderItems();
  if(skipped)notify(skipped+'件は内容を確認できなかったため読み込みませんでした');
 }
+// The first-run guide opens the *existing* detailed product picker. It never
+// creates a generic 'おむつ' or '離乳食' row, and saving still requires review.
+function openGuidedProduct(kind,options={}){
+ if(!['diaper','milk','wipes','food'].includes(kind)||!doc||!$('pg-add'))return false;
+ // Do not silently replace the pending list (or an in-progress routine edit).
+ if(state.tray.length||state.routineTarget||state.committing)return false;
+ state.afterSave=null;state.loadedSet=null;state.loadedSnapshot='';
+ setReviewing(false);
+ state.destination='stock';
+ if(kind==='food'){
+  food.maker='';food.series='';food.month='';food.query='';food.limit=24;
+  food.selected='';food.qty=1;
+  for(const field of ['Brand','Series','Name','Age','Amount','Format'])food['custom'+field]='';
+ }
+ openQuick();
+ setCategory(kind==='food'?'離乳食':'ベビー');
+ if(kind!=='food')chooseBabyField('kind',kind);
+ state.afterSave=typeof options.onSaved==='function'?options.onSaved:null;
+ return true;
+}
 function setCategory(cat){state.cat=cat;state.group='すべて';state.query='';state.showAll=false;if($('qaSearch'))$('qaSearch').value='';renderAll()}
-const api=Object.freeze({prefillFree,openReview,closeReview,isReviewing(){return state.reviewing},kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getTray(){return state.tray.map(x=>({...x}))}});
+const api=Object.freeze({prefillFree,openReview,closeReview,isReviewing(){return state.reviewing},kindOf,groupsFor,groupLabel,subgroupOf,isBabyFood,iconFor,buildBatch,validateLine,modelKey,openWithEntries,setCategory,openGuidedProduct,openRoutinePicker,cancelRoutinePicker,isRoutinePicker(){return !!state.routineTarget},setDestination(dest){changeDestination(dest)},getDestination(){return state.destination},getTray(){return state.tray.map(x=>({...x}))}});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreQuickAdd=api;
 if(doc&&typeof window!=='undefined')setup();

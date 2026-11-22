@@ -1,0 +1,34 @@
+name: Receipt revocation audit (isolated PostgreSQL)
+on:
+  pull_request:
+    paths:
+      - 'scripts/receipt-audit/**'
+      - '.github/workflows/receipt-revocation-audit.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: atokore_ci
+          POSTGRES_PASSWORD: atokore-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --ignore-scripts pg@8.16.3
+      - name: Compare current SQL and candidate under actual row-lock waits
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node scripts/receipt-audit/revocation.cjs

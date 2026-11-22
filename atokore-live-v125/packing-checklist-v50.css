@@ -1,0 +1,35 @@
+/* 持ち物チェックは既存の「いつもの買い物リスト」と別のローカル専用MVP。 */
+.atk-pack{margin-top:22px;padding:14px;border:1px solid #e5e7eb;border-radius:18px;background:#fcfdff}
+.atk-pack .section{margin:2px 0 7px}
+.atk-pack-tabs{display:flex;gap:8px;margin:12px 0}
+.atk-pack-tabs button{flex:1;min-height:44px;border-radius:12px;border:1px solid #ccd5e2;background:#fff;color:#25324a;font:inherit;font-weight:750}
+.atk-pack-tabs button.on{border-color:#1677ff;background:#eef5ff;color:#1357bd}
+.atk-pack-progress{font-weight:750;margin:8px 0}
+.atk-pack-row{display:flex;gap:8px;align-items:center;border-bottom:1px solid #edf0f4;padding:6px 0}
+.atk-pack-label{flex:1;display:flex;gap:10px;align-items:center;min-width:0;min-height:44px;overflow-wrap:anywhere}
+.atk-pack-label input{width:22px;height:22px;flex:none;accent-color:#1677ff}
+.atk-pack-done{text-decoration:line-through;color:#667085}
+.atk-pack-remove{min-height:44px;min-width:48px;border:0;background:transparent;color:#8e3940;font:inherit}
+.atk-pack-add{display:flex;gap:8px;margin-top:12px}
+.atk-pack-add input{flex:1;min-width:0;padding:10px;font-size:16px;border:1px solid #ccd5e2;border-radius:10px}
+.atk-pack-add button{min-height:44px;padding:8px 12px;font:inherit;font-weight:750;color:#fff;background:#1677ff;border:0;border-radius:10px}
+.atk-pack-reset{min-height:44px;margin-top:10px;padding:8px 12px;border:1px solid #d5dae3;border-radius:10px;background:#fff;font:inherit}
+.atk-pack-error{color:#b42318;font-weight:700}
+.atk-pack button:disabled{opacity:.55}
+
+/* Muse P2: jumping to the kit from the shopping heading saves long scrolling. */
+.atk-buy-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;column-gap:10px;row-gap:4px;margin-bottom:6px}
+.atk-buy-header>.section{margin:0}
+.atk-pack-jump{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 10px;border:1px solid #d9c6ba;border-radius:12px;background:#fff8f3;color:#704636;font-size:12px;font-weight:750;line-height:1.35;text-decoration:none}
+.atk-pack-jump:focus-visible{outline:3px solid #6F8FCF;outline-offset:2px}
+#atkPackingMvp{scroll-margin-top:12px}
+
+/* v50: preparation → shopping connection; kit checkmarks remain local-only. */
+.atk-pack-row{flex-wrap:wrap}
+.atk-pack-shopping-helper{display:flex;align-items:center;flex-wrap:wrap;gap:7px;width:100%;min-width:0;padding:0 0 6px 32px}
+.atk-pack-stock-hint{flex:1 1 160px;min-width:0;color:#5d6676;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.atk-pack-stock-choice{flex:1 1 165px;min-width:0;max-width:100%;min-height:44px;padding:8px;border:1px solid #c5d3df;border-radius:10px;background:#fff;color:#24324b;font-size:13px}
+.atk-pack-to-buy{min-height:44px;min-width:104px;padding:8px 11px;border:1px solid #c6dcef;border-radius:10px;background:#eaf5ff;color:#145e93;font-size:12px;font-weight:800;white-space:normal;overflow-wrap:anywhere}
+.atk-pack-to-buy:disabled{color:#5d6b78;background:#f1f5f9;border-color:#dbe2ea}
+.atk-pack-to-buy:focus-visible,.atk-pack-stock-choice:focus-visible{outline:3px solid #5278c9;outline-offset:2px}
+@media(max-width:350px){.atk-pack-shopping-helper{padding-left:0}.atk-pack-stock-hint{flex-basis:100%}.atk-pack-stock-choice{flex:1 1 100%}}

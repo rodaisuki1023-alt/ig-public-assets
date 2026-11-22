@@ -12,7 +12,7 @@ const oldShow=root.showPremium;
 root.showPremium=function(k){
  if(k==='predict'){
   const rows=all().map(x=>({x,...forecast(x)})).sort((a,b)=>a.priority-b.priority||a.qty-b.qty);
-  root.openM(close+'<h2>消費予測（補充の目安）</h2><p class="atk-insight-note">消費ペースはまだ計測していません。現在の数量と補充目安で並べています。使い切る日や確率の予測ではありません。</p>'+rows.map(r=>'<div class="atk-insight-row"><strong>'+esc(r.x.name)+'：'+r.label+'</strong><p>根拠：'+esc(r.x.qtyBasis==='unopened'?'未開封の予備':'残り')+r.qty+esc(r.x.unit||'個')+' ／ 補充目安 '+r.min+esc(r.x.unit||'個')+'以下'+(r.x.purchase?' ／ 前回購入日 '+esc(r.x.purchase):' ／ 購入日未記録')+'</p><button class="btn" onclick="premiumBuy('+Number(r.x.id)+')">買い物リストに追加</button></div>').join('')+(!rows.length?'<p>ストックを登録すると表示されます。</p>':''));return;
+  root.openM(close+'<h2>補充の目安（試算）</h2><p class="atk-insight-note">現在の登録数量と補充目安を比較した試算です。実際の不足日や購入時期を予測・保証するものではありません。消費ペースはまだ計測していません。</p>'+rows.map(r=>'<div class="atk-insight-row"><strong>'+esc(r.x.name)+'：'+r.label+'</strong><p>根拠：'+esc(r.x.qtyBasis==='unopened'?'未開封の予備':'残り')+r.qty+esc(r.x.unit||'個')+' ／ 補充目安 '+r.min+esc(r.x.unit||'個')+'以下'+(r.x.purchase?' ／ 前回購入日 '+esc(r.x.purchase):' ／ 購入日未記録')+'</p><button class="btn" onclick="premiumBuy('+Number(r.x.id)+')">買い物リストに追加</button></div>').join('')+(!rows.length?'<p>ストックを登録すると表示されます。</p>':''));return;
  }
  if(k==='money'){
   // W2 item 7: products without a price say "価格未記録" (never ¥0); 0円 only when confirmed free.
@@ -25,7 +25,7 @@ root.showPremium=function(k){
  }
  return oldShow.apply(this,arguments);
 };
-for(const [key,title,note] of [['predict','消費予測（補充の目安）','残りの数量と補充目安から確認'],['qr','保管場所別ストック','冷蔵庫・収納など場所ごとに確認'],['money','価格記録レポート','保存した価格と計算の内訳を確認']]){
+for(const [key,title,note] of [['predict','補充の目安（試算）','残りの数量と補充目安を比較（予測ではありません）'],['qr','保管場所別ストック','冷蔵庫・収納など場所ごとに確認'],['money','価格記録レポート','保存した価格と計算の内訳を確認']]){
  const row=doc.querySelector('#pg-premium [onclick="showPremium(\''+key+'\')"]');if(row){row.querySelector('.name').textContent=title;row.querySelector('.meta').textContent=note}
 }
 const version=doc.createElement('p');version.id='atkVersionInfo';version.className='atk-insight-note';version.textContent='ベビー特化 試用版 v19 ／ 機能更新 v48（2026/10/26）。v19は試用版の公開先、v48は更新履歴の番号です。';doc.getElementById('pg-premium')?.append(version);doc.title='あとこれ｜ベビー特化 試用版v19・機能更新v48';
