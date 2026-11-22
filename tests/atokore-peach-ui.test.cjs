@@ -32,3 +32,19 @@ test('integrations stay on the existing storage and action layer',()=>{
  assert.doesNotMatch(script,/localStorage\.setItem|fetch\(|affiliateUrl|http:\/\/|https:\/\//);
  assert.match(css,/#FAF6F3/);assert.match(css,/#F2DDD6/);
 });
+
+test('v50 formal product hides low-quality receipt OCR while retaining explicit QA-only opt-in',()=>{
+ const index=fs.readFileSync(path.join(dir,'index.html'),'utf8');
+ const fallback=fs.readFileSync(path.join(dir,'atokore-redesign.js'),'utf8');
+ const home=fs.readFileSync(path.join(dir,'home-v43.js'),'utf8');
+ const receipt=fs.readFileSync(path.join(dir,'receipt.js'),'utf8');
+ assert.match(index,/window\.ATOKORE_RECEIPT_EXPERIMENTAL=window\.ATOKORE_RECEIPT_EXPERIMENTAL===true/);
+ assert.doesNotMatch(index,/<button onclick="showPremium\('receipt'\)">/);
+ assert.match(index,/data-atk-experimental-receipt hidden/);
+ assert.match(index,/if\(k==='receipt'&&window\.ATOKORE_RECEIPT_EXPERIMENTAL!==true\)return/);
+ assert.match(index,/function applyReceipt\(\)\{if\(window\.ATOKORE_RECEIPT_EXPERIMENTAL!==true\)return/);
+ assert.match(home,/root\.ATOKORE_RECEIPT_EXPERIMENTAL===true\?/);
+ assert.match(home,/data-atk-buy/);
+ assert.match(fallback,/root\.ATOKORE_RECEIPT_EXPERIMENTAL===true\?/);
+ assert.match(receipt,/if\(window\.ATOKORE_RECEIPT_EXPERIMENTAL===false\)return/);
+});
