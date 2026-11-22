@@ -130,7 +130,7 @@ function card(x){
 }
 function html(){return '<div class="atk-home atk-home-v43">'+
  '<div class="atk-actions"><button type="button" data-atk-add class="atk-action atk-action-primary">'+icon('add')+'<span>ストック追加</span></button>'+(root.ATOKORE_RECEIPT_EXPERIMENTAL===true?'<button type="button" data-atk-receipt class="atk-action atk-action-peach">'+icon('receipt')+'<span>レシートで追加</span></button>':'<button type="button" data-atk-buy class="atk-action atk-action-peach">'+icon('buy')+'<span>買い物メモ</span></button>')+'</div>'+
- '<section id="atkHomeAttention" aria-labelledby="atkHomeAttentionTitle"><div class="atk-section-head"><h2 id="atkHomeAttentionTitle">補充・期限の確認</h2><button type="button" data-atk-nav="stock">ストックへ ›</button></div><p class="atk-home-history-note">補充目安以下の商品と、期限まで3日以内の商品。補充目安は商品編集で変更できます（未設定は数量1以下）。</p><div id="atkTasks" class="atk-home-stock-list"></div><button type="button" id="atkHomeMoreStock" class="atk-home-more" hidden></button></section>'+
+ '<section id="atkHomeAttention" aria-labelledby="atkHomeAttentionTitle"><div class="atk-section-head"><h2 id="atkHomeAttentionTitle">補充・期限の確認</h2><button type="button" data-atk-nav="stock">ストックへ ›</button></div><details id="atkHomeAttentionDetails" class="atk-home-attention-details"><summary class="atk-home-attention-toggle"><span id="atkHomeAttentionSummary">確認する商品</span><span class="atk-home-attention-action" aria-hidden="true">開く</span><span class="atk-home-attention-arrow" aria-hidden="true">⌄</span></summary><div class="atk-home-attention-panel"><p class="atk-home-history-note">補充目安以下の商品と、期限まで3日以内の商品。補充目安は商品編集で変更できます（未設定は数量1以下）。</p><div id="atkTasks" class="atk-home-stock-list"></div><button type="button" id="atkHomeMoreStock" class="atk-home-more" hidden></button></div></details></section>'+
  '<section aria-labelledby="atkHomeHistoryTitle"><div class="atk-section-head"><h2 id="atkHomeHistoryTitle">最近の変更</h2><button type="button" id="atkHomeAllChanges">すべて見る ›</button></div><p id="atkHomeHistoryNote" class="atk-home-history-note" role="status"></p><ol id="atkHomeActivity" class="atk-home-activity"></ol><button type="button" id="atkHomeHistoryRefresh" class="atk-home-more" hidden>履歴を再読み込み</button></section></div>'}
 function state(){try{return root.AtokoreHousehold?.homeState?.()||{joined:false}}catch(_){return {joined:false}}}
 function entries(s){return s.joined?sharedEntries(s.changes):localEntries(root.AtokoreHistory?.recent?.()||[],{joined:false})}
@@ -142,6 +142,7 @@ function render(){
  let data=[],buy=[];try{data=items;buy=buys}catch(_){}
  const checks=attention(Array.isArray(data)?data:[]),cards=checks.slice(0,2).map(card).join('');
  $('atkHomeAttention').hidden=!checks.length;
+ const summary=$('atkHomeAttentionSummary');if(summary)summary.textContent='確認する商品 '+checks.length+'件';
  if(cards!==lastCards){$('atkTasks').innerHTML=cards;lastCards=cards}
  const more=$('atkHomeMoreStock');more.hidden=checks.length<=2;more.textContent='ほか'+Math.max(0,checks.length-2)+'商品を確認';
  const badge=$('atkHomeBuyBadge');if(badge){badge.hidden=!buy.length;badge.textContent=buy.length>99?'99+':String(buy.length)}
