@@ -148,6 +148,7 @@ for(const width of [320,393,430]) test('v50 owner review: packing rows stay comp
  await open(page,{[KEY]:initial});await go(page,'buy');
  const rows=page.locator('#atkPackRows .atk-pack-row');
  await expect(rows).toHaveCount(6);
+ await expect(rows.nth(2).locator('.atk-pack-stock-inline')).toHaveText('在庫：2袋');
  await expect(page.locator('#atkPackRows .atk-pack-to-buy,#atkPackRows .atk-pack-stock-choice,#atkPackRows .atk-pack-shopping-helper')).toHaveCount(0);
  for(const row of await rows.all()){
   const box=await row.boundingBox();expect(box.height).toBeLessThanOrEqual(72);
