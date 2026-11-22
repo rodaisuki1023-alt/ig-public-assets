@@ -167,7 +167,11 @@ function openEditor(id){
  const joined=!!root.AtokoreHousehold?.homeState?.().joined;
  const note=element('p','atk-photo-note',joined?'写真は家族と自動で共有され、バックアップにも含まれます。参加者を外すと新しい取得は拒否されますが、以前に見たり保存した写真・バックアップのコピーは回収できません。':'写真はこの端末とバックアップに保存されます。家族共有を始めると写真も自動共有され、相手が取得・保存したコピーは後から回収できません。');
  panel.append(close,title,name,preview,pick,file,status,save,reset,note);sheet.append(panel);
- const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item)};editor=session;
+ const shared=!!(item.photoPath&&root.AtokoreHousehold?.photoScope?.(id));
+ const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item),clearSharedPreview(){
+  if(!shared||session.blob)return; // A newly chosen local file is still the user's draft.
+  preview.hidden=true;preview.removeAttribute('src');reset.hidden=true;
+ }};editor=session;
  const active=()=>editor===session&&panel.isConnected;
  const busy=value=>{session.busy=value;pick.disabled=close.disabled=reset.disabled=value;save.disabled=value||!session.blob};
  const message=text=>{if(active())status.textContent=text};
@@ -354,7 +358,7 @@ function install(){
  root.closeM=function(...args){if(editor?.busy)return;dispose();return priorClose.apply(this,args)};
  doc.addEventListener('atokore-stock-edited',event=>moveIdentity(event.detail.before,event.detail.after));
  doc.addEventListener('atokore-household-updated',()=>{
-  const next=scopeKey();if(next!==photoHousehold){photoHousehold=next;resetShared();decorate();detailPhoto()}
+  const next=scopeKey();if(next!==photoHousehold){photoHousehold=next;resetShared();editor?.clearSharedPreview();decorate();detailPhoto()}
   shareWaiting();
  });
  decorate();detailPhoto();

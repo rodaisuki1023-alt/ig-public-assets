@@ -373,6 +373,41 @@ test('owner removes a second phone: local stock remains but stale token cannot p
   await A.ctx.close();await B.ctx.close();
 });
 
+test('revoking a member clears the shared photo already shown in the open editor',async({browser,request},info)=>{
+ const { A, B } = await sharedPair(browser,request,info);
+ try{
+  // Generate a small fictional photo in the browser. No account or image leaves the local emulator.
+  const photo=await A.page.evaluate(()=>{
+   const c=document.createElement('canvas');c.width=32;c.height=32;
+   const g=c.getContext('2d');g.fillStyle='#395b80';g.fillRect(0,0,32,32);
+   return c.toDataURL('image/jpeg').split(',')[1];
+  });
+  const ownerId=await idOf(A.page,diaper);
+  await A.page.evaluate(async({id,jpeg})=>{
+   const bytes=Uint8Array.from(atob(jpeg),c=>c.charCodeAt(0));
+   await window.AtokoreHousehold.sharePhoto(id,new Blob([bytes],{type:'image/jpeg'}));
+  },{id:ownerId,jpeg:photo});
+  await sync(A.page);await sync(B.page);
+  const memberId=await idOf(B.page,diaper);
+  await go(B.page,'stock');
+  await B.page.locator(`#stockList [data-stock-id="${memberId}"] .name`).click();
+  await B.page.locator('.atk-photo-open').click();
+  const preview=B.page.locator('#atkPhotoEditor .atk-photo-preview');
+  await expect(preview).toBeVisible();
+  await expect.poll(()=>preview.evaluate(img=>img.naturalWidth)).toBe(32);
+  await go(A.page,'premium');await A.page.click('#atkHouseholdCard');
+  await A.page.getByRole('button',{name:'外して再招待：パパ'}).click();await appConfirm(A.page,true);
+  await expect(A.page.getByRole('button',{name:'外して再招待：パパ'})).toHaveCount(0);
+  await sync(B.page);
+  await expect.poll(()=>B.page.evaluate(()=>window.AtokoreHousehold.status().state)).toBe('removed');
+  await expect(B.page.locator('#atkPhotoEditor')).toBeVisible();
+  await expect(preview).toBeHidden();
+  expect(await preview.getAttribute('src')).toBeNull();
+ }finally{
+  await A.ctx.close();await B.ctx.close();
+ }
+});
+
 test('leave keeps the device data, re-join asks again; the free plan stops at two accounts', async ({ browser, request }, info) => {
   const { A, B } = await sharedPair(browser, request, info);
   await go(A.page, 'premium'); await A.page.click('#atkHouseholdCard');

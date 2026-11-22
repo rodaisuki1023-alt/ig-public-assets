@@ -570,6 +570,13 @@ test('P1 independent audit: no-space item count needs individual review, tax-onl
  assert.deepEqual(fee.items.map(x=>x.name),['会員入会金']);
 });
 
+test('a misread tax-rate aggregate stays outside stock while real percentage-marked goods remain',()=>{
+ const r=parse(['会員入会金 ¥750','テスト飲料 ¥200','１０％ 対块額 ¥200','８％対块金額 ¥300',
+  '10%増量テスト洗剤 ¥420','小計 ¥1370'].join('\n'));
+ assert.deepEqual(r.items.map(x=>x.name),['会員入会金','テスト飲料','10%増量テスト洗剤']);
+ assert.equal(r.rejected.some(x=>x.text.includes('対块')),false);
+});
+
 test('P1: warehouse-club arithmetic cannot silently override a different printed multiplier',()=>{
  const correct=parse('※ TEST BULK PRODUCT\n91529 10 1.398 1,398 E\n**** 合計 1,398');
  assert.equal(correct.items.length,1);

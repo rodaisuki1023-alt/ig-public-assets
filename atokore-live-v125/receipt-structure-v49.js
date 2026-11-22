@@ -99,7 +99,7 @@ const META=/合計|小計|税込|税抜|消費税|内税|外税|税率|お預|�
 // and OCR often alters the last kanji of "対象"; do not treat such lines as goods.
 function taxAggregate(raw){
  const s=hw(raw).replace(/[\s　]+/g,'').replace(/^[*＊※#＃:：()（）]+/,'');
- return /^(?:課税(?:対象|対[像家]|額|金額)|税(?:対象|対[像家]|額|金額)|(?:軽減|標準)(?:税率)?(?:対象|課税|税額))(?=$|[¥\\Y￥:：\d%.,()（）])/i.test(s);
+ return /^(?:課税(?:対象|対[像家]|額|金額)|税(?:対象|対[像家]|額|金額)|(?:軽減|標準)(?:税率)?(?:対象|課税|税額)|(?:8|10)%対块(?:金)?額)(?=$|[¥\\Y￥:：\d%.,()（）])/i.test(s);
 }
 function isMeta(s){return taxAggregate(s)||META.test(s)||/^(?:8|10)%\s*(?:対象|税額|課税|外税|内税)/.test(s.replace(/\s+/g,''))||/(?:20\d{2}|\b\d{2})\s*[\/\-.年]\s*\d{1,2}\s*[\/\-.月]\s*\d{1,2}|\b\d{1,2}:\d{2}(?::\d{2})?\b|〒\s*\d{3}[-ー]\d{4}|(?:^|\s)No\.?\s*\d{4,}|\d{2,4}-\d{2,4}-\d{3,4}/i.test(s)}
 const DISCOUNT=/値引|割引|引き|クーポン|\bCPN\b|\bIRC\b|特売|まとめ売り|まとめ値引|ポイント値引|会員値引|見切/i;
