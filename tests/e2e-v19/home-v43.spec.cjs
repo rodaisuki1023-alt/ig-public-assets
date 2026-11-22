@@ -85,3 +85,18 @@ test('two household members see confirmed family history, retries do not duplica
   expect(b.page.__errors).toEqual([]);
  }finally{await a.ctx.close();await b.ctx.close()}
 });
+
+for(const width of [320,393,430])test('public v50 hides unverified receipt OCR and keeps manual flow at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:780});
+ const initial=baseState();
+ await open(page,{[KEY]:initial},{receiptExperimental:false});
+ await expect(page.locator('#pg-home [data-atk-receipt]')).toHaveCount(0);
+ await expect(page.locator('#pg-home [data-atk-buy]')).toBeVisible();
+ await expect(page.locator('#pg-premium [data-atk-experimental-receipt]')).toBeHidden();
+ await page.evaluate(()=>showPremium('receipt'));
+ await expect(page.locator('#modal')).not.toHaveClass(/on/);
+ await page.locator('#pg-home [data-atk-buy]').click();
+ await expect(page.locator('#pg-buy')).toHaveClass(/on/);
+ expect(await stored(page)).toEqual(initial);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
