@@ -37,4 +37,16 @@ manifest = json.loads((root / "manifest.webmanifest").read_text(encoding="utf-8"
 assert manifest["display"] == "standalone"
 assert manifest["start_url"].startswith("./")
 assert (root / "service-worker.js").is_file()
+# Only the isolated /qa/ page is allowed to contact synthetic Auth/Storage.
+qa = root / "qa" / "atokore-v50-auth-qa.html"
+assert qa.is_file(), "guarded synthetic QA page missing"
+qa_html = qa.read_text(encoding="utf-8")
+assert "location.origin==='https://atokore-v50-owner-review-20261122.vercel.app'" in qa_html
+assert "location.pathname==='/qa/atokore-v50-auth-qa.html'" in qa_html
+assert "location.origin==='https://rodaisuki1023-alt.github.io'" not in qa_html
+assert "https://vzyxurodowpjltwbgbyc.supabase.co" in qa_html
+assert "sb_publishable_" in qa_html and "sb_secret_" not in qa_html
+assert "service_role" not in qa_html
+assert "example.invalid" in qa_html and "Auth sign-in" in qa_html
+
 print("PASS: private review output is isolated, family-disabled, and asset-complete")
