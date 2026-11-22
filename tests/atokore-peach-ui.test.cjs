@@ -46,5 +46,5 @@ test('v50 formal product hides low-quality receipt OCR while retaining explicit 
  assert.match(home,/root\.ATOKORE_RECEIPT_EXPERIMENTAL===true\?/);
  assert.match(home,/data-atk-buy/);
  assert.match(fallback,/root\.ATOKORE_RECEIPT_EXPERIMENTAL===true\?/);
- assert.match(receipt,/if\(window\.ATOKORE_RECEIPT_EXPERIMENTAL===false\)return/);
+ assert.match(receipt,/if\(window\.ATOKORE_RECEIPT_EXPERIMENTAL!==true\)return;return openReceipt\(\)/);
 });
