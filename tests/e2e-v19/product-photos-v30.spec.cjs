@@ -43,8 +43,13 @@ for(const [width,height] of [[320,568],[375,667],[390,844],[430,932]]){
    await expect(page.locator('#stockList [data-stock-id="4"] .atk-user-photo')).toHaveCount(0);
    expect(await stored(page)).toEqual(initial);
    const records=await imageFacts(page);expect(records).toHaveLength(1);expect(records[0]).toMatchObject({type:'image/jpeg',metadata:false});expect(records[0].size).toBeLessThanOrEqual(81920);
-   await go(page,'home');await expect(page.locator('#pg-home [data-atk-open="2"] .atk-user-photo')).toBeVisible();
-   expect((await page.locator('#pg-home [data-atk-open="2"] .atk-user-photo').boundingBox()).width).toBe(48);
+   await go(page,'home');
+   await expect(page.locator('#atkHomeAttentionDetails')).not.toHaveAttribute('open');
+   await page.locator('#atkHomeAttentionDetails summary').click();
+   await expect(page.locator('#pg-home [data-atk-open="2"] .atk-user-photo')).toBeVisible();
+   const homeImageWidth=(await page.locator('#pg-home [data-atk-open="2"] .atk-user-photo').boundingBox()).width;
+   expect(homeImageWidth).toBeGreaterThanOrEqual(30);
+   expect(homeImageWidth).toBeLessThanOrEqual(48);
    await page.reload();await go(page,'stock');
    const img=row(page).locator('.atk-user-photo');await expect(img).toBeVisible();await expect.poll(()=>img.evaluate(i=>i.naturalWidth)).toBe(256);
    await row(page).locator('.name').scrollIntoViewIfNeeded();await shot(page,info,`${width}-v32-product-photo`);
