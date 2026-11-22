@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "python3 -I scripts/atokore/build-local-review.py atokore-live-v125 _local_review 19 && python3 -I scripts/atokore/verify-iphone-review-build.py _local_review",
+  "buildCommand": "python3 -I scripts/atokore/build-local-review.py atokore-live-v125 _local_review 19 && python3 -I scripts/atokore/attach-synthetic-storage-qa.py _local_review && python3 -I scripts/atokore/verify-iphone-review-build.py _local_review",
   "outputDirectory": "_local_review",
   "headers": [
     {
@@ -22,6 +22,19 @@
         {
           "key": "X-Frame-Options",
           "value": "DENY"
+        }
+      ]
+    },
+    {
+      "source": "/qa/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
         }
       ]
     }
