@@ -15,7 +15,9 @@ async function seed(page, entries) {
   }, entries);
 }
 
-async function open(page, entries) {
+async function open(page, entries, options = {}) {
+  // Internal OCR tests stay available; ordinary/public browsing defaults to disabled.
+  await page.addInitScript(flag => { window.ATOKORE_RECEIPT_EXPERIMENTAL = flag; }, options.receiptExperimental !== false);
   page.__dialogs = [];
   page.on('dialog', d => { page.__dialogs.push(d.message()); d.type() === 'confirm' ? d.accept() : d.dismiss(); });
   page.__errors = [];
