@@ -1,0 +1,107 @@
+name: Atokore v19 Release Candidate Dry Run
+
+# PR-only quality gate. Intentionally NO workflow_dispatch, Pages permissions,
+# deployment, database credentials, secrets, artifact upload or stateful browser login.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/atokore-pages.yml'
+      - '.github/workflows/atokore-v19-release-dry-run.yml'
+      - 'docs/atokore-v19-release-candidate-20261117.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atokore-v19-rc-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout proposed release settings (no deployment)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Confirm exact v19 source pin, and only this rollout
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          text = Path('.github/workflows/atokore-pages.yml').read_text(encoding='utf-8')
+          block = re.search(
+              r'(?m)^\s*- name: Checkout reviewed v19 integrated v49 trial source\n'
+              r'\s*uses: actions/checkout@v4\n\s*with:\n'
+              r'\s*ref: ([0-9a-f]{40})\n\s*path: _preview_v19_source',
+              text,
+          )
+          assert block, 'Missing or changed v19 release pin block'
+          assert block.group(1) == '4fcbb825f8d3b893ae060a62fcaf7f4a209c0fea', 'Unreviewed v19 SHA'
+          assert text.count('path: _preview_v19_source') == 1
+          print('v19 release source pin matches reviewed integrated HEAD')
+          PY
+
+      - name: Checkout the pinned candidate into an isolated directory
+        uses: actions/checkout@v4
+        with:
+          ref: 4fcbb825f8d3b893ae060a62fcaf7f4a209c0fea
+          path: _preview_v19_source
+          persist-credentials: false
+
+      - name: Setup Node for existing regression tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install only pinned local test dependencies
+        run: npm install --no-save --ignore-scripts jsdom@26.1.0 @electric-sql/pglite@0.5.8
+
+      - name: Build v19 like Pages, but never upload or deploy
+        shell: bash
+        run: |
+          python3 -I _preview_v19_source/scripts/atokore/build-preview.py \
+            _preview_v19_source/atokore-live-v125 \
+            _atokore_release_dry_run/preview-baby-v19 19
+          for file in _atokore_release_dry_run/preview-baby-v19/*.js; do node --check "$file"; done
+
+      - name: Check isolation and document actual household connectivity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path('_atokore_release_dry_run/preview-baby-v19')
+          html = (root / 'index.html').read_text(encoding='utf-8')
+          files = [root / 'index.html', *root.glob('*.js')]
+          built = '\n'.join(x.read_text(encoding='utf-8') for x in files)
+          for key in ('atokoreTrialV4', 'atokoreHistoryV1',
+                      'atokoreHouseholdSyncV1', 'atokoreHouseholdSessionV1',
+                      'atokoreHouseholdInviteV1'):
+              assert not re.search(r'\b' + key + r'\b', built), f'production key remains: {key}'
+          for name in ('household-config-v37.js', 'household-core-v37.js',
+                       'household-google-v40.js', 'household-sync-v37.js'):
+              assert (root / name).is_file() and name in html, f'missing household path: {name}'
+          assert 'family sync is intentionally disabled' in (root / 'family.js').read_text()
+          sync = (root / 'household-sync-v37.js').read_text()
+          assert 'ATOKORE_HOUSEHOLD_CONFIG' in sync
+          assert 'async function request(' in sync
+          print('PASS: known production storage keys isolated; old family.js stubbed.')
+          print('NOTICE: new household-sync-v37.js can still communicate with trial Supabase.')
+          PY
+
+      - name: Run saving, backup, first-run and routine regressions on candidate
+        shell: bash
+        run: |
+          node --test \
+            _preview_v19_source/tests/atokore-storage-bootstrap-v19.test.cjs \
+            _preview_v19_source/tests/atokore-backup-ids.test.cjs \
+            _preview_v19_source/tests/atokore-quick-add.test.cjs \
+            _preview_v19_source/tests/atokore-routine-catalog-v20.test.cjs
+
+      - name: Explicit non-deployment boundary
+        run: echo "Dry run complete. No Pages upload, deployment, Supabase connection, or real household data operation."
