@@ -76,6 +76,11 @@ jobs:
           node --test tests/atokore-photo-gateway-sql.test.cjs
           node --check supabase/functions/_shared/photo-gateway-handler.mjs
           node --test tests/atokore-auth-qa-guard.test.cjs
+          node --test tests/atokore-photo-gateway-qa-guard.test.cjs
+          mkdir -p "$RUNNER_TEMP/photo-qa-build/_local_review"
+          printf '%s\n' '<!doctype html><title>isolated QA fixture</title>' > "$RUNNER_TEMP/photo-qa-build/_local_review/index.html"
+          python3 -I scripts/atokore/attach-photo-gateway-qa.py "$RUNNER_TEMP/photo-qa-build/_local_review"
+          cmp tests/manual/atokore-v50-photo-gateway-qa.html "$RUNNER_TEMP/photo-qa-build/_local_review/qa/atokore-v50-photo-gateway-qa.html"
           node --test tests/atokore-baby-food-v35.test.cjs
           node --test tests/atokore-batch-review-v36.test.cjs
           node --test --test-concurrency=1 tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs tests/atokore-history-w2-sql.test.cjs tests/atokore-receipt-imports-sql.test.cjs tests/atokore-household-guest-v42.test.cjs
