@@ -43,11 +43,14 @@ test('new bucket: directly cached URL can never be read by any end-user role',as
   assert.equal(bucket.public,false);
   // Only postgres/storage service owns this synthetic object. Client has no policy.
   await db.query("insert into storage.objects(bucket_id,name) values($1,$2)",['atokore-private-photos-v2',photoPath]);
-  for(const user of [null,A,B,C]){
+  for(const user of [A,B,C]){
     const visible=await asRole(db,user,
       "select count(*)::int as n from storage.objects where bucket_id='atokore-private-photos-v2'");
     assert.equal(visible[0].n,0);
   }
+  await assert.rejects(asRole(db,null,
+    "select count(*)::int as n from storage.objects where bucket_id='atokore-private-photos-v2'"),
+    /permission denied/i);
   await assert.rejects(
     asRole(db,A,
       "insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2','abc/some/path.jpg')"),
