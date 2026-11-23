@@ -39,7 +39,8 @@ test('shared photo requests never expose a signed/public URL and recheck the int
  assert.match(transport,/method==='GET'\?'authenticated\/':'/);
  assert.match(transport,/Authorization:'Bearer '\+session\.access_token/);
  assert.match(transport,/cache:'no-store'/);
- assert.match(transport,/'cache-control':'no-cache'/);
+ assert.match(transport,/'cache-control':method==='POST'\?'max-age=0':'no-cache'/,
+  'upload must write zero-second CDN/browser TTL while GET requests bypass browser cache');
  assert.match(transport,/\?v='\+/,'fresh authenticated GETs require a changing query token');
  assert.match(transport,/root\.crypto\?\.randomUUID\?\.\(\)/,'prefer a unique per-request nonce instead of a time-only value');
  assert.match(transport,/Date\.now\(\)/,'old Safari retains a nonce fallback');
@@ -105,4 +106,16 @@ test('v50: family photo cache identity uses real household scope, even without a
  }};
  vm.runInNewContext(source.replace(hook,'root.__photoRace={scopeKey};'+hook),ctx);
  assert.equal(ctx.__photoRace.scopeKey(),'h2:u2');
+});
+
+test('v50: new private family photo uploads prohibit cache TTL reuse after revocation (proposal pending real HTTP)',()=>{
+ const sync=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ const request=sync.slice(sync.indexOf('async function photoRequest('),sync.indexOf('\nasync function fetchPhoto('));
+ assert.match(request,/'cache-control':method==='POST'\?'max-age=0':'no-cache'/);
+ assert.match(request,/cache:'no-store'/);
+ assert.match(request,/method==='GET'\?'authenticated\/':'/);
+ assert.doesNotMatch(request,/max-age=3600|max-age=86400|cache:'force-cache'/);
+ const upload=sync.slice(sync.indexOf('async function sharePhoto('),sync.indexOf('\nasync function refreshChanges('));
+ assert.match(upload,/await photoRequest\(path,'POST',blob\)/);
+ assert.match(upload,/root\.crypto\.randomUUID\(\)\+'\.jpg'/);
 });
