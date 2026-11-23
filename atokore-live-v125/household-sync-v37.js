@@ -119,6 +119,32 @@ async function photoRequest(path,method='GET',blob){
  if(session.expires_at-60<Date.now()/1000)await refreshSession();
  const controller=new root.AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
  try{
+  // Non-deployed v50 gateway flag: OFF until owner approves trial migration and
+  // HTTP revocation QA. When ON, NEVER fall back to direct Storage URLs.
+  if(cfg.photoGatewayEnabled===true){
+   const op=method==='GET'?'read':method==='POST'?'write':null;
+   if(!op)throw Error('写真の共有操作を確認できませんでした。');
+   const parts=path.split('/');
+   const payload=op==='read'?{operation:'read',path}:{operation:'write',householdId:parts[0],recordId:parts[1]};
+   if(op==='write'){
+    if(!blob||blob.size>81920||blob.type!=='image/jpeg')throw Error('写真サイズ・形式を確認してください。');
+    const bytes=new Uint8Array(await blob.arrayBuffer());
+    let binary='';
+    for(let i=0;i<bytes.length;i+=4096)binary+=String.fromCharCode(...bytes.subarray(i,i+4096));
+    payload.base64=root.btoa(binary);
+   }
+   const response=await root.fetch(base+'/functions/v1/atokore-photo-gateway',{
+    method:'POST',headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},
+    body:JSON.stringify(payload),cache:'no-store',signal:controller.signal
+   });
+   if(!response.ok)throw Error('写真の共有許可を確認できませんでした。');
+   if(op==='read')return response.blob();
+   const data=await response.json();
+   if(!data?.path||typeof data.path!=='string')throw Error('写真の保存先を確認できませんでした。');
+   return data.path;
+  }
+  // Legacy trial transport ONLY. Never enable this path in a public photo
+  // release: an excluded user's previously cached direct URL can return 200.
   const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path+(method==='GET'?'?v='+(root.crypto?.randomUUID?.()||Date.now()):''),{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'cache-control':method==='POST'?'private, no-store, max-age=0':'no-cache',...(blob?{'Content-Type':'image/jpeg'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('写真を共有できませんでした。通信状態を確認してお試しください。');
   return method==='GET'?response.blob():null;
@@ -137,8 +163,8 @@ async function sharePhoto(id,blob){
  await syncNow();if(status.state!=='synced')throw Error('端末には保存済みです。写真の共有は通信が戻ってからお試しください。');
  const current=readState()?.items.find(x=>String(x.id)===String(id));if(!current||!sameScope(scope,photoScope(id)))throw Error('共有先が変わりました。商品を開き直してください。');
  const expected=JSON.stringify([current.name,current.unit,current.photoPath]);
- const path=blob?scope.household+'/'+scope.sid+'/'+root.crypto.randomUUID()+'.jpg':null;
- if(blob)await photoRequest(path,'POST',blob);
+ let path=blob?scope.household+'/'+scope.sid+'/'+root.crypto.randomUUID()+'.jpg':null;
+ if(blob)path=(await photoRequest(path,'POST',blob))||path;
  const next=readState(),item=next?.items.find(x=>String(x.id)===String(id));
  if(!item||!sameScope(scope,photoScope(id))||JSON.stringify([item.name,item.unit,item.photoPath])!==expected)throw Error('共有先か商品が変わりました。写真の共有は反映していません。');
  item.photoPath=path;
