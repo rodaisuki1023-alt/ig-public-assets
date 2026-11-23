@@ -1,0 +1,5 @@
+# DRAFT ONLY. Do not deploy while photo CDN revocation P1 remains open.
+# New publishable/secret API keys are checked by @supabase/server auth:'user'.
+# Platform legacy verify_jwt must be disabled for the server SDK to validate them.
+[functions.atokore-photo-gateway]
+verify_jwt = false
