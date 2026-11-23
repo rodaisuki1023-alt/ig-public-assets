@@ -58,7 +58,7 @@ export async function authorizePhotoOperation({
         !new RegExp('^'+UUID+'$').test(user.id)) return deny('auth');
     const nowAllowed = await checkCurrentAccess({
       userId: user.id, householdId: parsed.householdId,
-      recordId: parsed.recordId, operation
+      recordId: parsed.recordId, operation, path
     });
     if (nowAllowed !== true) return deny('membership');
     return Object.freeze({ allowed: true, ...parsed });
