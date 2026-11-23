@@ -92,7 +92,7 @@ test('A/B/C errors are field-specific and do not lock the QA or call Auth',async
  for(let i=0;i<3;i++){
   assert.equal(errors[i].hidden,false);
   assert.match(errors[i].textContent,RegExp('合成アカウント '+['A','B','C'][i]));
-  assert.match(errors[i].textContent,/12文字以上/);
+  assert.match(errors[i].textContent,/一時パスワードを入力してください/);
   assert.equal(passwords[i].attributes['aria-invalid'],'true');
  }
  passwords.forEach((p,i)=>{p.value=['Correct-password-A','Correct-password-B','Correct-password-C'][i]});
@@ -159,4 +159,18 @@ test('post-removal uses a new Auth sign-in JWT and retains no password in logs',
  assert.match(js,/cache:reload取得拒否/);
  assert.match(js,/SHA256同一/);
  assert.doesNotMatch(js,/resultLine\([^\n]*reauthBSecret/);
+});
+
+
+test('QA has no independent 12-character password limit; Supabase Auth remains authoritative',()=>{
+ const qa=load();
+ const short=['a','b','c'].map(r=>qa.doc.getElementById('password-'+r));
+ short.forEach((node,i)=>{node.value=['a1b2c3','d4e5f6','g7h8i9'][i]});
+ const valid=qa.verdict.validateInputs();
+ assert.equal(valid.a,'a1b2c3');
+ assert.equal(valid.b,'d4e5f6');
+ assert.equal(valid.c,'g7h8i9');
+ assert.equal(qa.requests.length,0,'validation must not communicate with Supabase');
+ assert.equal(qa.state.size,0,'preflight must not mark the test as run');
+ assert.doesNotMatch(html,/一時パスワードは12文字以上/);
 });
