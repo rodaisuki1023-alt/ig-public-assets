@@ -51,6 +51,10 @@ assert "https://vzyxurodowpjltwbgbyc.supabase.co" in qa_html
 assert "sb_publishable_" in qa_html and "sb_secret_" not in qa_html
 assert "service_role" not in qa_html
 assert "example.invalid" in qa_html and "Auth sign-in" in qa_html
+assert "COHORT='c0e4b6f7a9'" in qa_html, "new one-shot synthetic cohort required"
+assert "COHORT='d59b5fa73f'" not in qa_html, "deleted cohort must not be reused"
+assert "private, no-store, max-age=0" in qa_html, "synthetic JPEG upload must demand zero cache"
+
 
 # /family/: the only family-enabled copy, for the two-iPhone acceptance test.
 fam_html = (family_dir / "index.html").read_text(encoding="utf-8")
