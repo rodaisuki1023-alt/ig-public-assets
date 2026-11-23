@@ -60,8 +60,8 @@ function validateInputs(){
   var reason='';
   if(!email||email.value!==ids[role])
    reason='合成アカウント '+role.toUpperCase()+'：メールが今回の試験用アドレスと一致しません。';
-  else if(!password||password.value.length===0)
-   reason='合成アカウント '+role.toUpperCase()+'：一時パスワードを入力してください。';
+  else if(!password||password.value.length<12)
+   reason='合成アカウント '+role.toUpperCase()+'：12文字以上の一時パスワードを入力してください。';
   if(reason){
    if(error){error.textContent=reason;error.hidden=false}
    if(email)email.setAttribute('aria-invalid',email.value!==ids[role]?'true':'false');
@@ -143,8 +143,14 @@ var GATE='/functions/v1/atokore-photo-gateway';
 var UUID='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 var canonical=new RegExp('^'+UUID+'/qa_'+COHORT+'_item/'+UUID+'[.]jpg$');
 function safePath(path,hh){return typeof path==='string'&&canonical.test(path)&&path.startsWith(hh+'/'+mkId()+'/')}
-function denied(r){return [401,403,404].includes(r.status)&&!r.image}
-function directDenied(r){return [400,401,403,404].includes(r.status)&&!r.image}
+// An expired/invalid JWT, CORS failure or generic origin error is NOT proof of revocation.
+function denied(r){return r.status===403&&!r.image&&r.data?.error==='denied'}
+function directDenied(r){
+ if(r.image)return false;
+ if(r.status===403)return true;
+ var evidence=[r.data?.code,r.data?.error,r.data?.statusCode,r.data?.message].filter(Boolean).join('|');
+ return [400,404].includes(r.status)&&/(nosuchkey|not.found|object not found|404)/i.test(evidence);
+}
 async function binaryMeta(r){
  var type=String(r.headers.get('content-type')||'');
  var image=type.startsWith('image/jpeg');
@@ -211,7 +217,11 @@ async function start(){
   }]});
   assert(p.ok&&p.data?.results?.[0]?.status==='applied','create item');
   var bstock=await rpc(users.b,'hh_pull',{p_since:0,p_limit:20});
-  resultLine('B在庫共有',bstock.ok&&bstock.data?.records?.some(r=>r.id===mkId()&&r.qty===2));
+  var shared=bstock.ok&&bstock.data?.records?.some(r=>r.id===mkId()&&r.qty===2);
+  resultLine('B在庫共有',shared===true);assert(shared,'B stock positive control');
+  var cstock=await rpc(users.c,'hh_pull',{p_since:0,p_limit:20});
+  var isolated=cstock.ok&&Array.isArray(cstock.data?.records)&&!cstock.data.records.some(r=>r.id===mkId());
+  resultLine('CのJWT有効・別世帯在庫分離',isolated);assert(isolated,'C stock control');
   var jpg=await tinyJpeg(),bytes=new Uint8Array(await jpg.arrayBuffer()),expected=await hashBytes(bytes);
   var base64=btoa(String.fromCharCode(...bytes));
   var w=await gateway(users.a,{operation:'write',householdId:hh,recordId:mkId(),base64:base64});
@@ -224,9 +234,10 @@ async function start(){
   resultLine('A画像SHA256一致・no-store',isMatch(ra,expected,bytes.length),desc(ra));
   resultLine('B画像SHA256一致・no-store',isMatch(rb,expected,bytes.length),desc(rb));
   resultLine('別世帯Cゲート拒否',denied(rc),desc(rc));
+  assert(isMatch(ra,expected,bytes.length)&&isMatch(rb,expected,bytes.length),'image positive control failed');
   var nonce='fixed-'+crypto.randomUUID();meta.directNonce=nonce;
   for(var role of roles){var d=await direct(path,users[role],nonce);resultLine('新バケット直GET拒否 '+role.toUpperCase(),directDenied(d),desc(d))}
-  var noauth=await gateway(null,read);resultLine('認証なしゲート拒否',noauth.status===0?null:denied(noauth),desc(noauth));
+  var noauth=await gateway(null,read);resultLine('認証なしゲート拒否',noauth.status===0?null:([401,403].includes(noauth.status)&&!noauth.image),desc(noauth));
   var rem=await rpc(users.a,'hh_remove_member',{p_user:users.b.id});assert(rem.ok&&rem.data?.removed===1,'remove B');
   resultLine('AがBを除外',true);
   var afterA=await gateway(users.a,read),afterB=await gateway(users.b,read,'reload');
@@ -238,6 +249,8 @@ async function start(){
   resultLine('除外後B在庫RPC拒否',rpcDenied(bpull),'HTTP '+bpull.status);
   bNew=await signIn(ids.b,reauthB);
   assert(bNew.id===users.b.id,'B UID changed');
+  var bNewPull=await rpc(bNew,'hh_pull',{p_since:0,p_limit:20});
+  resultLine('除外後Bの新JWTで在庫RPC拒否',rpcDenied(bNewPull),'HTTP '+bNewPull.status);
   var newB=await gateway(bNew,read,'reload');
   resultLine('除外後Bの同一POST・新JWT拒否',denied(newB),desc(newB));
   var forbiddenDelete=await gateway(bNew,{operation:'delete',path:path});
