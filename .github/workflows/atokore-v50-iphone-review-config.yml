@@ -1,0 +1,58 @@
+name: Atokore v50 iPhone Review Config (No Deployment)
+
+on:
+  pull_request:
+    paths:
+      - vercel.json
+      - scripts/atokore/verify-iphone-review-build.py
+      - scripts/atokore/attach-synthetic-storage-qa.py
+      - scripts/atokore/attach-family-acceptance.py
+      - scripts/atokore/build-owner-review.py
+      - scripts/atokore/build-preview.py
+      - scripts/atokore/build-local-review.py
+      - tests/atokore-family-acceptance.test.cjs
+      - atokore-live-v125/**
+      - tests/manual/atokore-v50-auth-qa.html
+      - docs/atokore-v50-vercel-owner-review-20261122.md
+      - .github/workflows/atokore-v50-iphone-review-config.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-local-family-disabled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate site configuration and build only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          c=json.loads(Path('vercel.json').read_text())
+          assert c.get('framework') is None
+          assert c['outputDirectory']=='_local_review'
+          assert c['buildCommand'].endswith('python3 -I scripts/atokore/verify-iphone-review-build.py _local_review')
+          # Vercel rejects a buildCommand longer than 256 characters (schema validation).
+          assert len(c['buildCommand']) <= 256, len(c['buildCommand'])
+          assert c['buildCommand'].startswith('python3 -I scripts/atokore/build-owner-review.py && ')
+          b=Path('scripts/atokore/build-owner-review.py').read_text()
+          order=[b.index(x) for x in ('build-local-review.py','attach-synthetic-storage-qa.py','attach-family-acceptance.py')]
+          assert order==sorted(order)
+          assert {'source':'/family','destination':'/family/','permanent':False} in c.get('redirects',[])
+          assert 'X-Robots-Tag' in [x['key'] for h in c.get('headers',[]) for x in h['headers']]
+          print('Vercel build configuration is local-only')
+          PY
+          # Run exactly the Vercel buildCommand.
+          bash -ec "$(python3 -c 'import json;print(json.load(open("vercel.json"))["buildCommand"])')"
+          python3 -m compileall -q scripts/atokore/verify-iphone-review-build.py scripts/atokore/attach-family-acceptance.py scripts/atokore/build-owner-review.py
+      - name: Family acceptance copy is isolated and host-guarded
+        run: node --test tests/atokore-family-acceptance.test.cjs
+      - name: Confirm no deployment took place
+        run: test ! -e _local_review/.vercel

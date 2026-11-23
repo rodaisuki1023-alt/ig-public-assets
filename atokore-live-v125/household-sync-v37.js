@@ -119,7 +119,7 @@ async function photoRequest(path,method='GET',blob){
  if(session.expires_at-60<Date.now()/1000)await refreshSession();
  const controller=new root.AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
  try{
-  const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path+(method==='GET'?'?v='+(root.crypto?.randomUUID?.()||Date.now()):''),{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'cache-control':'no-cache',...(blob?{'Content-Type':'image/jpeg'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
+  const response=await root.fetch(base+'/storage/v1/object/'+(method==='GET'?'authenticated/':'')+'atokore-product-photos/'+path+(method==='GET'?'?v='+(root.crypto?.randomUUID?.()||Date.now()):''),{method,headers:{apikey:cfg.anonKey,Authorization:'Bearer '+session.access_token,'cache-control':method==='POST'?'private, no-store, max-age=0':'no-cache',...(blob?{'Content-Type':'image/jpeg'}:{})},...(blob?{body:blob}:{}),cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('写真を共有できませんでした。通信状態を確認してお試しください。');
   return method==='GET'?response.blob():null;
  }catch(e){if(e.name==='AbortError'||e instanceof TypeError)throw Error('通信できません。端末に保存済みの写真は残っています。つながってからお試しください。');throw e}finally{clearTimeout(timeout)}

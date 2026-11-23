@@ -19,7 +19,11 @@ for(const width of [320,390,430])test(`home v43 has two safe actions, real local
  expect(geometry).toHaveLength(5);expect(new Set(geometry.map(r=>r.top)).size).toBe(1);
  expect(geometry.every(r=>r.left>=0&&r.right<=width&&r.bottom<=844)).toBe(true);
  await shot(page,info,`v43-home-${width}`);
- await page.locator('#atkTasks [data-atk-open="2"]').click();await expect(page.locator('#sheet')).toContainText('M');
+ await expect(page.locator('#atkHomeAttentionDetails')).not.toHaveAttribute('open');
+  await expect(page.locator('#atkHomeAttentionSummary')).toHaveText('確認する商品 2件');
+  await page.locator('#atkHomeAttentionDetails summary').click();
+  await expect(page.locator('#atkHomeAttentionDetails')).toHaveAttribute('open','');
+  await page.locator('#atkTasks [data-atk-open="2"]').click();await expect(page.locator('#sheet')).toContainText('M');
  expect(await stored(page)).toEqual(state);await page.getByRole('button',{name:'閉じる',exact:true}).click();
  await page.locator('#atkHomeAllChanges').click();await expect(page.getByRole('heading',{name:'この端末の変更履歴'})).toBeVisible();
  await page.getByRole('button',{name:'閉じる',exact:true}).click();
@@ -48,7 +52,8 @@ test('long names and hostile history stay readable at 320px; more alerts reveal 
  await expect(page.locator('#atkHomeActivity')).toContainText('<img');await expect(page.locator('#atkHomeActivity img, #atkHomeActivity script')).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await expect(page.locator('#atkTasks [data-atk-open]').first()).toHaveAttribute('data-atk-open','2');
- await page.locator('#atkHomeMoreStock').click();await expect(page.locator('#sheet [data-atk-open]')).toHaveCount(3);
+ await page.locator('#atkHomeAttentionDetails summary').click();
+  await page.locator('#atkHomeMoreStock').click();await expect(page.locator('#sheet [data-atk-open]')).toHaveCount(3);
  await expect(page.locator('#sheet')).not.toContainText('十分ある商品');expect(await stored(page)).toEqual(state);
 });
 
@@ -79,4 +84,20 @@ test('two household members see confirmed family history, retries do not duplica
   await expect(b.page.locator('#atkHomeHistoryTitle')).toHaveText('この端末の最近の変更');await expect(b.page.locator('#atkHomeActivity')).not.toContainText('共有テスト担当');
   expect(b.page.__errors).toEqual([]);
  }finally{await a.ctx.close();await b.ctx.close()}
+});
+
+for(const width of [320,393,430])test('public v50 hides unverified receipt OCR and keeps manual flow at '+width+'px',async({page})=>{
+ await page.setViewportSize({width,height:780});
+ const initial=baseState();
+ await open(page,{[KEY]:initial},{receiptExperimental:false});
+ await expect(page.locator('#pg-home [data-atk-receipt]')).toHaveCount(0);
+ await expect(page.locator('#pg-home [data-atk-buy]')).toBeVisible();
+ await expect(page.locator('#pg-premium [data-atk-experimental-receipt]')).toBeHidden();
+ await expect(page.locator('#premiumIntroV125m')).toContainText('消費予測');await expect(page.locator('#premiumIntroV125m')).not.toContainText('レシート');
+ await page.evaluate(()=>showPremium('receipt'));
+ await expect(page.locator('#modal')).not.toHaveClass(/on/);
+ await page.locator('#pg-home [data-atk-buy]').click();
+ await expect(page.locator('#pg-buy')).toHaveClass(/on/);
+ expect(await stored(page)).toEqual(initial);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

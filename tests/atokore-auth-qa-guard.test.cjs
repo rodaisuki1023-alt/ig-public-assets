@@ -4,11 +4,12 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
+const crypto=require('node:crypto');
 const html=fs.readFileSync(path.join(__dirname,'manual/atokore-v50-auth-qa.html'),'utf8');
 const js=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert(js,'QA inline script must exist');
 
-function load(origin='https://rodaisuki1023-alt.github.io',pathname='/ig-public-assets/tests/manual/atokore-v50-auth-qa.html',seed=[]){
+function load(origin='https://rodaisuki1023-alt.github.io',pathname='/ig-public-assets/tests/manual/atokore-v50-auth-qa.html',seed=[],mockFetch=null){
  const nodes={},created=[],state=new Map(seed),requests=[];
  const elt=()=>({
   textContent:'',value:'',disabled:false,hidden:false,attributes:{},
@@ -21,16 +22,16 @@ function load(origin='https://rodaisuki1023-alt.github.io',pathname='/ig-public-
   getElementById(id){return nodes[id]||created.find(x=>x.id===id)||null},
   createElement(){const obj=elt();created.push(obj);return obj}
  };
- const ctx={document:doc,location:{origin,pathname},console,
+ const ctx={document:doc,location:{origin,pathname},console,crypto:crypto.webcrypto,TextEncoder,Response,
   localStorage:{
    getItem(k){return state.get(k)||null},
    setItem(k,v){state.set(k,v)},
    removeItem(k){state.delete(k)}
   },
-  fetch(url){requests.push(url);throw Error('No external HTTP calls allowed by QA unit tests')}
+  fetch(url,options){requests.push({url,options});if(mockFetch)return mockFetch(url,options);throw Error('No external HTTP calls allowed by QA unit tests')}
  };
  vm.createContext(ctx);
- const exposed=js.replace(/\}\)\(\);\s*$/, 'globalThis.__verdict={rpcDenied,storageVerdict,photoMeta,validateInputs,start};})();');
+ const exposed=js.replace(/\}\)\(\);\s*$/, 'globalThis.__verdict={rpcDenied,storageVerdict,photoMeta,photoFetch,hashBytes,validateInputs,start};})();');
  assert.notEqual(exposed,js,'QA verdict injection point must exist');
  new vm.Script(exposed,{filename:'atokore-v50-auth-qa.html'}).runInContext(ctx);
  return {nodes,created,doc,state,requests,verdict:ctx.__verdict};
@@ -69,7 +70,7 @@ test('Review covers negative controls, separate histories, same-URL replay and c
  assert.match(html,/別世帯CにAの商品履歴がない/);
  assert.match(html,/same-url-/);
  assert.match(html,/meta.fixedNonce,'default'/);
- assert.match(html,/除外後Bの新規URL取得拒否/);
+ assert.match(html,/除外後Bの新規URL\/no-store取得拒否/);
  assert.match(html,/削除後Aの新規URLで画像不存在/);
  assert.match(html,/referrer" content="no-referrer"/);
  assert.match(html,/Content-Security-Policy/);
@@ -91,7 +92,7 @@ test('A/B/C errors are field-specific and do not lock the QA or call Auth',async
  for(let i=0;i<3;i++){
   assert.equal(errors[i].hidden,false);
   assert.match(errors[i].textContent,RegExp('合成アカウント '+['A','B','C'][i]));
-  assert.match(errors[i].textContent,/12文字以上/);
+  assert.match(errors[i].textContent,/一時パスワードを入力してください/);
   assert.equal(passwords[i].attributes['aria-invalid'],'true');
  }
  passwords.forEach((p,i)=>{p.value=['Correct-password-A','Correct-password-B','Correct-password-C'][i]});
@@ -124,4 +125,52 @@ test('only old pre-network validation errors are unlocked; real Auth progress st
  assert.equal(begun.state.has(key),true);
  const ambiguous=load(undefined,undefined,[[key,'QA開始済み']]);
  assert.equal(ambiguous.nodes.start.disabled,true,'ambiguous prior runs remain locked');
+});
+
+test('photo proof records real SHA256 of bytes and does not confuse browser cache with network',async()=>{
+ const buf=Buffer.from([3,7,12,20,31,40]);
+ const calls=[];
+ const qa=load(undefined,undefined,[],(url,options)=>{
+  calls.push({url,options});
+  return Promise.resolve(new Response(buf,{status:200,headers:{'content-type':'image/jpeg','cache-control':'private,no-store'}}));
+ });
+ const fake={access_token:'synthetic-test-only'};
+ const fresh=await qa.verdict.photoFetch('safe/test/item.jpg',fake,'a','no-store');
+ assert.equal(fresh.status,200);
+ assert.equal(fresh.bytes,buf.byteLength);
+ assert.equal(fresh.bodyHash,crypto.createHash('sha256').update(buf).digest('hex'));
+ assert.equal(fresh.source,'cache_bypass_requested');
+ assert.equal(calls[0].options.cache,'no-store');
+ const same=await qa.verdict.photoFetch('safe/test/item.jpg',fake,'a','default');
+ assert.equal(same.source,'cache_or_network_undetermined');
+ assert.equal(calls[1].options.cache,'default');
+ const reloaded=await qa.verdict.photoFetch('safe/test/item.jpg',fake,'a','reload');
+ assert.equal(reloaded.source,'cache_bypass_requested');
+ assert.equal(calls[2].options.cache,'reload');
+ assert.equal(calls[0].url,calls[1].url);
+ assert.equal(calls[1].url,calls[2].url,'same URL must be cache-bypassed without a new nonce');
+ assert.doesNotMatch(qa.verdict.photoMeta(same),/definitely_network/);
+});
+test('post-removal uses a new Auth sign-in JWT and retains no password in logs',()=>{
+ assert.match(js,/signIn\(ids\.b,reauthBSecret\)/);
+ assert.match(js,/除外後Bの新JWTで在庫RPC拒否/);
+ assert.match(js,/除外後Bの新JWTで写真の新規GET拒否/);
+ assert.match(js,/reauthBSecret=null/);
+ assert.match(js,/cache:reload取得拒否/);
+ assert.match(js,/SHA256同一/);
+ assert.doesNotMatch(js,/resultLine\([^\n]*reauthBSecret/);
+});
+
+
+test('QA has no independent 12-character password limit; Supabase Auth remains authoritative',()=>{
+ const qa=load();
+ const short=['a','b','c'].map(r=>qa.doc.getElementById('password-'+r));
+ short.forEach((node,i)=>{node.value=['a1b2c3','d4e5f6','g7h8i9'][i]});
+ const valid=qa.verdict.validateInputs();
+ assert.equal(valid.a,'a1b2c3');
+ assert.equal(valid.b,'d4e5f6');
+ assert.equal(valid.c,'g7h8i9');
+ assert.equal(qa.requests.length,0,'validation must not communicate with Supabase');
+ assert.equal(qa.state.size,0,'preflight must not mark the test as run');
+ assert.doesNotMatch(html,/一時パスワードは12文字以上/);
 });
