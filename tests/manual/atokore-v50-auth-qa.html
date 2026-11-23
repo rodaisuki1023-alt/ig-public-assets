@@ -69,8 +69,8 @@ function validateInputs(){
   var reason='';
   if(!email||email.value!==ids[role])
    reason='合成アカウント '+role.toUpperCase()+'：メールが今回の試験用アドレスと一致しません。';
-  else if(!password||password.value.length<12)
-   reason='合成アカウント '+role.toUpperCase()+'：一時パスワードは12文字以上入力してください。';
+  else if(!password||password.value.length===0)
+   reason='合成アカウント '+role.toUpperCase()+'：一時パスワードを入力してください。';
   if(reason){
    if(error){error.textContent=reason;error.hidden=false}
    if(email)email.setAttribute('aria-invalid',email.value!==ids[role]?'true':'false');
