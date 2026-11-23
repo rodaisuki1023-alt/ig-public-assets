@@ -32,7 +32,42 @@ language sql stable security definer set search_path='' as $fn$
       and coalesce(p_operation in ('read','write','delete'),false)
       and coalesce(
         p_path ~
-        '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}/[A-Za-z0-9_-]{8,64}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$',
+        '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[A-Za-z0-9_-]{8,64}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.]jpg,
+        false)
+      and exists(
+        select 1
+        from atokore_private.members m
+        join atokore_private.households h
+          on h.id=m.household_id and h.archived_at is null
+        join atokore_private.records r
+          on r.household_id=h.id and r.kind='item' and r.deleted=false
+        where m.user_id=auth.uid() and m.left_at is null
+          and h.id::text=split_part(p_path,'/',1)
+          and r.id=split_part(p_path,'/',2)
+          and (
+            p_operation='write'
+            or r.fields->>'photoPath'=p_path
+          )
+      );
+$fn$;
+
+revoke all on function public.hh_photo_access(text,text)
+  from public, anon, authenticated;
+grant execute on function public.hh_photo_access(text,text) to authenticated;
+
+commit;
+
+-- RELEASE CHECKLIST (read-only before apply and after apply):
+--  1) New bucket remains public=false and has zero matching storage.object policies
+--     (also check combined policies, not only their names).
+--  2) With valid user A/B JWT, direct GET/POST/DELETE on new Storage bucket
+--     cannot succeed. Only Edge Function server-side secret client can access.
+--  3) Boolean RPC returns true for active member with item (write);
+--     read/delete true ONLY when current item.photoPath exactly matches path.
+--  4) B removed -> false with old and newly-issued B JWT; C unrelated -> false.
+--  5) Existing old bucket has at least one image: DO NOT remove without owner
+--     review and documented rollback/new-bucket copy; delete via Storage API.
+,
         false)
       and exists(
         select 1
