@@ -6,7 +6,7 @@
  * Storage in an RLS-denied private bucket. No Storage object URL is disclosed.
  *
  * Supabase server SDK 1.9.2: https://supabase.com/docs/guides/functions/auth
- * supabase/config.toml must keep verify_jwt=false so SDK's auth:'user' is used.
+ * supabase/config.toml keeps verify_jwt=true; SDK auth:'user' is a second gate.
  */
 import { withSupabase } from 'npm:@supabase/server@1.9.2'
 import { createPhotoGatewayHandler } from '../_shared/photo-gateway-handler.mjs'
@@ -22,9 +22,9 @@ const NO_STORE={
 
 function originHeaders(req){
   const origin=req.headers.get('origin')||''
-  let allowed=[]
+  let allowed=['https://atokore-v50-owner-review-20261122.vercel.app']
   try{
-    allowed=(Deno.env.get('ATOKORE_ALLOWED_ORIGINS')||'').split(',').map(s=>s.trim())
+    allowed=[...allowed,...(Deno.env.get('ATOKORE_ALLOWED_ORIGINS')||'').split(',').map(s=>s.trim())]
       .filter(s=>s.startsWith('https://')&&/^https:\/\/[a-zA-Z0-9.-]+(?::[0-9]+)?$/.test(s))
   }catch{return null}
   if(!allowed.includes(origin))return null
