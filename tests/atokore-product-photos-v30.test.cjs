@@ -119,3 +119,45 @@ test('v50: new private family photo uploads prohibit cache TTL reuse after revoc
  assert.match(upload,/await photoRequest\(path,'POST',blob\)/);
  assert.match(upload,/root\.crypto\.randomUUID\(\)\+'\.jpg'/);
 });
+
+test('v50: actual private photo transport sends no-store upload policy and authenticated cache-bypassed GET',async()=>{
+ const vm=require('node:vm');
+ const sync=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ const start=sync.indexOf('async function photoRequest('),end=sync.indexOf('\nasync function fetchPhoto(',start);
+ assert(start>=0&&end>start,'private photo function must remain isolated');
+ const captures=[];
+ const ctx={
+   session:{access_token:'unit-test-only',expires_at:99999999999},
+   base:'https://synthetic.invalid',
+   cfg:{anonKey:'unit-test-publishable'},
+   root:{
+     AbortController,
+     crypto:{randomUUID:()=> 'unit-test-nonce-1'},
+     fetch:async(url,options)=>{
+       captures.push({url,options});
+       return new Response(Uint8Array.from([255,216,255,224]),{status:200,headers:{'content-type':'image/jpeg'}});
+     }
+   },
+   setTimeout:()=>1,clearTimeout:()=>{},
+   refreshSession:()=>{throw Error('unexpected token refresh')}
+ };
+ vm.runInNewContext(sync.slice(start,end)+'\nglobalThis.photoTransport=photoRequest;',ctx);
+ const jpeg=new Blob([Uint8Array.from([255,216,255,224])],{type:'image/jpeg'});
+ assert.equal(await ctx.photoTransport('household/item/picture.jpg','POST',jpeg),null);
+ const put=captures.shift();
+ assert.equal(put.options.method,'POST');
+ assert.equal(put.options.headers['cache-control'],'private, no-store, max-age=0');
+ assert.equal(put.options.cache,'no-store');
+ assert.equal(put.options.headers.Authorization,'Bearer unit-test-only');
+ assert.match(put.url,/\/storage\/v1\/object\/atokore-product-photos\//);
+ const response=await ctx.photoTransport('household/item/picture.jpg');
+ assert.equal(response.type,'image/jpeg');
+ assert.equal(response.size,4);
+ const get=captures.shift();
+ assert.equal(get.options.method,'GET');
+ assert.equal(get.options.headers['cache-control'],'no-cache');
+ assert.equal(get.options.cache,'no-store');
+ assert.match(get.url,/\/storage\/v1\/object\/authenticated\/atokore-product-photos\//);
+ assert.match(get.url,/\?v=unit-test-nonce-1$/);
+ assert.equal(captures.length,0);
+});
