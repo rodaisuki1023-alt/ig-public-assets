@@ -25,8 +25,9 @@ function decodeJpeg(b64){
 export function createPhotoGatewayHandler({verifySession,checkCurrentAccess,readObject,writeObject,removeObject,newFileId}={}){
  if([verifySession,checkCurrentAccess,readObject,writeObject,removeObject,newFileId].some(x=>typeof x!=='function'))
    throw new TypeError('trusted auth, current membership, storage and UUID adapters required');
- const authorize=async(operation,path,accessToken)=>authorizePhotoOperation({
-   operation,path,accessToken,verifySession,checkCurrentAccess
+ const authorize=async(operation,path,accessToken,jpegBytes)=>authorizePhotoOperation({
+   operation,path,accessToken,verifySession,checkCurrentAccess,
+   ...(operation==='write'?{jpegBytes,contentType:'image/jpeg'}:{})
  });
  return async function handle({operation,path,householdId,recordId,base64,accessToken}={}){
    if(!['read','write','delete'].includes(operation))return deny(400,'operation');
@@ -42,7 +43,7 @@ export function createPhotoGatewayHandler({verifySession,checkCurrentAccess,read
      objectPath=householdId+'/'+recordId+'/'+fileId+'.jpg';
    }else if(!parsePhotoPath(objectPath))return deny(400,'path');
 
-   const before=await authorize(operation,objectPath,accessToken);
+   const before=await authorize(operation,objectPath,accessToken,bytes);
    if(!before.allowed)return deny(before.reason==='unavailable'?503:403,'denied');
 
    if(operation==='read'){
@@ -56,7 +57,7 @@ export function createPhotoGatewayHandler({verifySession,checkCurrentAccess,read
 
    if(operation==='write'){
      try{await writeObject(objectPath,bytes)}catch{return deny(503,'unavailable')}
-     const after=await authorize('write',objectPath,accessToken);
+     const after=await authorize('write',objectPath,accessToken,bytes);
      if(!after.allowed){
        // No orphan image should be retained after losing membership.
        try{await removeObject(objectPath)}catch{return deny(503,'cleanup_unconfirmed')}
