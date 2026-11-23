@@ -14,10 +14,11 @@
 
 ## 独立Draft PRの防御強化（候補・本番未反映）
 
-- `household-sync-v37.js` の**新規JPEGアップロード**で `Cache-Control: max-age=0` を明示する。Supabase StorageのバイナリPOSTはこのヘッダーを保存しレスポンスに使用する実装（storage-js StorageFileApi / storage server uploader）。従来のPOSTに `no-cache` が混ざっていた状態から明確化。
+- `household-sync-v37.js` の**新規JPEGアップロード**で `Cache-Control: private, no-store, max-age=0` を明示する。Supabase StorageのバイナリPOSTはこのヘッダーを保存しレスポンスに使用する実装（storage-js StorageFileApi / storage server uploader）。従来のPOSTに `no-cache` が混ざっていた状態から明確化。
 - 写真の**GETは現状の認証付きURL**、Bearer JWT、常に異なる `?v=`、`cache:'no-store'` と `Cache-Control: no-cache` を継続。署名URLや公開URLへ変更しない。
 - 参照するJSアセットを `v50.6` に更新し、Service Workerキャッシュを `atokore-pwa-v50.6` にしてiPhoneの旧スクリプト残存を防ぐ。商品状態/IndexedDB/Supabase schemaは変更しない。
 - 追加ユニットガードで、新規写真のupload TTL=0・private GET・nonce・非公開経路を確認。
+- Supabaseサーバーの生バイナリアップロード実装は`cache-control`ヘッダーの値を保持するため、短いTTLだけではなく**private＋no-store**も指定する。これはCDN/ブラウザにキャッシュを保存しないよう要求するためで、CDNの実挙動で確認する必要がある。
 - **重要**：`max-age=0` はCDNからのデータの消滅を保証するための機構ではない。CDNの実挙動、Safari/PWA、元URLを別ユーザーが持つケースは新しい**別コホート**で実HTTP再検証が必須。
 
 参考：
