@@ -63,7 +63,7 @@ test('per-call membership: write checks item, read checks current photoPath; B r
   assert.equal(await sql(A,'write'),true);
   assert.equal(await sql(B,'write'),true);
   assert.equal(await sql(C,'write'),false);
-  assert.equal(await sql(null,'write'),false);
+  await assert.rejects(sql(null,'write'),/permission denied/);
   assert.equal(await sql(A,'read'),false);
   assert.equal(await sql(B,'read'),false);
   const setPhoto={op_id:newOp(),type:'set',kind:'item',id:recordId,
