@@ -6,7 +6,7 @@ const zlib = require('node:zlib');
 const { test, expect } = require('@playwright/test');
 const { open, go, stored, baseState, KEY, appConfirm } = require('./helpers.cjs');
 const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
-const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false };
+const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false, photoGatewayEnabled:true };
 const DB = 'atokorePreviewProductPhotosV19';
 
 function crc32(data) { let crc = 0xffffffff; for (const b of data) { crc ^= b; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); } return (crc ^ 0xffffffff) >>> 0; }

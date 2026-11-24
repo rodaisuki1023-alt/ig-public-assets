@@ -1,7 +1,7 @@
 const {test,expect}=require('@playwright/test');
 const {open,go,stored,baseState,KEY,shot, appConfirm}=require('./helpers.cjs');
 const EMU='http://127.0.0.1:'+(process.env.E2E_HH_PORT||4720);
-const CFG={url:EMU,anonKey:'emu-anon-key',google:true,guest:true,email:false};
+const CFG={url:EMU,anonKey:'emu-anon-key',google:true,guest:true,email:false,photoGatewayEnabled:true};
 for(const width of [320,390,430])test(`v44 text stock groups categories, hides pictures, remembers view and keeps quantity actions at ${width}px`,async({page},info)=>{
  await page.setViewportSize({width,height:844});await open(page,{[KEY]:baseState()});await go(page,'stock');
  await page.click('[data-atk-view="list"]');

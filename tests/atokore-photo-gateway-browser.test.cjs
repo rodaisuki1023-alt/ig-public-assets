@@ -4,15 +4,15 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../atokore-live-v125/household-sync-v37.js'),'utf8');
-const start=source.indexOf('function validPhotoPath('),end=source.indexOf('\nasync function fetchPhoto(',start);
+const start=source.indexOf('function photoSharingEnabled('),end=source.indexOf('\nasync function fetchPhoto(',start);
 assert.ok(start>=0&&end>start);
 const fragment=source.slice(start,end);
 const jpeg=Uint8Array.from([255,216,255,224,23,12,255,217]);
-function setup(status=200,returnedPath) {
+function setup(status=200,returnedPath,enabled=true) {
  const calls=[], now='https://synthetic.invalid',picture='12345678-1234-1234-1234-123456789abc/mockRecord/12345678-1234-1234-1234-123456789abc.jpg';
  const ctx={
   session:{access_token:'synthetic-jwt',expires_at:9999999999},
-  cfg:{anonKey:'sb_publishable_synthetic',photoGatewayEnabled:true},
+  cfg:{anonKey:'sb_publishable_synthetic',photoGatewayEnabled:enabled},
   base:now,Uint8Array,AbortController,
   root:{
    AbortController,
@@ -69,10 +69,22 @@ test('photo upload cannot link another household, item or malformed UUID from ga
   original.replace('12345678-1234-1234-1234-123456789abc/','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/'),
   original.replace('/mockRecord/','/otherItem/'),
   original.replace(/\/[^/]+\.jpg$/,'/------------------------------------.jpg'),
-  original+'?signed=unexpected',null
+  original+'?signed=unexpected',original+'\n',null
  ]){
   const t=setup(200,foreign);
   await assert.rejects(t.photoRequest(t.picture,'POST',blob),/保存先/);
   assert.equal(t.calls.length,1);
  }
+});
+
+test('disabled gateway: read and write are rejected before any HTTP or refresh',async()=>{
+ const t=setup(200,undefined,false);
+ await assert.rejects(t.photoRequest(t.picture,'GET'),/停止中/);
+ await assert.rejects(t.photoRequest(t.picture,'POST',{type:'image/jpeg',size:8}),/停止中/);
+ assert.equal(t.calls.length,0);
+});
+test('malformed path cannot reach HTTP',async()=>{
+ const t=setup();
+ await assert.rejects(t.photoRequest(t.picture+'\n','GET'),/保存先/);
+ assert.equal(t.calls.length,0);
 });

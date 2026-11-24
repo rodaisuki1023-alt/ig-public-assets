@@ -6,11 +6,15 @@
 // Supabase behaviour (email delivery, token format, rate limits) is NOT verified by this emulator.
 const http = require('node:http');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const gatewayModule=import('../../supabase/functions/_shared/photo-gateway-handler.mjs');
+const photoProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposals/atokore-photo-gateway-v50.sql'),'utf8');
 const { createDb, call, asRole } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
 let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory, photos;
-async function reset() { db = await createDb(); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map(); }
+async function reset() { db = await createDb(); await db.exec(photoProposal); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map(); }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
@@ -53,17 +57,25 @@ http.createServer(async (req, res) => {
       res.writeHead(302, { Location: redirect.href, 'Cache-Control': 'no-store' }); res.end(); return;
     }
     if (req.headers.apikey !== 'emu-anon-key') return send(res, 401, { message: 'Invalid API key' });
-    if(binary){
-      const uid=tokens.get(String(req.headers.authorization||'').replace(/^Bearer /,''));if(!uid)return send(res,401,{message:'not_authenticated'});
-      const name=decodeURIComponent(url.pathname.replace(/^\/storage\/v1\/object\/(authenticated\/)?atokore-product-photos\//,''));
-      if(!/^[0-9a-f-]{36}\/[A-Za-z0-9_-]{8,64}\/[0-9a-f-]{36}\.jpg$/.test(name))return send(res,400,{message:'invalid path'});
-      if(req.method==='POST'){
-        if(req.headers['content-type']!=='image/jpeg'||body.length>81920)return send(res,400,{message:'invalid JPEG'});
-        await asRole(db,uid,"insert into storage.objects(bucket_id,name) values('atokore-product-photos','"+name+"')");photos.set(name,body);return send(res,200,{Key:name});
-      }
-      const rows=await asRole(db,uid,"select name from storage.objects where bucket_id='atokore-product-photos' and name='"+name+"'");
-      if(!rows.length||!photos.has(name))return send(res,404,{message:'not found'});
-      res.writeHead(200,{'Content-Type':'image/jpeg','Access-Control-Allow-Origin':'*'});res.end(photos.get(name));return;
+    // Local-only mock of the POST gateway; not the general production implementation.
+    if(binary)return send(res,403,{error:'denied'});
+    if(url.pathname==='/functions/v1/atokore-photo-gateway'&&req.method==='POST'){
+      const {createPhotoGatewayHandler}=await gatewayModule;
+      const handle=createPhotoGatewayHandler({
+        verifySession:async token=>{const id=tokens.get(token);return id?{id}:null},
+        checkCurrentAccess:async({userId,path,operation})=>{
+          // The handler validated the exact path and operation before this call.
+          const rows=await asRole(db,userId,"select public.hh_photo_access('"+path+"','"+operation+"') as ok");
+          return rows[0]?.ok===true;
+        },
+        readObject:async name=>{if(!photos.has(name))throw Error('not found');return Uint8Array.from(photos.get(name))},
+        writeObject:async(name,bytes)=>{if(photos.has(name))throw Error('exists');photos.set(name,Uint8Array.from(bytes))},
+        removeObject:async name=>{photos.delete(name)},
+        newFileId:()=>crypto.randomUUID()
+      });
+      const result=await handle({...body,accessToken:String(req.headers.authorization||'').replace(/^Bearer /,'')});
+      if(result.bytes){res.writeHead(result.status,{'Content-Type':'image/jpeg','Cache-Control':'private, no-store, max-age=0','Access-Control-Allow-Origin':'*'});res.end(result.bytes);return}
+      return send(res,result.status,{...(result.path?{path:result.path}:{}),...(result.deleted?{deleted:true}:{}),...(result.error?{error:result.error}:{})});
     }
     if (url.pathname === '/auth/v1/signup') {
       if(body.email||body.password)return send(res,400,{message:'Only guest signup is simulated'});

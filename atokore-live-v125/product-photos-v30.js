@@ -69,7 +69,7 @@ function scopeKey(){const hh=root.AtokoreHousehold;return hh?.homeState?.().join
 function resetShared(){sharedEpoch++;for(const url of sharedCache.values())if(url)root.URL.revokeObjectURL(url);sharedCache.clear();sharedPending.clear()}
 async function loadFor(item){
  const hh=root.AtokoreHousehold,scope=hh?.photoScope?.(item.id);
- if(!scope||!item.photoPath)return load(key(item));
+ if(!scope||!item.photoPath||hh?.photoSharingEnabled?.()===false)return load(key(item));
  const sk=scope.household+':'+scope.user+':'+item.photoPath;
  if(sharedCache.has(sk))return sharedCache.get(sk);
  if(sharedPending.has(sk))return sharedPending.get(sk);
@@ -165,7 +165,7 @@ function openEditor(id){
  const save=element('button','atk-photo-save','この写真にする');save.type='button';save.disabled=true;
  const reset=element('button','atk-photo-reset','元のアイコンに戻す');reset.type='button';reset.hidden=true;
  const joined=!!root.AtokoreHousehold?.homeState?.().joined;
- const note=element('p','atk-photo-note',joined?'写真は家族と自動で共有され、バックアップにも含まれます。参加者を外すと新しい取得は拒否されますが、以前に見たり保存した写真・バックアップのコピーは回収できません。':'写真はこの端末とバックアップに保存されます。家族共有を始めると写真も自動共有され、相手が取得・保存したコピーは後から回収できません。');
+ const note=element('p','atk-photo-note',root.AtokoreHousehold?.photoSharingEnabled?.()===false?'写真の家族共有は現在停止中です。端末内の写真は保存・バックアップできます。':joined?'写真は家族と自動で共有され、バックアップにも含まれます。参加者を外すと新しい取得は拒否されますが、以前に見たり保存した写真・バックアップのコピーは回収できません。':'写真はこの端末とバックアップに保存されます。家族共有を始めると写真も自動共有され、相手が取得・保存したコピーは後から回収できません。');
  panel.append(close,title,name,preview,pick,file,status,save,reset,note);sheet.append(panel);
  const shared=!!(item.photoPath&&root.AtokoreHousehold?.photoScope?.(id));
  const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item),clearSharedPreview(){
@@ -202,7 +202,7 @@ function openEditor(id){
    await transaction('readwrite',store=>record?store.put(record,session.key):store.delete(session.key));
    cacheBlob(session.key,remove?null:session.blob);
    resetShared();
-   if(sharing&&record){
+   if(sharing&&record&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
     const sent=await sendOne(current,record).catch(()=>false);
     if(!sent)root.notifyAtokoreV125H?.('写真は端末に保存しました。家族への共有は、つながったときに自動で送ります。');
    }
@@ -222,17 +222,21 @@ async function allRecords(){
 }
 // Sends one local photo change to the family. True when the family has it.
 async function sendOne(item,record){
- const hh=root.AtokoreHousehold;if(!hh?.homeState?.().joined)return false;
+ const hh=root.AtokoreHousehold;if(!hh?.homeState?.().joined||hh.photoSharingEnabled?.()!==true)return false;
  const k=key(item);
  const blob=record.removed?null:recordBlob(record);if(!record.removed&&!blob)return false;
  // Throws when the upload or the record could not be made; once it returns, the photo's place is
  // recorded in the product and reaches the family with the next sync.
- await hh.sharePhoto(item.id,blob);
- const latest=await readRecord(k);
- // Only clear the marker if the photo was not changed again meanwhile.
- if(latest&&(latest.removed===record.removed)&&(record.removed||latest.bytes?.length===record.bytes?.length)){
-  await transaction('readwrite',store=>latest.removed?store.delete(k):store.put({bytes:latest.bytes,pending:false},k));
- }
+ const sent=await hh.sharePhoto(item.id,blob);
+ if(sent?.shared!==true)return false;
+ // Compare the exact bytes inside the write transaction, not just their length.
+ await transaction('readwrite',store=>{const req=store.get(k);req.onsuccess=()=>{
+  const latest=req.result;
+  if(latest&&latest.removed===record.removed&&(record.removed||
+    (latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i])))){
+   if(latest.removed)store.delete(k);else store.put({bytes:latest.bytes,pending:false},k);
+  }
+ }});
  resetShared();decorate();detailPhoto();
  return true;
 }
@@ -246,7 +250,7 @@ function needsSending(item,record){
 let sharing=null;
 async function shareWaiting(){
  const hh=root.AtokoreHousehold,s=hh?.homeState?.();
- if(!s?.joined||s.state!=='synced'||sharing)return sharing;
+ if(!s?.joined||s.state!=='synced'||sharing||hh.photoSharingEnabled?.()!==true)return sharing;
  sharing=(async()=>{
   let list=[];try{list=items.slice()}catch(_){}
   const byKey=new Map(list.map(x=>[key(x),x]));
@@ -271,7 +275,7 @@ async function exportPhotos(list){
  for(const item of list){
   let bytes=null;
   try{const r=await readRecord(key(item));if(r&&!r.removed&&recordBlob(r))bytes=r.bytes}catch(_){}
-  if(!bytes&&item.photoPath&&root.AtokoreHousehold?.homeState?.().joined){
+  if(!bytes&&item.photoPath&&root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
    try{const blob=await root.AtokoreHousehold.fetchPhoto(item.id,item.photoPath);if(blob&&validBlob(blob))bytes=new Uint8Array(await blob.arrayBuffer())}catch(_){missing++;continue}
   }
   if(bytes)photos.push({id:String(item.id),name:String(item.name||''),unit:String(item.unit||'個'),jpeg:toBase64(bytes)});

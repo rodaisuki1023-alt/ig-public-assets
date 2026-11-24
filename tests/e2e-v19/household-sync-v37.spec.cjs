@@ -5,7 +5,7 @@ const { test, expect } = require('@playwright/test');
 const { open, go, stored, baseState, KEY, shot, appConfirm } = require('./helpers.cjs');
 
 const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
-const CONFIG = { url: EMU, anonKey: 'emu-anon-key' };
+const CONFIG = { url: EMU, anonKey: 'emu-anon-key', photoGatewayEnabled:true };
 const diaper = 'パンパース さらさらケア おむつ テープ M';
 
 async function person(browser, info, state, { config = CONFIG } = {}) {
