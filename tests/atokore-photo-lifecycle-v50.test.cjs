@@ -54,7 +54,7 @@ test('lifecycle: stale revision and removed member cannot attach a photo',async(
  try{
   const {file}=await prepare();
   await assert.rejects(b('photo_attach_v50',h,R,file),/photo_denied/);
-  assert.equal((await push(B,{type:'delta',delta:1})).results[0].status,'applied');
+  assert.equal((await push(B,{type:'add',delta:1})).results[0].status,'applied');
   await assert.rejects(a('photo_attach_v50',h,R,file),/photo_stale_reference/);
   assert.equal((await row()).photo,null);assert.equal(await state(file),'uploaded');
   const bid=(await b('photo_reserve_v50',h,R,op(),null).catch(e=>{assert.match(e.message,/photo_pending_item/);return null}));
