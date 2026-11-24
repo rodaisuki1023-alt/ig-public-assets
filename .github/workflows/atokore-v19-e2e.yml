@@ -16,6 +16,23 @@ permissions:
   contents: read
 
 jobs:
+  photo-focused-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+      options: --shm-size=1gb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
+      - name: Focused photo sharing regression in both browsers
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs w2-backup-share.spec.cjs --grep 'photos are shared automatically' --repeat-each=2
   photo-edge-dependency-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 8

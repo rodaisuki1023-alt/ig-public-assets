@@ -226,6 +226,16 @@ test('sharing: restore is refused with guidance, the status matches on home and 
       try{const blob=await AtokoreHousehold.fetchPhoto(id,path);return {ok:!!blob,type:blob?.type||null,bytes:blob?.size||0}}
       catch(e){return {ok:false,error:String(e.message||e)}}
     },{id:eggB.id,path:serverPath});
+    if(!received.ok){
+      const scope=await b.page.evaluate(id=>AtokoreHousehold.photoScope(id),eggB.id);
+      const events=await (await request.get(EMU+'/__test/photo-events')).json();
+      console.log('PHOTO_QA_RECEIVE',JSON.stringify({
+        // Synthetic local fixture only. No user/token/image bytes in logs.
+        scopeMatches:!!scope&&serverPath.startsWith(scope.household+'/'+scope.sid+'/'),
+        enabled:await b.page.evaluate(()=>AtokoreHousehold.photoSharingEnabled()),
+        received,events
+      }));
+    }
     expect(received).toMatchObject({ok:true,type:'image/jpeg'});
     expect(received.bytes).toBeGreaterThan(0);
     const receivedImage=receivedRow.locator('.atk-user-photo');

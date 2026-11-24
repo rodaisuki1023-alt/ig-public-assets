@@ -14,7 +14,8 @@ const { createDb, call, asRole } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
 let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory, photos;
-async function reset() { db = await createDb(); await db.exec(photoProposal); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map(); }
+let photoEvents=[];
+async function reset() { db = await createDb(); await db.exec(photoProposal); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map();photoEvents=[]; }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
@@ -34,6 +35,7 @@ http.createServer(async (req, res) => {
   const body = req.method === 'POST' ? (binary?await new Promise(resolve=>{const parts=[];req.on('data',c=>parts.push(c));req.on('end',()=>resolve(Buffer.concat(parts)))}):await readBody(req)) : {};
   if (body === null) return send(res, 400, { code: 'PGRST102', message: 'invalid JSON' });
   try {
+    if (url.pathname === '/__test/photo-events') return send(res,200,photoEvents.slice(-100));
     if (url.pathname === '/__test/health') return send(res, db ? 200 : 503, { ok: !!db });
     if (url.pathname === '/__test/reset') { await reset(); return send(res, 200, { ok: true }); }
     if (url.pathname === '/__test/history-failure') { failHistory=body.enabled===true;return send(res,200,{enabled:failHistory}); }
@@ -74,6 +76,9 @@ http.createServer(async (req, res) => {
         newFileId:()=>crypto.randomUUID()
       });
       const result=await handle({...body,accessToken:String(req.headers.authorization||'').replace(/^Bearer /,'')});
+      photoEvents.push({operation:body.operation,status:result.status,error:result.error||null,
+        path:result.path||body.path||null,recordId:body.recordId||null});
+      if(photoEvents.length>200)photoEvents.shift();
       if(result.bytes){res.writeHead(result.status,{'Content-Type':'image/jpeg','Cache-Control':'private, no-store, max-age=0','Access-Control-Allow-Origin':'*'});res.end(result.bytes);return}
       return send(res,result.status,{...(result.path?{path:result.path}:{}),...(result.deleted?{deleted:true}:{}),...(result.error?{error:result.error}:{})});
     }
