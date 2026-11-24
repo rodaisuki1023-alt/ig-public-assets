@@ -58,3 +58,16 @@ test('managed pending photos never cross household/user scope',()=>{
  assert.equal(api.canSendManagedPhoto(pending,b),false);
  assert.equal(api.canSendManagedPhoto(pending,c),false);
 });
+
+test('photo queue rescans a local edit arriving during a transfer without sync-event spinning',async()=>{
+ const {createPhotoQueue}=require('../atokore-live-v125/product-photos-v30.js');
+ let scans=0,release,allowed=true;
+ const first=new Promise(resolve=>{release=resolve});
+ const run=createPhotoQueue(async()=>{if(++scans===1)await first},()=>allowed);
+ const task=run();await Promise.resolve();assert.equal(scans,1);
+ run();run(true);run();release();await task;
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(scans,2);
+ allowed=false;assert.equal(run(true),null);allowed=true;await run();
+ assert.equal(scans,3);
+});

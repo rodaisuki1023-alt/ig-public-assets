@@ -172,21 +172,32 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     await expect(b.page.locator(`#stockList [data-stock-id="${(await findDiaper(b.page)).id}"] .atk-user-photo`)).toBeVisible();
 
     // A photo set while sharing is shared at once.
-    // Hold the actual gateway request: local save must finish BEFORE remote upload.
-    let release,observed=false;
-    const gate=new Promise(resolve=>{release=resolve});
-    const matcher='**/functions/v1/atokore-photo-gateway';
-    const intercept=async route=>{
-      const payload=route.request().postDataJSON();
-      if(payload?.operation==='write'){observed=true;await gate}
-      await route.continue();
-    };
-    await a.page.route(matcher,intercept);
+    // Delay the app's fetch BEFORE the real request reaches the emulator.
+    // This works without Playwright route interception or service-worker races.
+    await a.page.evaluate(()=>{
+      const original=window.fetch,gate={observed:0};
+      let release;const wait=new Promise(resolve=>{release=resolve});
+      gate.release=()=>{window.fetch=original;release()};
+      window.__photoWriteGate=gate;
+      window.fetch=async function(input,init){
+        const url=typeof input==='string'?input:input?.url||String(input);
+        let body;try{body=JSON.parse(init?.body||'{}')}catch{}
+        if(url.endsWith('/functions/v1/atokore-photo-gateway')&&body?.operation==='write'){
+          gate.observed++;await wait;
+        }
+        return original.call(this,input,init);
+      };
+    });
     try{
       await setPhoto(a.page, 3, 40);
-      await expect.poll(()=>observed,{timeout:20000}).toBe(true);
+      // Local image is visible and saved, even while the request is delayed.
       expect((await stored(a.page)).items.find(x=>x.id===3).photoPath??null).toBeNull();
-    }finally{release();await a.page.unroute(matcher,intercept)}
+      await expect.poll(async()=>{
+        const seen=await a.page.evaluate(()=>window.__photoWriteGate.observed);
+        if(!seen)await a.page.evaluate(()=>{void AtokoreHousehold.syncNow();});
+        return seen>0;
+      },{timeout:20000}).toBe(true);
+    }finally{await a.page.evaluate(()=>window.__photoWriteGate?.release())}
     await expect.poll(async () => { await a.page.evaluate(() => AtokoreHousehold.syncNow()); return !!(await stored(a.page)).items.find(x => x.id === 3).photoPath; }, { timeout: 20000 }).toBe(true);
     await b.page.evaluate(() => AtokoreHousehold.syncNow());
     const eggB = (await stored(b.page)).items.find(x => x.name === '卵');

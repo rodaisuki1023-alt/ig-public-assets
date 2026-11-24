@@ -212,7 +212,7 @@ function openEditor(id){
    dispose();root.renderHome?.();root.renderStock?.();root.atkShowDetail?.(id);
    if(sharing&&record&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
     root.notifyAtokoreV125H?.('写真は端末に保存しました。家族への共有は同期時に行います。');
-    void shareWaiting().catch(()=>{});
+    void shareWaiting(true).catch(()=>{});
    }
   }catch(error){message('端末に保存できた写真は残っています。'+error.message);busy(false)}
  }
@@ -275,22 +275,36 @@ function needsSending(item,record){
  if(record.pending===true)return true;
  return record.pending===undefined&&!record.removed&&!item.photoPath;
 }
-let sharing=null;
-async function shareWaiting(){
- const hh=root.AtokoreHousehold,s=hh?.homeState?.();
- if(!s?.joined||s.state!=='synced'||sharing||hh.photoSharingEnabled?.()!==true)return sharing;
- sharing=(async()=>{
-  let list=[];try{list=items.slice()}catch(_){}
-  const byKey=new Map(list.map(x=>[key(x),x]));
-  for(const [k,record] of await allRecords()){
-   const item=byKey.get(k);
-   if(!needsSending(item,record))continue;
-   if(hh.photoGeneralEnabled?.()===true&&!canSendManagedPhoto(record,hh.receiptScope?.()))continue;
-   if(!await sendOne(item,record).catch(()=>false))break; // try again on the next update
-  }
- })().finally(()=>{sharing=null});
- return sharing;
+// A local edit while an existing scan is running requests exactly one rescan.
+// Sync paint events never request a rescan: they occur inside sendOne and
+// would otherwise create a busy loop after an unavailable network response.
+function createPhotoQueue(scan,canRun){
+ let running=null,requested=false;
+ return function run(localEdit=false){
+  if(localEdit)requested=true;
+  if(running||!canRun())return running;
+  requested=false;
+  running=Promise.resolve().then(scan).finally(()=>{
+   running=null;
+   if(requested&&canRun())void run().catch(()=>{});
+  });
+  return running;
+ };
 }
+const shareWaiting=createPhotoQueue(async()=>{
+ const hh=root.AtokoreHousehold;
+ let list=[];try{list=items.slice()}catch(_){}
+ const byKey=new Map(list.map(x=>[key(x),x]));
+ for(const [k,record] of await allRecords()){
+  const item=byKey.get(k);
+  if(!needsSending(item,record))continue;
+  if(hh.photoGeneralEnabled?.()===true&&!canSendManagedPhoto(record,hh.receiptScope?.()))continue;
+  if(!await sendOne(item,record).catch(()=>false))break;
+ }
+},()=>{
+ const hh=root.AtokoreHousehold,s=hh?.homeState?.();
+ return s?.joined&&s.state==='synced'&&hh.photoSharingEnabled?.()===true;
+});
 // ---------------------------------------------------------------- backup
 function toBase64(bytes){let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return root.btoa(s)}
 function fromBase64(text){
@@ -398,7 +412,7 @@ function install(){
  root.addEventListener('pagehide',()=>{dispose();resetShared();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
 }
-const api=Object.freeze({key,fileKind,validBlob,canSendManagedPhoto,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
+const api=Object.freeze({key,fileKind,validBlob,canSendManagedPhoto,createPhotoQueue,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreProductPhotos=api;
 if(doc)install();

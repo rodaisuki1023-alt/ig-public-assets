@@ -128,5 +128,23 @@ async function main(){
  await pool.query('delete from auth.sessions where id=$1',[SA]);
  await assert.rejects(svc(A,SA,'read',{file}),e=>e.code==='42501');
  console.log('PASS actual PostgreSQL duplicate begin, attached-only read, cross-household denial, queued revocation, stale CAS and session removal');
+ // At the organization-wide photo admission boundary, simultaneous requests
+ // from separate connections must not both consume the last slot.
+ await pool.query(fs.readFileSync(path.resolve(__dirname,'../../supabase/proposals/atokore-photo-budget-v50.sql'),'utf8'));
+ await pool.query('insert into auth.sessions values($1,$2,null)',[SA,A]);
+ const month=(await pool.query("select date_trunc('month',clock_timestamp() AT TIME ZONE 'UTC')::date m")).rows[0].m;
+ await pool.query("insert into atokore_private.photo_budget_v50(scope,scope_id,period,requests,reserved_bytes) values('global_month','00000000-0000-0000-0000-000000000000',$1,3999,1048313856)",[month]);
+ const budget=async()=>{
+  const c=await pool.connect();try{
+   await c.query('begin');await c.query('set local role service_role');
+   const q=await c.query("select public.hh_photo_budget_service_v50($1,$2,$3,'read') ok",[A,SA,hh]);
+   await c.query('commit');return q.rows[0].ok;
+  }catch(e){await c.query('rollback');throw e}finally{c.release()}
+ };
+ const result=await Promise.all([budget(),budget()]);
+ assert.equal(result.filter(Boolean).length,1);
+ const cap=(await pool.query("select requests,reserved_bytes from atokore_private.photo_budget_v50 where scope='global_month'")).rows[0];
+ assert.equal(cap.requests,4000);assert.equal(Number(cap.reserved_bytes),1048576000);
+ console.log('PASS actual PostgreSQL concurrent traffic budget boundary');
 }
 main().then(()=>pool.end(),async e=>{console.error(e.message);await pool.end();process.exitCode=1});
