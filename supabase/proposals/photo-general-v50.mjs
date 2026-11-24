@@ -67,7 +67,7 @@ export function makeJpegNormalizer(codec){
  }
 }
 const mapError=e=>e?.code==='42501'?bad(403,'denied'):['23505','40001','55000'].includes(e?.code)?bad(409,'conflict'):bad(503,'unavailable');
-export function createGeneralPhotoHandler({verify,db,storage,normalize}){
+export function createGeneralPhotoHandler({verify,db,storage,normalize,admit=null}){
  if([verify,db,normalize,storage?.download,storage?.upload].some(f=>typeof f!=='function'))throw Error('missing trusted adapter');
  return async function handle(input,token){
   if(!input||typeof input!=='object'||Array.isArray(input)||typeof token!=='string'||!token)return bad(401,'auth');
@@ -76,6 +76,10 @@ export function createGeneralPhotoHandler({verify,db,storage,normalize}){
   try{
    const user=await verify(token);
    if(!id(user?.uid)||!id(user?.session))return bad(401,'auth');
+   // The deployed adapter MUST supply admit; null is only for isolated fixtures.
+   const target=op==='write'?input.householdId:parsePath(input.path)?.household;
+   if(!id(target))return bad(400,'path');
+   if(admit!==null&&await admit(user,target,op)!==true)return bad(429,'budget_or_access');
    const run=(action,fields)=>db(user,action,fields);
    if(op==='read'||op==='delete'){
     const p=parsePath(input.path);if(!p)return bad(400,'path');

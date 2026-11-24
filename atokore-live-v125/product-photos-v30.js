@@ -201,11 +201,13 @@ function openEditor(id){
    await transaction('readwrite',store=>record?store.put(record,session.key):store.delete(session.key));
    cacheBlob(session.key,remove?null:session.blob);
    resetShared();
-   if(sharing&&record&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
-    const sent=await sendOne(current,record).catch(()=>false);
-    if(!sent)root.notifyAtokoreV125H?.('写真は端末に保存しました。家族への共有は、つながったときに自動で送ります。');
-   }
+   // Local commit is complete. Do not hold the editor open for network sync.
+   // A single queue owns automatic sends (including writes made in the editor).
    dispose();root.renderHome?.();root.renderStock?.();root.atkShowDetail?.(id);
+   if(sharing&&record&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
+    root.notifyAtokoreV125H?.('写真は端末に保存しました。家族への共有は同期時に行います。');
+    void shareWaiting().catch(()=>{});
+   }
   }catch(error){message('端末に保存できた写真は残っています。'+error.message);busy(false)}
  }
  save.addEventListener('click',()=>commit(false));reset.addEventListener('click',()=>commit(true));

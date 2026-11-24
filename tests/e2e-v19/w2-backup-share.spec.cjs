@@ -172,7 +172,21 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     await expect(b.page.locator(`#stockList [data-stock-id="${(await findDiaper(b.page)).id}"] .atk-user-photo`)).toBeVisible();
 
     // A photo set while sharing is shared at once.
-    await setPhoto(a.page, 3, 40);
+    // Hold the actual gateway request: local save must finish BEFORE remote upload.
+    let release,observed=false;
+    const gate=new Promise(resolve=>{release=resolve});
+    const matcher='**/functions/v1/atokore-photo-gateway';
+    const intercept=async route=>{
+      const payload=route.request().postDataJSON();
+      if(payload?.operation==='write'){observed=true;await gate}
+      await route.continue();
+    };
+    await a.page.route(matcher,intercept);
+    try{
+      await setPhoto(a.page, 3, 40);
+      await expect.poll(()=>observed,{timeout:20000}).toBe(true);
+      expect((await stored(a.page)).items.find(x=>x.id===3).photoPath??null).toBeNull();
+    }finally{release();await a.page.unroute(matcher,intercept)}
     await expect.poll(async () => { await a.page.evaluate(() => AtokoreHousehold.syncNow()); return !!(await stored(a.page)).items.find(x => x.id === 3).photoPath; }, { timeout: 20000 }).toBe(true);
     await b.page.evaluate(() => AtokoreHousehold.syncNow());
     const eggB = (await stored(b.page)).items.find(x => x.name === '卵');

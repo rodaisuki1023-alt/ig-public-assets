@@ -46,6 +46,11 @@ const secure=withSupabase({auth:'user'},async(req,ctx)=>{
    if(error||!data?.user||ctx.jwtClaims?.sub!==data.user.id)return null
    return {uid:data.user.id,session:ctx.jwtClaims.session_id}
   },
+  admit:async(user:{uid:string,session:string},household:string,operation:string)=>{
+   const {data,error}=await ctx.supabaseAdmin.rpc('hh_photo_budget_service_v50',{p_uid:user.uid,p_session:user.session,p_household:household,p_operation:operation})
+   if(error)throw Error('budget unavailable')
+   return data===true
+  },
   db:async(user:{uid:string,session:string},action:string,fields:Record<string,unknown>)=>{
    const {data,error}=await ctx.supabaseAdmin.rpc('hh_photo_service_v50',{p_uid:user.uid,p_session:user.session,p_action:action,...fields})
    if(error)throw Object.assign(Error('photo service'),{code:error.code})
