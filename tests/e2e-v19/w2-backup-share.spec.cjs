@@ -148,6 +148,8 @@ test('sharing: restore is refused with guidance, the status matches on home and 
   await request.post(EMU + '/__test/reset');
   async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 } }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
   const a = await device(baseState()), b = await device({ items: [], buys: [], routines: [] });
+  const navigation=[];
+  for(const [deviceId,device] of [['sender',a],['receiver',b]])device.page.on('framenavigated',frame=>{if(frame===device.page.mainFrame()){const url=new URL(frame.url());navigation.push({device:deviceId,path:url.pathname,at:Date.now()})}});
   try {
     // Before sharing: single use.
     await expect(a.page.locator('#atkHomeLastSync')).toHaveText('この端末だけで利用中');
@@ -203,7 +205,7 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     // device's exact reference, before checking the actual rendered image.
     let serverPath;
     await expect.poll(async()=>{
-      await a.page.evaluate(()=>AtokoreHousehold.syncNow());
+      try{await a.page.evaluate(()=>AtokoreHousehold.syncNow())}catch(error){console.log('PHOTO_QA_NAVIGATION',JSON.stringify({navigation}));throw error}
       const res=await request.post(EMU+'/__test/sql',{data:{sql:"SELECT fields->>'photoPath' AS path FROM atokore_private.records WHERE kind='item' AND NOT deleted AND fields->>'name'='卵'"}});
       expect(res.ok()).toBe(true);
       const rows=await res.json();

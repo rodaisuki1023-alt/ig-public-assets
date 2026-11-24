@@ -9,6 +9,7 @@ on:
       - 'scripts/atokore/**'
       - 'supabase/**'
       - 'tests/**'
+      - 'proposals/**'
       - '.github/workflows/atokore-v19-e2e.yml'
   workflow_dispatch:
 
@@ -16,6 +17,15 @@ permissions:
   contents: read
 
 jobs:
+  family-prep-proposal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/atokore-family-prep-v51.test.cjs
   photo-focused-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 8
