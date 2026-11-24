@@ -1,6 +1,7 @@
 /**
- * Trial-only prototype: DO NOT DEPLOY without approved SQL proposal, explicit
- * allowed Origins, secret-key review, old-photo migration and HTTP revocation QA.
+ * v2 draft: disabled by default; only explicitly approved synthetic identities
+ * can access the fixed QA object. Deploy only with approved matching session RPC.
+ * Not a production transport; do not enable normal client photo sharing.
  *
  * Browser -> POST Edge Function -> live user/Auth + membership RPC -> service
  * Storage in an RLS-denied private bucket. No Storage object URL is disclosed.
@@ -10,6 +11,7 @@
  */
 import { withSupabase } from 'npm:@supabase/server@1.9.2'
 import { createPhotoGatewayHandler } from '../_shared/photo-gateway-handler.mjs'
+import { trialConfig, approvedTrialUser, approvedTrialRequest, QA_FILE } from '../_shared/photo-gateway-trial-guard.mjs'
 
 const BUCKET='atokore-private-photos-v2'
 const MAX_REQUEST_BYTES=125000
@@ -71,18 +73,23 @@ const secureHandler=withSupabase({auth:'user'},async (req,ctx)=>{
  const cors=originHeaders(req)
  if(!cors)return failed(403,'origin',{})
  if(req.method!=='POST')return failed(405,'method',cors)
- const bearer=/^Bearer (.+)$/.exec(req.headers.get('authorization')||'')
+ const bearer=/^Bearer ([A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+)$/.exec(req.headers.get('authorization')||'')
  if(!bearer)return failed(401,'auth',cors)
+ let qa
+ try{qa=trialConfig(Deno.env.get('ATOKORE_PHOTO_QA_ENABLED'),Deno.env.get('ATOKORE_PHOTO_QA_USERS'))}catch{return failed(503,'qa_disabled',cors)}
+ if(!qa)return failed(503,'qa_disabled',cors)
  let input
  try{input=await safeJson(req)}catch{return failed(400,'invalid_request',cors)}
- if(typeof input.operation!=='string')return failed(400,'operation',cors)
+ if(!approvedTrialRequest(input))return failed(403,'denied',cors)
 
  const handler=createPhotoGatewayHandler({
   verifySession:async(token)=>{
     const {data,error}=await ctx.supabase.auth.getUser(token)
     if(error||!data?.user)return null
-    if(ctx.userClaims?.sub && ctx.userClaims.sub!==data.user.id)return null
-    return {id:data.user.id}
+    const allowed=approvedTrialUser(qa,data.user,ctx.jwtClaims)
+    if(!allowed)return null
+    if(input.operation!=='read'&&allowed.role!=='a')return null
+    return {id:allowed.id}
   },
   checkCurrentAccess:async({path,operation})=>{
     // Public boolean RPC binds auth.uid() to the JWT in ctx.supabase.
@@ -108,7 +115,7 @@ const secureHandler=withSupabase({auth:'user'},async (req,ctx)=>{
     const {error}=await ctx.supabaseAdmin.storage.from(BUCKET).remove([path])
     if(error)throw Error('storage_unavailable')
   },
-  newFileId:()=>crypto.randomUUID()
+  newFileId:()=>QA_FILE
  })
  const result=await handler({
   operation:input.operation,
@@ -137,6 +144,6 @@ export default {
    const cors=originHeaders(req)
    if(!cors)return failed(403,'origin',{})
    if(req.method==='OPTIONS')return new Response(null,{status:204,headers:{...NO_STORE,...cors}})
-   return secureHandler(req)
+   return Promise.resolve(secureHandler(req)).catch(()=>failed(503,'unavailable',cors))
  }
 }
