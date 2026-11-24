@@ -4,9 +4,9 @@ const {randomUUID}=require('node:crypto'),{createDb,call}=require('./household/p
 test('scoped general trial defaults closed, leaves existing records untouched, and denies outsiders',async()=>{
  const db=await createDb(),A=randomUUID(),B=randomUUID(),C=randomUUID(),D=randomUUID(),SA=randomUUID(),SB=randomUUID(),SC=randomUUID(),SD=randomUUID();
  try{
-  await db.exec('CREATE TABLE auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);CREATE TABLE auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz)');
+  await db.exec('CREATE TABLE auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,is_anonymous boolean NOT NULL DEFAULT false);CREATE TABLE auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz)');
   for(const [uid,sid,email] of [[A,SA,'atokore-gqa-a-20261124@example.invalid'],[B,SB,'atokore-gqa-b-20261124@example.invalid'],[C,SC,'atokore-gqa-c-20261124@example.invalid'],[D,SD,'existing@example.invalid']]){
-   await db.query('INSERT INTO auth.users VALUES($1,$2,now())',[uid,email]);
+   await db.query('INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1,$2,now())',[uid,email]);
    await db.query('INSERT INTO auth.sessions VALUES($1,$2,NULL)',[sid,uid]);
   }
   const H=(await call(db,A,'hh_create',{p_name:'ATK-GQA-20261124-A',p_display_name:'A'})).household.id;
@@ -38,7 +38,12 @@ test('scoped general trial defaults closed, leaves existing records untouched, a
   await assert.rejects(svc(D,SD,'reserve',HD,R2,args),/photo_trial_denied/);
   await assert.rejects(svc(A,SA,'reserve',H,R2,args),/photo_trial_denied/);
   await assert.rejects(svc(C,SC,'reserve',H,R,args),/photo_denied/);
-  assert.equal((await svc(A,SA,'reserve',H,R,args)).state,'reserved');
+  await db.query('UPDATE auth.users SET is_anonymous=true WHERE id=$1',[A]);
+  assert.equal(await budget(A,SA,H),false);
+  await assert.rejects(svc(A,SA,'reserve',H,R,args),/photo_trial_denied/);
+  await db.query('UPDATE auth.users SET is_anonymous=false WHERE id=$1',[A]);
+  const reserved=await svc(A,SA,'reserve',H,R,args);
+  assert.equal(reserved.state,'reserved');
   // Existing unrelated product keeps its original legacy behavior and data.
   assert.equal((await push(D,R2,{type:'add',delta:1})).results[0].status,'applied');
   assert.equal((await db.query("SELECT fields->>'photoPath' p FROM atokore_private.records WHERE household_id=$1 AND id=$2",[HD,R2])).rows[0].p,legacy);
@@ -48,5 +53,16 @@ test('scoped general trial defaults closed, leaves existing records untouched, a
   await db.query('UPDATE atokore_private.photo_general_trial_scope_v50 SET enabled=false');
   await assert.rejects(svc(A,SA,'reserve',H,R,args),/photo_trial_denied/);
   assert.equal(await budget(A,SA,H),false);
+  const cleanup=(file,action)=>db.transaction(async tx=>{
+   await tx.exec('SET LOCAL ROLE service_role');
+   return (await tx.query("SELECT public.hh_photo_cleanup_service_v50($1,$2) r",[file,action])).rows[0].r;
+  });
+  await assert.rejects(cleanup(reserved.file_id,'inspect_expired'),/photo_trial_cleanup_denied/);
+  await db.query('UPDATE atokore_private.photo_general_trial_scope_v50 SET cleanup_enabled=true');
+  await assert.rejects(svc(A,SA,'reserve',H,R,args),/photo_trial_denied/);
+  assert.equal(await budget(A,SA,H),false);
+  await assert.rejects(cleanup(randomUUID(),'inspect_expired'),/photo_trial_cleanup_denied/);
+  assert.deepEqual(await cleanup(reserved.file_id,'inspect_expired'),{ok:false});
+  await assert.rejects(db.query('UPDATE atokore_private.photo_general_trial_scope_v50 SET enabled=true'),/check constraint/);
  }finally{await db.close()}
 });

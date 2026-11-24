@@ -22,7 +22,7 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
 AS $fn$
  SELECT EXISTS(
   SELECT 1 FROM atokore_private.photo_general_trial_scope_v50 q
-  JOIN auth.users u ON u.id=p_uid AND u.email_confirmed_at IS NOT NULL
+  JOIN auth.users u ON u.id=p_uid AND u.email_confirmed_at IS NOT NULL AND u.is_anonymous IS FALSE
   WHERE q.singleton AND (CASE WHEN p_cleanup THEN q.cleanup_enabled ELSE q.enabled END)
   AND ((u.id=q.a AND u.email='atokore-gqa-a-20261124@example.invalid')
     OR (u.id=q.b AND u.email='atokore-gqa-b-20261124@example.invalid')
@@ -35,7 +35,7 @@ AS $fn$
  SELECT EXISTS(
   SELECT 1 FROM atokore_private.photo_general_trial_scope_v50 q
   JOIN atokore_private.households h ON h.id=p_h
-  JOIN auth.users u ON u.id=h.created_by AND u.email_confirmed_at IS NOT NULL
+  JOIN auth.users u ON u.id=h.created_by AND u.email_confirmed_at IS NOT NULL AND u.is_anonymous IS FALSE
   WHERE q.singleton AND ((h.created_by=q.a AND h.name='ATK-GQA-20261124-A' AND u.email='atokore-gqa-a-20261124@example.invalid')
    OR (h.created_by=q.c AND h.name='ATK-GQA-20261124-C' AND u.email='atokore-gqa-c-20261124@example.invalid'))
  )
@@ -55,6 +55,9 @@ CREATE TRIGGER photo_trial_ref_update_v50 BEFORE UPDATE ON atokore_private.recor
  AND atokore_private.photo_trial_household_v50(OLD.household_id))
  EXECUTE FUNCTION atokore_private.photo_ref_guard_v50();
 
+-- The service role needs only the scoped SECURITY DEFINER wrappers, not direct table writes.
+REVOKE ALL ON atokore_private.photo_ledger_v50,atokore_private.photo_quota_lock_v50,atokore_private.photo_budget_v50 FROM service_role;
+
 -- Move unrestricted bridge functions out of the REST-exposed schema and
 -- remove service_role direct EXECUTE. Only scoped wrappers keep public names.
 ALTER FUNCTION public.hh_photo_service_v50(uuid,uuid,text,uuid,text,uuid,uuid,text,bigint,text,integer) SET SCHEMA atokore_private;
@@ -71,25 +74,32 @@ CREATE FUNCTION public.hh_photo_service_v50(
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
 BEGIN
- IF p_r IS DISTINCT FROM 'qa_general_20261124_item'
+ -- A switch-off waits for any currently admitted SQL operation to commit.
+ -- Subsequent calls see the new switch state. In-flight HTTP may still finish;
+ -- the Edge read path rechecks access after download before returning bytes.
+ PERFORM 1 FROM atokore_private.photo_general_trial_scope_v50 WHERE singleton AND enabled FOR SHARE;
+ IF NOT FOUND OR p_r IS DISTINCT FROM 'qa_general_20261124_item'
  OR NOT atokore_private.photo_trial_actor_v50(p_uid)
  OR NOT atokore_private.photo_trial_household_v50(p_h)
  THEN RAISE EXCEPTION 'photo_trial_denied' USING ERRCODE='42501'; END IF;
  RETURN atokore_private.hh_photo_service_v50(p_uid,p_session,p_action,p_h,p_r,p_file,p_operation,p_expected,p_seq,p_sha,p_bytes);
 END $fn$;
 CREATE FUNCTION public.hh_photo_budget_service_v50(p_uid uuid,p_session uuid,p_household uuid,p_operation text)
-RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path=''
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
- SELECT CASE WHEN atokore_private.photo_trial_actor_v50(p_uid) AND atokore_private.photo_trial_household_v50(p_household)
- THEN atokore_private.hh_photo_budget_service_v50(p_uid,p_session,p_household,p_operation) ELSE false END
-$fn$;
+BEGIN
+ PERFORM 1 FROM atokore_private.photo_general_trial_scope_v50 WHERE singleton AND enabled FOR SHARE;
+ IF NOT FOUND OR NOT atokore_private.photo_trial_actor_v50(p_uid) OR NOT atokore_private.photo_trial_household_v50(p_household)
+ THEN RETURN false; END IF;
+ RETURN atokore_private.hh_photo_budget_service_v50(p_uid,p_session,p_household,p_operation);
+END $fn$;
 CREATE FUNCTION public.hh_photo_cleanup_service_v50(p_file uuid,p_action text,p_sha text DEFAULT NULL,p_confirmed boolean DEFAULT false)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
 DECLARE v_row atokore_private.photo_ledger_v50%ROWTYPE;
 BEGIN
- IF NOT EXISTS(SELECT 1 FROM atokore_private.photo_general_trial_scope_v50 WHERE singleton AND cleanup_enabled AND NOT enabled)
- THEN RAISE EXCEPTION 'photo_trial_cleanup_denied' USING ERRCODE='42501'; END IF;
+ PERFORM 1 FROM atokore_private.photo_general_trial_scope_v50 WHERE singleton AND cleanup_enabled AND NOT enabled FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'photo_trial_cleanup_denied' USING ERRCODE='42501'; END IF;
  SELECT * INTO v_row FROM atokore_private.photo_ledger_v50 WHERE file_id=p_file;
  IF NOT FOUND OR v_row.record_id<>'qa_general_20261124_item'
  OR NOT atokore_private.photo_trial_actor_v50(v_row.actor,true)
