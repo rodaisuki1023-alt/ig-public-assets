@@ -24,22 +24,15 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.9.8
-      - name: Resolve, check and audit the proposed Edge module
+      - name: Verify frozen and audited Edge dependencies
         run: |
-          mkdir -p "$RUNNER_TEMP/atokore-edge-audit"
-          lock="$RUNNER_TEMP/atokore-edge-audit/deno.lock"
-          deno --version
-          deno cache --lock="$lock" --frozen=false supabase/proposals/photo-general-edge-v50.ts
+          lock="supabase/proposals/photo-general-v50.deno.lock"
           test -s "$lock"
+          deno --version
+          deno cache --lock="$lock" --frozen supabase/proposals/photo-general-edge-v50.ts
           deno check --lock="$lock" --frozen supabase/proposals/photo-general-edge-v50.ts
           deno audit --lock="$lock" --frozen
-      - name: Preserve resolved lock candidate for review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: atokore-photo-edge-lock-candidate
-          path: ${{ runner.temp }}/atokore-edge-audit/deno.lock
-          if-no-files-found: error
+          git diff --exit-code -- "$lock"
   postgres-concurrency:
     runs-on: ubuntu-latest
     timeout-minutes: 5
