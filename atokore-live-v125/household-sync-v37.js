@@ -155,13 +155,16 @@ async function photoRequest(path,method='GET',blob){
 // by product-photos in its existing IndexedDB record BEFORE network transfer.
 function photoUuid(x){return typeof x==='string'&&x.length===36&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(x)}
 function photoRevision(x){return Number.isSafeInteger(x)&&x>=0}
+// An earlier sync may already have finished its push/pull before the photo
+// operation committed. Wait for that flight, then start a fresh observation.
+async function syncPhotoFresh(){const active=syncing;if(active)await active;return syncNow()}
 function photoBase(scope){const row=engine?.meta()?.base?.['item:'+scope.sid];return row&&!row.deleted&&photoRevision(row.seq)?row:null}
 async function photoTransferPlan(id,blob,prior=null){
  if(!photoGeneralEnabled())throw Error('写真の家族共有は現在停止中です。');
  const scope=photoScope(id);if(!scope)throw Error('家族共有に参加してください。');
  if(blob&&(blob.type!=='image/jpeg'||blob.size<1||blob.size>81920))throw Error('写真の形式を確認してください。');
  const digest=blob?[...new Uint8Array(await root.crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))].map(b=>b.toString(16).padStart(2,'0')).join(''):null;
- await syncNow();
+ await syncPhotoFresh();
  if(status.state!=='synced'||!sameScope(scope,photoScope(id))||engine.status().pending)throw Error('共有先を確認できませんでした。端末内の写真は残っています。');
  const row=photoBase(scope);if(!row)throw Error('最新の商品情報を確認できませんでした。');
  const operation=blob?'write':'delete';
@@ -211,7 +214,7 @@ async function shareGeneralPhoto(id,blob,prior){
   }
  }
  // The server owns the reference. Never write a local photoPath or hh_push it.
- await syncNow();
+ await syncPhotoFresh();
  return {shared:status.state==='synced'&&sameScope(scope,photoScope(id))&&
   !!photoBase(scope)&&(photoBase(scope).fields?.photoPath??null)===path};
 }
@@ -229,7 +232,7 @@ async function sharePhoto(id,blob,transfer=null){
  if(!photoSharingEnabled())throw Error('写真の家族共有は現在停止中です。端末内の写真は残っています。');
  const scope=photoScope(id);if(!scope)throw Error('家族共有に参加してからお試しください。');
  if(blob&&(blob.type!=='image/jpeg'||blob.size>81920||blob.size===0))throw Error('写真の形式を確認できませんでした。');
- await syncNow();if(status.state!=='synced')throw Error('端末には保存済みです。写真の共有は通信が戻ってからお試しください。');
+ await syncPhotoFresh();if(status.state!=='synced'||engine.status().pending)throw Error('端末には保存済みです。写真の共有は通信が戻ってからお試しください。');
  const current=readState()?.items.find(x=>String(x.id)===String(id));if(!current||!sameScope(scope,photoScope(id)))throw Error('共有先が変わりました。商品を開き直してください。');
  const expected=JSON.stringify([current.name,current.unit,current.photoPath]);
  let path=blob?scope.household+'/'+scope.sid+'/'+root.crypto.randomUUID()+'.jpg':null;
@@ -238,8 +241,10 @@ async function sharePhoto(id,blob,transfer=null){
  if(!item||!sameScope(scope,photoScope(id))||JSON.stringify([item.name,item.unit,item.photoPath])!==expected)throw Error('共有先か商品が変わりました。写真の共有は反映していません。');
  item.photoPath=path;
  if(!writeState(next))throw Error('端末の空き容量を確認してください。写真の共有情報を保存できませんでした。');
- engine.flush();await syncNow();
+ engine.flush();await syncPhotoFresh();
+ const confirmed=photoBase(scope);
  return {shared:status.state==='synced'&&sameScope(scope,photoScope(id))&&
+   engine.status().pending===0&&!!confirmed&&(confirmed.fields?.photoPath??null)===path&&
    (readState()?.items.find(x=>String(x.id)===String(id))?.photoPath??null)===path};
 }
 async function refreshChanges(){

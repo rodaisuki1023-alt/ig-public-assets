@@ -145,3 +145,11 @@ test('v50: stale row render cannot overwrite a newer photo, a replaced badge or 
  element.isConnected=false;assert.equal(newer(),false);
  element.isConnected=true;resetShared();assert.equal(newer(),false);
 });
+
+test('trial photo upload completion requires authoritative base pointer and empty outbox',()=>{
+ const sync=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ const body=sync.slice(sync.indexOf('async function sharePhoto('),sync.indexOf('\nasync function refreshChanges('));
+ assert.match(body,/engine\.flush\(\);await syncPhotoFresh\(\)/);
+ assert.match(body,/const confirmed=photoBase\(scope\)/);
+ assert.match(body,/engine\.status\(\)\.pending===0&&!!confirmed/);
+});

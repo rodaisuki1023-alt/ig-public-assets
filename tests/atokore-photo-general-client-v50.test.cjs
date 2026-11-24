@@ -22,7 +22,7 @@ test('general transfer retries retain original revision and operation id; no cli
   sameScope:(a,b)=>a&&b&&a.household===b.household&&a.user===b.user&&a.sid===b.sid,
   validPhotoPath:(p,s)=>p===P&&s.sid===R,Uint8Array,Date,setTimeout,clearTimeout,
   root:{crypto:{subtle:require('node:crypto').webcrypto.subtle,randomUUID:()=>O},AbortController,btoa:s=>Buffer.from(s,'binary').toString('base64')},
-  refreshSession:()=>{throw Error('unexpected refresh')},syncNow:async()=>{},
+  refreshSession:()=>{throw Error('unexpected refresh')},syncing:null,syncNow:async()=>{},
  };
  let row={seq:7,fields:{}};let requests=[];
  ctx.engine={meta:()=>({base:{['item:'+R]:row}}),status:()=>({pending:0})};
@@ -70,4 +70,15 @@ test('photo queue rescans a local edit arriving during a transfer without sync-e
  assert.equal(scans,2);
  allowed=false;assert.equal(run(true),null);allowed=true;await run();
  assert.equal(scans,3);
+});
+
+test('photo sync waits for an earlier flight then starts a new observation',async()=>{
+ const source=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ const part=source.slice(source.indexOf('async function syncPhotoFresh('),source.indexOf('\nfunction photoBase('));
+ let release,calls=0;const prior=new Promise(resolve=>{release=resolve});
+ const ctx={syncing:prior,syncNow:async()=>{calls++;return 'new authoritative sync'}};
+ vm.runInNewContext(part+'\nglobalThis.run=syncPhotoFresh;',ctx);
+ const pending=ctx.run();await Promise.resolve();assert.equal(calls,0);
+ ctx.syncing=null;release();assert.equal(await pending,'new authoritative sync');assert.equal(calls,1);
+ assert.equal(await ctx.run(),'new authoritative sync');assert.equal(calls,2);
 });
