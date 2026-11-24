@@ -74,3 +74,20 @@ test('revocation between read checks never releases bytes',async()=>{
   storage:{download:async()=>bytes,upload:async()=>{throw Error('unexpected')}}});
  assert.deepEqual(await h({operation:'read',path:P},'valid'),{status:403,error:'denied'});
 });
+
+test('expired unknown upload is held; positive hash-matched settlement can purge',async()=>{
+ const m=await mod,bytes=m.makeJpegNormalizer(jpeg)(sample),sha=await m.sha256(bytes);
+ let remove=0,settle=0,unknown=true;
+ const worker=async(action,file,f)=>{
+  if(action==='inspect_expired')return {ok:true,state:'uploading',path:P,sha};
+  if(action==='settled_upload'){assert.equal(f.p_sha,sha);settle++;return {ok:true}}
+  if(action==='claim_purge')return {path:P};
+  if(action==='finish_purge')return {ok:true};
+  throw Error('unexpected');
+ };
+ const storage={download:async()=>{if(unknown)throw Error('timeout');return bytes},remove:async()=>{remove++}};
+ assert.deepEqual(await m.reconcileExpired({worker,storage},F),{state:'held'});
+ assert.equal(remove,0);assert.equal(settle,0);
+ unknown=false;assert.deepEqual(await m.reconcileExpired({worker,storage},F),{state:'purged'});
+ assert.equal(remove,1);assert.equal(settle,1);
+});

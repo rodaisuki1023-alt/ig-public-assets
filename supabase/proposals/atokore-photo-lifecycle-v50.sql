@@ -80,6 +80,19 @@ BEGIN
    RETURN NEW;
  END IF;
  v_old:=OLD.fields->>'photoPath';
+ -- Ordinary item deletion already holds the household/record locks. Do not
+ -- take the global lock here (lock inversion); retiring changes no quota.
+ -- The managed path is detached in the same transaction as the tombstone.
+ IF OLD.kind='item' AND NOT OLD.deleted AND NEW.deleted AND v_old IS NOT NULL
+ AND NEW.household_id=OLD.household_id AND NEW.id=OLD.id AND NEW.kind=OLD.kind
+ AND NEW.fields->'photoPath' IS NOT DISTINCT FROM OLD.fields->'photoPath' THEN
+  UPDATE atokore_private.photo_ledger_v50 l SET state='retired'
+   WHERE l.household_id=OLD.household_id AND l.record_id=OLD.id AND l.state='attached'
+    AND atokore_private.photo_object_path_v50(l)=v_old;
+  IF FOUND THEN NEW.fields:=NEW.fields-'photoPath'; END IF;
+  -- Unmanaged legacy photo remains held for explicit migration.
+  RETURN NEW;
+ END IF;
  IF NEW.fields->'photoPath' IS NOT DISTINCT FROM OLD.fields->'photoPath' THEN RETURN NEW; END IF;
  -- Allow absent/null normalization only, but no non-string path.
  IF v_new IS NULL AND v_old IS NULL THEN RETURN NEW; END IF;

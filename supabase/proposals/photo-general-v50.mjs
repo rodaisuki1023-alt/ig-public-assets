@@ -131,3 +131,22 @@ export async function purgeRetired({worker,storage},file){
  const done=await worker('finish_purge',file,{p_confirmed:true});
  return done?.ok===true; // DB additionally checks metadata absence
 }
+
+// Run only from a trusted worker, not a request originating from the browser.
+// A timeout/absent object after begin remains unresolved; never "guess clean".
+export async function reconcileExpired({worker,storage},file){
+ if(!id(file))throw Error('invalid file');
+ const x=await worker('inspect_expired',file);
+ if(x?.ok!==true)return {state:'held'};
+ const p=parsePath(x.path);if(!p||p.file!==file)throw Error('invalid reconciliation path');
+ if(x.state==='uploading'){
+  let bytes;try{bytes=await storage.download(x.path)}catch{return {state:'held'};}
+  if(!bounded(bytes)||!jpegFrame(bytes)||await sha256(bytes)!==x.sha)return {state:'held'};
+  const done=await worker('settled_upload',file,{p_sha:x.sha,p_confirmed:true});
+  if(done?.ok!==true)return {state:'held'};
+ }else if(x.state==='reserved'||x.state==='uploaded'){
+  if((await worker('retire_expired',file))?.ok!==true)return {state:'held'};
+ }else if(x.state!=='retired'&&x.state!=='purging')return {state:'held'};
+ try{return {state:await purgeRetired({worker,storage},file)?'purged':'held'}}
+ catch{return {state:'held'}}
+}

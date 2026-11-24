@@ -78,6 +78,12 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
 DECLARE v_row atokore_private.photo_ledger_v50%ROWTYPE; v_path text;
 BEGIN
+ IF p_action='inspect_expired' THEN
+  SELECT * INTO v_row FROM atokore_private.photo_ledger_v50 WHERE file_id=p_file AND expires_at<=clock_timestamp()
+   AND state IN ('reserved','uploading','uploaded','retired','purging');
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok',false); END IF;
+  RETURN jsonb_build_object('ok',true,'state',v_row.state,'path',atokore_private.photo_object_path_v50(v_row),'sha',v_row.upload_sha256);
+ END IF;
  IF p_action='retire_expired' THEN RETURN jsonb_build_object('ok',atokore_private.photo_retire_expired_v50(p_file)); END IF;
  IF p_action='claim_purge' THEN RETURN jsonb_build_object('path',atokore_private.photo_claim_purge_v50(p_file)); END IF;
  IF p_action='finish_purge' THEN RETURN jsonb_build_object('ok',atokore_private.photo_finish_purge_v50(p_file,p_confirmed)); END IF;
