@@ -75,6 +75,7 @@ jobs:
           node --test tests/atokore-photo-gateway-operations.test.cjs tests/atokore-photo-gateway-browser.test.cjs
           node --test tests/atokore-photo-gateway-sql.test.cjs
           node --test tests/atokore-photo-gateway-trial-guard.test.cjs
+          node --test tests/atokore-photo-reservation-v50.test.cjs
           node --check supabase/functions/_shared/photo-gateway-handler.mjs
           node --test tests/atokore-auth-qa-guard.test.cjs
           node --test tests/atokore-photo-gateway-qa-guard.test.cjs
