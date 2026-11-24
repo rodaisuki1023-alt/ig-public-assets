@@ -77,6 +77,7 @@ jobs:
           node --check supabase/functions/_shared/photo-gateway-handler.mjs
           node --test tests/atokore-auth-qa-guard.test.cjs
           node --test tests/atokore-photo-gateway-qa-guard.test.cjs
+          python3 -I scripts/atokore/photo-gateway-http-qa.py --self-test
           mkdir -p "$RUNNER_TEMP/photo-qa-build/_local_review"
           printf '%s\n' '<!doctype html><title>isolated QA fixture</title>' > "$RUNNER_TEMP/photo-qa-build/_local_review/index.html"
           python3 -I scripts/atokore/attach-photo-gateway-qa.py "$RUNNER_TEMP/photo-qa-build/_local_review"
