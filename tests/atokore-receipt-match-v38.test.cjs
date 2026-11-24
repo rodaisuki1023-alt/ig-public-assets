@@ -133,3 +133,19 @@ test('v50: compare explicit package multipliers separately from each package cap
  assert.equal(m.conflict(m.features('テスト飲料 500ml×6'),m.features('テスト飲料 500ml×3')),'bundle');
  assert.deepEqual(m.features('テスト商品 x3').bundles,[],'bare x3 may be purchase quantity');
 });
+
+test('receipt shorthand: explicit product-context flavour without 味 still blocks wrong learned merges',()=>{
+ const items=[
+  {id:1,name:'テストラーメン しょうゆ味',receiptAliases:[m.lineKey('ﾃｽﾄﾗｰﾒﾝ ﾐｿ')]},
+  {id:2,name:'テストラーメン みそ味'},
+  {id:3,name:'テストヨーグルト バニラ味 100g',receiptAliases:[m.lineKey('テストヨーグルトいちご100g')]},
+  {id:4,name:'テストヨーグルト いちご味 100g'}
+ ];
+ assert.equal(m.conflict(m.features('ﾃｽﾄﾗｰﾒﾝ ﾐｿ'),m.features(items[0].name)),'flavour');
+ assert.ok(!m.candidates('ﾃｽﾄﾗｰﾒﾝ ﾐｿ',items).some(c=>c.item.id===1));
+ assert.ok(m.candidates('ﾃｽﾄﾗｰﾒﾝ ﾐｿ',items).some(c=>c.item.id===2));
+ assert.ok(!m.candidates('テストヨーグルトいちご100g',items).some(c=>c.item.id===3));
+ assert.ok(m.candidates('テストヨーグルトいちご100g',items).some(c=>c.item.id===4));
+ assert.deepEqual(m.features('味噌').flavours,[]);
+ assert.deepEqual(m.features('牛乳 1L').flavours,[]);
+});

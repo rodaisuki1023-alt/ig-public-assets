@@ -52,9 +52,23 @@ const FLAVOUR_TERMS=[
  ['apple',/(?:りんご|林檎|アップル|あっぷる)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
  ['peach',/(?:もも|桃|ピーチ|ぴーち)(?:味|風味|ふうみ|フレーバー|ふれーばー)/]
 ];
+// A receipt often drops the suffix 味. Only infer a bare trailing flavour
+// inside a recognized product context, not a standalone ingredient or brand.
+const BARE_FLAVOURS=[
+ ['soy_sauce',/(?:しょうゆ|しょーゆ|醤油|正油)$/],
+ ['miso',/(?:みそ|味噌)$/],['salt',/(?:しお|塩)$/],
+ ['strawberry',/(?:いちご|苺|すとろべりー)$/],['banana',/ばなな$/],
+ ['chocolate',/(?:ちょこれーと|ちょこ)$/],['vanilla',/ばにら$/],
+ ['plain',/ぷれーん$/],['apple',/(?:りんご|林檎|あっぷる)$/],['peach',/(?:もも|桃|ぴーち)$/]
+];
 function flavours(s){
  const t=hira(nfkc(s).toLowerCase()).replace(/\s+/g,'');
- return FLAVOUR_TERMS.filter(([,re])=>re.test(t)).map(([key])=>key).sort();
+ const out=new Set(FLAVOUR_TERMS.filter(([,re])=>re.test(t)).map(([key])=>key));
+ // Remove only trailing explicit package amounts; never remove model numbers.
+ const tail=t.replace(/\d+(?:\.\d+)?(?:kg|ml|g|l|枚|個入|本入|袋入|包|缶|入)(?:[x×*]\d{1,3})?$/,'');
+ if(/らーめん|拉麺|らあめん|かっぷ麺|かっぷめん|よーぐると|ぷろていん|ぜりー|あいす/.test(tail))
+  for(const [key,re] of BARE_FLAVOURS)if(re.test(tail))out.add(key);
+ return [...out].sort();
 }
 function bundles(s){
  const t=nfkc(s).toLowerCase().replace(/マイ/g,'枚').replace(/\s+/g,'');
