@@ -1,6 +1,8 @@
 # あとこれ v50｜一括完成ゲートと安全な導入手順（2026-11-24 JST）
 
-**用途**：オーナー最終承認用、実装/試用/公開を明確に分ける。追加固定費0円。PR #109内の資料・コードは一切本番反映していない。
+**用途**：オーナー最終承認用、実装/試用/公開を明確に分ける。追加固定費0円。本番反映なし。
+
+**現状追記**：試用のみ本人承認後に migration `20261123171254` を適用し、`atokore-photo-gateway` ACTIVE v1 / `verify_jwt=true` を配置済み。新バケット0件、旧バケット1件を保持。合成実HTTP試験・既存写真移行・正式公開は未実施。
 
 ## A. 実測済みの現状と止めているP1
 
@@ -24,7 +26,7 @@
 
 1. 影響対象：試用Supabase **`vzyxurodowpjltwbgbyc`だけ**。本番のバケット/DB/ユーザー/Secretsには触れない。GitHubの対象PRとHEAD SHA・Vercel保護済みPreviewを確認。
 2. **本人の個別承認後**、新private bucket `atokore-private-photos-v2` と専用RPC `hh_photo_access` を新しいmigrationで作成し、原本/実行SQL SHA/戻し方を記録。既存テーブルや既存写真は変更しない。Storage `SELECT/INSERT/DELETE` は新バケットへの end-user ポリシーなしを照合。
-3. 新Edge Functionのデプロイ前に、`ATOKORE_ALLOWED_ORIGINS` を実際の認証付き試用ドメインに**完全一致**で設定。secretはサーバー環境にのみ保持し、コミット/ログ/HTMLへ出さない。Auth方式は `withSupabase({auth:'user'})`、`verify_jwt=false` をコードで補完し、未認証/偽JWT/他世帯から呼べないことを確認。
+3. 新Edge Functionのデプロイ前に、`ATOKORE_ALLOWED_ORIGINS` を実際の認証付き試用ドメインに**完全一致**で設定。secretはサーバー環境にのみ保持し、コミット/ログ/HTMLへ出さない。Auth方式は `withSupabase({auth:'user'})`、`verify_jwt=true` とサーバー認証を併用し、未認証/偽JWT/他世帯から呼べないことを確認。
 4. 新合成A/B/Cで端末ブラウザの写真ゲートONモードを保護付き試用だけで有効化し、画像アップロード→同世帯A/B閲覧→別世帯C拒否→B除外→旧JWT/再ログイン新JWTで**同じPOSTを繰り返しても**画像取得拒否、A閲覧維持をブラウザとEdge logsの双方で測定。新バケットへの**直接GET**はA/B/Cで常に拒否。
 5. 旧バケットの実オブジェクト **1件** は、個別に所有者/参照先/複製先の一致を確認する。**既存画像の自動削除は不可**。所有者が理解して承認した後、Storage APIだけで移行/旧オブジェクト削除（DBでstorage.objectsをDELETEしない）。旧直接URLの同一URL/cache:reload等でCDN HTTP200が失効したことをログ付きで再確認しない限り公開ゲートはFAIL。
 6. 新しい合成データは新コホートUUIDを記録。実験後、**別途本人の削除承認**を得て対象UUID限定で削除し、Auth/DB/Storageの14カテゴリ0件を再測定。
@@ -42,7 +44,7 @@
 | ID | 受入条件 | 現状 |
 |---|---|---|
 | P1-01 | 旧同一Storage URLの除外後HTTP200なし | FAIL。直接Storage方式不合格 |
-| P1-02 | 新しいゲート経由の実HTTP試験 | 非公開Draftだけ。未実施 |
+| P1-02 | 新しいゲート経由の実HTTP試験 | 試用Function配置済み。実HTTP未実施 |
 | P1-03 | 既存写真1件の移行/旧URL失効 | 未実施・個別承認条件 |
 | P1-04 | 物理iPhone2台Safari/PWA | 本人希望で保留 |
 | P1-05 | PWA保存・復元・同期・写真回帰 | 既存E2E合格、最終実機未了 |
