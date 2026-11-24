@@ -1,7 +1,6 @@
-/* Product photos. JPEGs (256px, metadata stripped) are kept in IndexedDB. While the family shares
- * data, every product photo is shared through the household's private Storage bucket, like the
- * product itself: a photo set while sharing is sent right away (or when the connection is back),
- * and photos set before sharing started are sent once sharing is confirmed.
+/* Product photos. JPEGs (256px, metadata stripped) are kept in IndexedDB.
+ * Family photo transfer requires the explicitly enabled protected gateway.
+ * While disabled, changes are retained locally, never sent through legacy Storage.
  * Local records: {bytes, pending} — pending:true means "not yet sent to the family";
  * {removed:true, pending:true} means "removal not yet sent". Backups include the photos.
  */

@@ -112,3 +112,21 @@ test('v50: private photo gateway never falls back; shared path comes from the se
  assert.match(upload,/path=await photoRequest\(path,'POST',blob\)/);
  assert.doesNotMatch(upload,/\|\|path/);
 });
+
+test('v50: disabled family photo gateway retains local pictures without any shared request',async()=>{
+ const vm=require('node:vm');
+ const source=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
+ const hook='root.AtokoreProductPhotos=api;';
+ const item={id:7,name:'合成商品',unit:'個',photoPath:'old/shared/photo.jpg'};
+ let requests=0;
+ const ctx={items:[item],AtokoreHousehold:{
+  photoSharingEnabled:()=>false,photoScope:()=>({household:'h1',user:'u1',sid:'record'}),
+  homeState:()=>({joined:true,state:'synced'}),fetchPhoto:async()=>{requests++;throw Error('not allowed')},
+  sharePhoto:async()=>{requests++;throw Error('not allowed')}
+ }};
+ vm.runInNewContext(source.replace(hook,'root.__photoTest={loadFor,cache,shareWaiting};'+hook),ctx);
+ ctx.__photoTest.cache.set(api.key(item),'blob:device-photo');
+ assert.equal(await ctx.__photoTest.loadFor(item),'blob:device-photo');
+ await ctx.__photoTest.shareWaiting();
+ assert.equal(requests,0);
+});

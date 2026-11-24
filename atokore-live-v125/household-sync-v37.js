@@ -3,7 +3,7 @@
  * project (household-config-v37.js). Without it nothing is shown and nothing is sent anywhere.
  * Only the public anon key lives in the browser; every server rule is in the database functions.
  * The app keeps saving locally as before; household-core-v37.js turns saved changes into operations.
- * Product photos are shared with the family automatically, like the products (private bucket).
+ * Shared photos are disabled unless the separately verified gateway is explicitly enabled.
  */
 (function(root){
 'use strict';
@@ -171,7 +171,8 @@ async function sharePhoto(id,blob){
  item.photoPath=path;
  if(!writeState(next))throw Error('端末の空き容量を確認してください。写真の共有情報を保存できませんでした。');
  engine.flush();await syncNow();
- return {shared:status.state==='synced'};
+ return {shared:status.state==='synced'&&sameScope(scope,photoScope(id))&&
+   (readState()?.items.find(x=>String(x.id)===String(id))?.photoPath??null)===path};
 }
 async function refreshChanges(){
  const target=household&&session?household.id+':'+session.user.id:null;
@@ -341,11 +342,11 @@ function recoveryHelp(){
  sheet('機種変更・データの復旧',[
   el('h3',{text:'Googleで参加した方'}),
   note('新しい端末で同じ試用版を開き、マイページ → 家族共有 → 同じGoogleアカウントでログインします。「共有のデータを使う」を選び、内容を確認してください。新しい世帯を作る必要はありません。'),
-  note('復旧できるのは、共有先へ送信済みの在庫・買い物リスト・いつものリスト・写真です。Googleログインだけではバックアップになりません。家族共有を開始し、旧端末で「未送信あり」が出ていないことを確認してください。'),
+  note('復旧できるのは、共有先へ送信済みの在庫・買い物リスト・いつものリスト'+(photoSharingEnabled()?'・写真':'（写真は現在対象外）')+'です。Googleログインだけではバックアップになりません。家族共有を開始し、旧端末で「未送信あり」が出ていないことを確認してください。'),
   note('未送信の変更（写真を含む）・端末内だけの控え・表示設定は、Googleログインだけでは戻りません。Googleは本人確認に使い、共有データはあとこれ側に保存します。'),
   el('h3',{text:'Googleなしで参加した方'}),
   note('同じ端末・同じブラウザなら次回も自動接続します。機種変更、ブラウザのデータ削除、ログアウト後は同じ参加者として戻れません。作成者の家族共有画面で以前の参加者を「外して再招待」し、新しい招待リンクから参加してください。'),
-  note('再招待しても、共有済みの在庫と写真は残ります。旧端末で未送信だった変更は戻りません。Safariとホーム画面アプリなど、保存領域が分かれる場合も再参加が必要です。'),
+  note('再招待しても、共有済みの在庫'+(photoSharingEnabled()?'と写真':'（写真の共有は現在停止中）')+'は残ります。旧端末で未送信だった変更は戻りません。Safariとホーム画面アプリなど、保存領域が分かれる場合も再参加が必要です。'),
   button('家族共有へ戻る',()=>open(),'atk-hh-secondary')]);
 }
 function invitationURL(code){
@@ -383,7 +384,7 @@ function joinScreen(){
  const code=el('input',{id:'atkHhGuestCode',type:'text',maxlength:'12',autocapitalize:'characters',autocomplete:'off',placeholder:'8文字',value:inviteCode});
  const canJoin=!!session||cfg.guest===true;
  sheet('招待コードで家族に参加',[
-  note('名前と招待コードを入れて参加します。コードは発行から24時間・1回だけ使えます。開いただけでは共有されません。参加すると在庫と商品写真が共有されます。相手が保存した写真のコピーは後から回収できません。'),
+  note('名前と招待コードを入れて参加します。コードは発行から24時間・1回だけ使えます。開いただけでは共有されません。参加すると在庫'+(photoSharingEnabled()?'と商品写真が共有されます。相手が保存した写真のコピーは後から回収できません。':'が共有されます。写真は現在共有されません。')),
   field('家族に表示される名前',name),field('家族から届いた招待コード',code),
   canJoin?button(session?'共有に参加する':'Googleなしで共有に参加する',e=>busy(e.target,()=>joinWithCode(name.value,code.value))):note('この試用版では、Googleでログインしてから参加します。'),
   !session&&googleAuth?button('Googleで参加する（機種変更時に復旧しやすい）',e=>busy(e.target,()=>{
@@ -416,7 +417,7 @@ function signIn(){
   await afterSignIn();
  }))]);
  sheet('家族共有（限定テスト）',[
-  note((cfg.guest===true?'作成者はGoogleでログイン。招待された方はGoogleなしでも参加できます。':'家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインします。')+'同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。商品の写真も家族と自動で共有されます。'),
+  note((cfg.guest===true?'作成者はGoogleでログイン。招待された方はGoogleなしでも参加できます。':'家族それぞれが自分の'+(googleAuth?'Googleアカウント':'メールアドレス')+'でログインします。')+'同じ在庫・買い物リスト・いつものリストを使えます。無料で1世帯2人まで。'+(photoSharingEnabled()?'商品の写真も家族と自動で共有されます。':'写真の家族共有は現在停止中です。')),
   button('招待コードを入力して参加する',joinScreen),
   google,
   note('作成者はGoogleでログインして世帯を作ります。Googleで参加した方は、端末変更後も同じアカウントから共有済みデータを引き継げます。'),
@@ -448,10 +449,10 @@ function chooseHousehold(){
  sheet('家族共有（限定テスト）',[
   field('家族に表示される名前',name),
   el('div',{class:'atk-hh-card'},[el('h3',{text:'世帯を作って家族を招待する'}),
-   note('この端末の'+counts(local)+'と登録済みの商品写真が共有の最初のデータになります。相手が保存した写真のコピーは後から回収できません。共有前に端末内に控えを保存します。'),
+   note('この端末の'+counts(local)+(photoSharingEnabled()?'と登録済みの商品写真が共有の最初のデータになります。相手が保存した写真のコピーは後から回収できません。':'が共有の最初のデータになります。写真は端末内に残ります。')+'共有前に端末内に控えを保存します。'),
    button('世帯を作る',e=>busy(e.target,async()=>{
     if(!name.value.trim())throw '名前を入れてください';
-    if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+'と登録済みの写真を共有します。相手に保存された写真は後から回収できません。','共有を始める'))return;
+    if(!await ask('この端末のデータで共有を始めますか？','この端末の'+counts(local)+(photoSharingEnabled()?'と登録済みの写真を共有します。相手に保存された写真は後から回収できません。':'を共有します。写真の家族共有は現在停止中です。'),'共有を始める'))return;
     if(!backupDevice())throw '控えを保存できなかったため中止しました（何も変更していません）';
     const my=await rpc('hh_create',{p_name:'わが家',p_display_name:name.value.trim()});
     household={id:my.household.id,name:my.household.name};saveMeta({household,...since(household)});rememberMembers(my);
@@ -525,7 +526,7 @@ async function dashboard(){
     engine.resolveRejected();await syncNow();dashboard();
    }),'atk-hh-link')]):null,
   readJSON(RECOVERY)?button('同期を再開する前の控えをファイルに保存',()=>downloadRecovery(true),'atk-hh-link'):null,
-  note('商品の写真は、共有開始前に登録した分も家族へ自動で共有されます。家族から外しても、相手がすでに見たり保存した写真・バックアップのコピーは回収できません。'),
+  note((photoSharingEnabled()?'商品の写真は、共有開始前に登録した分も家族へ自動で共有されます。':'写真の家族共有は現在停止中です。')+'家族から外しても、相手がすでに見たり保存した写真・バックアップのコピーは回収できません。'),
   readJSON(BEFORE_SHARE)?button('共有前の控えをファイルに保存',downloadBackup,'atk-hh-link'):null,
   button('この世帯から抜ける（端末の在庫は残ります）',e=>busy(e.target,leave),'atk-hh-link'),
   button('ログアウト',()=>signOut(),'atk-hh-link')]);

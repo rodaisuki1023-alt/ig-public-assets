@@ -8,6 +8,8 @@ if (!Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')) {
     anonKey: 'sb_publishable_26Owk0KT0uV4J0T64QZQyw_wIri_8Ui',
     google: true,
     guest: true,
-    email: false
+    email: false,
+    // General photo gateway is not release-ready. No old Storage fallback.
+    photoGatewayEnabled: false
   };
 }
