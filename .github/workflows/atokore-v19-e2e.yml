@@ -29,7 +29,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/atokore-edge-audit"
           lock="$RUNNER_TEMP/atokore-edge-audit/deno.lock"
           deno --version
-          deno check --lock="$lock" --frozen=false supabase/proposals/photo-general-edge-v50.ts
+          deno cache --lock="$lock" --frozen=false supabase/proposals/photo-general-edge-v50.ts
+          test -s "$lock"
           deno check --lock="$lock" --frozen supabase/proposals/photo-general-edge-v50.ts
           deno audit --lock="$lock" --frozen
       - name: Preserve resolved lock candidate for review

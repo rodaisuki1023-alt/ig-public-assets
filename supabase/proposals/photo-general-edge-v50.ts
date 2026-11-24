@@ -13,12 +13,13 @@ function cors(req:Request){
 }
 function reply(status:number,data:unknown,c:Record<string,string>={}){
  const bytes=data instanceof Uint8Array
- return new Response(status===204?null:bytes?data:JSON.stringify(data),{status,headers:{...headers,...c,'Content-Type':bytes?'image/jpeg':'application/json'}})
+ // Copy into an owned ArrayBuffer (not ArrayBufferLike/SharedArrayBuffer).
+ return new Response(status===204?null:bytes?new Uint8Array(data).buffer:JSON.stringify(data),{status,headers:{...headers,...c,'Content-Type':bytes?'image/jpeg':'application/json'}})
 }
 async function body(req:Request){
  if(!req.body||!/^application\/json(?:;|$)/i.test(req.headers.get('content-type')||''))throw Error('invalid')
  const reader=req.body.getReader(),parts:Uint8Array[]=[]
- let total=0,timer:number|undefined
+ let total=0,timer:ReturnType<typeof setTimeout>|undefined
  try{
   const timeout=new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),4000)})
   for(;;){
@@ -70,8 +71,9 @@ const secure=withSupabase({auth:'user'},async(req,ctx)=>{
   normalize:makeJpegNormalizer(jpeg)
  })
  const result=await handle(input,token)
- const {status,bytes,...rest}=result
- return reply(status,bytes||rest,c)
+ if('bytes' in result&&result.bytes instanceof Uint8Array)return reply(result.status,result.bytes,c)
+ const {status,...rest}=result
+ return reply(status,rest,c)
 })
 export default {fetch(req:Request){
  const c=cors(req);if(!c)return reply(403,{error:'origin'})

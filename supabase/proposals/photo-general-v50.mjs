@@ -67,6 +67,10 @@ export function makeJpegNormalizer(codec){
  }
 }
 const mapError=e=>e?.code==='42501'?bad(403,'denied'):['23505','40001','55000'].includes(e?.code)?bad(409,'conflict'):bad(503,'unavailable');
+/**
+ * @param {{verify:Function,db:Function,storage:{download:Function,upload:Function},
+ * normalize:Function,admit?:((user:{uid:string,session:string},household:string,operation:string)=>Promise<boolean>)|null}} adapters
+ */
 export function createGeneralPhotoHandler({verify,db,storage,normalize,admit=null}){
  if([verify,db,normalize,storage?.download,storage?.upload].some(f=>typeof f!=='function'))throw Error('missing trusted adapter');
  return async function handle(input,token){
