@@ -108,3 +108,28 @@ test('P1: capacity must be explicitly comparable, including for learned aliases'
  assert.equal(m.conflict(m.features('テスト飲料 2L'),m.features('テスト飲料 2000ml')),'');
  assert.equal(m.candidates('テスト飲料',candidates).some(x=>x.item.id===3),false);
 });
+
+test('v50: explicit flavour conflict cannot be overridden by learned receipt aliases',()=>{
+ const raw='テストラーメン 醤油味';
+ const rows=[
+  {id:1,name:'テストラーメン みそ味',receiptAliases:[m.lineKey(raw)]},
+  {id:2,name:'テストラーメン しょうゆ味'},
+  {id:3,name:'テストラーメン',receiptAliases:[m.lineKey(raw)]}
+ ];
+ assert.deepEqual(m.candidates(raw,rows).map(c=>c.item.id),[2]);
+ assert.equal(m.conflict(m.features('テストゼリー ｲﾁｺﾞ味'),m.features('テストゼリー 苺味')),'');
+ assert.equal(m.conflict(m.features('テストゼリー 桃味'),m.features('テストゼリー 林檎味')),'flavour');
+ assert.equal(m.conflict(m.features('テストヨーグルト'),m.features('テストヨーグルト バニラ風味')),'flavour');
+});
+test('v50: compare explicit package multipliers separately from each package capacity',()=>{
+ const raw='おしりふき ８０ﾏｲＸ３';
+ const items=[
+  {id:1,name:'おしりふき 80枚×6',receiptAliases:[m.lineKey(raw)]},
+  {id:2,name:'おしりふき 80枚',receiptAliases:[m.lineKey(raw)]},
+  {id:3,name:'おしりふき 80枚×3'}
+ ];
+ assert.deepEqual(m.candidates(raw,items).map(c=>c.item.id),[3]);
+ assert.equal(m.conflict(m.features('テスト飲料 0.5L×6'),m.features('テスト飲料 500ml x 6')),'');
+ assert.equal(m.conflict(m.features('テスト飲料 500ml×6'),m.features('テスト飲料 500ml×3')),'bundle');
+ assert.deepEqual(m.features('テスト商品 x3').bundles,[],'bare x3 may be purchase quantity');
+});
