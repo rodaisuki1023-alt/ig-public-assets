@@ -17,6 +17,7 @@ CREATE TABLE atokore_private.photo_ledger_v50 (
   actor uuid NOT NULL,
   operation_id uuid NOT NULL,
   expected_path text,
+  expected_seq bigint, -- populated on real reservations; test quota fixtures may omit
   state text NOT NULL DEFAULT 'reserved'
     CHECK(state IN ('reserved','uploading','uploaded','attached','retired','purging','purged')),
   reserved_at timestamptz NOT NULL DEFAULT now(),
@@ -46,6 +47,7 @@ AS $fn$
 DECLARE
   v_uid uuid := auth.uid();
   v_current text;
+  v_seq bigint;
   v_row atokore_private.photo_ledger_v50%ROWTYPE;
 BEGIN
   IF v_uid IS NULL OR p_household IS NULL OR p_operation IS NULL OR p_record IS NULL
@@ -67,7 +69,7 @@ BEGIN
       AND s.id::text=auth.jwt()->>'session_id' AND (s.not_after IS NULL OR s.not_after>clock_timestamp()))
   THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
 
-  SELECT r.fields->>'photoPath' INTO v_current
+  SELECT r.fields->>'photoPath',r.seq INTO v_current,v_seq
     FROM atokore_private.records r WHERE r.household_id=p_household AND r.kind='item'
     AND r.id=p_record AND NOT r.deleted FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
@@ -80,7 +82,7 @@ BEGIN
     -- Return same reservation identity without issuing new space or renewing a lease.
     RETURN jsonb_build_object('file_id',v_row.file_id,'state',v_row.state,'expires_at',v_row.expires_at,
       'reused',true,'eligible',v_row.state='reserved' AND v_row.expires_at>clock_timestamp()
-         AND v_current IS NOT DISTINCT FROM p_expected);
+         AND v_current IS NOT DISTINCT FROM p_expected AND v_seq=v_row.expected_seq);
   END IF;
   IF v_current IS DISTINCT FROM p_expected THEN RAISE EXCEPTION 'photo_stale_reference' USING ERRCODE='40001'; END IF;
   IF EXISTS(SELECT 1 FROM atokore_private.photo_ledger_v50 WHERE household_id=p_household
@@ -92,8 +94,8 @@ BEGIN
   IF (SELECT count(*) FROM atokore_private.photo_ledger_v50 WHERE household_id=p_household AND state<>'purged')>=50
     OR (SELECT count(*) FROM atokore_private.photo_ledger_v50 WHERE state<>'purged')>=1280
   THEN RAISE EXCEPTION 'photo_quota' USING ERRCODE='55000'; END IF;
-  INSERT INTO atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_path,expires_at)
-    VALUES(p_household,p_record,v_uid,p_operation,p_expected,clock_timestamp()+interval '5 minutes')
+  INSERT INTO atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_path,expected_seq,expires_at)
+    VALUES(p_household,p_record,v_uid,p_operation,p_expected,v_seq,clock_timestamp()+interval '5 minutes')
     RETURNING * INTO v_row;
   RETURN jsonb_build_object('file_id',v_row.file_id,'state',v_row.state,'expires_at',v_row.expires_at,'reused',false,'eligible',true);
 END;
