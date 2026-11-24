@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {planDay,shortagePlan,forecast,assignmentPlan}=require('../proposals/atokore-family-prep-v51.cjs');
+const {planDay,shortagePlan,forecast,assignmentPlan,assignmentResponsePlan}=require('../proposals/atokore-family-prep-v51.cjs');
 const row=(id,stockId='diaperM',unit='枚',required=5)=>({id,name:'おむつ',stockId,unit,required});
 const profiles=[{id:'a',week:{1:[row('a')]},exceptions:{'2026-11-30':[]}},{id:'b',week:{1:[row('b')]}}];
 test('Monday profiles independent; exception and daily instance identity',()=>{
@@ -39,4 +39,14 @@ test('long valid UUID-style identifiers remain distinct and duplicate rows fail 
  const rows=planDay([{id:'p'.repeat(100),week:{1:[row('r'.repeat(100))]}}],'2026-11-23');
  assert.equal(shortagePlan(rows,[{id:'diaperM',unit:'枚',qty:0}],[]).items[0].missing,5);
  assert.throws(()=>shortagePlan([rows[0],{...rows[0],stockId:'diaperL'}],[{id:'diaperM',unit:'枚',qty:0},{id:'diaperL',unit:'枚',qty:0}],[]));
+});
+
+test('only assigned active member can respond; stale revision and duplicate response blocked',()=>{
+ const a={householdId:'h',buyId:'b',actorId:'b',assigneeId:'b',requesterId:'a',revision:2,expectedRevision:2,response:'pending',decision:'accept',members:[{id:'a',householdId:'h',active:true},{id:'b',householdId:'h',active:true},{id:'c',householdId:'other',active:true}]};
+ const p=assignmentResponsePlan(a);assert.equal(p.response,'accepted');assert.equal(p.revision,3);assert.equal(p.event.recipientId,'a');
+ assert.equal(assignmentResponsePlan({...a,actorId:'a'}).status,'denied');assert.equal(assignmentResponsePlan({...a,actorId:'c'}).status,'denied');
+ assert.equal(assignmentResponsePlan({...a,expectedRevision:1}).status,'stale');
+ assert.equal(assignmentResponsePlan({...a,response:'accepted'}).status,'stale');
+ assert.equal(assignmentResponsePlan({...a,members:a.members.map(m=>m.id==='b'?{...m,active:false}:m)}).status,'denied');
+ const d=assignmentResponsePlan({...a,decision:'decline'});assert.equal(d.assigneeId,null);assert.equal(d.response,'declined');
 });

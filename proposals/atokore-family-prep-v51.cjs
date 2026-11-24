@@ -73,5 +73,18 @@ function assignmentPlan({householdId,buyId,actorId,assigneeId,currentAssigneeId,
  return {status:'ready',revision:next,assigneeId,
   event:assigneeId===null||assigneeId===actorId?null:{id:JSON.stringify([householdId,buyId,next,'assignment']),recipientId:assigneeId,title:'あとこれ',body:'買い物のお願いがあります',kind:'assignment'}};
 }
-if(typeof module==='object'&&module.exports)module.exports={planDay,shortagePlan,forecast,assignmentPlan};
-else if(typeof window==='object')window.AtokorePrepProposal=Object.freeze({planDay,shortagePlan,forecast,assignmentPlan});
+
+// Reference policy for a server transaction with locked current record and membership.
+// A declined request releases the item, so the household can find another buyer.
+function assignmentResponsePlan({householdId,buyId,actorId,assigneeId,requesterId,revision,expectedRevision,response,decision,members}={}){
+ if(![householdId,buyId,actorId,assigneeId,requesterId].every(key)||!count(revision)||!count(expectedRevision)||!Array.isArray(members)||!['accept','decline'].includes(decision))throw Error('invalid response');
+ const active=id=>members.some(m=>m&&m.id===id&&m.householdId===householdId&&m.active===true);
+ if(actorId!==assigneeId||actorId===requesterId||!active(actorId)||!active(requesterId))return {status:'denied'};
+ if(revision!==expectedRevision||response!=='pending')return {status:'stale'};
+ if(revision===99999)throw Error('revision overflow');
+ const next=revision+1,accepted=decision==='accept';
+ return {status:'ready',revision:next,assigneeId:accepted?assigneeId:null,response:accepted?'accepted':'declined',
+  event:{id:JSON.stringify([householdId,buyId,next,'response']),recipientId:requesterId,title:'あとこれ',body:accepted?'買い物のお願いが引き受けられました':'買い物の担当を確認してください',kind:'assignment-response'}};
+}
+if(typeof module==='object'&&module.exports)module.exports={planDay,shortagePlan,forecast,assignmentPlan,assignmentResponsePlan};
+else if(typeof window==='object')window.AtokorePrepProposal=Object.freeze({planDay,shortagePlan,forecast,assignmentPlan,assignmentResponsePlan});

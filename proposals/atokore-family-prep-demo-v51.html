@@ -5,7 +5,7 @@
 </style></head><body><main><span class="tag">非公開・合成データの試作</span><h1>明日の準備、あとこれ。</h1><p><small>実際の購入、通知、家族共有、端末データへの保存は行いません。</small></p>
 <section><div class="split"><h2>11月25日（水）の持ち物</h2><select id="child" aria-label="表示する子ども"><option value="all">ふたり分</option><option value="a">お兄ちゃん</option><option value="b">弟くん</option></select></div><progress id="progress" max="1" value="0" aria-label="準備の進み具合"></progress><p id="progressText" aria-live="polite"></p><div id="kit"></div></section>
 <section><h2>買い足すもの</h2><div id="shortages"></div><button type="button" id="queue" class="primary">不足を買い物に追加</button></section>
-<section><div class="split"><h2>家族の買い物</h2><select id="filter" aria-label="購入担当で絞り込み"><option value="all">すべて</option><option value="papa">パパ担当</option><option value="mama">ママ担当</option><option value="none">担当未設定</option></select></div><div id="shopping"></div><p id="notice" role="status"></p></section>
+<section><div class="split"><h2>家族の買い物</h2></div><p><small>操作する人（試作の切替）</small></p><select id="actor" aria-label="操作する家族"><option value="mama">ママ</option><option value="papa">パパ</option></select><div class="split"><select id="filter" aria-label="購入担当で絞り込み"><option value="all">すべて</option><option value="papa">パパ担当</option><option value="mama">ママ担当</option><option value="none">担当未設定</option></select></div><div id="shopping"></div><p id="notice" role="status"></p></section>
 <footer>これは操作性検証用です。通知表示はシミュレーションのみ。準備チェックだけでは在庫を減らしません。</footer></main>
 <script src="./atokore-family-prep-v51.cjs"></script>
 <script>
@@ -19,6 +19,7 @@ const profiles=[{id:'a',week:{3:[row('diaper','おむつ L','l','枚',4),row('to
 const rows=core.planDay(profiles,date),done=new Set(),thanks=new Set();
 const stocks=[{id:'l',name:'おむつ L',qty:3,unit:'枚'},{id:'m',name:'おむつ M',qty:2,unit:'枚'},{id:'t',name:'タオル',qty:2,unit:'枚'},{id:'w',name:'おしりふき',qty:1,unit:'個'}];
 let buys=[],completed=[],seq=0;
+const members=[{id:'mama',householdId:'demo',active:true},{id:'papa',householdId:'demo',active:true}], who=id=>id==='papa'?'パパ':'ママ';
 function node(tag,text,cls){const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e}
 function status(s){$('notice').textContent=s}
 function render(){
@@ -34,13 +35,16 @@ function render(){
  $('shopping').replaceChildren();
  for(const b of buys.filter(b=>$('filter').value==='all'||$('filter').value===(b.assigneeId||'none'))){
  const e=node('div',null,'item');e.append(node('strong',b.name+' '+b.qty+b.unit));
+ const actor=$('actor').value;
  const controls=node('div',null,'split'),sel=node('select');sel.setAttribute('aria-label',b.name+'の担当');
  for(const [v,l] of [['none','担当未設定'],['papa','パパ'],['mama','ママ']]){const o=node('option',l);o.value=v;sel.append(o)}sel.value=b.assigneeId||'none';
- sel.addEventListener('change',()=>{const p=core.assignmentPlan({householdId:'demo',buyId:b.id,actorId:'mama',assigneeId:sel.value==='none'?null:sel.value,currentAssigneeId:b.assigneeId,revision:b.revision,members:[{id:'mama',householdId:'demo',active:true},{id:'papa',householdId:'demo',active:true}]});if(p.status==='ready'){b.assigneeId=p.assigneeId;b.revision=p.revision;status(p.event?'通知のイメージ：パパに買い物のお願い（送信なし）':'担当を変更しました')}render()});
- const button=node('button','買った','primary');button.type='button';button.addEventListener('click',()=>{if(!buys.includes(b))return;const s=stocks.find(x=>x.id===b.stockId&&x.unit===b.unit);if(!s)return;s.qty+=b.qty;buys=buys.filter(x=>x!==b);completed.push(b);status('合成在庫に補充しました。実データは変更していません。');render()});controls.append(sel,button);e.append(controls);$('shopping').append(e)}
+ sel.addEventListener('change',()=>{const p=core.assignmentPlan({householdId:'demo',buyId:b.id,actorId:actor,assigneeId:sel.value==='none'?null:sel.value,currentAssigneeId:b.assigneeId,revision:b.revision,members});if(p.status==='ready'){b.assigneeId=p.assigneeId;b.revision=p.revision;b.requesterId=actor;b.response=p.event?'pending':p.assigneeId?'accepted':null;status(p.event?'通知のイメージ：'+who(p.assigneeId)+'に買い物のお願い（送信なし）':'担当を変更しました')}render()});
+ if(b.response)e.append(node('p',b.response==='pending'?'返事待ち':b.response==='declined'?'担当を再確認してください':'引き受け済み','muted'));
+ if(b.response==='pending'&&b.assigneeId===actor){const r=b.revision;for(const [decision,label] of [['accept','買えるよ'],['decline','今回は難しい']]){const answer=node('button',label);answer.type='button';answer.addEventListener('click',()=>{if(!buys.includes(b))return;const q=core.assignmentResponsePlan({householdId:'demo',buyId:b.id,actorId:actor,assigneeId:b.assigneeId,requesterId:b.requesterId,revision:b.revision,expectedRevision:r,response:b.response,decision,members});if(q.status==='ready'){b.revision=q.revision;b.assigneeId=q.assigneeId;b.response=q.response;status('返事の通知イメージ（送信なし）：'+(decision==='accept'?'買えるよ':'今回は難しい'))}render()});controls.append(answer)}}
+ const button=node('button','買った','primary');button.type='button';button.disabled=!!b.assigneeId&&b.assigneeId!==actor;button.addEventListener('click',()=>{if(!buys.includes(b)||b.assigneeId&&b.assigneeId!==actor)return;const s=stocks.find(x=>x.id===b.stockId&&x.unit===b.unit);if(!s)return;s.qty+=b.qty;buys=buys.filter(x=>x!==b);completed.push({...b,purchasedBy:actor});status('合成在庫に補充しました。実データは変更していません。');render()});controls.append(sel,button);e.append(controls);$('shopping').append(e)}
  if(!buys.length)$('shopping').append(node('p','購入予定なし','muted'));
- for(const b of completed){const e=node('div',null,'item split'),button=node('button',thanks.has(b.id)?'ありがとう済み':'ありがとう');button.type='button';button.disabled=thanks.has(b.id);button.addEventListener('click',()=>{thanks.add(b.id);status('ありがとうの表示例（送信なし）');render()});e.append(node('span',b.name+' 購入済み','good'),button);$('shopping').append(e)}
+ for(const b of completed){const e=node('div',null,'item split'),button=node('button',thanks.has(b.id)?'ありがとう済み':'ありがとう');button.type='button';button.disabled=thanks.has(b.id)||b.purchasedBy===$('actor').value;button.addEventListener('click',()=>{if(b.purchasedBy===$('actor').value||thanks.has(b.id))return;thanks.add(b.id);status('ありがとうの表示例（送信なし）');render()});e.append(node('span',b.name+' 購入済み','good'),button);$('shopping').append(e)}
 }
-$('queue').addEventListener('click',()=>{const p=core.shortagePlan(rows,stocks,buys);for(const x of p.items.filter(x=>x.status==='shortage'&&x.additional>0)){buys.push({id:'demo-'+(++seq),stockId:x.stockId,name:x.name,qty:x.additional,unit:x.unit,assigneeId:null,revision:0})}status('不足分を購入予定へ追加しました');render()});$('child').addEventListener('change',render);$('filter').addEventListener('change',render);render();
+$('queue').addEventListener('click',()=>{const p=core.shortagePlan(rows,stocks,buys);for(const x of p.items.filter(x=>x.status==='shortage'&&x.additional>0)){buys.push({id:'demo-'+(++seq),stockId:x.stockId,name:x.name,qty:x.additional,unit:x.unit,assigneeId:null,revision:0})}status('不足分を購入予定へ追加しました');render()});$('child').addEventListener('change',render);$('filter').addEventListener('change',render);$('actor').addEventListener('change',()=>{status('');render()});render();
 })();
 </script></body></html>
