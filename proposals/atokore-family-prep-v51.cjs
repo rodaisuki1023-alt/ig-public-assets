@@ -24,9 +24,10 @@ function planDay(profiles,date){
 }
 function shortagePlan(rows,stocks,buys){
  if(![rows,stocks,buys].every(Array.isArray))throw Error('invalid data');
- const groups=new Map(),unresolved=[];
+ const groups=new Map(),unresolved=[],seen=new Set();
  for(const r of rows){
-  if(!r||!key(r.instanceId)||!key(r.stockId)||!key(r.unit)||!count(r.required)||r.required===0){unresolved.push({instanceId:r?.instanceId??null,status:'unregistered'});continue}
+  if(r&&typeof r.instanceId==='string'&&r.instanceId.length<=1300){if(seen.has(r.instanceId))throw Error('duplicate requirement');seen.add(r.instanceId)}
+  if(!r||typeof r.instanceId!=='string'||r.instanceId.length===0||r.instanceId.length>1300||!key(r.stockId)||!key(r.unit)||!count(r.required)||r.required===0){unresolved.push({instanceId:r?.instanceId??null,status:'unregistered'});continue}
   const matches=stocks.filter(s=>s&&String(s.id)===r.stockId);
   if(matches.length!==1){unresolved.push({instanceId:r.instanceId,status:matches.length?'ambiguous':'unregistered'});continue}
   const stock=matches[0];
@@ -72,4 +73,5 @@ function assignmentPlan({householdId,buyId,actorId,assigneeId,currentAssigneeId,
  return {status:'ready',revision:next,assigneeId,
   event:assigneeId===null||assigneeId===actorId?null:{id:JSON.stringify([householdId,buyId,next,'assignment']),recipientId:assigneeId,title:'あとこれ',body:'買い物のお願いがあります',kind:'assignment'}};
 }
-module.exports={planDay,shortagePlan,forecast,assignmentPlan};
+if(typeof module==='object'&&module.exports)module.exports={planDay,shortagePlan,forecast,assignmentPlan};
+else if(typeof window==='object')window.AtokorePrepProposal=Object.freeze({planDay,shortagePlan,forecast,assignmentPlan});

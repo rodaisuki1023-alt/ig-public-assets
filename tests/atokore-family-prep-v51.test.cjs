@@ -34,3 +34,9 @@ test('assignment validates active same-household members, no self or repeated no
  const result=assignmentPlan(a);assert.equal(result.event.recipientId,'b');assert.deepEqual(result,assignmentPlan(a));assert.equal(assignmentPlan({...a,currentAssigneeId:'b'}).status,'unchanged');
  assert.equal(assignmentPlan({...a,assigneeId:'c'}).status,'denied');assert.equal(assignmentPlan({...a,assigneeId:'d'}).status,'denied');assert.equal(assignmentPlan({...a,assigneeId:'a'}).event,null);assert.equal(assignmentPlan({...a,assigneeId:null,currentAssigneeId:'b'}).event,null);
 });
+
+test('long valid UUID-style identifiers remain distinct and duplicate rows fail across products',()=>{
+ const rows=planDay([{id:'p'.repeat(100),week:{1:[row('r'.repeat(100))]}}],'2026-11-23');
+ assert.equal(shortagePlan(rows,[{id:'diaperM',unit:'枚',qty:0}],[]).items[0].missing,5);
+ assert.throws(()=>shortagePlan([rows[0],{...rows[0],stockId:'diaperL'}],[{id:'diaperM',unit:'枚',qty:0},{id:'diaperL',unit:'枚',qty:0}],[]));
+});
