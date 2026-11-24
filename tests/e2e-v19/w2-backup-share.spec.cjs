@@ -218,7 +218,17 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     },{timeout:20000}).toBe(serverPath);
     const eggB = (await stored(b.page)).items.find(x => x.name === '卵');
     await go(b.page, 'stock');
-    const receivedImage=b.page.locator(`#stockList [data-stock-id="${eggB.id}"] .atk-user-photo`);
+    const receivedRow=b.page.locator(`#stockList [data-stock-id="${eggB.id}"]`);
+    await expect(receivedRow).toBeVisible();
+    // Verify transport separately, without touching the UI's object-URL cache.
+    // If this fails the issue is the receiver authorization/transport, not DOM.
+    const received=await b.page.evaluate(async({id,path})=>{
+      try{const blob=await AtokoreHousehold.fetchPhoto(id,path);return {ok:!!blob,type:blob?.type||null,bytes:blob?.size||0}}
+      catch(e){return {ok:false,error:String(e.message||e)}}
+    },{id:eggB.id,path:serverPath});
+    expect(received).toMatchObject({ok:true,type:'image/jpeg'});
+    expect(received.bytes).toBeGreaterThan(0);
+    const receivedImage=receivedRow.locator('.atk-user-photo');
     await expect(receivedImage).toBeVisible();
     await expect.poll(()=>receivedImage.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
 

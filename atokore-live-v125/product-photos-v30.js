@@ -69,16 +69,17 @@ function resetShared(){sharedEpoch++;for(const url of sharedCache.values())if(ur
 async function loadFor(item){
  const hh=root.AtokoreHousehold,scope=hh?.photoScope?.(item.id);
  if(!scope||!item.photoPath||hh?.photoSharingEnabled?.()===false)return load(key(item));
- const sk=scope.household+':'+scope.user+':'+item.photoPath;
+ const path=item.photoPath;
+ const sk=scope.household+':'+scope.user+':'+path;
  if(sharedCache.has(sk))return sharedCache.get(sk);
  if(sharedPending.has(sk))return sharedPending.get(sk);
  const epoch=sharedEpoch;
  const stillActive=()=>{
   const current=readItem(item.id),now=hh.photoScope(item.id);
-  return epoch===sharedEpoch&&current?.photoPath===item.photoPath
+  return epoch===sharedEpoch&&current?.photoPath===path
    &&now?.household===scope.household&&now?.user===scope.user&&now?.sid===scope.sid;
  };
- const task=hh.fetchPhoto(item.id,item.photoPath).then(async blob=>{
+ const task=hh.fetchPhoto(item.id,path).then(async blob=>{
   if(!blob||!validBlob(blob)||!stillActive())return null;
   if(fileKind(new Uint8Array(await blob.slice(0,32).arrayBuffer()))!=='jpeg'||!stillActive())return null;
   const url=root.URL.createObjectURL(blob);
@@ -119,17 +120,30 @@ function picture(badge,url){
  if(badge.querySelector('.atk-user-photo')?.getAttribute('src')===url)return;
  const label=badge.querySelector('.bf-baby-brand,.atk-photo-brand')?.textContent||badge.textContent.trim();
  const img=element('img','atk-user-photo');img.alt='';img.src=url;img.width=256;img.height=256;
- img.addEventListener('error',()=>picture(badge,null),{once:true});
+ img.addEventListener('error',()=>{if(badge.querySelector('.atk-user-photo')===img)picture(badge,null)},{once:true});
  badge.replaceChildren(img);if(label)badge.append(element('span','atk-photo-brand',label));badge.classList.add('atk-has-photo');
+}
+// A row may be painted several times while sync and image requests are in
+// flight. An older null/error or an older photo must not clear or replace a
+// newer render. Capture the actual DOM target, item identity and reference.
+const renderTickets=new WeakMap();
+function beginPhotoRender(target,item){
+ const token={},identity=key(item),path=item.photoPath??null,epoch=sharedEpoch;
+ renderTickets.set(target,token);
+ return ()=>{
+  const current=readItem(item.id);
+  return renderTickets.get(target)===token&&target.isConnected&&epoch===sharedEpoch&&
+   !!current&&key(current)===identity&&(current.photoPath??null)===path;
+ };
 }
 function decorate(){
  for(const row of doc.querySelectorAll('#stockList [data-stock-id],#pg-home [data-atk-open],#buyList [data-buy-id]')){
   let item=readItem(row.dataset.stockId||row.dataset.atkOpen);
   if(row.dataset.buyId){try{const buy=buys.find(x=>String(x.id)===row.dataset.buyId);item=items.find(x=>root.__atokoreCoreV125H.sameProduct(x,buy))}catch(_){}}
   if(!item)continue;
-  const k=key(item),badge=row.querySelector('.atk-row-brand,.atk-brand');if(!badge)continue;
-  const epoch=sharedEpoch;
-  loadFor(item).then(url=>{if(epoch===sharedEpoch&&row.isConnected&&key(readItem(item.id)||{})===k)picture(badge,url)}).catch(()=>{if(epoch===sharedEpoch)picture(badge,null)});
+  const badge=row.querySelector('.atk-row-brand,.atk-brand');if(!badge)continue;
+  const current=beginPhotoRender(badge,item);
+  loadFor(item).then(url=>{if(current()&&row.contains(badge))picture(badge,url)}).catch(()=>{if(current()&&row.contains(badge))picture(badge,null)});
  }
 }
 let editor=null;
@@ -141,13 +155,13 @@ function detailPhoto(){
   const button=element('button','atk-photo-open','写真を設定');button.type='button';
   button.addEventListener('click',()=>openEditor(item.id));head.append(button);
  }
- const epoch=sharedEpoch;
+ const current=beginPhotoRender(head,item);
  loadFor(item).then(url=>{
-  if(epoch!==sharedEpoch||!head.isConnected)return;
+  if(!current())return;
   let image=head.querySelector('.atk-detail-photo');
   if(url){if(!image){image=element('img','atk-detail-photo');image.alt='商品の写真';head.prepend(image)}image.src=url}
   else image?.remove();
-  head.querySelector('.atk-photo-open').textContent=url?'写真を変更':'写真を設定';
+  const button=head.querySelector('.atk-photo-open');if(button)button.textContent=url?'写真を変更':'写真を設定';
  }).catch(()=>{});
 }
 function openEditor(id){
@@ -394,6 +408,9 @@ async function moveIdentity(before,after){
   decorate();detailPhoto();
  }catch(_){root.notifyAtokoreV125H?.('商品は保存しました。写真だけ引き継げませんでした。写真を設定し直してください。')}
 }
+function photoReferences(){
+ try{return JSON.stringify(items.map(x=>[key(x),x.photoPath??null]))}catch(_){return ''}
+}
 function install(){
  // Never enable this UI in the normal app or another trial sharing this origin.
  if(!/\/preview-baby-v19\//.test(root.location?.pathname||''))return;
@@ -404,8 +421,12 @@ function install(){
  root.openM=function(...args){dispose();const result=priorOpen.apply(this,args);detailPhoto();return result};
  root.closeM=function(...args){if(editor?.busy)return;dispose();return priorClose.apply(this,args)};
  doc.addEventListener('atokore-stock-edited',event=>moveIdentity(event.detail.before,event.detail.after));
+ let priorReferences=photoReferences();
  doc.addEventListener('atokore-household-updated',()=>{
-  const next=scopeKey();if(next!==photoHousehold){photoHousehold=next;resetShared();editor?.clearSharedPreview();decorate();detailPhoto()}
+  const next=scopeKey(),refs=photoReferences(),changed=refs!==priorReferences;
+  priorReferences=refs;
+  if(next!==photoHousehold){photoHousehold=next;resetShared();editor?.clearSharedPreview();decorate();detailPhoto()}
+  else if(changed){decorate();detailPhoto()}
   shareWaiting();
  });
  decorate();detailPhoto();

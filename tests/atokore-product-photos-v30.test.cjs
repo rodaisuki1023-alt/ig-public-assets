@@ -130,3 +130,18 @@ test('v50: disabled family photo gateway retains local pictures without any shar
  await ctx.__photoTest.shareWaiting();
  assert.equal(requests,0);
 });
+
+test('v50: stale row render cannot overwrite a newer photo, a replaced badge or a removed scope',()=>{
+ const vm=require('node:vm'),source=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
+ const hook='root.AtokoreProductPhotos=api;';
+ const item={id:1,name:'合成商品',unit:'個',photoPath:'old.jpg'};
+ const ctx={items:[item],URL:{revokeObjectURL(){}}};
+ vm.runInNewContext(source.replace(hook,'root.__renderTest={beginPhotoRender,resetShared};'+hook),ctx);
+ const {beginPhotoRender,resetShared}=ctx.__renderTest,element={isConnected:true};
+ const old=beginPhotoRender(element,item);assert.equal(old(),true);
+ item.photoPath='new.jpg';assert.equal(old(),false);
+ const next=beginPhotoRender(element,item);assert.equal(next(),true);
+ const newer=beginPhotoRender(element,item);assert.equal(next(),false);assert.equal(newer(),true);
+ element.isConnected=false;assert.equal(newer(),false);
+ element.isConnected=true;resetShared();assert.equal(newer(),false);
+});
