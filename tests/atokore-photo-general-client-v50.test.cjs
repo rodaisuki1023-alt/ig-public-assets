@@ -43,6 +43,18 @@ test('general protocol is disabled and the journal is persisted before sharePhot
  const config=fs.readFileSync(path.join(dir,'household-config-v37.js'),'utf8');
  assert.match(config,/photoGatewayEnabled:\s*false/);
  const p=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8'),a=p.indexOf('async function sendOne'),b=p.indexOf('function needsSending',a),s=p.slice(a,b);
- assert.ok(s.indexOf('store.put({...latest,transfer},k)')<s.indexOf('await hh.sharePhoto(item.id,blob,transfer)'));
+ assert.ok(s.indexOf('store.put({...latest,boundScope:bound,transfer},k)')<s.indexOf('await hh.sharePhoto(item.id,blob,transfer)'));
  assert.match(s,/if\(!persisted\)return false/);assert.match(s,/latest\.transfer\?\.operationId===transfer\.operationId/);
+});
+
+test('managed pending photos never cross household/user scope',()=>{
+ const api=require('../atokore-live-v125/product-photos-v30.js');
+ const a='household-a:user-a',b='household-b:user-a',c='household-a:user-b';
+ assert.equal(api.canSendManagedPhoto({bytes:new Uint8Array(4)},a),true);
+ assert.equal(api.canSendManagedPhoto({pending:true},a),false);
+ assert.equal(api.canSendManagedPhoto({removed:true,pending:true},a),false);
+ const pending={pending:true,boundScope:a};
+ assert.equal(api.canSendManagedPhoto(pending,a),true);
+ assert.equal(api.canSendManagedPhoto(pending,b),false);
+ assert.equal(api.canSendManagedPhoto(pending,c),false);
 });

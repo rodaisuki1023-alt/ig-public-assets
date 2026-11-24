@@ -198,6 +198,12 @@ function openEditor(id){
    const sharing=!!root.AtokoreHousehold?.homeState?.().joined;
    // While sharing, the change is marked "not yet sent" until the family has it.
    const record=remove?(sharing&&current.photoPath?{removed:true,pending:true}:null):(sharing?{bytes,pending:true}:{bytes});
+   // Bind pending family changes to the exact household and actor before saving.
+   // Never silently send a pending change into a later, different household.
+   if(record&&sharing&&root.AtokoreHousehold?.photoProtocolManaged?.()===true){
+    const bound=root.AtokoreHousehold.receiptScope?.();
+    if(bound)record.boundScope=bound;
+   }
    await transaction('readwrite',store=>record?store.put(record,session.key):store.delete(session.key));
    cacheBlob(session.key,remove?null:session.blob);
    resetShared();
@@ -230,13 +236,15 @@ async function sendOne(item,record){
  // recorded in the product and reaches the family with the next sync.
  let transfer=null;
  if(hh.photoGeneralEnabled?.()===true){
+  const bound=hh.receiptScope?.();
+  if(!bound||!canSendManagedPhoto(record,bound))return false;
   transfer=await hh.photoTransferPlan(item.id,blob,record.transfer||null);
   const persisted=await transaction('readwrite',(store,done)=>{const req=store.get(k);req.onsuccess=()=>{
    const latest=req.result;
    const same=latest&&latest.removed===record.removed&&(record.removed||
      (latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i])));
-   if(!same||(latest.transfer&&latest.transfer.operationId!==transfer.operationId)){done(false);return}
-   store.put({...latest,transfer},k);done(true);
+   if(!same||!canSendManagedPhoto(latest,bound)||(latest.transfer&&latest.transfer.operationId!==transfer.operationId)){done(false);return}
+   store.put({...latest,boundScope:bound,transfer},k);done(true);
   }});
   if(!persisted)return false;
  }
@@ -255,6 +263,13 @@ async function sendOne(item,record){
 }
 // Which local photos still have to reach the family: changes made while sharing (pending), and
 // photos from before sharing started (no marker) for products that have no family photo yet.
+function canSendManagedPhoto(record,bound){
+ if(!record||!bound)return false;
+ if(record.boundScope!=null)return record.boundScope===bound;
+ // Unsent edits from the old protocol are held for explicit reselection.
+ // A device-only photo from before joining may follow the confirmed join.
+ return record.pending===undefined&&!record.removed&&!record.transfer;
+}
 function needsSending(item,record){
  if(!item||!record)return false;
  if(record.pending===true)return true;
@@ -270,6 +285,7 @@ async function shareWaiting(){
   for(const [k,record] of await allRecords()){
    const item=byKey.get(k);
    if(!needsSending(item,record))continue;
+   if(hh.photoGeneralEnabled?.()===true&&!canSendManagedPhoto(record,hh.receiptScope?.()))continue;
    if(!await sendOne(item,record).catch(()=>false))break; // try again on the next update
   }
  })().finally(()=>{sharing=null});
@@ -382,7 +398,7 @@ function install(){
  root.addEventListener('pagehide',()=>{dispose();resetShared();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
 }
-const api=Object.freeze({key,fileKind,validBlob,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
+const api=Object.freeze({key,fileKind,validBlob,canSendManagedPhoto,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreProductPhotos=api;
 if(doc)install();
