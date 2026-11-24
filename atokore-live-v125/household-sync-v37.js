@@ -113,7 +113,7 @@ function photoScope(id){
  return sid?{household:household.id,user:session.user.id,sid}:null;
 }
 function sameScope(a,b){return a&&b&&a.household===b.household&&a.user===b.user&&a.sid===b.sid}
-function validPhotoPath(path,scope){return typeof path==='string'&&scope&&path.startsWith(scope.household+'/'+scope.sid+'/')&&/^[0-9a-f-]{36}\/[A-Za-z0-9_-]{8,64}\/[0-9a-f-]{36}\.jpg$/.test(path)}
+function validPhotoPath(path,scope){return typeof path==='string'&&scope&&path.startsWith(scope.household+'/'+scope.sid+'/')&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[A-Za-z0-9_-]{8,64}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/.test(path)}
 async function photoRequest(path,method='GET',blob){
  if(!session)throw Error('家族共有に参加してからお試しください。');
  if(session.expires_at-60<Date.now()/1000)await refreshSession();
@@ -140,7 +140,7 @@ async function photoRequest(path,method='GET',blob){
    if(!response.ok)throw Error('写真の共有許可を確認できませんでした。');
    if(op==='read')return response.blob();
    const data=await response.json();
-   if(!data?.path||typeof data.path!=='string')throw Error('写真の保存先を確認できませんでした。');
+   if(!validPhotoPath(data?.path,{household:parts[0],sid:parts[1]}))throw Error('写真の保存先を確認できませんでした。');
    return data.path;
   }
   // Legacy trial transport ONLY. Never enable this path in a public photo
