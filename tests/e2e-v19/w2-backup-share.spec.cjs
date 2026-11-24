@@ -198,11 +198,29 @@ test('sharing: restore is refused with guidance, the status matches on home and 
         return seen>0;
       },{timeout:20000}).toBe(true);
     }finally{await a.page.evaluate(()=>window.__photoWriteGate?.release())}
-    await expect.poll(async () => { await a.page.evaluate(() => AtokoreHousehold.syncNow()); return !!(await stored(a.page)).items.find(x => x.id === 3).photoPath; }, { timeout: 20000 }).toBe(true);
-    await b.page.evaluate(() => AtokoreHousehold.syncNow());
+    // Local photoPath can appear before the asynchronous hh_push has been
+    // acknowledged. Observe the authoritative server row, then the receiving
+    // device's exact reference, before checking the actual rendered image.
+    let serverPath;
+    await expect.poll(async()=>{
+      await a.page.evaluate(()=>AtokoreHousehold.syncNow());
+      const res=await request.post(EMU+'/__test/sql',{data:{sql:"SELECT fields->>'photoPath' AS path FROM atokore_private.records WHERE kind='item' AND NOT deleted AND fields->>'name'='卵'"}});
+      expect(res.ok()).toBe(true);
+      const rows=await res.json();
+      expect(rows).toHaveLength(1);
+      serverPath=rows[0].path;
+      return typeof serverPath==='string'&&serverPath.endsWith('.jpg');
+    },{timeout:20000}).toBe(true);
+    expect((await stored(a.page)).items.find(x=>x.id===3).photoPath).toBe(serverPath);
+    await expect.poll(async()=>{
+      await b.page.evaluate(()=>AtokoreHousehold.syncNow());
+      return (await stored(b.page)).items.find(x=>x.name==='卵')?.photoPath??null;
+    },{timeout:20000}).toBe(serverPath);
     const eggB = (await stored(b.page)).items.find(x => x.name === '卵');
     await go(b.page, 'stock');
-    await expect(b.page.locator(`#stockList [data-stock-id="${eggB.id}"] .atk-user-photo`)).toBeVisible();
+    const receivedImage=b.page.locator(`#stockList [data-stock-id="${eggB.id}"] .atk-user-photo`);
+    await expect(receivedImage).toBeVisible();
+    await expect.poll(()=>receivedImage.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
 
     // Status: same summary on home and in the dialog, with names and "this device".
     await go(a.page, 'home');
