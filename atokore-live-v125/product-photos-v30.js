@@ -226,12 +226,24 @@ async function sendOne(item,record){
  const blob=record.removed?null:recordBlob(record);if(!record.removed&&!blob)return false;
  // Throws when the upload or the record could not be made; once it returns, the photo's place is
  // recorded in the product and reaches the family with the next sync.
- const sent=await hh.sharePhoto(item.id,blob);
+ let transfer=null;
+ if(hh.photoGeneralEnabled?.()===true){
+  transfer=await hh.photoTransferPlan(item.id,blob,record.transfer||null);
+  const persisted=await transaction('readwrite',(store,done)=>{const req=store.get(k);req.onsuccess=()=>{
+   const latest=req.result;
+   const same=latest&&latest.removed===record.removed&&(record.removed||
+     (latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i])));
+   if(!same||(latest.transfer&&latest.transfer.operationId!==transfer.operationId)){done(false);return}
+   store.put({...latest,transfer},k);done(true);
+  }});
+  if(!persisted)return false;
+ }
+ const sent=await hh.sharePhoto(item.id,blob,transfer);
  if(sent?.shared!==true)return false;
  // Compare the exact bytes inside the write transaction, not just their length.
  await transaction('readwrite',store=>{const req=store.get(k);req.onsuccess=()=>{
   const latest=req.result;
-  if(latest&&latest.removed===record.removed&&(record.removed||
+  if(latest&&(!transfer||latest.transfer?.operationId===transfer.operationId)&&latest.removed===record.removed&&(record.removed||
     (latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i])))){
    if(latest.removed)store.delete(k);else store.put({bytes:latest.bytes,pending:false},k);
   }

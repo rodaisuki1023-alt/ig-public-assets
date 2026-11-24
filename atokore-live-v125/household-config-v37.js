@@ -10,6 +10,7 @@ if (!Object.prototype.hasOwnProperty.call(window, 'ATOKORE_HOUSEHOLD_CONFIG')) {
     guest: true,
     email: false,
     // General photo gateway is not release-ready. No old Storage fallback.
-    photoGatewayEnabled: false
+    photoGatewayEnabled: false,
+    photoGatewayProtocol: 2
   };
 }

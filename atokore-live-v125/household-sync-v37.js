@@ -114,6 +114,7 @@ function photoScope(id){
 }
 function sameScope(a,b){return a&&b&&a.household===b.household&&a.user===b.user&&a.sid===b.sid}
 function photoSharingEnabled(){return cfg.photoGatewayEnabled===true}
+function photoGeneralEnabled(){return photoSharingEnabled()&&cfg.photoGatewayProtocol===2}
 function validPhotoPath(path,scope){return typeof path==='string'&&!/\s/.test(path)&&scope&&path.startsWith(scope.household+'/'+scope.sid+'/')&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[A-Za-z0-9_-]{8,64}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$/.test(path)}
 async function photoRequest(path,method='GET',blob){
  if(!photoSharingEnabled())throw Error('写真の家族共有は現在停止中です。端末内の写真は残っています。');
@@ -149,15 +150,81 @@ async function photoRequest(path,method='GET',blob){
 
  }catch(e){if(e.name==='AbortError'||e instanceof TypeError)throw Error('通信できません。端末に保存済みの写真は残っています。つながってからお試しください。');throw e}finally{clearTimeout(timeout)}
 }
+// Candidate general protocol (disabled in trial config). Journal is persisted
+// by product-photos in its existing IndexedDB record BEFORE network transfer.
+function photoUuid(x){return typeof x==='string'&&x.length===36&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(x)}
+function photoRevision(x){return Number.isSafeInteger(x)&&x>=0}
+function photoBase(scope){const row=engine?.meta()?.base?.['item:'+scope.sid];return row&&!row.deleted&&photoRevision(row.seq)?row:null}
+async function photoTransferPlan(id,blob,prior=null){
+ if(!photoGeneralEnabled())throw Error('写真の家族共有は現在停止中です。');
+ const scope=photoScope(id);if(!scope)throw Error('家族共有に参加してください。');
+ if(blob&&(blob.type!=='image/jpeg'||blob.size<1||blob.size>81920))throw Error('写真の形式を確認してください。');
+ const digest=blob?[...new Uint8Array(await root.crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))].map(b=>b.toString(16).padStart(2,'0')).join(''):null;
+ await syncNow();
+ if(status.state!=='synced'||!sameScope(scope,photoScope(id))||engine.status().pending)throw Error('共有先を確認できませんでした。端末内の写真は残っています。');
+ const row=photoBase(scope);if(!row)throw Error('最新の商品情報を確認できませんでした。');
+ const operation=blob?'write':'delete';
+ if(prior){
+  if(prior.v!==2||!sameScope(prior.scope,scope)||prior.operation!==operation||prior.digest!==digest||
+   !photoUuid(prior.operationId)||!photoRevision(prior.expectedSeq)||
+   (prior.expectedPath!==null&&!validPhotoPath(prior.expectedPath,scope)))
+   throw Error('前回の写真共有を確認できません。端末内の写真は残っています。');
+  return prior; // never silently refresh a pending operation's original revision
+ }
+ const expectedPath=row.fields?.photoPath??null;
+ if(expectedPath!==null&&!validPhotoPath(expectedPath,scope))throw Error('以前の写真の移行が必要です。');
+ return {v:2,scope,operation,digest,operationId:root.crypto.randomUUID(),expectedPath,expectedSeq:row.seq};
+}
+async function generalPhotoPost(id,scope,payload){
+ if(!photoGeneralEnabled()||!session||!sameScope(scope,photoScope(id)))throw Error('写真の共有先が変わりました。');
+ if(session.expires_at-60<Date.now()/1000)await refreshSession();
+ if(!sameScope(scope,photoScope(id)))throw Error('写真の共有先が変わりました。');
+ const token=session.access_token,controller=new root.AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+ try{
+  const res=await root.fetch(base+'/functions/v1/atokore-photo-general-v50',{method:'POST',headers:{
+   apikey:cfg.anonKey,Authorization:'Bearer '+token,'Content-Type':'application/json'
+  },body:JSON.stringify(payload),cache:'no-store',signal:controller.signal});
+  if(!sameScope(scope,photoScope(id)))throw Error('写真の共有先が変わりました。');
+  if(!res.ok)throw Error(res.status===409?'写真の変更が競合しました。端末内の写真は残っています。':'写真を共有できませんでした。端末内の写真は残っています。');
+  return payload.operation==='read'?await res.blob():await res.json();
+ }finally{clearTimeout(timeout)}
+}
+async function shareGeneralPhoto(id,blob,prior){
+ if(!prior)throw Error('写真の操作記録が保存されていません。');
+ const plan=await photoTransferPlan(id,blob,prior),scope=plan.scope;
+ let path=null;
+ if(blob){
+  const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';
+  for(let i=0;i<bytes.length;i+=4096)binary+=String.fromCharCode(...bytes.subarray(i,i+4096));
+  const data=await generalPhotoPost(id,scope,{operation:'write',householdId:scope.household,recordId:scope.sid,
+   operationId:plan.operationId,expectedPath:plan.expectedPath,expectedSeq:plan.expectedSeq,base64:root.btoa(binary)});
+  if(!validPhotoPath(data?.path,scope)||!photoRevision(data.seq))throw Error('写真の保存先を確認できませんでした。');
+  path=data.path;
+ }else{
+  const current=photoBase(scope)?.fields?.photoPath??null;
+  // Lost detach reply: if the intended state is already absent, no new delete.
+  if(current!==null){
+   if(current!==plan.expectedPath)throw Error('家族が写真を変更しました。');
+   const data=await generalPhotoPost(id,scope,{operation:'delete',path:plan.expectedPath,expectedSeq:plan.expectedSeq});
+   if(data?.deleted!==true||!photoRevision(data.seq))throw Error('写真の解除を確認できませんでした。');
+  }
+ }
+ // The server owns the reference. Never write a local photoPath or hh_push it.
+ await syncNow();
+ return {shared:status.state==='synced'&&sameScope(scope,photoScope(id))&&
+  !!photoBase(scope)&&(photoBase(scope).fields?.photoPath??null)===path};
+}
+
 async function fetchPhoto(id,path){
  if(!photoSharingEnabled())return null;
  const scope=photoScope(id);if(!validPhotoPath(path,scope))return null;
- const blob=await photoRequest(path);
+ const blob=photoGeneralEnabled()?await generalPhotoPost(id,scope,{operation:'read',path}):await photoRequest(path);
  if(!sameScope(scope,photoScope(id)))return null;
  if(blob.type!=='image/jpeg'||blob.size>81920||blob.size===0)throw Error('写真の形式を確認できませんでした。');
  return blob;
 }
-async function sharePhoto(id,blob){
+async function sharePhoto(id,blob,transfer=null){
+ if(photoGeneralEnabled())return shareGeneralPhoto(id,blob,transfer);
  if(!photoSharingEnabled())throw Error('写真の家族共有は現在停止中です。端末内の写真は残っています。');
  const scope=photoScope(id);if(!scope)throw Error('家族共有に参加してからお試しください。');
  if(blob&&(blob.type!=='image/jpeg'||blob.size>81920||blob.size===0))throw Error('写真の形式を確認できませんでした。');
@@ -237,7 +304,7 @@ function writeState(state){
  return true;
 }
 function makeEngine(){
- engine=core.createEngine({readState,writeState,readMeta:()=>meta.engine||null,writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device});
+ engine=core.createEngine({readState,writeState,readMeta:()=>meta.engine||null,writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
  return engine;
 }
 function setStatus(state,detail){status={state,detail,pending:engine?engine.status().pending:0};paint()}
@@ -623,5 +690,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);
