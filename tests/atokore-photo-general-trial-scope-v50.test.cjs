@@ -43,8 +43,8 @@ test('scoped general trial defaults closed, leaves existing records untouched, a
   assert.equal((await push(D,R2,{type:'add',delta:1})).results[0].status,'applied');
   assert.equal((await db.query("SELECT fields->>'photoPath' p FROM atokore_private.records WHERE household_id=$1 AND id=$2",[HD,R2])).rows[0].p,legacy);
   await assert.rejects(push(A,R,{type:'set',field:'photoPath',value:H+'/'+R+'/'+randomUUID()+'.jpg'}),/photo_reference_requires_gateway/);
-  const acl=(await db.query("SELECT has_function_privilege('service_role','atokore_private.hh_photo_service_v50(uuid,uuid,text,uuid,text,uuid,uuid,text,bigint,text,integer)','EXECUTE') inner,has_function_privilege('authenticated','public.hh_photo_service_v50(uuid,uuid,text,uuid,text,uuid,uuid,text,bigint,text,integer)','EXECUTE') outer")).rows[0];
-  assert.deepEqual(acl,{inner:false,outer:false});
+  const acl=(await db.query("SELECT has_function_privilege('service_role','atokore_private.hh_photo_service_v50(uuid,uuid,text,uuid,text,uuid,uuid,text,bigint,text,integer)','EXECUTE') inner_allowed,has_function_privilege('authenticated','public.hh_photo_service_v50(uuid,uuid,text,uuid,text,uuid,uuid,text,bigint,text,integer)','EXECUTE') outer_allowed")).rows[0];
+  assert.deepEqual(acl,{inner_allowed:false,outer_allowed:false});
   await db.query('UPDATE atokore_private.photo_general_trial_scope_v50 SET enabled=false');
   await assert.rejects(svc(A,SA,'reserve',H,R,args),/photo_trial_denied/);
   assert.equal(await budget(A,SA,H),false);
