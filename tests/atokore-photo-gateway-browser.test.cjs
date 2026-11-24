@@ -4,11 +4,11 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../atokore-live-v125/household-sync-v37.js'),'utf8');
-const start=source.indexOf('async function photoRequest('),end=source.indexOf('\nasync function fetchPhoto(',start);
+const start=source.indexOf('function validPhotoPath('),end=source.indexOf('\nasync function fetchPhoto(',start);
 assert.ok(start>=0&&end>start);
 const fragment=source.slice(start,end);
 const jpeg=Uint8Array.from([255,216,255,224,23,12,255,217]);
-function setup(status=200) {
+function setup(status=200,returnedPath) {
  const calls=[], now='https://synthetic.invalid',picture='12345678-1234-1234-1234-123456789abc/mockRecord/12345678-1234-1234-1234-123456789abc.jpg';
  const ctx={
   session:{access_token:'synthetic-jwt',expires_at:9999999999},
@@ -21,7 +21,7 @@ function setup(status=200) {
    fetch:async(url,opts)=>{
     calls.push({url,opts});
     if(status!==200)return {ok:false,status};
-    return {ok:true,blob:async()=>({type:'image/jpeg',size:8}),json:async()=>({path:picture})};
+    return {ok:true,blob:async()=>({type:'image/jpeg',size:8}),json:async()=>({path:returnedPath===undefined?picture:returnedPath})};
    }
   },
   setTimeout:()=>1,clearTimeout:()=>{},refreshSession:()=>{throw Error('unexpected refresh')},
@@ -60,4 +60,19 @@ test('gateway error refuses photo and NEVER falls back to legacy Storage',async(
  await assert.rejects(t.photoRequest(t.picture,'GET'),/許可/);
  assert.equal(t.calls.length,1);
  assert.ok(!t.calls[0].url.includes('/storage/v1/object/'));
+});
+
+test('photo upload cannot link another household, item or malformed UUID from gateway response',async()=>{
+ const blob={type:'image/jpeg',size:jpeg.length,arrayBuffer:async()=>jpeg.buffer};
+ const original=setup().picture;
+ for(const foreign of [
+  original.replace('12345678-1234-1234-1234-123456789abc/','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/'),
+  original.replace('/mockRecord/','/otherItem/'),
+  original.replace(/\/[^/]+\.jpg$/,'/------------------------------------.jpg'),
+  original+'?signed=unexpected',null
+ ]){
+  const t=setup(200,foreign);
+  await assert.rejects(t.photoRequest(t.picture,'POST',blob),/保存先/);
+  assert.equal(t.calls.length,1);
+ }
 });
