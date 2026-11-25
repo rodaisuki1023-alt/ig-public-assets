@@ -70,7 +70,8 @@ function rememberMembers(my){
  saveMeta({members:my.members.map(m=>({name:String(m.display_name||''),me:!!m.is_me})),membersFor:membersKey(),membersAt:Date.now()});
 }
 async function refreshMembers(force){
- if(!membersKey()||(!force&&meta.membersFor===membersKey()&&Date.now()-(meta.membersAt||0)<20000))return;
+ // v51 traffic: the member list changes rarely; a changed cursor forces a refresh (see syncNow).
+ if(!membersKey()||(!force&&meta.membersFor===membersKey()&&Date.now()-(meta.membersAt||0)<MEMBERS_TTL))return;
  try{const my=await rpc('hh_my',{});if(my?.household)rememberMembers(my)}catch(_){}
 }
 const when=t=>new Date(t).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -330,7 +331,10 @@ function makeEngine(){
  return engine;
 }
 function setStatus(state,detail){status={state,detail,pending:engine?engine.status().pending:0};paint()}
-async function syncNow(){
+// opts.poll: a periodic background poll. Only those skip history/member reads when nothing changed;
+// an explicit sync (button, API, coming back, online) always refreshes them as before.
+async function syncNow(opts){
+ const poll=opts?.poll===true;
  if(!engine||!household)return status;
  if(syncing)return syncing;
  // Defer execution until the guard is assigned. An offline failure can happen before the
@@ -339,11 +343,17 @@ async function syncNow(){
   try{
    if(root.navigator&&root.navigator.onLine===false)throw new NetError('offline','network',0);
    setStatus('syncing');
+   const before=engine.status();
    await engine.sync();
    const s=engine.status();
    setStatus(s.pending?'pending':'synced');
-   await refreshChanges();
-   if(!s.pending){await refreshMembers();paint()}
+   // v51 traffic: history and members are fetched again only when something changed (the
+   // server cursor moved or this device sent changes) or they were never loaded; a quiet poll
+   // costs one hh_pull instead of three requests.
+   const changed=s.cursor!==before.cursor||before.pending>s.pending;
+   if(!poll||changed||historyState!=='ready')await refreshChanges();
+   if(!s.pending){await refreshMembers(changed||!poll);paint()}
+   pollAfter(changed?'active':'quiet');
   }catch(e){
    if(e.code==='rejected'||e.code==='recovery')setStatus('blocked');
    else if(e.code==='storage')setStatus('storage');
@@ -351,6 +361,7 @@ async function syncNow(){
    else if(e.code==='auth'||e.status===401)setStatus('auth');
    else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
    else setStatus('error',e.message);
+   if(e.code==='network'||!['rejected','recovery','storage','auth'].includes(e.code))pollAfter('failed');
    if(household&&session){const current=household.id+':'+session.user.id;if(changesFor!==current)changes=[];changesFor=current;historyState='error';paint()}
    root.console?.warn?.('あとこれ 家族共有の同期',e);
   }
@@ -368,13 +379,24 @@ function watch(){
   if(raw!==lastRaw){
    lastRaw=raw;
    try{if(engine.flush())setStatus('pending')}catch(e){setStatus('error',e.message)}
-   clearTimeout(pending);pending=setTimeout(syncNow,1500);
+   clearTimeout(pending);pending=setTimeout(syncNow,1500);pollAfter('active');
   }
  },1000);
- clearInterval(puller);puller=setInterval(()=>{if(doc.visibilityState!=='hidden')syncNow()},20000);
+ pollAfter('active');
 }
-root.addEventListener?.('online',()=>syncNow());
-doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')syncNow()});
+// v51 traffic: adaptive polling instead of a fixed 20 s pull. Active (a change went either way):
+// 20 s. Quiet: grows ×1.5 up to 2 min. After a failed request: doubles up to 5 min (backoff). A
+// hidden page never polls; coming back, going online or a local edit syncs at once and resets.
+const POLL_MIN=20000,POLL_QUIET_MAX=120000,POLL_FAIL_MAX=300000,MEMBERS_TTL=300000;
+let pollDelay=POLL_MIN;
+function pollAfter(kind){
+ pollDelay=kind==='active'?POLL_MIN:kind==='failed'?Math.min(POLL_FAIL_MAX,Math.max(POLL_MIN,pollDelay*2)):Math.min(POLL_QUIET_MAX,Math.round(pollDelay*1.5));
+ clearTimeout(puller);
+ if(!engine||!household)return;
+ puller=setTimeout(()=>{if(doc.visibilityState!=='hidden')syncNow({poll:true});else pollAfter('quiet')},pollDelay);
+}
+root.addEventListener?.('online',()=>{pollAfter('active');syncNow()});
+doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible'){pollAfter('active');syncNow()}});
 
 // ---------------------------------------------------------------- UI helpers (DOM + textContent only)
 function el(tag,props,children){
@@ -663,7 +685,7 @@ async function leave(){
  await rpc('hh_leave',{});
  stop();household=null;saveMeta({household:null,engine:null});setStatus('local');root.closeM?.();notice('世帯から抜けました。この端末の在庫はそのまま残っています');
 }
-function stop(){clearInterval(timer);clearInterval(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
+function stop(){clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
 async function signOut(){
  const left=engine?engine.status().pending:0;
  if(!await ask('ログアウトしますか？',(left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+(session?.user?.is_anonymous?'Googleなしの参加情報は失われます。戻るには作成者から再招待が必要です。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。','ログアウト'))return;

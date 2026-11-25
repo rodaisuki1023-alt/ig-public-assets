@@ -214,6 +214,8 @@
   root.AtokorePackingChecklist = Object.freeze({
     key: KEY,
     status: () => ({ active: state.active, items: state.lists[state.active].length, locked }),
+    // Read-only copy of the active list for summaries (v51); writes stay in this module.
+    items: () => locked ? null : state.lists[state.active].map(x => ({ name: x.name, done: x.done })),
     refresh: () => { if (!locked) render(); }
   });
 })(typeof window !== 'undefined' ? window : globalThis);
