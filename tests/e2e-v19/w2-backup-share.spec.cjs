@@ -309,3 +309,54 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     expect(a.page.__errors).toEqual([]); expect(b.page.__errors).toEqual([]);
   } finally { await a.ctx.close(); await b.ctx.close(); }
 });
+
+// v51 A2: the gateway names every upload itself. When the sync right after an upload cannot
+// confirm it (push lost), the photo stays "not yet shared" and is retried. The retry must reuse
+// the uploaded path and only confirm it: a second upload would get a new path, the family would
+// read a reference that is no longer current (denied) and the first file would be orphaned.
+test('photo share retried after an unconfirmed sync uploads once and both phones keep one path', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  await request.post(EMU + '/__test/reset');
+  async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 } }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
+  const a = await device(baseState()), b = await device({ items: [], buys: [], routines: [] });
+  const writes = async () => (await (await request.get(EMU + '/__test/photo-events')).json()).filter(e => e.operation === 'write' && e.status === 200);
+  const serverPath = async () => { const rows = await (await request.post(EMU + '/__test/sql', { data: { sql: "SELECT fields->>'photoPath' AS path FROM atokore_private.records WHERE kind='item' AND NOT deleted AND fields->>'name'='卵'" } })).json(); return rows[0]?.path ?? null; };
+  try {
+    await go(a.page, 'premium'); await a.page.click('#atkHouseholdCard');
+    await a.page.getByRole('button', { name: 'Googleでログイン', exact: true }).click();
+    await a.page.fill('#atkHhName', 'パパ'); await a.page.getByRole('button', { name: '世帯を作る', exact: true }).click(); await appConfirm(a.page, true);
+    await expect(a.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
+    await a.page.getByRole('button', { name: /家族を招待する/ }).click();
+    const link = await a.page.locator('#atkHhInviteLink').inputValue();
+    await b.page.goto(link); await b.page.fill('#atkHhGuestName', 'ママ');
+    await b.page.getByRole('button', { name: 'Googleなしで共有に参加する', exact: true }).click();
+    await expect(b.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
+    await b.page.getByRole('button', { name: '閉じる', exact: true }).click();
+    await a.page.getByRole('button', { name: '閉じる', exact: true }).click();
+    await a.page.evaluate(() => AtokoreHousehold.syncNow());
+
+    // The upload succeeds, but the push that would record it on the server is lost.
+    await request.post(EMU + '/__test/drop-push', { data: { email: 'google@example.test', enabled: true } });
+    await setPhoto(a.page, 3, 40);
+    await expect.poll(async () => (await writes()).length, { timeout: 20000 }).toBe(1);
+    const uploaded = (await writes())[0].path;
+    await expect.poll(async () => (await request.post(EMU + '/__test/drop-push', { data: { email: 'google@example.test', enabled: true } }).then(r => r.json())).attempts, { timeout: 20000 }).toBeGreaterThan(0);
+    expect(await serverPath()).toBeNull();
+
+    // Connection back: every later sync re-runs the share queue. It must confirm, not re-upload.
+    await request.post(EMU + '/__test/drop-push', { data: { email: 'google@example.test', enabled: false } });
+    await expect.poll(async () => { await a.page.evaluate(() => AtokoreHousehold.syncNow()); return serverPath(); }, { timeout: 20000 }).toBe(uploaded);
+    for (let i = 0; i < 3; i++) await a.page.evaluate(() => AtokoreHousehold.syncNow());
+    expect((await writes()).map(w => w.path)).toEqual([uploaded]);
+    expect((await stored(a.page)).items.find(x => x.id === 3).photoPath).toBe(uploaded);
+    // The device record is marked shared once the family has the photo, so no later scan resends it.
+    await expect.poll(() => a.page.evaluate(() => new Promise(res => { const r = indexedDB.open('atokorePreviewProductPhotosV19', 1); r.onsuccess = () => { const q = r.result.transaction('photos').objectStore('photos').getAll(); q.onsuccess = () => { res(q.result.filter(v => v && v.bytes && v.pending === true).length); r.result.close(); }; }; })), { timeout: 20000 }).toBe(0);
+
+    // The partner receives exactly that reference and may read it.
+    await expect.poll(async () => { await b.page.evaluate(() => AtokoreHousehold.syncNow()); return (await stored(b.page)).items.find(x => x.name === '卵')?.photoPath ?? null; }, { timeout: 20000 }).toBe(uploaded);
+    const eggB = (await stored(b.page)).items.find(x => x.name === '卵');
+    const received = await b.page.evaluate(async ({ id, path }) => { const blob = await AtokoreHousehold.fetchPhoto(id, path); return { type: blob?.type, bytes: blob?.size || 0 }; }, { id: eggB.id, path: uploaded });
+    expect(received.type).toBe('image/jpeg'); expect(received.bytes).toBeGreaterThan(0);
+    expect(a.page.__errors).toEqual([]); expect(b.page.__errors).toEqual([]);
+  } finally { await a.ctx.close(); await b.ctx.close(); }
+});

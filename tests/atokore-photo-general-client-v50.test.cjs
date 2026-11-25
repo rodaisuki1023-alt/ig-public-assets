@@ -43,7 +43,8 @@ test('general protocol is disabled and the journal is persisted before sharePhot
  const config=fs.readFileSync(path.join(dir,'household-config-v37.js'),'utf8');
  assert.match(config,/photoGatewayEnabled:\s*false/);
  const p=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8'),a=p.indexOf('async function sendOne'),b=p.indexOf('function needsSending',a),s=p.slice(a,b);
- assert.ok(s.indexOf('store.put({...latest,boundScope:bound,transfer},k)')<s.indexOf('await hh.sharePhoto(item.id,blob,transfer)'));
+ assert.ok(s.indexOf('store.put({...latest,boundScope:bound,transfer},k)')<s.indexOf('await hh.sharePhoto(item.id,blob,transfer,resume)'));
+ assert.ok(s.indexOf('await hh.sharePhoto(item.id,blob,transfer,resume)')>0,'single send call');assert.match(s,/const resume=transfer\?null:/);
  assert.match(s,/if\(!persisted\)return false/);assert.match(s,/latest\.transfer\?\.operationId===transfer\.operationId/);
 });
 

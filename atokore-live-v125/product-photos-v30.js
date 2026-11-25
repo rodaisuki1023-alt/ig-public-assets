@@ -262,7 +262,15 @@ async function sendOne(item,record){
   }});
   if(!persisted)return false;
  }
- const sent=await hh.sharePhoto(item.id,blob,transfer);
+ // Legacy single-step protocol: remember the uploaded path with these exact bytes so that a retry
+ // after an unconfirmed sync only confirms instead of uploading a second copy (new server path).
+ const resume=transfer?null:{sentPath:record.removed?null:record.sentPath??null,uploaded:path=>transaction('readwrite',(store,done)=>{
+  const req=store.get(k);req.onsuccess=()=>{
+   const latest=req.result;
+   if(latest&&!latest.removed&&latest.pending===true&&latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i]))store.put({...latest,sentPath:path},k);
+   done(true);
+  }})};
+ const sent=await hh.sharePhoto(item.id,blob,transfer,resume);
  if(sent?.shared!==true)return false;
  // Compare the exact bytes inside the write transaction, not just their length.
  await transaction('readwrite',store=>{const req=store.get(k);req.onsuccess=()=>{

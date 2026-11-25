@@ -227,20 +227,32 @@ async function fetchPhoto(id,path){
  if(blob.type!=='image/jpeg'||blob.size>81920||blob.size===0)throw Error('写真の形式を確認できませんでした。');
  return blob;
 }
-async function sharePhoto(id,blob,transfer=null){
+// resume: {sentPath, uploaded(path)} from the device photo record. The gateway names each upload
+// itself, so a retry after an unconfirmed attempt must NOT upload again: a second upload gets a new
+// path, the family then reads a reference that is no longer current, and the first file is orphaned.
+async function sharePhoto(id,blob,transfer=null,resume=null){
  if(photoGeneralEnabled())return shareGeneralPhoto(id,blob,transfer);
  if(!photoSharingEnabled())throw Error('写真の家族共有は現在停止中です。端末内の写真は残っています。');
  const scope=photoScope(id);if(!scope)throw Error('家族共有に参加してからお試しください。');
  if(blob&&(blob.type!=='image/jpeg'||blob.size>81920||blob.size===0))throw Error('写真の形式を確認できませんでした。');
  await syncPhotoFresh();if(status.state!=='synced'||engine.status().pending)throw Error('端末には保存済みです。写真の共有は通信が戻ってからお試しください。');
  const current=readState()?.items.find(x=>String(x.id)===String(id));if(!current||!sameScope(scope,photoScope(id)))throw Error('共有先が変わりました。商品を開き直してください。');
- const expected=JSON.stringify([current.name,current.unit,current.photoPath]);
+ // The earlier attempt for these same bytes already uploaded and recorded its path: only confirm.
+ const resumed=!!blob&&typeof resume?.sentPath==='string'&&validPhotoPath(resume.sentPath,scope)&&current.photoPath===resume.sentPath;
  let path=blob?scope.household+'/'+scope.sid+'/'+root.crypto.randomUUID()+'.jpg':null;
- if(blob)path=await photoRequest(path,'POST',blob);
- const next=readState(),item=next?.items.find(x=>String(x.id)===String(id));
- if(!item||!sameScope(scope,photoScope(id))||JSON.stringify([item.name,item.unit,item.photoPath])!==expected)throw Error('共有先か商品が変わりました。写真の共有は反映していません。');
- item.photoPath=path;
- if(!writeState(next))throw Error('端末の空き容量を確認してください。写真の共有情報を保存できませんでした。');
+ if(resumed)path=resume.sentPath;
+ else{
+  const expected=JSON.stringify([current.name,current.unit,current.photoPath]);
+  if(blob){
+   path=await photoRequest(path,'POST',blob);
+   // Remember the uploaded path with the device photo before anything else can fail.
+   if(typeof resume?.uploaded==='function')await resume.uploaded(path);
+  }
+  const next=readState(),item=next?.items.find(x=>String(x.id)===String(id));
+  if(!item||!sameScope(scope,photoScope(id))||JSON.stringify([item.name,item.unit,item.photoPath])!==expected)throw Error('共有先か商品が変わりました。写真の共有は反映していません。');
+  item.photoPath=path;
+  if(!writeState(next))throw Error('端末の空き容量を確認してください。写真の共有情報を保存できませんでした。');
+ }
  engine.flush();await syncPhotoFresh();
  const confirmed=photoBase(scope);
  return {shared:status.state==='synced'&&sameScope(scope,photoScope(id))&&
