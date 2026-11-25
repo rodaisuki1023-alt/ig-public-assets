@@ -26,7 +26,8 @@ function valid(s){
  const name=x=>typeof x==='string'&&x.trim().length>0&&x.length<=MAX_NAME;
  const rows=a=>Array.isArray(a)&&a.length<=MAX_ROWS&&a.every(r=>r&&typeof r.id==='string'&&r.id.length<=60&&name(r.name));
  if(!s||s.v!==1||!Array.isArray(s.children)||s.children.length>MAX_CHILDREN)return false;
- if(!s.children.every(c=>c&&typeof c.id==='string'&&c.id.length<=60&&name(c.name)))return false;
+ // place: the daycare/kindergarten the child goes to (optional, to tell two 園 apart).
+ if(!s.children.every(c=>c&&typeof c.id==='string'&&c.id.length<=60&&name(c.name)&&(c.place==null||(typeof c.place==='string'&&c.place.length<=20))))return false;
  const ids=new Set(s.children.map(c=>c.id));if(ids.size!==s.children.length)return false;
  for(const [cid,w] of Object.entries(s.week||{})){if(!ids.has(cid)||typeof w!=='object')return false;for(const [d,r] of Object.entries(w))if(!/^[0-6]$/.test(d)||!rows(r))return false}
  for(const [cid,e] of Object.entries(s.events||{})){if(!ids.has(cid)||typeof e!=='object')return false;for(const [d,ev] of Object.entries(e))if(!isDay(d)||!ev||!rows(ev.rows)||(ev.label!=null&&!(typeof ev.label==='string'&&ev.label.length<=MAX_NAME)))return false}
@@ -43,8 +44,8 @@ function rowsFor(state,date){
   const rows=[...weekly,...(ev?.rows||[])].map(r=>({id:r.id,name:r.name,required:1,unit:'点'}));
   return {id:c.id,week:{[day]:rows}};
  });
- const names=new Map(state.children.map(c=>[c.id,c.name]));
- return core.planDay(profiles,date).map(r=>({instanceId:r.instanceId,childId:r.profileId,child:names.get(r.profileId),name:r.name,
+ const names=new Map(state.children.map(c=>[c.id,c.name])),places=new Map(state.children.map(c=>[c.id,c.place||null]));
+ return core.planDay(profiles,date).map(r=>({instanceId:r.instanceId,childId:r.profileId,child:names.get(r.profileId),place:places.get(r.profileId),name:r.name,
   event:state.events?.[r.profileId]?.[date]?.rows?.some(x=>x.id===r.id)?(state.events[r.profileId][date].label||'行事'):null}));
 }
 /** Unticked rows of today, for 出かける前の確認 (name -> number of children). */
@@ -137,25 +138,26 @@ function paint(){
  const dayLabel=(Number(date.slice(5,7)))+'/'+Number(date.slice(8))+'（'+DAYS[new Date(date+'T00:00:00Z').getUTCDay()]+'）';
  const kids=state.children,multi=kids.length>1;
  const todayList=rows.length?'<ul class="atk-prep-today">'+rows.map(r=>'<li><label><input type="checkbox" data-prep-tick="'+esc(r.instanceId)+'"'+(done.has(r.instanceId)?' checked':'')+(locked?' disabled':'')+'><span>'+esc(r.name)+'</span>'+
-   (multi||r.event?'<small>'+esc([multi?r.child:null,r.event].filter(Boolean).join('・'))+'</small>':'')+'</label></li>').join('')+'</ul>'
+   (multi||r.event||r.place?'<small>'+esc([multi?r.child:null,r.place,r.event].filter(Boolean).join('・'))+'</small>':'')+'</label></li>').join('')+'</ul>'
   :'<p class="atk-prep-note">今日の追加はありません。曜日や行事の持ち物を下で登録できます。</p>';
- const childOpts=kids.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join('');
+ const kidLabel=c=>c.name+(c.place?'（'+c.place+'）':'');
+ const childOpts=kids.map(c=>'<option value="'+esc(c.id)+'">'+esc(kidLabel(c))+'</option>').join('');
  const configured=kids.map(c=>{
   const w=state.week?.[c.id]||{},e=state.events?.[c.id]||{};
   const lines=[...Object.entries(w).filter(([,r])=>r.length).sort().map(([d,r])=>'<li><b>毎週'+DAYS[d]+'</b>'+r.map(x=>esc(x.name)+'<button type="button" class="atk-prep-del" data-prep-del-week="'+esc(c.id)+'|'+d+'|'+esc(x.id)+'" aria-label="毎週'+DAYS[d]+'の'+esc(x.name)+'を削除">×</button>').join('')+'</li>'),
    ...Object.entries(e).filter(([d])=>d>=date).sort().map(([d,ev])=>'<li><b>'+esc(d.slice(5).replace('-','/'))+(ev.label?' '+esc(ev.label):'')+'</b>'+ev.rows.map(x=>esc(x.name)+'<button type="button" class="atk-prep-del" data-prep-del-event="'+esc(c.id)+'|'+d+'|'+esc(x.id)+'" aria-label="'+esc(d)+'の'+esc(x.name)+'を削除">×</button>').join('')+'</li>')];
-  return lines.length?'<div class="atk-prep-child"><p>'+esc(c.name)+'</p><ul>'+lines.join('')+'</ul></div>':'';
+  return lines.length?'<div class="atk-prep-child"><p>'+esc(kidLabel(c))+'</p><ul>'+lines.join('')+'</ul></div>':'';
  }).join('');
  // A redraw (e.g. after a family update arrives) must not wipe what the person is typing.
  const typed={},focused=doc.activeElement&&box.contains(doc.activeElement)?[...doc.activeElement.attributes].find(a=>a.name.startsWith('data-prep-'))?.name:null;
- for(const el of box.querySelectorAll('input[data-prep-kid-name],input[data-prep-name],input[data-prep-label],input[data-prep-date],select[data-prep-when],select[data-prep-child]'))
+ for(const el of box.querySelectorAll('input[data-prep-kid-name],input[data-prep-kid-place],input[data-prep-name],input[data-prep-label],input[data-prep-date],select[data-prep-when],select[data-prep-child]'))
   typed[[...el.attributes].find(a=>a.name.startsWith('data-prep-')).name]=el.value;
  box.innerHTML='<summary><span>曜日・行事・子どもの持ち物</span><span class="atk-prep-count">'+(rows.length?'今日 '+left+'/'+rows.length:'設定')+'</span></summary>'+
   '<div class="atk-prep-body">'+
   (locked?'<p class="atk-prep-error" role="alert">保存内容を読めないため、変更を止めています（データは消していません）。</p>':'')+
   '<p class="atk-prep-day">'+esc(dayLabel)+'の追加</p>'+todayList+
-  '<div class="atk-prep-kids" role="group" aria-label="子ども">'+kids.map(c=>'<span class="atk-prep-kid">'+esc(c.name)+'<button type="button" data-prep-del-child="'+esc(c.id)+'" aria-label="'+esc(c.name)+'を削除">×</button></span>').join('')+
-  (kids.length<MAX_CHILDREN?'<span class="atk-prep-addkid"><input type="text" maxlength="20" placeholder="子どもの名前（例：上の子）" aria-label="子どもの名前" data-prep-kid-name><button type="button" data-prep-add-child>追加</button></span>':'')+'</div>'+
+  '<div class="atk-prep-kids" role="group" aria-label="子ども">'+kids.map(c=>'<span class="atk-prep-kid">'+esc(kidLabel(c))+'<button type="button" data-prep-del-child="'+esc(c.id)+'" aria-label="'+esc(c.name)+'を削除">×</button></span>').join('')+
+  (kids.length<MAX_CHILDREN?'<span class="atk-prep-addkid"><input type="text" maxlength="20" placeholder="子どもの名前（例：上の子）" aria-label="子どもの名前" data-prep-kid-name><input type="text" maxlength="20" placeholder="園の名前（任意）" aria-label="通っている園の名前（任意）" data-prep-kid-place><button type="button" data-prep-add-child>追加</button></span>':'')+'</div>'+
   (kids.length?'<div class="atk-prep-form">'+
    (multi?'<label>子ども<select data-prep-child>'+childOpts+'</select></label>':'')+
    '<label>いつ<select data-prep-when><option value="w1">毎週月曜</option><option value="w2">毎週火曜</option><option value="w3">毎週水曜</option><option value="w4">毎週木曜</option><option value="w5">毎週金曜</option><option value="w6">毎週土曜</option><option value="w0">毎週日曜</option><option value="date">日付（行事）</option></select></label>'+
@@ -186,8 +188,10 @@ if(section){
   const t=e.target.closest?.('[data-prep-add-child],[data-prep-del-child],[data-prep-add],[data-prep-del-week],[data-prep-del-event]');if(!t)return;
   if(t.hasAttribute('data-prep-add-child')){
    const name=section.querySelector('[data-prep-kid-name]')?.value.trim().slice(0,20);if(!name)return;
+   const place=section.querySelector('[data-prep-kid-place]')?.value.trim().slice(0,20)||'';
    section.querySelector('[data-prep-kid-name]').value='';
-   edit(n=>{if(n.children.length<MAX_CHILDREN)n.children.push({id:uid('c'),name})});return;
+   const pl=section.querySelector('[data-prep-kid-place]');if(pl)pl.value='';
+   edit(n=>{if(n.children.length<MAX_CHILDREN)n.children.push({id:uid('c'),name,...(place?{place}:{})})});return;
   }
   if(t.hasAttribute('data-prep-del-child')){
    const id=t.getAttribute('data-prep-del-child'),c=state.children.find(x=>x.id===id);if(!c)return;

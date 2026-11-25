@@ -5,14 +5,17 @@
 // Rules: generic lock-screen text only (no product names); per-recipient daily cap; minimum gap;
 // quiet hours deferred to the morning; several events inside the gap are combined into one;
 // duplicate event ids are dropped; a kind the person turned off is dropped.
-const DEFAULTS=Object.freeze({dailyCap:3,minGapMinutes:30,quietStart:21,quietEnd:7,tzOffsetMinutes:540});
+// v51.1: no notice about one's own action; everything off (prefs.all=false) drops all; the same
+// subject (e.g. the same product) is only told once per decision; an event that is too old, or whose
+// subject is already settled (isCurrent returns false: answered, bought, removed), is dropped.
+const DEFAULTS=Object.freeze({dailyCap:3,minGapMinutes:30,quietStart:21,quietEnd:7,tzOffsetMinutes:540,maxAgeHours:36});
 const KINDS=new Set(['assignment','assignment-response','refill','prep']);
 const GENERIC=Object.freeze({assignment:'買い物のお願いがあります','assignment-response':'買い物のお願いに返事がありました',refill:'そろそろ補充が必要な物があります',prep:'明日の準備を確認してください'});
 function localHour(ms,tz){return new Date(ms+tz*60000).getUTCHours()}
 function localDay(ms,tz){return new Date(ms+tz*60000).toISOString().slice(0,10)}
 function nextMorning(ms,o){const d=new Date(ms+o.tzOffsetMinutes*60000);if(d.getUTCHours()>=o.quietEnd)d.setUTCDate(d.getUTCDate()+1);d.setUTCHours(o.quietEnd,0,0,0);return d.getTime()-o.tzOffsetMinutes*60000}
 /** plan({events, sent, prefs, now, options}) -> {send, defer, drop}. Pure; never throws on bad rows. */
-function plan({events=[],sent=[],prefs={},now,options={}}={}){
+function plan({events=[],sent=[],prefs={},now,options={},isCurrent=null}={}){
  const o={...DEFAULTS,...options},out={send:[],defer:[],drop:[]};
  if(!Number.isFinite(now))throw Error('now required');
  const seen=new Set(sent.map(s=>s&&s.id)),byRecipient=new Map();
@@ -20,7 +23,12 @@ function plan({events=[],sent=[],prefs={},now,options={}}={}){
   if(!e||typeof e.id!=='string'||!e.id||typeof e.recipientId!=='string'||!KINDS.has(e.kind)){out.drop.push({id:e?.id??null,reason:'invalid'});continue}
   if(seen.has(e.id)){out.drop.push({id:e.id,reason:'duplicate'});continue}
   seen.add(e.id);
-  if(prefs[e.recipientId]?.[e.kind]===false){out.drop.push({id:e.id,reason:'turned_off'});continue}
+  if(typeof e.actorId==='string'&&e.actorId===e.recipientId){out.drop.push({id:e.id,reason:'own_action'});continue}
+  if(prefs[e.recipientId]?.all===false||prefs[e.recipientId]?.[e.kind]===false){out.drop.push({id:e.id,reason:'turned_off'});continue}
+  if(Number.isFinite(e.at)&&now-e.at>o.maxAgeHours*3600000){out.drop.push({id:e.id,reason:'expired'});continue}
+  if(typeof isCurrent==='function'){let ok=false;try{ok=isCurrent(e)===true}catch(_){ok=false}if(!ok){out.drop.push({id:e.id,reason:'settled'});continue}}
+  const subject=typeof e.subject==='string'&&e.subject?e.recipientId+'\u0001'+e.kind+'\u0001'+e.subject:null;
+  if(subject){if(seen.has(subject)){out.drop.push({id:e.id,reason:'same_subject'});continue}seen.add(subject)}
   const list=byRecipient.get(e.recipientId)||[];list.push(e);byRecipient.set(e.recipientId,list);
  }
  for(const [recipientId,list] of byRecipient){

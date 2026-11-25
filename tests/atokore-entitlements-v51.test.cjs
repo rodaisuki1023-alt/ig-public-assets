@@ -19,3 +19,18 @@ test('photo slots follow the plan and unknown counts stay unknown',()=>{
  assert.equal(E.photoSlotsLeft(E.fromServer({plan:'premium'},now),25),0);
  assert.equal(E.photoSlotsLeft(E.fromServer(null,now),undefined),null);
 });
+test('photo counter: device-only vs shared, replace uses no slot, above the limit nothing is deleted',()=>{
+ const E=require('../atokore-live-v125/entitlements-v51.js');
+ assert.match(E.photoCounter({}).text,/この端末だけ/);
+ assert.equal(E.photoCounter({}).tone,'local');
+ assert.match(E.photoCounter({joined:true,sharing:false}).text,/止まっています/);
+ const free=E.fromServer({plan:'free'}),paid=E.fromServer({plan:'premium'});
+ assert.equal(E.photoCounter({joined:true,sharing:true,used:3,ent:free}).text,'共有写真 3/5枚・無料プラン。あと2枚共有できます。');
+ assert.equal(E.photoCounter({joined:true,sharing:true,used:5,ent:free}).tone,'full');
+ assert.match(E.photoCounter({joined:true,sharing:true,used:5,ent:free,hasShared:true}).text,/差し替えは、枠を増やしません/);
+ const over=E.photoCounter({joined:true,sharing:true,used:12,ent:E.fromServer({plan:'premium',premium_until:'2000-01-01'})});
+ assert.equal(over.tone,'over');assert.match(over.text,/12\/5枚.*今ある写真は消えません/);
+ assert.match(E.photoCounter({joined:true,sharing:true,used:3,ent:paid}).text,/3\/20枚・有料プラン/);
+ assert.match(E.photoCounter({joined:true,sharing:true,used:3}).text,/プランは確認中/,'no server answer yet');
+ assert.equal(E.photoCounter({joined:true,sharing:true,used:null}).tone,'unknown','unknown is not 0');
+});

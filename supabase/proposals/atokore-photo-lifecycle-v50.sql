@@ -131,6 +131,13 @@ BEGIN
  THEN RAISE EXCEPTION 'photo_stale_reference' USING ERRCODE='40001'; END IF;
  IF NOT EXISTS(SELECT 1 FROM storage.objects WHERE bucket_id='atokore-private-photos-v2' AND name=v_path)
  THEN RAISE EXCEPTION 'photo_storage_unconfirmed' USING ERRCODE='55000'; END IF;
+ -- v51 (Work review): a photo for a product WITHOUT one is re-checked against the household plan at
+ -- confirm time, so a plan that ended (or a lowered limit) after the reservation refuses it. A
+ -- replacement needs no new slot; nothing already attached is removed.
+ IF v_old IS NULL AND (SELECT count(DISTINCT l.record_id) FROM atokore_private.photo_ledger_v50 l
+      WHERE l.household_id=p_h AND l.state='attached' AND l.record_id<>p_r)
+    >= atokore_private.cloud_photo_limit_v51(atokore_private.effective_plan(p_h))
+ THEN RAISE EXCEPTION 'photo_plan_limit' USING ERRCODE='55000'; END IF;
  IF v_old IS NOT NULL THEN
    UPDATE atokore_private.photo_ledger_v50 l SET state='retired' WHERE l.household_id=p_h AND l.record_id=p_r
      AND l.state='attached' AND atokore_private.photo_object_path_v50(l)=v_old;

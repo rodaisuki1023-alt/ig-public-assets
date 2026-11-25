@@ -3,7 +3,7 @@
 const { test, expect } = require('@playwright/test');
 const { open, go, stored, baseState, KEY } = require('./helpers.cjs');
 const PACK = 'atokorePackingChecklistV1:/ig-public-assets/preview-baby-v19/';
-const PREP = 'atokorePrepSetsV1:/ig-public-assets/preview-baby-v19/';
+const PREP = 'atokorePreviewPrepSetsV19:/ig-public-assets/preview-baby-v19/'; // renamed by the trial build
 
 test('v50 stock and checklist open unchanged; old reorder rule still decides the alerts', async ({ page }) => {
   const initial = baseState({ items: [

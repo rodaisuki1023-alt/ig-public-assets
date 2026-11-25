@@ -284,6 +284,16 @@ async function refreshAssignments(){
 }
 function buySid(localId){engine?.flush?.();return engine?.meta?.().map?.['buy:'+localId]||null}
 function assignmentFor(localId){const sid=buySid(localId);return sid?{sid,...(assignments.get(sid)||{assignee:null,requester:null,response:'none',rev:0})}:null}
+// The household plan as the server reports it (hh_entitlements), read at most every 10 minutes and
+// only when a screen asks (the photo counter). Unknown stays null: the screen says "確認中".
+let entCache=null,entAt=0;
+function entitlements(){return household&&session?entCache:null}
+async function refreshEntitlements(){
+ if(!household||!session)return null;
+ if(entCache&&Date.now()-entAt<600000)return entCache;
+ try{entCache=await rpc('hh_entitlements',{});entAt=Date.now()}catch(e){console.error('あとこれ: プランの確認',e?.code||e?.message)}
+ return entCache;
+}
 function familyMembers(){return (Array.isArray(meta.members)?meta.members:[]).filter(m=>m&&typeof m.id==='string').map(m=>({id:m.id,name:m.name,me:m.me}))}
 async function assignBuy(localId,assigneeId){
  if(!assignmentsEnabled())throw Error('担当の機能は現在使えません。');
@@ -776,5 +786,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,sharedIdFor,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

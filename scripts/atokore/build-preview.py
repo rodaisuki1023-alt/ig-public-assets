@@ -7,6 +7,7 @@ trial-only key and family sync is replaced by a stub. The build fails if any pro
 survives, or if a file referenced by index.html is missing. Used both by the Pages workflow and
 by the local end-to-end tests, so the tested copy is built exactly like the published one.
 """
+import os
 import re
 import shutil
 import sys
@@ -29,7 +30,9 @@ PRODUCTION_KEYS = {
     'atokoreReceiptOcrV49Ready': 'atokorePreviewReceiptOcrReadyV{v}',
     'atokoreReceiptClaimQueueV1': 'atokorePreviewReceiptClaimQueueV{v}',
     'atokoreQuickAddPendingV1': 'atokorePreviewQuickAddPendingV{v}',
+    'atokorePrepSetsV1': 'atokorePreviewPrepSetsV{v}',
 }
+
 
 
 def build(source: Path, dest: Path, version: str) -> None:
@@ -47,6 +50,9 @@ def build(source: Path, dest: Path, version: str) -> None:
             text = re.sub(rf'\b{old}\b', new.format(v=version), text)
         if path.name == 'index.html':
             text = text.replace('試用版 v12.5m', f'ベビー特化 試用版 v{version}')
+            # Which commit this trial was built from, shown on the お試し screen (Muse E4).
+            sha = re.sub(r'[^0-9a-f]', '', (os.environ.get('ATOKORE_BUILD_SHA') or os.environ.get('GITHUB_SHA') or '').lower())[:7]
+            text = text.replace('__ATOKORE_BUILD__', f'trial-v{version}' + (f'-{sha}' if sha else '-local'))
         path.write_text(text, encoding='utf-8')
 
     built = ''.join(p.read_text(encoding='utf-8') for p in [dest / 'index.html', *dest.glob('*.js')])

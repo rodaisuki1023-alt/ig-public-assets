@@ -109,6 +109,21 @@ function openEntry(entry){
  const rows=refs.map((ref,i)=>{const at=locate(ref);return '<li>'+(at.status==='item'?'<button type="button" data-atk-history-item="'+esc(at.item.id)+'">'+esc(at.item.name)+' ›</button>':'<span>'+esc(ref.name)+'</span> <span class="'+(at.status==='deleted'?'atk-history-deleted':'atk-history-inbuy')+'">'+(at.status==='deleted'?'削除済み':'買い物リストにあります')+'</span>')+'</li>'}).join('');
  root.openM?.(close+'<h2>対象の商品（'+refs.length+'件）</h2>'+recordHTML(entry)+'<ul class="atk-history-targets">'+rows+'</ul>');
 }
+// v51 (Muse): the reason says what decided it, so it never contradicts the count or the estimate:
+// the person's own level (with its date), the estimate (a range, separate from the count), a
+// question when the estimate cannot decide, or the existing count rule.
+function reasonText(item,countText){
+ const L=root.AtokoreStockLevels,UI=root.AtokoreStockLevelsUI;if(!L||!UI)return countText;
+ const t=UI.today(),d=L.displayLevel(item,t);
+ if(d.source==='manual'){
+  const at=typeof item.levelAt==='string'?item.levelAt.slice(5,10).replace('-','/'):'';
+  const check=UI.manualState(item,t);
+  return '自分で「'+d.label+'」に設定'+(at?'（'+at+'）':'')+(check==='stale'?'・前回から日数がたっています':check==='conflict'?'・在庫数と合っていません':'');
+ }
+ if(d.source==='estimate'&&d.estimate)return '見積もり：あと'+d.estimate.range[0]+'〜'+d.estimate.range[1]+'日（実際の在庫数とは別）';
+ if(d.source==='estimate')return '見積もりの確認が必要です（残りを確認してください）';
+ return countText;
+}
 function card(x){
  const item=x.item,raw=String(item.name||'商品'),id=Number(item.id),kit=root.AtokoreBabyKit;
  const type=kit?.kind(raw,item.cat),d=root.AtokorePeachUI?.describe(item),food=root.AtokoreBabyFood;
@@ -121,7 +136,8 @@ function card(x){
  const expiry=root.AtokoreDates?.label(item.exp)||'';
  // W2 item 7: each reason is a text label (not only colour), and both show when both apply.
  const unit=item.unit||'個',line=root.atokoreReorderAt?root.atokoreReorderAt(item):1;
- const lowText='補充目安以下：'+(Number(item.qty)<=0?(item.qtyBasis==='unopened'?'未開封の予備なし':'在庫なし'):(item.qtyBasis==='unopened'?'未開封'+item.qty+unit+(item.inUse?'・使用中あり':''):'残り'+item.qty+unit))+'／目安'+line+unit;
+ const countText='補充目安以下：'+(Number(item.qty)<=0?(item.qtyBasis==='unopened'?'未開封の予備なし':'在庫なし'):(item.qtyBasis==='unopened'?'未開封'+item.qty+unit+(item.inUse?'・使用中あり':''):'残り'+item.qty+unit))+'／目安'+line+unit;
+ const lowText=reasonText(item,countText);
  const soon=x.days!==null&&x.days<=3;
  const labels=(x.low?'<span class="atk-home-low">'+esc(lowText)+'</span>':'')+(soon&&expiry?'<span class="atk-home-expiry '+(x.days<=0?'is-overdue':'')+'">'+esc((item.expType&&item.expType!=='期限なし'?item.expType:'期限')+'：'+expiry)+'</span>':'');
  const already=(()=>{try{return buys.some(b=>root.__atokoreCoreV125H?.sameProduct(b,item))}catch(_){return false}})();

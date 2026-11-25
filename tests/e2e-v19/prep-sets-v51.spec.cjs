@@ -2,7 +2,7 @@
 // several children, daily ticks, no stock change, stale-tab and corrupt-data protection.
 const { test, expect } = require('@playwright/test');
 const { open, go, stored, baseState, KEY, appConfirm } = require('./helpers.cjs');
-const PREP = 'atokorePrepSetsV1:/ig-public-assets/preview-baby-v19/';
+const PREP = 'atokorePreviewPrepSetsV19:/ig-public-assets/preview-baby-v19/'; // renamed by the trial build
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const stock = () => baseState({ items: [
   { id: 1, name: 'おしりふき', cat: 'ベビー', qty: 0, unit: 'パック' },

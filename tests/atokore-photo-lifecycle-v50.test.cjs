@@ -97,3 +97,34 @@ test('lifecycle: attach, replace, detach, reference injection and confirmed purg
   assert.equal(await a('photo_claim_purge_v50',next.file),next.p);
  }finally{await db.close()}
 });
+test('confirm re-checks the plan: a plan that ended after the reservation refuses a NEW photo, a replacement still works',async()=>{
+ const {db,h,a,prepare,row,state}=await fixture();
+ try{
+  await db.query("UPDATE atokore_private.households SET plan='premium',plan_expires_at=NULL WHERE id=$1",[h]);
+  // R already has a shared photo (attached under the paid plan).
+  const first=await prepare();await a('photo_attach_v50',h,R,first.file);
+  // Five other products also have shared photos: 6 in total, above the free limit of 5.
+  for(let i=1;i<=5;i++)await db.query("INSERT INTO atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,state,expires_at,actual_bytes) VALUES($1,$2,$3,gen_random_uuid(),'attached',now()+interval '1 day',1000)",[h,'other_item_'+i,A]);
+  // A new product's photo was reserved and uploaded while still paid...
+  const R2='photo_item_new';
+  await db.query("INSERT INTO atokore_private.records(household_id,kind,id,fields,seq,qty) VALUES($1,'item',$2,'{\"name\":\"合成 新商品\",\"unit\":\"個\"}',nextval('atokore_private.change_seq'),1)",[h,R2]);
+  const f2=(await a('photo_reserve_v50',h,R2,'00000000-0000-4000-8000-00000000f201',null)).file_id;
+  const p2=await a('photo_begin_v50',h,R2,f2);
+  await db.query('INSERT INTO storage.objects(bucket_id,name) VALUES($1,$2)',['atokore-private-photos-v2',p2]);
+  assert.equal(await a('photo_finish_v50',h,R2,f2,700),true);
+  // ...then the paid plan ended before the confirm.
+  await db.query("UPDATE atokore_private.households SET plan='free',plan_expires_at=NULL WHERE id=$1",[h]);
+  await assert.rejects(a('photo_attach_v50',h,R2,f2),/photo_plan_limit/);
+  assert.equal(await state(f2),'uploaded','not attached, nothing deleted');
+  const r2=(await db.query("SELECT fields->>'photoPath' p FROM atokore_private.records WHERE household_id=$1 AND id=$2",[h,R2])).rows[0];
+  assert.equal(r2.p,null);
+  // Replacing R's existing photo needs no new slot and is still allowed.
+  const before=await row();
+  const second=await prepare(before.photo);
+  const done=await a('photo_attach_v50',h,R,second.file);
+  assert.equal(done.reused,false);assert.equal(await state(first.file),'retired');
+  // Already attached photos above the limit are kept.
+  const kept=(await db.query("SELECT count(*)::int n FROM atokore_private.photo_ledger_v50 WHERE household_id=$1 AND state='attached'",[h])).rows[0].n;
+  assert.equal(kept,6);
+ }finally{await db.close()}
+});

@@ -179,7 +179,18 @@ function openEditor(id){
  const reset=element('button','atk-photo-reset','元のアイコンに戻す');reset.type='button';reset.hidden=true;
  const joined=!!root.AtokoreHousehold?.homeState?.().joined;
  const note=element('p','atk-photo-note',root.AtokoreHousehold?.photoSharingEnabled?.()===false?'写真の家族共有は現在停止中です。端末内の写真は保存・バックアップできます。':joined?'写真は家族と自動で共有され、バックアップにも含まれます。参加者を外すと新しい取得は拒否されますが、以前に見たり保存した写真・バックアップのコピーは回収できません。':'写真はこの端末とバックアップに保存されます。家族共有を始めると写真も自動共有され、相手が取得・保存したコピーは後から回収できません。');
- panel.append(close,title,name,preview,pick,file,status,save,reset,note);sheet.append(panel);
+ // v51: shared-photo counter before adding (the server enforces the household limit).
+ const count=element('p','atk-photo-count');count.id='atkPhotoCount';
+ const paintCount=()=>{try{
+  const hh=root.AtokoreHousehold,E=root.AtokoreEntitlements,list=(()=>{try{return Array.isArray(items)?items:[]}catch(_){return []}})();
+  const raw=hh?.entitlements?.();
+  const c=E?.photoCounter?.({joined:!!hh?.homeState?.().joined,sharing:hh?.photoSharingEnabled?.()===true,used:list.filter(x=>x&&x.photoPath).length,ent:raw?E.fromServer(raw):null,hasShared:!!item.photoPath});
+  if(c){count.textContent=c.text;count.dataset.tone=c.tone;count.hidden=false}else count.hidden=true;
+ }catch(e){count.hidden=true;console.error('あとこれ: 写真の枚数',e)}};
+ paintCount();
+ if(root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true)
+  root.AtokoreHousehold.refreshEntitlements?.().then(()=>{if(count.isConnected)paintCount()}).catch(()=>{});
+ panel.append(close,title,name,count,preview,pick,file,status,save,reset,note);sheet.append(panel);
  const shared=!!(item.photoPath&&root.AtokoreHousehold?.photoScope?.(id));
  const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item),clearSharedPreview(){
   if(!shared||session.blob)return; // A newly chosen local file is still the user's draft.
@@ -444,7 +455,7 @@ function install(){
  root.addEventListener('pagehide',()=>{dispose();resetShared();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
 }
-const api=Object.freeze({key,fileKind,validBlob,canSendManagedPhoto,createPhotoQueue,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
+const api=Object.freeze({key,fileKind,validBlob,compress,canSendManagedPhoto,createPhotoQueue,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreProductPhotos=api;
 if(doc)install();

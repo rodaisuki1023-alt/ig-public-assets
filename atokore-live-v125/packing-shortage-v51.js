@@ -47,6 +47,27 @@ function classify(names,choices){
  }
  return out;
 }
+// Several sizes/brands for one checklist item: list each registered product with its size and
+// what is known about its stock, so the person picks the right one. Only a product counted as 0
+// (and not already queued) can be added here; anything else is shown, never guessed.
+function candidates(names,bridge){
+ if(!names.length)return '';
+ const L=root.AtokoreStockLevels,day=root.AtokoreStockLevelsUI?.today?.();
+ const all=(()=>{try{return Array.isArray(items)?items:[]}catch(_){return []}})();
+ return names.map(name=>{
+  const c=bridge.choices(name);if(!c?.stocks?.length)return '';
+  const rows=c.stocks.map(st=>{
+   const item=all.find(x=>String(x.id)===String(st.id));
+   const e=L&&item&&day?L.estimate(item,day):null;
+   const est=e?.status==='estimate'?'・見積もり あと'+e.range[0]+'〜'+e.range[1]+'日':e?.status==='unknown'?'・見積もりは要確認':'';
+   const state=st.queued?'<span class="atk-pack-cand-state">買い物リストにあります</span>':
+    Number(st.qty)===0?'<button type="button" class="atk-pack-cand-add" data-pack-cand-add="'+esc(name)+'" data-pack-cand-id="'+esc(st.id)+'">これを買い物へ</button>':
+    '<span class="atk-pack-cand-state">在庫あり</span>';
+   return '<li><span class="atk-pack-cand-name">'+esc(st.name)+'</span><span class="atk-pack-cand-qty">在庫 '+esc(st.qty)+esc(st.unit)+esc(est)+'</span>'+state+'</li>';
+  }).join('');
+  return '<div class="atk-pack-cands"><p class="atk-pack-cands-head">「'+esc(name)+'」の候補（'+c.stocks.length+'件）</p><ul>'+rows+'</ul></div>';
+ }).join('');
+}
 function paint(){
  const bridge=root.AtokoreKitShoppingV50,list=pending();
  let box=doc.getElementById('atkPackShort');
@@ -60,12 +81,23 @@ function paint(){
  const line=(title,names,cls)=>names.length?'<li class="'+cls+'"><b>'+esc(title)+'</b>'+names.map(n=>esc(withCount(n))).join('、')+'</li>':'';
  box.innerHTML='<summary><span>出かける前の確認</span><span class="atk-pack-short-count">'+(total?'要確認 '+total+'件':'買い物リストにあり')+'</span></summary>'+
   '<ul>'+line('在庫0：',c.zero,'zero')+line('サイズ・種類を選んでください：',c.choose,'choose')+line('在庫を確認してください：',c.unknown,'unknown')+line('買い物リストにあります：',c.queued,'queued')+'</ul>'+
+  candidates(c.choose,bridge)+
   (c.zero.length?'<button type="button" class="atk-pack-short-add" data-pack-short-add>在庫0の'+c.zero.length+'件を買い物リストへ</button>':'')+
   '<p class="atk-pack-short-note">チェックしても在庫の数は変わりません。必要な枚数は家庭ごとに違うため、足りるかどうかは決めつけません。</p>'+
   (lastMessage?'<p class="atk-pack-short-msg" role="status">'+esc(lastMessage)+'</p>':'');
  if(open)box.open=true;
 }
 section.addEventListener('click',event=>{
+ const pick=event.target.closest?.('[data-pack-cand-add]');
+ if(pick&&!busy){
+  const bridge=root.AtokoreKitShoppingV50;if(!bridge?.add)return;
+  busy=true;pick.disabled=true;
+  try{
+   const r=bridge.add(pick.dataset.packCandAdd,pick.dataset.packCandId);
+   lastMessage=r?.status==='added'?(r.name||'商品')+'を買い物リストに追加しました。':r?.status==='already'?'すでに買い物リストにあります。':r?.status==='failed'?'買い物リストに保存できませんでした。空き容量を確認してください。':'追加できませんでした。';
+  }finally{busy=false;paint();const box=doc.getElementById('atkPackShort');if(box)box.open=true;setTimeout(()=>{lastMessage='';paint()},8000)}
+  return;
+ }
  const t=event.target.closest?.('[data-pack-short-add]');if(!t||busy)return;
  const bridge=root.AtokoreKitShoppingV50,list=pending();if(!bridge?.add||!list)return;
  busy=true;t.disabled=true;

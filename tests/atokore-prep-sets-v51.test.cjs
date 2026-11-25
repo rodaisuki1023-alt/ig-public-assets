@@ -25,3 +25,17 @@ test('strict validation: corrupt, unknown child, bad day or date and oversize ar
   const s=base();mut(s);assert.equal(P.valid(s),false,mut.toString());
  }
 });
+test('two daycares are told apart; different sizes or names are never merged into one count',()=>{
+ const s=base();
+ s.children[0].place='さくら保育園';s.children[1].place='ひまわり園';
+ assert.equal(P.valid(s),true);
+ assert.equal(P.valid({...s,children:[{id:'x',name:'子',place:'x'.repeat(21)}]}),false);
+ assert.equal(P.valid({...s,children:[{id:'x',name:'子',place:5}]}),false);
+ const rows=P.rowsFor(s,'2026-11-30');
+ assert.deepEqual([...new Set(rows.map(r=>r.place))],['さくら保育園','ひまわり園']);
+ // Sizes are part of the name: おむつ M for one child and おむつ L for the other stay two lines.
+ s.week['c-a']['1']=[{id:'m',name:'おむつ M'}];s.week['c-b']['1']=[{id:'l',name:'おむつ L'}];
+ assert.deepEqual(P.pendingToday(s,'2026-11-30').filter(x=>x.name.startsWith('おむつ')),[{name:'おむつ M',children:1},{name:'おむつ L',children:1}]);
+ // Old saved data without a place still reads.
+ assert.equal(P.valid(base()),true);
+});

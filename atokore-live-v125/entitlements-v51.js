@@ -44,7 +44,22 @@ function label(feature){
 }
 /** Shared-photo slots left for the household, or null when the count is unknown. */
 function photoSlotsLeft(ent,used){const u=int(used,0,1000);return u===null?null:Math.max(0,(ent?.cloudPhotos??FREE.cloudPhotos)-u)}
-const api=Object.freeze({FREE,PREMIUM,FEATURES,fromServer,canUse,label,photoSlotsLeft});
+/** What the photo screen says before adding (Muse F1/F3). The server still decides; this only
+ * explains: device-only photos never use a slot; replacing a shared photo uses no new slot; above
+ * the limit (e.g. after the paid plan ended) nothing is deleted, only new additions stop. */
+function photoCounter({joined=false,sharing=false,used=null,ent=null,hasShared=false}={}){
+ if(!joined)return {tone:'local',text:'写真はこの端末だけに保存されます（共有写真の枠は使いません）。'};
+ if(!sharing)return {tone:'local',text:'写真の家族共有は止まっています。写真はこの端末だけに保存されます。'};
+ const limit=ent?.cloudPhotos??FREE.cloudPhotos,u=int(used,0,1000);
+ const plan=(ent?.plan==='premium'?'有料プラン':'無料プラン')+(ent?.source==='server'?'':'（プランは確認中）');
+ if(u===null)return {tone:'unknown',text:'共有写真の枚数を確認できません。追加できるかは保存時にサーバーが確かめます。'};
+ const head='共有写真 '+u+'/'+limit+'枚・'+plan;
+ if(hasShared)return {tone:'ok',text:head+'。この商品の写真の差し替えは、枠を増やしません。'};
+ if(u>limit)return {tone:'over',over:true,text:head+'。上限を超えています。今ある写真は消えませんが、新しい写真は共有できません（この端末には保存できます）。'};
+ if(u>=limit)return {tone:'full',over:true,text:head+'。上限に達しています。新しい写真は共有できません（差し替えはできます）。'};
+ return {tone:'ok',text:head+'。あと'+(limit-u)+'枚共有できます。'};
+}
+const api=Object.freeze({FREE,PREMIUM,FEATURES,fromServer,canUse,label,photoSlotsLeft,photoCounter});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreEntitlements=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

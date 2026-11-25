@@ -45,7 +45,7 @@ test('old items show the existing rule; setting a level changes home alerts but 
 test('detailed estimate from packs, used-up asks before changing the count', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
   await detail(page, 2);
-  await level(page).locator('summary').click();
+  await level(page).locator('.atk-level-detail > summary').click();
   await level(page).locator('[data-atk-level-packs]').fill('2');
   await level(page).locator('[data-atk-level-per-pack]').fill('60');
   await level(page).locator('[data-atk-level-per-day]').fill('6');
@@ -79,7 +79,7 @@ test('invalid detailed input is explained and nothing is saved; a failed save is
   const initial = baseState();
   await open(page, { [KEY]: initial });
   await detail(page, 2);
-  await level(page).locator('summary').click();
+  await level(page).locator('.atk-level-detail > summary').click();
   await level(page).locator('[data-atk-level-per-day]').fill('0');
   await level(page).locator('[data-atk-level-start]').click();
   await expect(level(page).locator('.atk-level-error')).toHaveText('1袋あたりの枚数を入力してください');
@@ -99,7 +99,7 @@ for (const width of [320, 393, 430]) test(`かんたん管理 fits at ${width}px
   await page.setViewportSize({ width, height: 800 });
   await open(page, { [KEY]: baseState() });
   await detail(page, 2);
-  await level(page).locator('summary').click();
+  await level(page).locator('.atk-level-detail > summary').click();
   const facts = await page.evaluate(() => {
     const box = document.querySelector('#sheet .atk-level');
     const targets = [...box.querySelectorAll('button,summary,input')].filter(e => e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().height);
