@@ -30,3 +30,32 @@
 .atk-pack-short-add{display:block;width:calc(100% - 24px);min-height:44px;margin:6px 12px;border:0;border-radius:12px;background:#8A5747;color:#fff;font:inherit;font-weight:800}
 .atk-pack-short-note,.atk-pack-short-msg{margin:4px 12px 10px;font-size:12px;color:#6B5249}
 .atk-pack-short-msg{font-weight:700;color:#3D6B3A}
+
+/* v51 曜日・行事・子どもの持ち物 (prep-sets-v51.js): folded, same palette as 出かける前の確認. */
+.atk-prep{margin:8px 0;border:1px solid #E9DAD3;border-radius:12px;background:#FFFDFB}
+.atk-prep>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:6px 12px;font-weight:800;color:#704839;cursor:pointer;list-style:none}
+.atk-prep>summary::-webkit-details-marker{display:none}
+.atk-prep-count{font-size:12px;font-weight:750;color:#8A5747}
+.atk-prep-body{padding:0 12px 10px}
+.atk-prep-day{margin:4px 0;font-weight:800;font-size:14px;color:#4A3029}
+.atk-prep-today{list-style:none;margin:0;padding:0}
+.atk-prep-today li label{display:flex;align-items:center;gap:10px;min-height:44px;border-bottom:1px solid #F0E4DE;font-size:15px;color:#4A3029}
+.atk-prep-today input{width:22px;height:22px;flex:none}
+.atk-prep-today span{flex:1;overflow-wrap:anywhere}
+.atk-prep-today small{font-size:12px;color:#7A5A4E;white-space:nowrap}
+.atk-prep-kids{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.atk-prep-kid{display:inline-flex;align-items:center;gap:2px;min-height:44px;padding:0 4px 0 12px;border:1px solid #E2CFC4;border-radius:999px;background:#fff;font-size:14px;font-weight:700}
+.atk-prep-kid button,.atk-prep-del{min-width:44px;min-height:44px;border:0;background:none;color:#8A5747;font:inherit;font-size:16px}
+.atk-prep-addkid{display:flex;gap:6px;flex:1 1 100%}
+.atk-prep-addkid input,.atk-prep-form input,.atk-prep-form select{flex:1;min-width:0;min-height:44px;border:1px solid #D9C6BB;border-radius:10px;padding:6px 10px;font-size:16px;background:#fff}
+.atk-prep-addkid button,.atk-prep-add{min-height:44px;border:0;border-radius:12px;background:#8A5747;color:#fff;font:inherit;font-weight:800;padding:0 14px}
+.atk-prep-form label{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:14px;color:#4A3029}
+.atk-prep-form label[hidden]{display:none}
+.atk-prep-add{width:100%;margin-top:4px}
+.atk-prep-list{margin-top:8px}
+.atk-prep-list summary{min-height:44px;display:flex;align-items:center;font-weight:700;color:#704839;cursor:pointer}
+.atk-prep-child p{margin:6px 0 2px;font-weight:800;font-size:13px}
+.atk-prep-child ul{margin:0;padding-left:18px;font-size:13px;line-height:1.5}
+.atk-prep-child b{margin-right:6px}
+.atk-prep-note{font-size:12px;color:#6B5249;margin:6px 0}
+.atk-prep-error{font-size:13px;color:#B42318;font-weight:700;margin:6px 0}

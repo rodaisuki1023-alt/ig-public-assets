@@ -18,8 +18,18 @@ let busy=false,lastMessage='';
 
 function pending(){
  const list=root.AtokorePackingChecklist?.items?.();
- return Array.isArray(list)?list.filter(x=>x&&typeof x.name==='string'&&x.done!==true).slice(0,50):null;
+ if(!Array.isArray(list))return null;
+ // v51: today's weekday/event rows of every child (prep-sets-v51.js) join the base checklist.
+ // A name needed by several children is listed once with how many need it.
+ const counts=new Map();
+ for(const x of list)if(x&&typeof x.name==='string'&&x.done!==true)counts.set(x.name,Math.max(counts.get(x.name)||0,1));
+ // The base list is shared, not per child: per-child rows decide the count when they exist.
+ for(const r of root.AtokorePrepSets?.pending?.()||[])counts.set(r.name,r.children);
+ lastCounts=counts;
+ return [...counts.keys()].slice(0,80).map(name=>({name}));
 }
+let lastCounts=new Map();
+const withCount=name=>(lastCounts.get(name)||1)>1?name+'（'+lastCounts.get(name)+'人分）':name;
 // Things that run out. An unregistered reusable item (連絡帳, 着替え, 水筒 …) is not a stock
 // question, so only these are asked about when they are not registered.
 const CONSUMABLE=/おむつ|オムツ|パンツ|おしりふき|ミルク|離乳食|ベビーフード|ティッシュ|ウェット|マスク|絆創膏|ばんそうこう|ビニール袋|ゴミ袋|ごみ袋|ポリ袋|母乳パッド|ガーゼ|保湿|ワセリン|麦茶|飲み物/;
@@ -47,7 +57,7 @@ function paint(){
  const open=box?.open;
  if(!box){box=doc.createElement('details');box.id='atkPackShort';box.className='atk-pack-short';
   (doc.getElementById('atkPackProgress')||section.firstElementChild).after(box)}
- const line=(title,names,cls)=>names.length?'<li class="'+cls+'"><b>'+esc(title)+'</b>'+names.map(esc).join('、')+'</li>':'';
+ const line=(title,names,cls)=>names.length?'<li class="'+cls+'"><b>'+esc(title)+'</b>'+names.map(n=>esc(withCount(n))).join('、')+'</li>':'';
  box.innerHTML='<summary><span>出かける前の確認</span><span class="atk-pack-short-count">'+(total?'要確認 '+total+'件':'買い物リストにあり')+'</span></summary>'+
   '<ul>'+line('在庫0：',c.zero,'zero')+line('サイズ・種類を選んでください：',c.choose,'choose')+line('在庫を確認してください：',c.unknown,'unknown')+line('買い物リストにあります：',c.queued,'queued')+'</ul>'+
   (c.zero.length?'<button type="button" class="atk-pack-short-add" data-pack-short-add>在庫0の'+c.zero.length+'件を買い物リストへ</button>':'')+
