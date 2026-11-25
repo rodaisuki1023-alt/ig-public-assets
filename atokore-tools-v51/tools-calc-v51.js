@@ -22,6 +22,16 @@ function monthly({perDay,perBag,days=30}){
  const sheets=Math.ceil(d*m);
  return {sheets,bags:Math.ceil(sheets/p),days:m};
 }
+/** Powdered milk: days a can lasts = can grams ÷ (grams per feed × feeds per day). */
+function milkDays({canGrams,cans=1,perFeedGrams,feedsPerDay}){
+ const g=n(canGrams,{min:1,max:5000}),c=n(cans,{min:1,max:20,int:true}),f=n(perFeedGrams,{min:1,max:300}),k=n(feedsPerDay,{min:1,max:20,int:true});
+ if(g===null)return {error:'1缶の内容量（g）をパッケージの表示どおりに入力してください'};
+ if(c===null)return {error:'缶の数を1〜20で入力してください'};
+ if(f===null)return {error:'1回に使う粉の量（g）を入力してください'};
+ if(k===null)return {error:'1日の回数を1〜20で入力してください'};
+ const perDay=f*k,total=g*c;
+ return {perDay:Math.round(perDay*10)/10,days:Math.floor(total/perDay),total};
+}
 /** Date the stock runs out, from a start date and whole days. */
 function runOutDate(start,days){
  const t=typeof start==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(start)?Date.parse(start+'T00:00:00Z'):NaN;
@@ -29,7 +39,7 @@ function runOutDate(start,days){
  if(!Number.isFinite(t)||new Date(t).toISOString().slice(0,10)!==start||!Number.isSafeInteger(days)||days<0)return null;
  return new Date(t+days*86400000).toISOString().slice(0,10);
 }
-const api=Object.freeze({daysLeft,monthly,runOutDate});
+const api=Object.freeze({daysLeft,monthly,milkDays,runOutDate});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreTools=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

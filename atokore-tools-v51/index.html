@@ -61,13 +61,32 @@ ul.check button{min-height:44px;padding:6px 10px;font-size:13px}
 <p class="note">袋数は切り上げです。サイズが変わる時期は、新しいサイズで計算し直してください。</p>
 </section>
 
+<section aria-labelledby="t4">
+<h2 id="t4">粉ミルクは、あと何日もつ？</h2>
+<label><span>1缶の内容量</span><input id="kGrams" type="number" inputmode="decimal" min="1" step="1" placeholder="パッケージの表示"><span class="unit">g</span></label>
+<label><span>缶の数</span><input id="kCans" type="number" inputmode="numeric" min="1" step="1" value="1"><span class="unit">缶</span></label>
+<label><span>1回に使う粉の量</span><input id="kPerFeed" type="number" inputmode="decimal" min="1" step="0.1" placeholder="スプーンの量×杯数"><span class="unit">g</span></label>
+<label><span>1日の回数</span><input id="kFeeds" type="number" inputmode="numeric" min="1" step="1" placeholder="ご家庭の回数"><span class="unit">回</span></label>
+<button type="button" id="kGo">計算する</button>
+<p class="result" id="kOut" role="status" aria-live="polite"></p>
+<p class="note">1回の量は、お使いのミルクの表示とスプーンで確認してください。この計算は量の目安を示すものではありません。</p>
+</section>
+
 <section aria-labelledby="t3">
-<h2 id="t3">保育園の持ち物チェックリスト</h2>
+<h2 id="t3">保育園・お出かけの持ち物チェックリスト</h2>
+<div class="row" role="group" aria-label="リストの種類" style="margin-bottom:6px"><button type="button" class="ghost" id="cDaycare" aria-pressed="true">保育園</button><button type="button" class="ghost" id="cOuting" aria-pressed="false">お出かけ</button></div>
 <p class="note" style="margin-top:0">持ち物は園によって違います。園からの案内に合わせて項目を追加・削除してください。チェックはこの端末にだけ保存されます。</p>
 <ul class="check" id="cList"></ul>
 <div class="row"><input id="cName" type="text" maxlength="40" placeholder="持ち物を追加" aria-label="持ち物を追加"><button type="button" id="cAdd">追加</button></div>
 <div class="row" style="margin-top:8px"><button type="button" class="ghost" id="cReset">チェックをすべて外す</button></div>
 <p class="result" id="cOut" role="status" aria-live="polite"></p>
+</section>
+
+<section aria-labelledby="t5">
+<h2 id="t5">よくある質問</h2>
+<p><b>入力した数字は送信されますか？</b><br>送信しません。計算とチェックリストの保存は、この端末の中だけで行います。</p>
+<p><b>1日に使う枚数がわかりません。</b><br>数日分、実際に使った枚数を数えて平均すると近くなります。月齢や季節、体調で変わります。</p>
+<p><b>保育園の持ち物はこれで全部ですか？</b><br>例として入れた項目です。持ち物は園によって違うため、園からの案内に合わせて追加・削除してください。</p>
 </section>
 
 <p class="cta">在庫・買い物・保育園の準備をまとめて管理できるアプリ「あとこれ」は公開準備中です。</p>
@@ -85,17 +104,29 @@ $('dGo').addEventListener('click',()=>{
  const end=T.runOutDate(today(),r.days),md=end?end.slice(5).replace('-','月').replace(/^0/,'')+'日':'';
  show($('dOut'),r,'合計'+r.total+'枚で、あと約'+r.days+'日（'+md+'ごろまで）です。');
 });
+$('kGo').addEventListener('click',()=>{
+ const r=T.milkDays({canGrams:$('kGrams').value,cans:$('kCans').value||1,perFeedGrams:$('kPerFeed').value,feedsPerDay:$('kFeeds').value});
+ show($('kOut'),r,'1日に約'+r.perDay+'g使うと、'+r.total+'gで約'+r.days+'日分です。');
+});
 $('mGo').addEventListener('click',()=>{
  const r=T.monthly({perDay:$('mPerDay').value,perBag:$('mPerBag').value,days:$('mDays').value});
  show($('mOut'),r,r.days+'日で約'+r.sheets+'枚、'+r.bags+'袋分です。');
 });
 // Checklist: device-only. A missing or unreadable save starts from the generic examples; an
 // unreadable save is never overwritten silently.
-const KEY='atokoreToolsChecklistV1',DEFAULTS=['着替え','おむつ','おしりふき','タオル','連絡帳','水筒','ビニール袋'];
-let list=null,locked=false;
+const LISTS={daycare:{key:'atokoreToolsChecklistV1',defaults:['着替え','おむつ','おしりふき','タオル','連絡帳','水筒','ビニール袋']},
+ outing:{key:'atokoreToolsOutingV1',defaults:['おむつ','おしりふき','着替え','飲み物','ビニール袋','ガーゼ・タオル','保険証・母子手帳']}};
+let KEY=LISTS.daycare.key,DEFAULTS=LISTS.daycare.defaults,list=null,locked=false;
+function loadList(kind){
+ KEY=LISTS[kind].key;DEFAULTS=LISTS[kind].defaults;locked=false;$('cOut').textContent='';
+ $('cDaycare').setAttribute('aria-pressed',String(kind==='daycare'));$('cOuting').setAttribute('aria-pressed',String(kind==='outing'));
 try{const raw=localStorage.getItem(KEY);list=raw===null?DEFAULTS.map(name=>({name,done:false})):JSON.parse(raw);
  if(!Array.isArray(list)||!list.every(x=>x&&typeof x.name==='string'&&x.name.length<=40&&typeof x.done==='boolean'))throw Error('invalid')}
 catch(_){locked=true;list=DEFAULTS.map(name=>({name,done:false}));$('cOut').textContent='保存されたチェックリストを読めないため、変更を保存しません。'}
+ if(typeof paint==='function')paint();
+}
+loadList('daycare');
+$('cDaycare').addEventListener('click',()=>loadList('daycare'));$('cOuting').addEventListener('click',()=>loadList('outing'));
 const save=()=>{if(locked)return false;try{localStorage.setItem(KEY,JSON.stringify(list));return true}catch(_){$('cOut').textContent='この端末に保存できませんでした。';return false}};
 function paint(){
  const ul=$('cList');ul.replaceChildren();

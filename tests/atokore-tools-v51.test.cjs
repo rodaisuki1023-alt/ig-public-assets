@@ -23,3 +23,9 @@ test('draft page stays out of search, sends nothing and makes no unsupported cla
  assert.doesNotMatch(html,/新生児は|平均\d+枚|必ず|No\.?1|日本一/);
  assert.match(html,/持ち物は園によって違います/);
 });
+test('powdered milk days from the visitor\'s own can size and feeds',()=>{
+ assert.deepEqual(T.milkDays({canGrams:800,cans:1,perFeedGrams:14,feedsPerDay:6}),{perDay:84,days:9,total:800});
+ assert.equal(T.milkDays({canGrams:800,cans:2,perFeedGrams:14,feedsPerDay:6}).days,19);
+ for(const bad of [{canGrams:0,perFeedGrams:14,feedsPerDay:6},{canGrams:800,perFeedGrams:0,feedsPerDay:6},{canGrams:800,perFeedGrams:14,feedsPerDay:1.5},{canGrams:800,cans:0,perFeedGrams:14,feedsPerDay:6}])
+  assert.ok(T.milkDays(bad).error,JSON.stringify(bad));
+});
