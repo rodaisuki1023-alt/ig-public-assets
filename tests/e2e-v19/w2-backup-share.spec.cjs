@@ -166,6 +166,16 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     device.page.on('framedetached',f=>navigation.push({device:deviceId,event:'framedetached',main:f===device.page.mainFrame(),at:Date.now()}));
     device.page.on('console',m=>{if(m.type()==='error')navigation.push({device:deviceId,event:'console-error',text:m.text().slice(0,160),at:Date.now()})});
     device.page.on('pageerror',e=>navigation.push({device:deviceId,event:'pageerror',text:String(e).slice(0,160),at:Date.now()}));
+    // 3rd step (trace of run 45619019248): same frame, URL and page before and after, and the page
+    // kept sending requests, so no navigation happened. Record which execution context Chromium
+    // destroys (main world or another) with its id; Chromium only, diagnostics only.
+    if(info.project.name==='chromium'){
+     const cdp=await device.page.context().newCDPSession(device.page);
+     cdp.on('Runtime.executionContextCreated',e=>navigation.push({device:deviceId,event:'ctx-created',id:e.context.id,name:e.context.name||'',def:!!e.context.auxData?.isDefault,type:e.context.auxData?.type||'',at:Date.now()}));
+     cdp.on('Runtime.executionContextDestroyed',e=>navigation.push({device:deviceId,event:'ctx-destroyed',id:e.executionContextId,at:Date.now()}));
+     cdp.on('Runtime.executionContextsCleared',()=>navigation.push({device:deviceId,event:'ctx-cleared',at:Date.now()}));
+     await cdp.send('Runtime.enable');
+    }
   }
   try {
     // Before sharing: single use.
