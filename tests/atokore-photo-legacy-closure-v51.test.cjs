@@ -1,0 +1,116 @@
+// A1 (旧URL問題) isolated checks: legacy bucket closure drafts on the real migrations in PGlite, and the
+// shipped client never talking to Storage URLs. The CDN behaviour itself cannot be tested here.
+const test=require('node:test'),assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path');
+const {createDb,call,asRole}=require('./household/pg.cjs');
+const SQL=f=>fs.readFileSync(path.join(__dirname,'../supabase/proposals',f),'utf8');
+const A='00000000-0000-4000-8000-0000000000a1',B='00000000-0000-4000-8000-0000000000b1',C='00000000-0000-4000-8000-0000000000c1';
+let n=1;const oid=()=>`20000000-0000-4000-8000-${String(n++).padStart(12,'0')}`;
+const LEGACY='atokore-product-photos';
+async function service(db,sql){return db.transaction(async tx=>{await tx.exec('set local role service_role');return (await tx.query(sql)).rows})}
+const objects=(db,uid)=>asRole(db,uid,"select name from storage.objects where bucket_id='"+LEGACY+"' order by name");
+const insert=(db,uid,name)=>asRole(db,uid,"insert into storage.objects(bucket_id,name) values('"+LEGACY+"','"+name+"')");
+async function fixture(){
+ const db=await createDb();await db.exec(SQL('atokore-photo-gateway-v50.sql'));
+ await call(db,A,'hh_create',{p_name:'家族',p_display_name:'親'});
+ const {code}=await call(db,A,'hh_invite_create');await call(db,B,'hh_join',{p_code:code,p_display_name:'家族'});
+ const {household}=await call(db,A,'hh_my');
+ await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'item',id:'item-legacy-a1',fields:{name:'おむつ',unit:'袋'},qty:1,ts:Date.now()}]});
+ const name=household.id+'/item-legacy-a1/'+oid()+'.jpg';
+ await insert(db,A,name);
+ // The record points at the legacy object, as written by pre-gateway clients.
+ await db.query("update atokore_private.records set fields=fields||jsonb_build_object('photoPath',$1::text) where id='item-legacy-a1'",[name]);
+ return {db,household,name};
+}
+test('stage 1: no client can add legacy objects; members keep seeing existing ones; leavers and outsiders cannot',async()=>{
+ const {db,household,name}=await fixture();
+ await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
+ await assert.rejects(insert(db,A,household.id+'/item-legacy-a1/'+oid()+'.jpg'),/row-level security/);
+ await assert.rejects(insert(db,B,household.id+'/item-legacy-a1/'+oid()+'.jpg'),/row-level security/);
+ assert.deepEqual((await objects(db,A)).map(r=>r.name),[name]);
+ assert.deepEqual((await objects(db,B)).map(r=>r.name),[name]);
+ assert.equal((await objects(db,C)).length,0);
+ await assert.rejects(objects(db,null),/permission denied/);
+ await call(db,A,'hh_remove_member',{p_user:B});
+ assert.equal((await objects(db,B)).length,0,'origin re-checks membership on every request');
+});
+test('inventory is service-only and separates referenced objects from orphans',async()=>{
+ const {db,household,name}=await fixture();
+ const orphan=household.id+'/item-legacy-a1/'+oid()+'.jpg';await insert(db,A,orphan);
+ await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
+ await assert.rejects(asRole(db,A,'select * from atokore_private.legacy_photo_inventory()'),/permission denied/);
+ await assert.rejects(asRole(db,null,'select * from atokore_private.legacy_photo_inventory()'),/permission denied/);
+ const rows=await service(db,'select household_id::text,record_id,path,referenced from atokore_private.legacy_photo_inventory()');
+ const by=Object.fromEntries(rows.map(r=>[r.path,r]));
+ assert.equal(rows.length,2);
+ assert.equal(by[name].referenced,true);assert.equal(by[name].household_id,household.id);assert.equal(by[name].record_id,'item-legacy-a1');
+ assert.equal(by[orphan].referenced,false);
+ // A deleted record no longer counts as a reference (its object is an orphan to review).
+ await db.query("update atokore_private.records set deleted=true where id='item-legacy-a1'");
+ assert.equal((await service(db,'select count(*)::int c from atokore_private.legacy_photo_inventory() where referenced')).at(0).c,0);
+});
+test('stage 2 refuses while any legacy object remains or stage 1 is missing, and changes nothing',async()=>{
+ const {db,name}=await fixture();
+ await assert.rejects(db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')),/legacy_photos_remain/);
+ await db.exec('rollback').catch(()=>{});
+ await db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);
+ await assert.rejects(db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')),/legacy_stage1_missing/);
+ await db.exec('rollback').catch(()=>{});
+ const policies=(await db.query("select policyname from pg_policies where schemaname='storage' and tablename='objects' order by 1")).rows.map(r=>r.policyname);
+ assert.deepEqual(policies,['atokore_photo_delete','atokore_photo_insert','atokore_photo_read']);
+ assert.ok(name);
+});
+test('full order: switch + Storage API delete, then stage 2 closes every client path; the gateway check still works',async()=>{
+ const {db,household,name}=await fixture();
+ await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
+ // Stand-ins for the separately approved steps: CAS switch to the gateway path, Storage API delete.
+ const next=household.id+'/item-legacy-a1/'+oid()+'.jpg';
+ await db.query("update atokore_private.records set fields=fields||jsonb_build_object('photoPath',$1::text) where id='item-legacy-a1'",[next]);
+ await db.query("delete from storage.objects where bucket_id=$1 and name=$2",[LEGACY,name]);
+ await db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql'));
+ const policies=(await db.query("select policyname from pg_policies where schemaname='storage' and tablename='objects'")).rows;
+ assert.equal(policies.length,0);
+ // Even if a legacy row reappeared (e.g. a restore), no client role can read or remove it.
+ await db.query("insert into storage.objects(bucket_id,name) values($1,$2)",[LEGACY,name]);
+ assert.equal((await objects(db,A)).length,0);
+ assert.equal((await asRole(db,A,"delete from storage.objects where bucket_id='"+LEGACY+"' returning name")).length,0);
+ const access=(uid,p)=>asRole(db,uid,"select public.hh_photo_access('"+p+"','read') as ok").then(r=>r[0].ok);
+ assert.equal(await access(A,next),true);
+ assert.equal(await access(B,next),true);
+ assert.equal(await access(A,name),false,'the old path is no longer the record photo');
+ await call(db,A,'hh_remove_member',{p_user:B});
+ assert.equal(await access(B,next),false,'removed member is refused by the gateway on the next request');
+ assert.equal(await access(C,next),false);
+});
+test('shipped app files never build Storage object URLs (photos go only through the POST gateway)',()=>{
+ const dir=path.join(__dirname,'../atokore-live-v125');
+ const files=fs.readdirSync(dir).filter(f=>/\.(js|html)$/.test(f));
+ assert.ok(files.length>20);
+ for(const f of files){
+  const src=fs.readFileSync(path.join(dir,f),'utf8');
+  assert.equal(/storage\/v1\/object|\/object\/(authenticated|public|sign)\//.test(src),false,f);
+  assert.equal(src.includes(LEGACY),false,f+' must not name the legacy bucket');
+ }
+ const sync=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ assert.match(sync,/functions\/v1\/atokore-photo-gateway/);
+ assert.match(fs.readFileSync(path.join(dir,'household-config-v37.js'),'utf8'),/photoGatewayEnabled:\s*false/);
+});
+test('every draft applies together in the documented order, and the v51 RPCs still work on top of the photo drafts',async()=>{
+ const db=await createDb();
+ await db.exec('CREATE TABLE auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz)');
+ for(const f of ['atokore-photo-gateway-v50.sql','atokore-photo-reservation-v50.sql','atokore-photo-lifecycle-v50.sql','atokore-photo-service-v50.sql',
+  'atokore-buy-assignment-v51.sql','atokore-prep-share-v51.sql','atokore-photo-legacy-close-writes-v51.sql'])await db.exec(SQL(f));
+ await call(db,A,'hh_create',{p_name:'家族',p_display_name:'親'});
+ const {code}=await call(db,A,'hh_invite_create');await call(db,B,'hh_join',{p_code:code,p_display_name:'家族'});
+ await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'buy',id:'buy-all-drafts',fields:{name:'おしりふき'},qty:1,ts:Date.now()}]});
+ const before=(await db.query("select seq from atokore_private.records where id='buy-all-drafts'")).rows[0].seq;
+ const r=await call(db,A,'hh_buy_assign',{p_buy:'buy-all-drafts',p_assignee:B,p_expected_rev:0});
+ assert.equal(r.status,'ready');
+ const after=(await db.query("select seq from atokore_private.records where id='buy-all-drafts'")).rows[0].seq;
+ assert.ok(Number(after)>Number(before),'assignment touches the buy cursor without tripping the photo triggers');
+ assert.equal((await call(db,B,'hh_buy_respond',{p_buy:'buy-all-drafts',p_decision:'accept',p_expected_rev:1})).status,'ready');
+ assert.equal((await call(db,A,'hh_prep_put',{p_doc:{v:1,children:[],week:{},events:{}},p_expected_rev:0})).status,'ready');
+ // Ordinary sync still round-trips while every draft is present.
+ const pulled=await call(db,B,'hh_pull',{p_since:0});
+ assert.ok(pulled.records.some(x=>x.id==='buy-all-drafts'));
+});

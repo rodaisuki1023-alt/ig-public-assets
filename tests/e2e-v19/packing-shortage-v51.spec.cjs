@@ -65,3 +65,26 @@ for (const width of [320, 393, 430]) test(`summary fits at ${width}px`, async ({
     return { right: r.right, min: Math.min(...t), scroll: document.documentElement.scrollWidth - innerWidth }; });
   expect(f.right).toBeLessThanOrEqual(width); expect(f.min).toBeGreaterThanOrEqual(44); expect(f.scroll).toBeLessThanOrEqual(0);
 });
+
+test('purchase chain: summary -> shopping list -> 買った restocks -> the next check no longer asks', async ({ page }) => {
+  const initial = state();
+  await open(page, { [KEY]: initial });
+  await go(page, 'buy');
+  const box = page.locator('#atkPackShort');
+  await box.locator('summary').click();
+  await expect(box.locator('li.zero')).toHaveText('在庫0：おしりふき');
+  await box.locator('[data-pack-short-add]').click();
+  await expect(box.locator('li.queued')).toHaveText('買い物リストにあります：おしりふき');
+  // Buying goes through the existing purchase owner: stock +1, the shopping row leaves.
+  await page.locator('#buyList [data-buy-id]').filter({ hasText: 'おしりふき' }).getByRole('button', { name: /を買った$/ }).click();
+  const s = await stored(page);
+  expect(s.buys).toEqual([]);
+  expect(s.items.find(x => x.id === 1).qty).toBe(1);
+  expect(s.items.filter(x => x.id !== 1)).toEqual(initial.items.filter(x => x.id !== 1));
+  // Next preparation: おしりふき is neither zero nor queued any more; the diaper question stays.
+  await expect(box.locator('li.zero')).toHaveCount(0);
+  await expect(box.locator('li.queued')).toHaveCount(0);
+  await expect(box.locator('li.choose')).toHaveText('サイズ・種類を選んでください：おむつ');
+  await expect(box.locator('.atk-pack-short-count')).toHaveText('要確認 1件');
+  expect(page.__errors).toEqual([]);
+});

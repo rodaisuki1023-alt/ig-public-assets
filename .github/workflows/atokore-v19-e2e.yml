@@ -169,7 +169,7 @@ jobs:
           node --test tests/atokore-stock-rules-v48.test.cjs
           node --test tests/atokore-stock-levels-v51.test.cjs tests/atokore-tools-v51.test.cjs
           node --test tests/atokore-prep-sets-v51.test.cjs tests/atokore-entitlements-v51.test.cjs tests/atokore-notify-policy-v51.test.cjs tests/atokore-usage-monitor-v51.test.cjs
-          node --test --test-concurrency=1 tests/atokore-buy-assignment-v51.test.cjs tests/atokore-prep-share-v51.test.cjs
+          node --test --test-concurrency=1 tests/atokore-buy-assignment-v51.test.cjs tests/atokore-prep-share-v51.test.cjs tests/atokore-photo-legacy-closure-v51.test.cjs
           node --test tests/atokore-buy-duplicates-v48.test.cjs
           node --test tests/atokore-baby-food-search-v48.test.cjs
           node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \
