@@ -232,7 +232,15 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     // device's exact reference, before checking the actual rendered image.
     let serverPath;
     await expect.poll(async()=>{
-      try{await a.page.evaluate(()=>AtokoreHousehold.syncNow())}catch(error){
+      // 4th step: CDP showed NO context destroyed at the failure, and Playwright reports any
+      // unclassified protocol error (e.g. "Promise was collected") with this navigation text.
+      // A live timer keeps the race promise referenced, so a syncNow() promise that never settles
+      // becomes an explicit, logged failure instead of an opaque one (no extra wait: still fails).
+      try{
+       const r=await a.page.evaluate(()=>Promise.race([AtokoreHousehold.syncNow().then(()=>'settled'),new Promise(res=>setTimeout(()=>res('hang'),15000))]));
+       if(r==='hang'){console.log('PHOTO_QA_SYNC_HANG',JSON.stringify({failedAt:Date.now(),navigation}));throw Error('syncNow() did not settle within 15 s (sync promise hangs)')}
+      }catch(error){
+       if(/did not settle/.test(error.message))throw error;
         // Let the navigation event that destroyed the context arrive before logging it.
         await a.page.waitForLoadState('domcontentloaded').catch(()=>{});
         console.log('PHOTO_QA_NAVIGATION',JSON.stringify({failedAt:Date.now(),closed:a.page.isClosed(),navigation,url:keys(a.page.url())}));throw error}
