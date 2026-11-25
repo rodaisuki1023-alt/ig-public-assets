@@ -9,6 +9,8 @@ on:
       - 'scripts/atokore/**'
       - 'supabase/**'
       - 'tests/**'
+      - 'atokore-tools-v51/**'
+      - 'docs/atokore-v51-*.md'
       - '.github/workflows/atokore-v19-e2e.yml'
   workflow_dispatch:
 
@@ -92,6 +94,7 @@ jobs:
           node --test tests/atokore-food-month-display.test.cjs
           node --test tests/atokore-search-v48.test.cjs
           node --test tests/atokore-stock-rules-v48.test.cjs
+          node --test tests/atokore-stock-levels-v51.test.cjs tests/atokore-tools-v51.test.cjs
           node --test tests/atokore-buy-duplicates-v48.test.cjs
           node --test tests/atokore-baby-food-search-v48.test.cjs
           node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \
