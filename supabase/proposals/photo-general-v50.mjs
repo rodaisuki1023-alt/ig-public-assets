@@ -66,7 +66,9 @@ export function makeJpegNormalizer(codec){
   }catch{return null}
  }
 }
-const mapError=e=>e?.code==='42501'?bad(403,'denied'):['23505','40001','55000'].includes(e?.code)?bad(409,'conflict'):bad(503,'unavailable');
+// The household's shared-photo limit (free 5 / premium 20) is its own reason so the app can say so
+// instead of reporting a conflict. Existing photos are never removed by this refusal.
+const mapError=e=>e?.code==='42501'?bad(403,'denied'):e?.code==='55000'&&/photo_plan_limit/.test(String(e?.message||''))?bad(409,'photo_limit'):['23505','40001','55000'].includes(e?.code)?bad(409,'conflict'):bad(503,'unavailable');
 /**
  * @param {{verify:Function,db:Function,storage:{download:Function,upload:Function},
  * normalize:Function,admit?:((user:{uid:string,session:string},household:string,operation:string)=>Promise<boolean>)|null}} adapters

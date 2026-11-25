@@ -226,7 +226,7 @@ function openEditor(id){
    dispose();root.renderHome?.();root.renderStock?.();root.atkShowDetail?.(id);
    if(sharing&&record&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
     root.notifyAtokoreV125H?.('写真は端末に保存しました。家族への共有は同期時に行います。');
-    void shareWaiting(true).catch(()=>{});
+    limitHoldUntil=0;void shareWaiting(true).catch(()=>{});
    }
   }catch(error){message('端末に保存できた写真は残っています。'+error.message);busy(false)}
  }
@@ -313,6 +313,9 @@ function createPhotoQueue(scan,canRun){
   return running;
  };
 }
+// After the server refuses a photo because the household's shared-photo limit is reached, do not
+// retry on every sync (each retry is a server call). A photo change by the person resumes at once.
+const LIMIT_HOLD_MS=10*60*1000;let limitHoldUntil=0;
 const shareWaiting=createPhotoQueue(async()=>{
  const hh=root.AtokoreHousehold;
  let list=[];try{list=items.slice()}catch(_){}
@@ -321,11 +324,11 @@ const shareWaiting=createPhotoQueue(async()=>{
   const item=byKey.get(k);
   if(!needsSending(item,record))continue;
   if(hh.photoGeneralEnabled?.()===true&&!canSendManagedPhoto(record,hh.receiptScope?.()))continue;
-  if(!await sendOne(item,record).catch(()=>false))break;
+  if(!await sendOne(item,record).catch(e=>{if(e?.code==='photo_limit'){if(Date.now()>=limitHoldUntil)root.notifyAtokoreV125H?.(e.message);limitHoldUntil=Date.now()+LIMIT_HOLD_MS}return false}))break;
  }
 },()=>{
  const hh=root.AtokoreHousehold,s=hh?.homeState?.();
- return s?.joined&&s.state==='synced'&&hh.photoSharingEnabled?.()===true;
+ return s?.joined&&s.state==='synced'&&hh.photoSharingEnabled?.()===true&&Date.now()>=limitHoldUntil;
 });
 // ---------------------------------------------------------------- backup
 function toBase64(bytes){let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return root.btoa(s)}

@@ -91,3 +91,61 @@ test('global cap includes retired rows across households',async()=>{
   assert.equal((await reserve(A,SA,record(0),op())).eligible,true);
  }finally{await db.close()}
 });
+
+// v51 owner policy: shared cloud photos per household, free 5 / premium 20 (device-only photos are
+// not counted). One slot per product; replacing a product's photo takes no new slot; a downgrade
+// keeps every existing photo and only refuses photos for further products.
+async function planFixture(count){
+ const f=await fixture();
+ for(let i=5;i<count;i++){
+  const res=await call(f.db,A,'hh_push',{p_ops:[{op_id:op(),type:'create',kind:'item',id:record(i),qty:1,fields:{name:'合成'+i,unit:'個'},ts:Date.now()}]});
+  assert.equal(res.results[0].status,'applied');
+ }
+ // Attach directly: the lifecycle (upload/finish/attach) is covered by its own tests.
+ f.attach=async r=>{const res=await f.reserve(A,SA,r,op());await f.db.query("UPDATE atokore_private.photo_ledger_v50 SET state='attached',actual_bytes=40000 WHERE file_id=$1",[res.file_id]);return res};
+ return f;
+}
+test('free household: the sixth product photo is refused, a replacement at the limit is not',async()=>{
+ const {db,h,attach,reserve}=await planFixture(7);
+ for(let i=0;i<5;i++)await attach(record(i));
+ await assert.rejects(reserve(A,SA,record(5),op()),/photo_plan_limit/);
+ await assert.rejects(reserve(B,SB,record(6),op()),/photo_plan_limit/,'any member, same household limit');
+ const replacing=await reserve(A,SA,record(2),op(),null);
+ assert.equal(replacing.eligible,true);
+ // Nothing was deleted or changed by the refusals.
+ const rows=(await db.query("SELECT state,count(*)::int n FROM atokore_private.photo_ledger_v50 WHERE household_id=$1 GROUP BY state ORDER BY state",[h])).rows;
+ assert.deepEqual(rows,[{state:'attached',n:5},{state:'reserved',n:1}]);
+});
+test('pending uploads hold a slot, so a burst cannot pass the limit; retired photos free it',async()=>{
+ const {db,h,attach,reserve}=await planFixture(7);
+ for(let i=0;i<3;i++)await attach(record(i));
+ await reserve(A,SA,record(3),op());await reserve(B,SB,record(4),op());
+ await assert.rejects(reserve(A,SA,record(5),op()),/photo_plan_limit/,'3 attached + 2 pending = 5');
+ // A product's old photo retired after replacement or deletion no longer occupies its slot.
+ await db.query("UPDATE atokore_private.photo_ledger_v50 SET state='retired' WHERE household_id=$1 AND record_id=$2",[h,record(0)]);
+ assert.equal((await reserve(A,SA,record(5),op())).eligible,true);
+});
+test('premium allows 20 product photos; the 21st is refused',async()=>{
+ const {db,h,attach,reserve}=await planFixture(22);
+ await db.query("UPDATE atokore_private.households SET plan='premium',plan_expires_at=NULL WHERE id=$1",[h]);
+ for(let i=0;i<20;i++)await attach(record(i));
+ await assert.rejects(reserve(A,SA,record(20),op()),/photo_plan_limit/);
+});
+test('after the paid plan ends, existing photos stay, replacements work, new products are refused',async()=>{
+ const {db,h,hc,attach,reserve}=await planFixture(14);
+ await db.query("UPDATE atokore_private.households SET plan='premium',plan_expires_at=NULL WHERE id=$1",[h]);
+ for(let i=0;i<12;i++)await attach(record(i));
+ await db.query("UPDATE atokore_private.households SET plan_expires_at=now()-interval '1 day' WHERE id=$1",[h]);
+ await assert.rejects(reserve(A,SA,record(12),op()),/photo_plan_limit/);
+ assert.equal((await reserve(A,SA,record(4),op(),null)).eligible,true,'replacing an existing photo');
+ assert.equal((await db.query("SELECT count(*)::int n FROM atokore_private.photo_ledger_v50 WHERE household_id=$1 AND state='attached'",[h])).rows[0].n,12,'nothing deleted');
+ // Another household's photos never count against this one.
+ assert.equal((await db.query('SELECT atokore_private.cloud_photo_limit_v51(atokore_private.effective_plan($1)) n',[hc])).rows[0].n,5);
+});
+test('the photo limit is not a consumable usage feature',async()=>{
+ const {db}=await fixture();
+ const r=await call(db,A,'hh_consume',{p_feature:'cloud_photos',p_event_key:'qa-cloud-photo-1'});
+ assert.equal(r.status,'rejected:unknown_feature');
+ for(const role of ['anon','authenticated'])
+  assert.equal((await db.query("SELECT has_function_privilege($1,'atokore_private.cloud_photo_limit_v51(text)','EXECUTE') ok",[role])).rows[0].ok,false);
+});

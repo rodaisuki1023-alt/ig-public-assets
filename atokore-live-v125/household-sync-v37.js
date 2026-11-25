@@ -189,7 +189,11 @@ async function generalPhotoPost(id,scope,payload){
    apikey:cfg.anonKey,Authorization:'Bearer '+token,'Content-Type':'application/json'
   },body:JSON.stringify(payload),cache:'no-store',signal:controller.signal});
   if(!sameScope(scope,photoScope(id)))throw Error('写真の共有先が変わりました。');
-  if(!res.ok)throw Error(res.status===409?'写真の変更が競合しました。端末内の写真は残っています。':'写真を共有できませんでした。端末内の写真は残っています。');
+  if(!res.ok){
+   let reason=null;try{reason=(await res.clone().json())?.error??null}catch(_){}
+   if(res.status===409&&reason==='photo_limit')throw Object.assign(Error('家族で共有できる写真の上限に達しました。端末内の写真は残っています。共有中の写真を差し替えるか外すと、新しい写真を共有できます。'),{code:'photo_limit'});
+   throw Error(res.status===409?'写真の変更が競合しました。端末内の写真は残っています。':'写真を共有できませんでした。端末内の写真は残っています。');
+  }
   return payload.operation==='read'?await res.blob():await res.json();
  }finally{clearTimeout(timeout)}
 }

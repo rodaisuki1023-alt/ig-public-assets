@@ -91,3 +91,13 @@ test('expired unknown upload is held; positive hash-matched settlement can purge
  unknown=false;assert.deepEqual(await m.reconcileExpired({worker,storage},F),{state:'purged'});
  assert.equal(remove,1);assert.equal(settle,1);
 });
+test('household photo limit is reported as its own reason, other pending limits stay conflicts',async()=>{
+ const m=await mod;
+ const make=err=>m.createGeneralPhotoHandler({verify:async()=>({uid:U,session:S}),normalize:m.makeJpegNormalizer(jpeg),
+  db:async(user,action)=>{if(action==='reserve')throw err;throw Error('unexpected '+action)},
+  storage:{upload:async()=>{throw Error('must not upload')},download:async()=>{throw Error('must not read')}}});
+ const limit=await make(Object.assign(Error('photo_plan_limit'),{code:'55000'}))(request,'valid');
+ assert.deepEqual([limit.status,limit.error],[409,'photo_limit']);
+ const pending=await make(Object.assign(Error('photo_pending_limit'),{code:'55000'}))(request,'valid');
+ assert.deepEqual([pending.status,pending.error],[409,'conflict']);
+});

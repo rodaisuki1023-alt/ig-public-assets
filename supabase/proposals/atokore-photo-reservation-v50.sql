@@ -3,6 +3,14 @@
 -- client integration, storage deletion and concurrency gates are proven.
 -- No legacy photo policy, existing record or public RPC is modified.
 BEGIN;
+-- v51: shared cloud-photo limit per household plan (free 5 / premium 20). Kept OUT of
+-- atokore_private.plan_limits on purpose: consume() treats every plan_limits key except seats as a
+-- monthly countable feature, so a key there would become callable through hh_consume.
+CREATE FUNCTION atokore_private.cloud_photo_limit_v51(p_plan text) RETURNS integer
+LANGUAGE sql IMMUTABLE SET search_path = '' AS $$
+  SELECT CASE p_plan WHEN 'premium' THEN 20 ELSE 5 END
+$$;
+REVOKE ALL ON FUNCTION atokore_private.cloud_photo_limit_v51(text) FROM PUBLIC, anon, authenticated;
 CREATE TABLE atokore_private.photo_quota_lock_v50 (
   singleton boolean PRIMARY KEY CHECK(singleton)
 );
@@ -49,6 +57,8 @@ DECLARE
   v_current text;
   v_seq bigint;
   v_row atokore_private.photo_ledger_v50%ROWTYPE;
+  v_limit integer;
+  v_used integer;
 BEGIN
   IF v_uid IS NULL OR p_household IS NULL OR p_operation IS NULL OR p_record IS NULL
     OR p_record !~ '^[A-Za-z0-9_-]{8,64}$'
@@ -91,6 +101,20 @@ BEGIN
   IF (SELECT count(*) FROM atokore_private.photo_ledger_v50 WHERE household_id=p_household
       AND state IN ('reserved','uploading','uploaded'))>=3
   THEN RAISE EXCEPTION 'photo_pending_limit' USING ERRCODE='55000'; END IF;
+  -- v51 plan limit (owner policy 2026-11-25): shared cloud photos per household, free 5 / premium 20.
+  -- One slot per product: a pending or attached photo of a product holds it. Replacing the photo of
+  -- a product that already has one takes no new slot. After a downgrade, existing photos are kept
+  -- (never deleted here); only photos for further products are refused until the count is below the
+  -- limit. Device-only photos never reach this function and are not counted. The locks above
+  -- serialize this check, so simultaneous uploads cannot both take the last slot.
+  v_limit := atokore_private.cloud_photo_limit_v51(atokore_private.effective_plan(p_household));
+  SELECT count(DISTINCT record_id) INTO v_used FROM atokore_private.photo_ledger_v50
+    WHERE household_id=p_household AND state IN ('reserved','uploading','uploaded','attached');
+  IF NOT EXISTS(SELECT 1 FROM atokore_private.photo_ledger_v50 WHERE household_id=p_household
+      AND record_id=p_record AND state='attached') AND v_used>=v_limit
+  THEN RAISE EXCEPTION 'photo_plan_limit' USING ERRCODE='55000',
+    DETAIL=json_build_object('limit',v_limit,'used',v_used)::text; END IF;
+  -- Storage safety cap, separate from the plan limit: every non-purged object is charged.
   IF (SELECT count(*) FROM atokore_private.photo_ledger_v50 WHERE household_id=p_household AND state<>'purged')>=50
     OR (SELECT count(*) FROM atokore_private.photo_ledger_v50 WHERE state<>'purged')>=1280
   THEN RAISE EXCEPTION 'photo_quota' USING ERRCODE='55000'; END IF;
