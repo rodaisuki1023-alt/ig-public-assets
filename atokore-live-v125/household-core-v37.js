@@ -12,7 +12,9 @@ const COUNTERS={item:true,buy:true,routine:false};
 
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v))}
 function same(a,b){return JSON.stringify(a)===JSON.stringify(b)}
-function wireFields(fields,managed){if(!managed)return fields;const out={...fields};delete out.photoPath;return out}
+// A new record never carries cleared (null) fields, e.g. undone purchase fields (tp…): they mean
+// "absent", and leaving them out keeps a restored record within the server's field limit.
+function wireFields(fields,managed){const out={};for(const [k,v] of Object.entries(fields||{}))if(v!==null&&v!==undefined&&!(managed&&k==='photoPath'))out[k]=v;return out}
 function legacyPhotoMutation(o){return o.field==='photoPath'||Object.prototype.hasOwnProperty.call(o.fields||{},'photoPath')||Object.prototype.hasOwnProperty.call(o.item_fields||{},'photoPath')}
 function intQty(v){const n=Math.round(Number(v));return Number.isFinite(n)&&n>0?Math.min(n,99999):0}
 

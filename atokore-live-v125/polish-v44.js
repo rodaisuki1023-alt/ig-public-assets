@@ -8,14 +8,22 @@ const CATS=['ベビー','離乳食','食料品','日用品','衛生・薬','子�
 const copy=v=>JSON.parse(JSON.stringify(v));
 function snapshot(){try{return copy({items,buys,routines})}catch(_){return {items:[],buys:[],routines:[]}}}
 function stockLabel(x){return (x.qtyBasis==='unopened'?'未開封 ':'残り ')+x.qty+(x.unit||'個')+(x.qtyBasis==='unopened'&&x.inUse?'・使用中あり':'')}
-// v51: a purchase may also have added to a product's detailed estimate (item.track). Undo puts the
-// estimate back only while it is exactly as the purchase left it; if it changed since (a correction,
-// a family edit), it is kept and marked to be checked, never silently rewritten.
-const stable=v=>JSON.stringify(v??null,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.keys(x).sort().map(key=>[key,x[key]])):x);
-function undoTrack(row,c){
- if(!c.track||!row)return;
- if(stable(row.track)===stable(c.track.after)){if(c.track.before==null)delete row.track;else row.track=copy(c.track.before);return}
- if(row.track&&typeof row.track==='object')row.track={...row.track,check:'purchase_undo'};
+// v51: a purchase of a product with a detailed estimate also stored that purchase in its own field
+// (tp…, see stock-levels-v51.js). Undo clears exactly that field when it still holds that purchase;
+// a purchase already counted into a later correction cannot be taken apart, so it asks to check.
+const ENTRY=/^tp[0-9a-z]{1,13}$/;
+function addedEntries(a,b){
+ if(!a||!b)return [];
+ return Object.keys(b).filter(f=>ENTRY.test(f)&&b[f]&&typeof b[f]==='object'&&b[f].k&&(!a[f]||a[f].k!==b[f].k)).map(f=>({field:f,k:b[f].k}));
+}
+function undoEntries(row,c){
+ if(!row||!c.entries)return;
+ for(const {field,k} of c.entries){
+  if(!row[field]||row[field].k!==k)continue;
+  delete row[field];
+  const t=row.track;
+  if(t&&typeof t==='object'&&Array.isArray(t.seen)&&t.seen.includes(k))row.track={...t,check:'purchase_undo'};
+ }
 }
 function inverseCounters(current,changes){
  const next=copy(current);
@@ -30,7 +38,7 @@ function inverseCounters(current,changes){
   }
   row.qty=Number(row.qty)-c.delta;
   if(c.usage)row.usage=Math.max(0,(Number(row.usage)||0)-c.usage);
-  undoTrack(row,c);
+  undoEntries(row,c);
  }
  return next;
 }
@@ -99,7 +107,7 @@ for(const name of ['buyOneToStockV125H','bought']){
   if(!removed.length)return result;
   // Rows that did not exist before were created by this purchase; undo removes them entirely.
   const changes=after.items.flatMap(b=>{const a=before.items.find(x=>String(x.id)===String(b.id));const delta=Number(b.qty)-(Number(a?.qty)||0);
-   const track=a&&stable(a.track)!==stable(b.track)?{track:{before:a.track??null,after:b.track??null}}:{};
+   const e=addedEntries(a,b),track=e.length?{entries:e}:{};
    return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0,...(a?{}:{created:true}),...track}]:[]});
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined,ticket=shared?hh.capturePurchases?.(removed.map(x=>x.id)):null;
   offerUndo(removed.length+'商品を「買った」にしました',async()=>{
@@ -107,8 +115,8 @@ for(const name of ['buyOneToStockV125H','bought']){
     if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');
     await hh.undoPurchases(ticket);
     // The server reverted the counted stock; the estimate is an ordinary field and is reverted here.
-    if(changes.some(c=>c.track)){
-     try{const cur=snapshot();for(const c of changes)undoTrack(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
+    if(changes.some(c=>c.entries)){
+     try{const cur=snapshot();for(const c of changes)undoEntries(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
      catch(e){console.error('あとこれ: 見積もりの取り消し',e);throw Error('「買った」は取り消しましたが、見積もりを戻せませんでした。商品の「詳しく管理」で残りを確認してください。')}
     }
     return;

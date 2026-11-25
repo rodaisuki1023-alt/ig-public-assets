@@ -97,64 +97,100 @@ test('corrupt or hostile tracks never throw and never produce a number',()=>{
   assert.ok(L.startTrack(bad).error,JSON.stringify(bad));
 });
 
-test('purchase adds to the estimate once per key, in pieces for bags, and moves the base date',()=>{
- const start=L.startTrack({packs:1,perPack:60,perDay:6,pieceUnit:'枚',today:day(-5),size:null}).track;
- const item=diaper({qty:1,track:start});
- // 5 days × 6/day used from 60: 30 left; +2 bags × 60 = 150 from today.
- const r=L.purchaseTrack(item,2,{today:T,key:'buy:a'});
- assert.equal(r.added,120);assert.equal(r.track.base,150);assert.equal(r.track.since,T);assert.deepEqual(r.track.applied,['buy:a']);
- assert.equal(L.estimate({...item,track:r.track},T).remaining,150);
- const again=L.purchaseTrack({...item,track:r.track},2,{today:T,key:'buy:a'});
- assert.equal(again.unchanged,true);assert.equal(again.track.base,150,'a retry or repaint never adds twice');
- const other=L.purchaseTrack({...item,track:r.track},1,{today:T,key:'buy:b'});
- assert.equal(other.track.base,210);assert.deepEqual(other.track.applied,['buy:a','buy:b']);
- // Only the last 8 keys are kept (bounded storage).
- let t=r.track;for(let i=0;i<12;i++)t=L.purchaseTrack({...item,track:t},1,{today:T,key:'k'+i}).track;
- assert.equal(t.applied.length,8);assert.equal(t.applied.at(-1),'k11');
- // Not a tracked item / bad key.
- assert.deepEqual(L.purchaseTrack(diaper(),1,{today:T,key:'x'}),{track:null});
- assert.equal(L.purchaseTrack(item,1,{today:T,key:''}).error,'purchase_key');
+// ---- Purchases as separate fields (family-safe) -----------------------------------------------
+const NOW=Date.parse(T+'T03:00:00Z');
+const base120=(extra={})=>L.startTrack({packs:2,perPack:60,perDay:6,pieceUnit:'枚',today:T,now:NOW-1000,...extra}).track;
+const buy=(item,key,bags=1,at=NOW)=>{const p=L.purchaseEntry(item,bags,{today:T,now:at,key});return {...item,[p.field]:p.entry}};
+// Field-wise merge as the family sync does it (each field: last writer wins).
+const merge=(...versions)=>Object.assign({},...versions);
+
+test('two family purchases at once both count; undoing one leaves the other; a resend adds nothing',()=>{
+ const start=diaper({qty:2,track:base120()});
+ assert.equal(L.estimate(start,T).remaining,120);
+ const a=buy(start,'buy:A'),b=buy(start,'buy:B');            // phone A and phone B, same day, offline
+ assert.equal(L.estimate(a,T).remaining,180);assert.equal(L.estimate(b,T).remaining,180);
+ const both=merge(a,b),reversed=merge(b,a);
+ assert.equal(L.estimate(both,T).remaining,240,'120 + 60 + 60');
+ assert.deepEqual(both,reversed,'sync order does not matter');
+ assert.equal(L.estimate(merge(both,b,a,b),T).remaining,240,'the same purchase sent again adds nothing');
+ const fa=L.entryField('buy:A');
+ const undo=L.undoEntry(both,fa,'buy:A');
+ const afterUndo={...both};for(const [k,v] of Object.entries(undo.patch))if(v===undefined)delete afterUndo[k];else afterUndo[k]=v;
+ assert.equal(L.estimate(afterUndo,T).remaining,180,'undo one purchase: back to 180');
+ assert.equal(undo.patch.track,undefined,'nothing asks: the purchase was never inside the base');
+ // A cleared field arriving from the family as null is the same as absent.
+ assert.equal(L.estimate({...both,[fa]:null},T).remaining,180);
+ assert.equal(L.undoEntry(both,fa,'buy:other').patch,null,'a different purchase in that field is never cleared');
+ assert.notEqual(L.entryField('buy:A'),L.entryField('buy:B'));
+ assert.match(L.entryField('buy:'+'x'.repeat(70)),/^tp[0-9a-z]{1,13}$/);
 });
-test('purchase in an unknown unit is never guessed: the estimate asks to be checked',()=>{
- const noPack={v:1,base:30,since:day(-1),perDay:6,perPack:null,refillDays:5,pieceUnit:'枚',size:null,snoozeUntil:null,confirmedAt:day(-1)};
- const r=L.purchaseTrack(diaper({track:noPack}),1,{today:T,key:'buy:c'});
- assert.equal(r.check,'purchase_unit');assert.equal(r.track.base,30,'nothing added');
- assert.deepEqual(L.estimate(diaper({track:r.track}),T),{status:'unknown',reason:'purchase_unit'});
- // The unit changed since tracking started (pieces 個 -> bag counted in 枚): not added either.
- const pieces=L.startTrack({units:10,perDay:2,pieceUnit:'個',today:day(-1)}).track;
- assert.equal(L.purchaseTrack({id:2,name:'ゼリー',unit:'袋',qty:1,track:pieces},1,{today:T,key:'k'}).check,'purchase_unit');
- // A future base date cannot be advanced safely.
- assert.equal(L.purchaseTrack(diaper({track:{...noPack,perPack:60,since:day(2),confirmedAt:day(2)}}),1,{today:T,key:'k'}).check,'purchase_unit');
- // The check stays through a later addable purchase, and the person's own correction settles it.
- const later=L.purchaseTrack(diaper({track:{...r.track,perPack:60}}),1,{today:T,key:'buy:d'});
- assert.equal(later.track.check,'purchase_unit');assert.equal(later.track.base,84); // 30-6 used +60
- const fixed=L.correct(later.track,'still',{today:T,remaining:80});
- assert.equal(fixed.track.check,null);assert.equal(L.estimate(diaper({track:fixed.track}),T).status,'estimate');
- // Corrupt check/applied values are ignored, never thrown.
- const odd=L.readTrack({...noPack,check:'other',applied:['ok',5,'x'.repeat(81)]});
- assert.equal(odd.check,null);assert.deepEqual(odd.applied,['ok']);
+test('consumption between purchases is walked in date order; the walk never goes below zero',()=>{
+ const t=L.startTrack({units:12,perDay:6,pieceUnit:'枚',today:day(-4),now:Date.parse(day(-4)+'T03:00:00Z')}).track;
+ let x={id:9,name:'おしりふき',unit:'枚',qty:0,track:t};
+ // 12 lasts 2 days; on day -1 (3 days later) stock had run out before buying 30.
+ const p=L.purchaseEntry(x,30,{today:day(-1),now:Date.parse(day(-1)+'T03:00:00Z'),key:'k1'});x={...x,[p.field]:p.entry};
+ assert.equal(L.estimate(x,T).remaining,24,'0 then +30 on day -1, minus 6 for one day');
 });
-test('a plain-unit product adds the bought amount directly; old tracks without the new fields still work',()=>{
- const old={v:1,base:6,since:day(-2),perDay:1,perPack:null,refillDays:5,size:null,snoozeUntil:null,confirmedAt:day(-2)};
- const milk={id:3,name:'牛乳',unit:'本',qty:1,track:old};
- const r=L.purchaseTrack(milk,2,{today:T,key:'buy:e'});
- assert.equal(r.track.base,6);assert.equal(r.added,2);
- assert.equal(L.estimate(milk,T).remaining,4);
+test('a correction counts the purchases it saw; a family purchase it did not see asks instead of guessing',()=>{
+ let x=buy(diaper({qty:2,track:base120()}),'buy:A');                // A bought: 180
+ // B corrects later having seen A's purchase: base 100, A's purchase is inside it.
+ const seenFix=L.correct(x.track,'still',{today:T,remaining:100,now:NOW+5000,seen:L.seenKeys(x)});
+ assert.equal(L.estimate({...x,track:seenFix.track},T).remaining,100);
+ // C corrects at the same time WITHOUT having received A's purchase yet (offline): it must not
+ // silently drop or double it.
+ const blind=L.correct(base120(),'still',{today:T,remaining:100,now:NOW+5000,seen:[]});
+ assert.deepEqual(L.estimate({...x,track:blind.track},T),{status:'unknown',reason:'purchase_overlap'});
+ // A purchase after the correction is simply added.
+ const later=buy({...x,track:blind.track},'buy:late',1,NOW+9000);
+ assert.equal(L.estimate({...later,track:{...blind.track,seen:['buy:A']}},T).remaining,160);
+ // The next correction that sees everything settles it.
+ const fixed=L.correct(blind.track,'still',{today:T,remaining:90,now:NOW+20000,seen:L.seenKeys(later)});
+ assert.equal(L.estimate({...later,track:fixed.track},T).remaining,90);
+ // Undo of a purchase that a correction already counted asks to check (the base cannot be split).
+ const counted={...x,track:seenFix.track};
+ const u=L.undoEntry(counted,L.entryField('buy:A'),'buy:A');
+ assert.equal(u.patch.track.check,'purchase_undo');
+ assert.deepEqual(L.estimate({...counted,...u.patch,[L.entryField('buy:A')]:undefined},T),{status:'unknown',reason:'purchase_undo'});
 });
-test('undoing a purchase restores the estimate only if nothing changed it since; otherwise it asks',()=>{
+test('unknown unit, unit change and size change are never added by guess',()=>{
+ const noPack={v:1,base:30,since:T,perDay:6,perPack:null,refillDays:5,pieceUnit:'枚',size:null,snoozeUntil:null,confirmedAt:T,t:NOW-1000,seen:[]};
+ const a=buy(diaper({track:noPack}),'buy:u');
+ assert.equal(a[L.entryField('buy:u')].u,null);
+ assert.deepEqual(L.estimate(a,T),{status:'unknown',reason:'purchase_unit'});
+ // A purchase recorded in 個 against an estimate in 枚 (the unit changed in between).
+ const t=base120(),x={...diaper({track:t}),[L.entryField('k')]:{v:1,k:'k',q:1,unit:'個',u:5,d:T,t:NOW,pu:'個',sz:null}};
+ assert.deepEqual(L.estimate(x,T),{status:'unknown',reason:'purchase_unit'});
+ // Bought as size M while the estimate is for L.
+ const sized={...diaper({size:'L',track:{...t,size:'L'}}),[L.entryField('s')]:{v:1,k:'s',q:1,unit:'袋',u:60,d:T,t:NOW,pu:'枚',sz:'M'}};
+ assert.deepEqual(L.estimate(sized,T),{status:'unknown',reason:'purchase_unit'});
+ // Corrupt purchase fields are ignored, never thrown.
+ const odd={...diaper({track:t}),tpbad:{v:1,k:5},tpx:'junk',tpy:null,[L.entryField('z')]:{v:1,k:'z',u:-1,d:T,t:NOW}};
+ assert.equal(L.estimate(odd,T).remaining,120);
+ assert.equal(L.purchaseEntry(diaper(),1,{today:T,key:'k'}),null,'no estimate: nothing stored');
+});
+test('old tracks (no observation time or seen list) and old clients keep working',()=>{
+ const old={v:1,base:60,since:T,perDay:6,perPack:60,refillDays:5,size:null,snoozeUntil:null,confirmedAt:T,applied:['x']};
+ const x=buy(diaper({track:old}),'buy:o');
+ assert.equal(L.estimate(x,T).remaining,120,'a purchase on the base day counts');
+ // An old client rewrites the track (without t/seen) after the purchase field exists: the purchase
+ // stays visible because the old track's time is the start of its base day.
+ assert.equal(L.estimate({...x,track:{...old,base:60}},T).remaining,120);
+ // Ancient purchases before the observation are history and may be cleared.
+ const ancient={...x,[L.entryField('a')]:{v:1,k:'a',q:1,unit:'袋',u:60,d:day(-60),t:Date.parse(day(-60)+'T03:00:00Z'),pu:'枚',sz:null}};
+ assert.equal(L.estimate(ancient,T).remaining,120);
+ assert.deepEqual(L.staleEntries(ancient),[L.entryField('a')]);
+});
+test('undo on screen (polish): clears exactly the purchase field; asks only if a correction counted it',()=>{
  const {inverseCounters}=require('../atokore-live-v125/polish-v44.js');
- const before=L.startTrack({packs:1,perPack:60,perDay:6,pieceUnit:'枚',today:T}).track;
- const after=L.purchaseTrack(diaper({qty:1,track:before}),1,{today:T,key:'buy:u'}).track;
- const change={key:'items',id:1,name:'パンパース テープ M',unit:'袋',delta:1,usage:0,track:{before,after}};
- const state=t=>({items:[diaper({qty:2,track:t})],buys:[],routines:[]});
- // Keys come back sorted from the server (jsonb): still recognised as unchanged.
- const sorted=Object.fromEntries(Object.keys(after).sort().map(k=>[k,after[k]]));
- const undone=inverseCounters(state(sorted),[change]);
- assert.equal(undone.items[0].qty,1);assert.deepEqual(undone.items[0].track,before);
- const edited=inverseCounters(state({...after,base:5}),[change]);
- assert.equal(edited.items[0].qty,1);assert.equal(edited.items[0].track.base,5);assert.equal(edited.items[0].track.check,'purchase_undo');
- assert.deepEqual(L.estimate(edited.items[0],T),{status:'unknown',reason:'purchase_undo'});
- // A purchase that started the product's first estimate-less row keeps working as before.
- const plain=inverseCounters({items:[diaper({qty:2})],buys:[],routines:[]},[{...change,track:undefined}]);
- assert.equal(plain.items[0].qty,1);assert.equal('track' in plain.items[0],false);
+ const start=diaper({qty:2,track:base120()}),a=buy(start,'buy:A'),both=merge(a,buy(start,'buy:B'));
+ const f=L.entryField('buy:A');
+ const change={key:'items',id:1,name:'パンパース テープ M',unit:'袋',delta:1,usage:0,entries:[{field:f,k:'buy:A'}]};
+ const out=inverseCounters({items:[{...both,qty:4}],buys:[],routines:[]},[change]).items[0];
+ assert.equal(out.qty,3);assert.equal(f in out,false);assert.equal(L.estimate(out,T).remaining,180);
+ const counted={...both,qty:4,track:L.correct(both.track,'still',{today:T,remaining:200,now:NOW+1,seen:L.seenKeys(both)}).track};
+ const out2=inverseCounters({items:[counted],buys:[],routines:[]},[change]).items[0];
+ assert.equal(out2.track.check,'purchase_undo');
+ // A purchase that was not stored as a field (no estimate) undoes like before.
+ const plain=inverseCounters({items:[diaper({qty:2})],buys:[],routines:[]},[{...change,entries:undefined}]).items[0];
+ assert.equal(plain.qty,1);
 });

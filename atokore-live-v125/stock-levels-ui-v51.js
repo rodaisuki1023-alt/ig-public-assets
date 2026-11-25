@@ -37,6 +37,8 @@ function update(id,change){
  try{root.renderStock?.();root.renderHome?.()}catch(e){console.error('あとこれ: 在庫表示',e)}
  return true;
 }
+// Purchases recorded long before the new observation are history: clear their fields.
+function tidy(item){for(const f of L.staleEntries(item))item[f]=undefined}
 function notice(text){try{root.notifyAtokoreV125H?root.notifyAtokoreV125H(text):root.alert?.(text)}catch(_){}}
 function error(id,text){const e=doc.querySelector('[data-atk-level-id="'+Number(id)+'"] .atk-level-error');if(e){e.textContent=text||'';e.hidden=!text}}
 
@@ -46,6 +48,7 @@ function estimateText(e,unit){
   return e.reason==='stale'?'前回の確認から'+e.days+'日たちました。残りを確認して「まだある」か「使い切った」を押してください。'
    :e.reason==='size_changed'?'サイズが変わったため、見積もりをやり直してください。'
    :e.reason==='purchase_unit'?'買った分を見積もりに足せませんでした（1袋の数や単位が分からないため）。残りを確認して「まだある」に数を入れてください。'
+   :e.reason==='purchase_overlap'?'家族の購入と残りの確認が同じころに重なりました。今の残りを確認して「まだある」に数を入れてください。'
    :e.reason==='purchase_undo'?'「買った」を取り消しましたが、その後に見積もりが変わっていたため自動で戻していません。残りを確認してください。'
    :'見積もりできません。残りを確認してください。';
  }
@@ -114,13 +117,13 @@ doc.addEventListener('click',event=>{
  }
  if(t.hasAttribute('data-atk-level-clear')){if(update(id,item=>Object.assign(item,L.clearLevel().patch)))paint(id);return}
  if(t.hasAttribute('data-atk-level-start')){
-  const u=L.units(x),common={perDay:val('[data-atk-level-per-day]'),refillDays:val('[data-atk-level-refill]')??L.DEFAULT_REFILL_DAYS,size:x.size||null,pieceUnit:u.piece,today:today()};
+  const u=L.units(x),common={perDay:val('[data-atk-level-per-day]'),refillDays:val('[data-atk-level-refill]')??L.DEFAULT_REFILL_DAYS,size:x.size||null,pieceUnit:u.piece,today:today(),now:Date.now(),seen:L.seenKeys(x)};
   // Bags/boxes: the number of containers (prefilled with the counted stock) × pieces in one.
   const r=u.container?(val('[data-atk-level-per-pack]')==null?{error:'1'+u.unit+'あたりの'+u.piece+'数を入力してください'}
     :L.startTrack({...common,packs:val('[data-atk-level-packs]')??0,perPack:val('[data-atk-level-per-pack]')}))
    :L.startTrack({...common,units:val('[data-atk-level-units]')});
   if(r.error)return error(id,r.error);
-  if(update(id,item=>{item.track=r.track}))paint(id);return;
+  if(update(id,item=>{item.track=r.track;tidy(item)}))paint(id);return;
  }
  if(t.hasAttribute('data-atk-level-stop')){if(update(id,item=>{item.track=undefined}))paint(id);return}
  if(t.hasAttribute('data-atk-level-undo')){
@@ -130,10 +133,10 @@ doc.addEventListener('click',event=>{
   return;
  }
  if(t.hasAttribute('data-atk-level-fix')){
-  const kind=t.dataset.atkLevelFix,r=L.correct(x.track,kind,{today:today(),remaining:val('[data-atk-level-left]')});
+  const kind=t.dataset.atkLevelFix,r=L.correct(x.track,kind,{today:today(),remaining:val('[data-atk-level-left]'),now:Date.now(),seen:L.seenKeys(x)});
   if(r.error)return error(id,r.error);
   const before=x.track;
-  if(!update(id,item=>{item.track=r.track}))return;
+  if(!update(id,item=>{item.track=r.track;tidy(item)}))return;
   lastFix=kind==='later'?null:{id,before:JSON.parse(JSON.stringify(before)),after:JSON.parse(JSON.stringify(r.track))};
   paint(id);
   // The person's statement may also correct the counted stock, but only when they confirm it.
@@ -153,20 +156,29 @@ for(const name of ['buyOneToStockV125H','bought']){
  const original=root[name];if(typeof original!=='function')continue;
  root[name]=function(...args){
   const qty=new Map(list().map(x=>[String(x.id),Number(x.qty)])),rows=buyIds();
+  const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined&&typeof hh.sharedIdFor==='function'?id=>hh.sharedIdFor('buy',id):null;
+  const ids=shared?new Map(rows.map(id=>[id,shared(id)])):null;
   const result=original.apply(this,args);
   const left=new Set(buyIds()),gone=rows.filter(id=>!left.has(id));
   if(!gone.length)return result;
-  const key='buy:'+hash(gone.sort().join(',')),day=today(),undo=[];
+  // Unique per purchase on this phone (local row ids can repeat on another phone), stable for
+  // every resend of the same purchase because the field and its value are written once here.
+  // While sharing, the key is the shared shopping rows: two phones that both mark the SAME row as
+  // bought are one purchase for the server (one restock) and one field here. Otherwise the key is
+  // unique per purchase on this phone (local row ids can repeat on another phone).
+  const sids=ids?gone.map(id=>ids.get(id)):[];
+  const key=sids.length&&sids.every(Boolean)?'sb:'+hash(sids.sort().join(',')):'buy:'+hash(gone.sort().join(','))+':'+Date.now().toString(36)+Math.floor(Math.random()*1679616).toString(36),day=today(),undo=[];
   for(const x of list()){
    if(!x.track||!qty.has(String(x.id)))continue;
    const delta=Number(x.qty)-qty.get(String(x.id));if(!(delta>0))continue;
-   const p=L.purchaseTrack(x,delta,{today:day,key});
-   if(!p.track||p.unchanged||p.error)continue;
-   undo.push([x,x.track]);x.track=p.track;
+   // Each purchase is its own field: two phones buying at once both count; a resend adds nothing.
+   const p=L.purchaseEntry(x,delta,{today:day,key:key.startsWith('sb:')?key:key+':'+x.id});
+   if(!p||L.readEntry(x[p.field])?.k===p.entry.k)continue;
+   undo.push([x,p.field,x[p.field]]);x[p.field]=p.entry;
   }
   if(undo.length){
    if(typeof root.save==='function'&&root.save()===false){
-    for(const [x,t] of undo)x.track=t;
+    for(const [x,f,old] of undo){if(old===undefined)delete x[f];else x[f]=old}
     notice('買った分を見積もりに保存できませんでした。在庫数は更新済みです。空き容量を確認してください。');
    }
    try{root.renderStock?.();root.renderHome?.()}catch(e){console.error('あとこれ: 在庫表示',e)}

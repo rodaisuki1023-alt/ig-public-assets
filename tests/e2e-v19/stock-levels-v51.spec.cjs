@@ -121,22 +121,28 @@ function purchaseState(track) {
   s.buys = [{ id: 20, name: 'パンパース さらさらケア おむつ テープ M', qty: 2, unit: '袋', stockId: 2 }, { id: 21, name: '牛乳', qty: 1, unit: '本', stockId: 1 }];
   return s;
 }
+const est = (page, id) => page.evaluate(([i, d]) => AtokoreStockLevels.estimate(items.find(x => x.id === i), d), [id, localDay()]);
+const tp = item => Object.keys(item).filter(k => /^tp[0-9a-z]+$/.test(k) && item[k]);
 test('買った adds the bought bags to the estimate once and undo puts both back', async ({ page }) => {
   await open(page, { [KEY]: purchaseState(tracked()) });
   await go(page, 'buy');
   await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
   let s = await stored(page), diaper = s.items.find(x => x.id === 2);
   expect(diaper.qty).toBe(4);
-  expect(diaper.track).toMatchObject({ base: 180, since: localDay(), check: null });
-  expect(diaper.track.applied).toHaveLength(1);
-  expect(s.items.find(x => x.id === 1).track.base).toBe(1); // the other estimate is untouched
+  expect(diaper.track).toEqual(tracked());                // the base itself is never rewritten
+  expect(tp(diaper)).toHaveLength(1);
+  expect(diaper[tp(diaper)[0]]).toMatchObject({ v: 1, q: 2, unit: '袋', u: 120, pu: '枚' });
+  expect((await est(page, 2)).remaining).toBe(180);
+  expect((await est(page, 1)).remaining).toBe(1);        // the other estimate is untouched
   await detail(page, 2);
   await expect(level(page).locator('.atk-level-estimate')).toContainText('約3袋（180枚）');
-  await page.locator('#modal').evaluate(m => m.click()); // close the sheet
+  await page.locator('#modal').evaluate(m => m.click());
   await page.getByRole('button', { name: '元に戻す', exact: true }).click();
   s = await stored(page); diaper = s.items.find(x => x.id === 2);
   expect(diaper.qty).toBe(2);
+  expect(tp(diaper)).toHaveLength(0);
   expect(diaper.track).toEqual(tracked());
+  expect((await est(page, 2)).remaining).toBe(60);
   expect(s.buys.map(b => b.id).sort()).toEqual([20, 21]);
   expect(page.__errors).toEqual([]);
 });
@@ -146,8 +152,8 @@ test('bulk 買った updates each tracked product once; a repaint or second rend
   for (const id of [20, 21]) await page.locator(`#buyList [data-buy-id="${id}"] .buyCheck`).check();
   await page.evaluate(() => window.bought());
   const s = await stored(page);
-  expect(s.items.find(x => x.id === 2).track.base).toBe(180);
-  expect(s.items.find(x => x.id === 1).track.base).toBe(2);   // 1 本 + 1 本 (plain unit)
+  expect((await est(page, 2)).remaining).toBe(180);
+  expect((await est(page, 1)).remaining).toBe(2);   // 1 本 + 1 本 (plain unit)
   await page.evaluate(() => { window.renderStock?.(); window.renderHome?.(); window.renderBuy?.(); });
   expect((await stored(page)).items).toEqual(s.items);
   expect(page.__errors).toEqual([]);
@@ -158,21 +164,27 @@ test('bags without a known count per bag: nothing is added and the estimate asks
   await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
   const diaper = (await stored(page)).items.find(x => x.id === 2);
   expect(diaper.qty).toBe(4);
-  expect(diaper.track).toMatchObject({ base: 60, check: 'purchase_unit' });
+  expect(diaper[tp(diaper)[0]].u).toBe(null);
+  expect(await est(page, 2)).toEqual({ status: 'unknown', reason: 'purchase_unit' });
   await detail(page, 2);
   await expect(level(page).locator('.atk-level-estimate')).toContainText('買った分を見積もりに足せませんでした');
+  // The person's own check settles it.
+  await level(page).locator('[data-atk-level-left]').fill('150');
+  await level(page).locator('[data-atk-level-fix="still"]').click();
+  expect((await est(page, 2)).remaining).toBe(150);
   expect(page.__errors).toEqual([]);
 });
 test('if the estimate cannot be saved after a purchase, the count stays bought and the estimate is unchanged', async ({ page }) => {
   await open(page, { [KEY]: purchaseState(tracked()) });
   await go(page, 'buy');
-  // Only the write that carries the purchase key fails (the purchase itself was already saved).
-  await page.evaluate(() => { const real = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (/TrialV/.test(k) && String(v).includes('"applied":["buy:')) throw new DOMException('quota', 'QuotaExceededError'); return real.call(this, k, v); }; });
+  // Only the write that carries the purchase field fails (the purchase itself was already saved).
+  await page.evaluate(() => { const real = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (/TrialV/.test(k) && /"tp[0-9a-z]+":\{"v":1,"k":"buy:/.test(String(v))) throw new DOMException('quota', 'QuotaExceededError'); return real.call(this, k, v); }; });
   await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
   const diaper = (await stored(page)).items.find(x => x.id === 2);
   expect(diaper.qty).toBe(4);
-  expect(diaper.track).toEqual(tracked());
-  expect(await page.evaluate(() => items.find(x => x.id === 2).track.base)).toBe(60);
+  expect(tp(diaper)).toHaveLength(0);
+  expect(await page.evaluate(() => Object.keys(items.find(x => x.id === 2)).filter(k => /^tp/.test(k)).length)).toBe(0);
+  expect((await est(page, 2)).remaining).toBe(60);
   expect(page.__errors).toEqual([]);
 });
 test('a correction can be put back; a chosen level shows its date and asks again when old or contradicted', async ({ page }) => {

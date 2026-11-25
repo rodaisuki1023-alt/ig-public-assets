@@ -19,9 +19,17 @@
  *    base   units at `since` (packs * perPack when started from packs), >= 0
  *    since  YYYY-MM-DD the base count was taken
  *    perDay average units used per day (household total; several children: sum of their rates)
- *    applied  keys of purchases already added to this estimate (last 8), so a purchase counts once
- *    check    'purchase_unit' | 'purchase_undo' | null: a purchase could not be applied safely;
- *             the estimate asks to be checked instead of guessing
+ *    t      time (ms) the base was observed; seen  purchase keys already inside `base`
+ *    check  'purchase_undo' | null: a purchase inside `base` was undone; asks to be checked
+ *
+ * Purchases (v51 family-safe): every purchase is its OWN item field  tp<hash> = {v:1,k,q,unit,u,d,t,pu,sz}
+ * (k = purchase key, u = pieces added or null when the unit is unknown, d = day, t = ms).
+ * The family sync merges fields one by one (last writer wins per field), so two purchases made at
+ * the same time on two phones are two different fields and both survive; the same purchase sent
+ * again writes the same field with the same value and adds nothing. The estimate is recomputed
+ * from base + the purchases not yet inside it, in date order. Undo clears that purchase's field.
+ * A correction records which purchases it saw; a purchase made before the correction but not
+ * seen by it (the family's purchase arrived later) is not guessed: the estimate asks to be checked.
  */
 (function(root){
 'use strict';
@@ -30,7 +38,9 @@ const LABEL=Object.freeze({plenty:'余裕あり',low:'そろそろ',buy:'買う'
 const DAY=86400000;
 const STALE_DAYS=30;          // no confirmation for this long: ask instead of estimating
 const DEFAULT_REFILL_DAYS=5;  // "そろそろ" when the estimate reaches this many days
-const CHECKS=Object.freeze(['purchase_unit','purchase_undo']);
+const CHECKS=Object.freeze(['purchase_undo']);
+const ENTRY=/^tp[0-9a-z]{1,13}$/;
+const OLD_PURCHASE_DAYS=30;   // a purchase this long before the last observation is history, not a question
 const MAX_UNITS=99999,MAX_PER_DAY=9999,MAX_PER_PACK=9999,MAX_PACKS=999,MAX_REFILL=60;
 
 const isDay=s=>{if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const t=Date.parse(s+'T00:00:00Z');return Number.isFinite(t)&&new Date(t).toISOString().slice(0,10)===s};
@@ -48,14 +58,16 @@ function readTrack(t){
  const refillDays=t.refillDays==null?DEFAULT_REFILL_DAYS:num(t.refillDays,MAX_REFILL,{min:1,int:true});
  if(t.perPack!=null&&perPack===null||refillDays===null)return null;
  const pieceUnit=typeof t.pieceUnit==='string'&&t.pieceUnit.length<=4?t.pieceUnit:null;
- const applied=Array.isArray(t.applied)?t.applied.filter(k=>typeof k==='string'&&k.length>0&&k.length<=80).slice(-8):[];
+ const seen=Array.isArray(t.seen)?t.seen.filter(k=>typeof k==='string'&&k.length>0&&k.length<=80).slice(-40):[];
  const check=CHECKS.includes(t.check)?t.check:null;
+ // Older tracks have no observation time: the start of their base day (any time zone) is used.
+ const at=Number.isSafeInteger(t.t)&&t.t>0?t.t:Date.parse(t.since+'T00:00:00Z')-14*3600000;
  return {v:1,base,since:t.since,perDay,perPack,refillDays,pieceUnit,size:typeof t.size==='string'?t.size.slice(0,40):null,
-  snoozeUntil:isDay(t.snoozeUntil)?t.snoozeUntil:null,confirmedAt:isDay(t.confirmedAt)?t.confirmedAt:t.since,applied,check};
+  snoozeUntil:isDay(t.snoozeUntil)?t.snoozeUntil:null,confirmedAt:isDay(t.confirmedAt)?t.confirmedAt:t.since,t:at,seen,check};
 }
 
 /** Start detailed tracking. Either units, or packs × perPack. Returns {track} or {error}. */
-function startTrack({units=null,packs=null,perPack=null,perDay,refillDays=DEFAULT_REFILL_DAYS,size=null,pieceUnit=null,today}={}){
+function startTrack({units=null,packs=null,perPack=null,perDay,refillDays=DEFAULT_REFILL_DAYS,size=null,pieceUnit=null,today,now=Date.now(),seen=[]}={}){
  if(!isDay(today))return {error:'日付を確認できませんでした'};
  const d=num(perDay,MAX_PER_DAY,{min:0.01});if(d===null)return {error:'1日に使う量は0より大きい数で入力してください'};
  const r=num(refillDays,MAX_REFILL,{min:1,int:true});if(r===null)return {error:'補充ラインは1〜'+MAX_REFILL+'日で入力してください'};
@@ -70,7 +82,7 @@ function startTrack({units=null,packs=null,perPack=null,perDay,refillDays=DEFAUL
   if(perPack!=null){pp=num(perPack,MAX_PER_PACK,{min:1,int:true});if(pp===null)return {error:'1袋の枚数（個数）を整数で入力してください'}}
  }
  const pu=typeof pieceUnit==='string'&&pieceUnit.length<=4?pieceUnit:null;
- return {track:{v:1,base,since:today,perDay:d,perPack:pp,refillDays:r,pieceUnit:pu,size:size?String(size).slice(0,40):null,snoozeUntil:null,confirmedAt:today,applied:[],check:null}};
+ return {track:{v:1,base,since:today,perDay:d,perPack:pp,refillDays:r,pieceUnit:pu,size:size?String(size).slice(0,40):null,snoozeUntil:null,confirmedAt:today,t:now,seen:[...seen].slice(-40),check:null}};
 }
 
 /** Estimate for one item on `today`. Never reads or changes item.qty for the estimate itself. */
@@ -83,9 +95,16 @@ function estimate(item,today){
  if(t.size&&item.size&&t.size!==String(item.size))return {status:'unknown',reason:'size_changed'};
  // A purchase that could not be added safely (unknown unit, undone after a later change).
  if(t.check)return {status:'unknown',reason:t.check};
- const sinceConfirm=between(t.confirmedAt,today);
+ const p=pending(item,t);
+ if(p.reason)return {status:'unknown',reason:p.reason};
+ // A purchase also tells that stock is there: the newest counted purchase refreshes the date.
+ const fresh=p.list.reduce((a,e)=>e.day>a?e.day:a,t.confirmedAt);
+ const sinceConfirm=between(fresh,today);
  if(sinceConfirm>STALE_DAYS)return {status:'unknown',reason:'stale',days:sinceConfirm};
- const remaining=Math.max(0,t.base-t.perDay*elapsed);
+ // Walk from the base through each purchase in date order (stock cannot go below 0 in between).
+ let lv=t.base,cur=t.since;
+ for(const e of p.list){const day=e.day>today?today:e.day<t.since?t.since:e.day;lv=Math.max(0,lv-t.perDay*between(cur,day))+e.u;cur=day}
+ const remaining=Math.max(0,lv-t.perDay*between(cur,today));
  const daysLeft=remaining/t.perDay;
  // Uncertainty grows with time since the last confirmation (±10% per week, at least ±1 day).
  const spread=Math.max(1,daysLeft*Math.min(0.5,0.1*Math.ceil(Math.max(1,sinceConfirm)/7)));
@@ -93,7 +112,7 @@ function estimate(item,today){
  const level=remaining<=0?'buy':daysLeft<=t.refillDays?(daysLeft<=Math.max(1,t.refillDays/2)?'buy':'low'):'plenty';
  return {status:'estimate',remaining:round1(remaining),daysLeft:Math.floor(daysLeft),range:[Math.max(0,Math.floor(daysLeft-spread)),Math.ceil(daysLeft+spread)],
   packs:t.perPack?round1(remaining/t.perPack):null,runOut:dayOf(Date.parse(today+'T00:00:00Z')+Math.floor(daysLeft)*DAY),
-  level,snoozed:!!snoozed,since:t.since,confirmedAt:t.confirmedAt,perDay:t.perDay};
+  level,snoozed:!!snoozed,since:t.since,confirmedAt:t.confirmedAt,perDay:t.perDay,purchases:p.list.length,added:round1(p.list.reduce((a,e)=>a+e.u,0))};
 }
 
 /** The level the screen shows: the person's own level wins; then a usable estimate; then the
@@ -121,7 +140,7 @@ function clearLevel(){return {patch:{level:undefined,levelAt:undefined}}}
  *          restart from the person's remaining amount if given, otherwise from a small remainder.
  *  usedUp: "使い切った" — learn the real rate from the elapsed days; suggest actual count 0.
  *  later : "後で確認" — hide the reminder for 3 days; the estimate itself is unchanged. */
-function correct(track,kind,{today,remaining=null}={}){
+function correct(track,kind,{today,remaining=null,now=Date.now(),seen=[]}={}){
  const t=readTrack(track);if(!t)return {error:'見積もりの設定がありません'};
  if(!isDay(today))return {error:'日付を確認できませんでした'};
  const elapsed=between(t.since,today);if(elapsed<0)return {error:'日付を確認できませんでした'};
@@ -135,13 +154,13 @@ function correct(track,kind,{today,remaining=null}={}){
   const observed=left!=null&&elapsed>=3?used/elapsed:null;
   const perDay=Math.max(0.01,observed==null?t.perDay*0.85:Math.max(t.perDay*0.7,Math.min(t.perDay,(t.perDay+observed)/2)));
   const base=left??Math.max(t.perDay,t.perPack?Math.min(t.perPack,t.perDay*3):t.perDay*3);
-  return {track:{...t,base,since:today,perDay:round1(perDay*100)/100,snoozeUntil:null,confirmedAt:today,check:null},approximate:left==null};
+  return {track:{...t,base,since:today,perDay:round1(perDay*100)/100,snoozeUntil:null,confirmedAt:today,t:now,seen:[...seen].slice(-40),check:null},approximate:left==null};
  }
  if(kind==='usedUp'){
   // Only a plausible observation updates the rate (at least 3 days, within x0.5..x2 of before).
   const observed=elapsed>=3?t.base/elapsed:null;
   const perDay=observed!=null&&observed>=t.perDay*0.5&&observed<=t.perDay*2?round1((t.perDay+observed)/2*100)/100:t.perDay;
-  return {track:{...t,base:0,since:today,perDay,snoozeUntil:null,confirmedAt:today,check:null},suggestQty:0,learned:perDay!==t.perDay};
+  return {track:{...t,base:0,since:today,perDay,snoozeUntil:null,confirmedAt:today,t:now,seen:[...seen].slice(-40),check:null},suggestQty:0,learned:perDay!==t.perDay};
  }
  return {error:'unknown correction'};
 }
@@ -159,23 +178,63 @@ function addPurchase(track,{packs=null,units=null,today}={}){
  return {track:{...t,base:round1(now+add),since:today,snoozeUntil:null,confirmedAt:today}};
 }
 
+// ---- Purchases as separate fields -------------------------------------------------------------
+const hash36=v=>{let h=2166136261,g=5381;for(let i=0;i<v.length;i++){const c=v.charCodeAt(i);h^=c;h=Math.imul(h,16777619);g=(Math.imul(g,33)+c)|0}return (h>>>0).toString(36)+(g>>>0).toString(36).slice(0,4)};
+/** The item field that holds one purchase (same key -> same field, so a resend changes nothing). */
+function entryField(key){return 'tp'+hash36(String(key)).slice(0,13)}
+function readEntry(v){
+ if(!v||typeof v!=='object'||v.v!==1||typeof v.k!=='string'||!v.k||v.k.length>80||!isDay(v.d)||!Number.isSafeInteger(v.t))return null;
+ const u=v.u==null?null:num(v.u,MAX_UNITS,{min:0.01});
+ if(v.u!=null&&u===null)return null;
+ return {k:v.k,u,q:Number(v.q)||null,unit:typeof v.unit==='string'?v.unit.slice(0,8):'',day:v.d,t:v.t,pu:typeof v.pu==='string'?v.pu.slice(0,4):null,sz:typeof v.sz==='string'?v.sz.slice(0,40):null};
+}
+/** Every purchase stored on the item: [{field, entry}] (null / cleared fields are skipped). */
+function entries(item){
+ const out=[];
+ for(const [f,v] of Object.entries(item||{}))if(ENTRY.test(f)){const e=readEntry(v);if(e)out.push({field:f,entry:e})}
+ return out.sort((a,b)=>a.entry.day<b.entry.day?-1:a.entry.day>b.entry.day?1:a.entry.t-b.entry.t||(a.entry.k<b.entry.k?-1:1));
+}
+/** Keys of the purchases the person can see now (a correction stores them as already counted). */
+function seenKeys(item){return entries(item).map(x=>x.entry.k).slice(-40)}
+// Purchases to add on top of the base; or the reason the estimate must ask instead.
+function pending(item,t){
+ const seen=new Set(t.seen),list=[];
+ for(const {entry:e} of entries(item)){
+  if(seen.has(e.k))continue;
+  if(e.t<=t.t){
+   if(e.t<t.t-OLD_PURCHASE_DAYS*DAY)continue;
+   return {reason:'purchase_overlap',list};
+  }
+  if(e.u===null||(t.pieceUnit&&e.pu&&e.pu!==t.pieceUnit)||(t.size&&e.sz&&e.sz!==t.size))return {reason:'purchase_unit',list};
+  list.push(e);
+ }
+ return {list};
+}
 /** The existing purchase flow just added `delta` (in the item's own unit: 袋, 個 …) to the counted
- * stock. Add the same amount to the estimate once per purchase `key` (a retry, a repaint or a
- * second call with the same key changes nothing). When the amount cannot be converted safely
- * (bags without a known count per bag, a unit changed since tracking started, a future base
- * date) nothing is added and the estimate asks to be checked. Returns {track} or {track:null}. */
-function purchaseTrack(item,delta,{today,key}={}){
- const t=readTrack(item?.track);if(!t)return {track:null};
- if(typeof key!=='string'||!key||key.length>80)return {error:'purchase_key'};
- if(t.applied.includes(key))return {track:t,unchanged:true};
- const applied=[...t.applied,key].slice(-8),u=units(item);
- const d=num(delta,MAX_UNITS,{min:0.01});
+ * stock. Returns {field, entry} to store on the item, or null when the item has no estimate.
+ * Bags/boxes need the pieces per bag; without it (or after a unit change) the amount is stored as
+ * unknown (u:null) and the estimate asks to be checked instead of guessing. */
+function purchaseEntry(item,delta,{today,now=Date.now(),key}={}){
+ const t=readTrack(item?.track);if(!t)return null;
+ if(typeof key!=='string'||!key||key.length>80||!isDay(today))return null;
+ const d=num(delta,MAX_UNITS,{min:0.01}),u=units(item);
  const sameUnit=!t.pieceUnit||t.pieceUnit===u.piece;
  const add=d===null||!sameUnit?null:u.container?(t.perPack?d*t.perPack:null):d;
- const r=add===null?{error:'unit'}:addPurchase(t,{units:add,today});
- if(r.error)return {track:{...t,applied,check:'purchase_unit'},check:'purchase_unit'};
- // An earlier purchase that could not be added keeps asking until the person checks the amount.
- return {track:{...r.track,applied,check:t.check},added:round1(add)};
+ return {field:entryField(key),entry:{v:1,k:key,q:d,unit:u.unit,u:add==null||add>MAX_UNITS?null:round1(add),d:today,t:now,pu:u.piece,sz:item.size?String(item.size).slice(0,40):null}};
+}
+/** Undo of one purchase: clear its field (only if it still holds that purchase). When the purchase
+ * was already inside a correction's base, the base cannot be taken apart: ask to check. */
+function undoEntry(item,field,key){
+ const e=readEntry(item?.[field]);if(!e||e.k!==key)return {patch:null};
+ const t=readTrack(item?.track);
+ const patch={[field]:undefined};
+ if(t&&t.seen.includes(key))patch.track={...item.track,check:'purchase_undo'};
+ return {patch};
+}
+/** Purchases long before the last observation that may be cleared to keep the item small. */
+function staleEntries(item){
+ const t=readTrack(item?.track);if(!t)return [];
+ return entries(item).filter(x=>x.entry.t<t.t-OLD_PURCHASE_DAYS*DAY).map(x=>x.field);
 }
 
 /** Several children: the household rate is the sum of each child's own daily use. */
@@ -198,7 +257,7 @@ function units(item){
  const piece=container?(/おむつ|オムツ|パンツ|テープ|おしりふき/.test(String(item?.name||''))?'枚':'個'):unit;
  return {unit,container,piece};
 }
-const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,addPurchase,purchaseTrack,combinedPerDay,changeSize});
+const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,addPurchase,entryField,readEntry,entries,seenKeys,purchaseEntry,undoEntry,staleEntries,combinedPerDay,changeSize});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreStockLevels=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

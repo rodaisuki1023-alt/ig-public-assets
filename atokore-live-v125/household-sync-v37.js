@@ -59,6 +59,12 @@ let changes=[],historyState='loading',changesFor=null,changesRequest=null;
 // "この端末・共有前の記録" (unknown for households joined before this was recorded).
 function since(h){return meta.sharedFor===h?.id&&meta.sharedSince?{}:{sharedFor:h?.id,sharedSince:Date.now()}}
 // Local product id for a shared record id (history rows name records by their shared id).
+// The shared id of a local row while sharing (null when not shared or not yet sent).
+function sharedIdFor(kind,id){
+ if(!household||!session)return null;
+ const map=engine?.meta?.().map||meta.engine?.map||{};
+ return map[(kind==='buy'?'buy':'item')+':'+id]||null;
+}
 function localIdFor(kind,sid){
  const map=engine?.meta?.().map||meta.engine?.map||{};
  for(const [k,v] of Object.entries(map))if(v===sid&&k.startsWith((kind==='buy'?'buy':'item')+':'))return k.slice(k.indexOf(':')+1);
@@ -770,5 +776,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,sharedIdFor,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

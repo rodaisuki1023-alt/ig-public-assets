@@ -101,6 +101,10 @@ jobs:
         env:
           ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
         run: node tests/household/photo-plan-limit-postgres.cjs
+      - name: Real PostgreSQL simultaneous family purchases (estimate 240, undo 180)
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/purchase-merge-postgres.cjs
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
