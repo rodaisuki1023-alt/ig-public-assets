@@ -110,3 +110,92 @@ for (const width of [320, 393, 430]) test(`かんたん管理 fits at ${width}px
   expect(facts.right).toBeLessThanOrEqual(width);
   expect(facts.scroll).toBeLessThanOrEqual(0);
 });
+
+// Muse P1-1: 「買った」 must reach the estimate once, move its base date, and be undone with the purchase.
+const localDay = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const tracked = (extra = {}) => ({ v: 1, base: 60, since: localDay(), perDay: 6, perPack: 60, refillDays: 5, pieceUnit: '枚', size: null, snoozeUntil: null, confirmedAt: localDay(), ...extra });
+function purchaseState(track) {
+  const s = baseState();
+  s.items[1].track = track;
+  s.items[0].track = { v: 1, base: 1, since: localDay(), perDay: 0.5, perPack: null, refillDays: 2, pieceUnit: '本', size: null, snoozeUntil: null, confirmedAt: localDay() };
+  s.buys = [{ id: 20, name: 'パンパース さらさらケア おむつ テープ M', qty: 2, unit: '袋', stockId: 2 }, { id: 21, name: '牛乳', qty: 1, unit: '本', stockId: 1 }];
+  return s;
+}
+test('買った adds the bought bags to the estimate once and undo puts both back', async ({ page }) => {
+  await open(page, { [KEY]: purchaseState(tracked()) });
+  await go(page, 'buy');
+  await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
+  let s = await stored(page), diaper = s.items.find(x => x.id === 2);
+  expect(diaper.qty).toBe(4);
+  expect(diaper.track).toMatchObject({ base: 180, since: localDay(), check: null });
+  expect(diaper.track.applied).toHaveLength(1);
+  expect(s.items.find(x => x.id === 1).track.base).toBe(1); // the other estimate is untouched
+  await detail(page, 2);
+  await expect(level(page).locator('.atk-level-estimate')).toContainText('約3袋（180枚）');
+  await page.locator('#modal').evaluate(m => m.click()); // close the sheet
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  s = await stored(page); diaper = s.items.find(x => x.id === 2);
+  expect(diaper.qty).toBe(2);
+  expect(diaper.track).toEqual(tracked());
+  expect(s.buys.map(b => b.id).sort()).toEqual([20, 21]);
+  expect(page.__errors).toEqual([]);
+});
+test('bulk 買った updates each tracked product once; a repaint or second render adds nothing', async ({ page }) => {
+  await open(page, { [KEY]: purchaseState(tracked()) });
+  await go(page, 'buy');
+  for (const id of [20, 21]) await page.locator(`#buyList [data-buy-id="${id}"] .buyCheck`).check();
+  await page.evaluate(() => window.bought());
+  const s = await stored(page);
+  expect(s.items.find(x => x.id === 2).track.base).toBe(180);
+  expect(s.items.find(x => x.id === 1).track.base).toBe(2);   // 1 本 + 1 本 (plain unit)
+  await page.evaluate(() => { window.renderStock?.(); window.renderHome?.(); window.renderBuy?.(); });
+  expect((await stored(page)).items).toEqual(s.items);
+  expect(page.__errors).toEqual([]);
+});
+test('bags without a known count per bag: nothing is added and the estimate asks to be checked', async ({ page }) => {
+  await open(page, { [KEY]: purchaseState(tracked({ perPack: null })) });
+  await go(page, 'buy');
+  await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
+  const diaper = (await stored(page)).items.find(x => x.id === 2);
+  expect(diaper.qty).toBe(4);
+  expect(diaper.track).toMatchObject({ base: 60, check: 'purchase_unit' });
+  await detail(page, 2);
+  await expect(level(page).locator('.atk-level-estimate')).toContainText('買った分を見積もりに足せませんでした');
+  expect(page.__errors).toEqual([]);
+});
+test('if the estimate cannot be saved after a purchase, the count stays bought and the estimate is unchanged', async ({ page }) => {
+  await open(page, { [KEY]: purchaseState(tracked()) });
+  await go(page, 'buy');
+  // Only the write that carries the purchase key fails (the purchase itself was already saved).
+  await page.evaluate(() => { const real = Storage.prototype.setItem; Storage.prototype.setItem = function (k, v) { if (/TrialV/.test(k) && String(v).includes('"applied":["buy:')) throw new DOMException('quota', 'QuotaExceededError'); return real.call(this, k, v); }; });
+  await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
+  const diaper = (await stored(page)).items.find(x => x.id === 2);
+  expect(diaper.qty).toBe(4);
+  expect(diaper.track).toEqual(tracked());
+  expect(await page.evaluate(() => items.find(x => x.id === 2).track.base)).toBe(60);
+  expect(page.__errors).toEqual([]);
+});
+test('a correction can be put back; a chosen level shows its date and asks again when old or contradicted', async ({ page }) => {
+  const s = purchaseState(tracked());
+  const old = new Date(Date.now() - 40 * 86400000).toISOString();
+  s.items[2] = { ...s.items[2], level: 'plenty', levelAt: old };
+  s.items.push({ id: 4, name: 'おしりふき', cat: 'ベビー', qty: 0, unit: 'パック', level: 'plenty', levelAt: new Date().toISOString() });
+  await open(page, { [KEY]: s });
+  await detail(page, 2);
+  await level(page).locator('[data-atk-level-fix="usedUp"]').click();
+  await appConfirm(page, false);
+  expect((await stored(page)).items.find(x => x.id === 2).track.base).toBe(0);
+  await level(page).locator('[data-atk-level-undo]').click();
+  let diaper = (await stored(page)).items.find(x => x.id === 2);
+  expect(diaper.track).toEqual(tracked());
+  expect(diaper.qty).toBe(2);
+  await expect(level(page).locator('[data-atk-level-undo]')).toHaveCount(0);
+  // Old level: dated and asks again; it still decides nothing on its own.
+  await detail(page, 3);
+  await expect(level(page).locator('.atk-level-detail')).toContainText('全員分を足した量'); // start form of an untracked item
+  await expect(level(page).locator('.atk-level-stale')).toContainText('40日たったので');
+  await detail(page, 4);
+  await expect(level(page).locator('.atk-level-stale')).toContainText('在庫数は0になっています');
+  expect((await stored(page)).items.find(x => x.id === 4)).toMatchObject({ qty: 0, level: 'plenty' });
+  expect(page.__errors).toEqual([]);
+});

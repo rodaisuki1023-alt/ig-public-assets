@@ -19,6 +19,9 @@
  *    base   units at `since` (packs * perPack when started from packs), >= 0
  *    since  YYYY-MM-DD the base count was taken
  *    perDay average units used per day (household total; several children: sum of their rates)
+ *    applied  keys of purchases already added to this estimate (last 8), so a purchase counts once
+ *    check    'purchase_unit' | 'purchase_undo' | null: a purchase could not be applied safely;
+ *             the estimate asks to be checked instead of guessing
  */
 (function(root){
 'use strict';
@@ -27,6 +30,7 @@ const LABEL=Object.freeze({plenty:'余裕あり',low:'そろそろ',buy:'買う'
 const DAY=86400000;
 const STALE_DAYS=30;          // no confirmation for this long: ask instead of estimating
 const DEFAULT_REFILL_DAYS=5;  // "そろそろ" when the estimate reaches this many days
+const CHECKS=Object.freeze(['purchase_unit','purchase_undo']);
 const MAX_UNITS=99999,MAX_PER_DAY=9999,MAX_PER_PACK=9999,MAX_PACKS=999,MAX_REFILL=60;
 
 const isDay=s=>{if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const t=Date.parse(s+'T00:00:00Z');return Number.isFinite(t)&&new Date(t).toISOString().slice(0,10)===s};
@@ -44,8 +48,10 @@ function readTrack(t){
  const refillDays=t.refillDays==null?DEFAULT_REFILL_DAYS:num(t.refillDays,MAX_REFILL,{min:1,int:true});
  if(t.perPack!=null&&perPack===null||refillDays===null)return null;
  const pieceUnit=typeof t.pieceUnit==='string'&&t.pieceUnit.length<=4?t.pieceUnit:null;
+ const applied=Array.isArray(t.applied)?t.applied.filter(k=>typeof k==='string'&&k.length>0&&k.length<=80).slice(-8):[];
+ const check=CHECKS.includes(t.check)?t.check:null;
  return {v:1,base,since:t.since,perDay,perPack,refillDays,pieceUnit,size:typeof t.size==='string'?t.size.slice(0,40):null,
-  snoozeUntil:isDay(t.snoozeUntil)?t.snoozeUntil:null,confirmedAt:isDay(t.confirmedAt)?t.confirmedAt:t.since};
+  snoozeUntil:isDay(t.snoozeUntil)?t.snoozeUntil:null,confirmedAt:isDay(t.confirmedAt)?t.confirmedAt:t.since,applied,check};
 }
 
 /** Start detailed tracking. Either units, or packs × perPack. Returns {track} or {error}. */
@@ -64,7 +70,7 @@ function startTrack({units=null,packs=null,perPack=null,perDay,refillDays=DEFAUL
   if(perPack!=null){pp=num(perPack,MAX_PER_PACK,{min:1,int:true});if(pp===null)return {error:'1袋の枚数（個数）を整数で入力してください'}}
  }
  const pu=typeof pieceUnit==='string'&&pieceUnit.length<=4?pieceUnit:null;
- return {track:{v:1,base,since:today,perDay:d,perPack:pp,refillDays:r,pieceUnit:pu,size:size?String(size).slice(0,40):null,snoozeUntil:null,confirmedAt:today}};
+ return {track:{v:1,base,since:today,perDay:d,perPack:pp,refillDays:r,pieceUnit:pu,size:size?String(size).slice(0,40):null,snoozeUntil:null,confirmedAt:today,applied:[],check:null}};
 }
 
 /** Estimate for one item on `today`. Never reads or changes item.qty for the estimate itself. */
@@ -75,6 +81,8 @@ function estimate(item,today){
  if(elapsed<0)return {status:'unknown',reason:'future_date'};
  // Size or product changed since tracking started: the old rate does not apply.
  if(t.size&&item.size&&t.size!==String(item.size))return {status:'unknown',reason:'size_changed'};
+ // A purchase that could not be added safely (unknown unit, undone after a later change).
+ if(t.check)return {status:'unknown',reason:t.check};
  const sinceConfirm=between(t.confirmedAt,today);
  if(sinceConfirm>STALE_DAYS)return {status:'unknown',reason:'stale',days:sinceConfirm};
  const remaining=Math.max(0,t.base-t.perDay*elapsed);
@@ -118,6 +126,7 @@ function correct(track,kind,{today,remaining=null}={}){
  if(!isDay(today))return {error:'日付を確認できませんでした'};
  const elapsed=between(t.since,today);if(elapsed<0)return {error:'日付を確認できませんでした'};
  if(kind==='later')return {track:{...t,snoozeUntil:dayOf(Date.parse(today+'T00:00:00Z')+3*DAY)}};
+ // Both corrections below are the person's own observation, so they also settle a pending check.
  if(kind==='still'){
   const left=remaining==null?null:num(remaining,MAX_UNITS);
   if(remaining!=null&&left===null)return {error:'残りの数量を0以上で入力してください'};
@@ -126,13 +135,13 @@ function correct(track,kind,{today,remaining=null}={}){
   const observed=left!=null&&elapsed>=3?used/elapsed:null;
   const perDay=Math.max(0.01,observed==null?t.perDay*0.85:Math.max(t.perDay*0.7,Math.min(t.perDay,(t.perDay+observed)/2)));
   const base=left??Math.max(t.perDay,t.perPack?Math.min(t.perPack,t.perDay*3):t.perDay*3);
-  return {track:{...t,base,since:today,perDay:round1(perDay*100)/100,snoozeUntil:null,confirmedAt:today},approximate:left==null};
+  return {track:{...t,base,since:today,perDay:round1(perDay*100)/100,snoozeUntil:null,confirmedAt:today,check:null},approximate:left==null};
  }
  if(kind==='usedUp'){
   // Only a plausible observation updates the rate (at least 3 days, within x0.5..x2 of before).
   const observed=elapsed>=3?t.base/elapsed:null;
   const perDay=observed!=null&&observed>=t.perDay*0.5&&observed<=t.perDay*2?round1((t.perDay+observed)/2*100)/100:t.perDay;
-  return {track:{...t,base:0,since:today,perDay,snoozeUntil:null,confirmedAt:today},suggestQty:0,learned:perDay!==t.perDay};
+  return {track:{...t,base:0,since:today,perDay,snoozeUntil:null,confirmedAt:today,check:null},suggestQty:0,learned:perDay!==t.perDay};
  }
  return {error:'unknown correction'};
 }
@@ -148,6 +157,25 @@ function addPurchase(track,{packs=null,units=null,today}={}){
  const now=Math.max(0,t.base-t.perDay*between(t.since,today));
  if(now+add>MAX_UNITS)return {error:'数量が大きすぎます'};
  return {track:{...t,base:round1(now+add),since:today,snoozeUntil:null,confirmedAt:today}};
+}
+
+/** The existing purchase flow just added `delta` (in the item's own unit: 袋, 個 …) to the counted
+ * stock. Add the same amount to the estimate once per purchase `key` (a retry, a repaint or a
+ * second call with the same key changes nothing). When the amount cannot be converted safely
+ * (bags without a known count per bag, a unit changed since tracking started, a future base
+ * date) nothing is added and the estimate asks to be checked. Returns {track} or {track:null}. */
+function purchaseTrack(item,delta,{today,key}={}){
+ const t=readTrack(item?.track);if(!t)return {track:null};
+ if(typeof key!=='string'||!key||key.length>80)return {error:'purchase_key'};
+ if(t.applied.includes(key))return {track:t,unchanged:true};
+ const applied=[...t.applied,key].slice(-8),u=units(item);
+ const d=num(delta,MAX_UNITS,{min:0.01});
+ const sameUnit=!t.pieceUnit||t.pieceUnit===u.piece;
+ const add=d===null||!sameUnit?null:u.container?(t.perPack?d*t.perPack:null):d;
+ const r=add===null?{error:'unit'}:addPurchase(t,{units:add,today});
+ if(r.error)return {track:{...t,applied,check:'purchase_unit'},check:'purchase_unit'};
+ // An earlier purchase that could not be added keeps asking until the person checks the amount.
+ return {track:{...r.track,applied,check:t.check},added:round1(add)};
 }
 
 /** Several children: the household rate is the sum of each child's own daily use. */
@@ -170,7 +198,7 @@ function units(item){
  const piece=container?(/おむつ|オムツ|パンツ|テープ|おしりふき/.test(String(item?.name||''))?'枚':'個'):unit;
  return {unit,container,piece};
 }
-const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,addPurchase,combinedPerDay,changeSize});
+const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,addPurchase,purchaseTrack,combinedPerDay,changeSize});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreStockLevels=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

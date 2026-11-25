@@ -96,3 +96,65 @@ test('corrupt or hostile tracks never throw and never produce a number',()=>{
  for(const bad of [{perDay:0,units:5,today:T},{perDay:1,units:5,today:'x'},{perDay:1,packs:1.5,perPack:60,today:T},{perDay:1,packs:1,perPack:0,today:T},{perDay:1,units:-1,today:T},{perDay:1,units:5,refillDays:0,today:T}])
   assert.ok(L.startTrack(bad).error,JSON.stringify(bad));
 });
+
+test('purchase adds to the estimate once per key, in pieces for bags, and moves the base date',()=>{
+ const start=L.startTrack({packs:1,perPack:60,perDay:6,pieceUnit:'枚',today:day(-5),size:null}).track;
+ const item=diaper({qty:1,track:start});
+ // 5 days × 6/day used from 60: 30 left; +2 bags × 60 = 150 from today.
+ const r=L.purchaseTrack(item,2,{today:T,key:'buy:a'});
+ assert.equal(r.added,120);assert.equal(r.track.base,150);assert.equal(r.track.since,T);assert.deepEqual(r.track.applied,['buy:a']);
+ assert.equal(L.estimate({...item,track:r.track},T).remaining,150);
+ const again=L.purchaseTrack({...item,track:r.track},2,{today:T,key:'buy:a'});
+ assert.equal(again.unchanged,true);assert.equal(again.track.base,150,'a retry or repaint never adds twice');
+ const other=L.purchaseTrack({...item,track:r.track},1,{today:T,key:'buy:b'});
+ assert.equal(other.track.base,210);assert.deepEqual(other.track.applied,['buy:a','buy:b']);
+ // Only the last 8 keys are kept (bounded storage).
+ let t=r.track;for(let i=0;i<12;i++)t=L.purchaseTrack({...item,track:t},1,{today:T,key:'k'+i}).track;
+ assert.equal(t.applied.length,8);assert.equal(t.applied.at(-1),'k11');
+ // Not a tracked item / bad key.
+ assert.deepEqual(L.purchaseTrack(diaper(),1,{today:T,key:'x'}),{track:null});
+ assert.equal(L.purchaseTrack(item,1,{today:T,key:''}).error,'purchase_key');
+});
+test('purchase in an unknown unit is never guessed: the estimate asks to be checked',()=>{
+ const noPack={v:1,base:30,since:day(-1),perDay:6,perPack:null,refillDays:5,pieceUnit:'枚',size:null,snoozeUntil:null,confirmedAt:day(-1)};
+ const r=L.purchaseTrack(diaper({track:noPack}),1,{today:T,key:'buy:c'});
+ assert.equal(r.check,'purchase_unit');assert.equal(r.track.base,30,'nothing added');
+ assert.deepEqual(L.estimate(diaper({track:r.track}),T),{status:'unknown',reason:'purchase_unit'});
+ // The unit changed since tracking started (pieces 個 -> bag counted in 枚): not added either.
+ const pieces=L.startTrack({units:10,perDay:2,pieceUnit:'個',today:day(-1)}).track;
+ assert.equal(L.purchaseTrack({id:2,name:'ゼリー',unit:'袋',qty:1,track:pieces},1,{today:T,key:'k'}).check,'purchase_unit');
+ // A future base date cannot be advanced safely.
+ assert.equal(L.purchaseTrack(diaper({track:{...noPack,perPack:60,since:day(2),confirmedAt:day(2)}}),1,{today:T,key:'k'}).check,'purchase_unit');
+ // The check stays through a later addable purchase, and the person's own correction settles it.
+ const later=L.purchaseTrack(diaper({track:{...r.track,perPack:60}}),1,{today:T,key:'buy:d'});
+ assert.equal(later.track.check,'purchase_unit');assert.equal(later.track.base,84); // 30-6 used +60
+ const fixed=L.correct(later.track,'still',{today:T,remaining:80});
+ assert.equal(fixed.track.check,null);assert.equal(L.estimate(diaper({track:fixed.track}),T).status,'estimate');
+ // Corrupt check/applied values are ignored, never thrown.
+ const odd=L.readTrack({...noPack,check:'other',applied:['ok',5,'x'.repeat(81)]});
+ assert.equal(odd.check,null);assert.deepEqual(odd.applied,['ok']);
+});
+test('a plain-unit product adds the bought amount directly; old tracks without the new fields still work',()=>{
+ const old={v:1,base:6,since:day(-2),perDay:1,perPack:null,refillDays:5,size:null,snoozeUntil:null,confirmedAt:day(-2)};
+ const milk={id:3,name:'牛乳',unit:'本',qty:1,track:old};
+ const r=L.purchaseTrack(milk,2,{today:T,key:'buy:e'});
+ assert.equal(r.track.base,6);assert.equal(r.added,2);
+ assert.equal(L.estimate(milk,T).remaining,4);
+});
+test('undoing a purchase restores the estimate only if nothing changed it since; otherwise it asks',()=>{
+ const {inverseCounters}=require('../atokore-live-v125/polish-v44.js');
+ const before=L.startTrack({packs:1,perPack:60,perDay:6,pieceUnit:'枚',today:T}).track;
+ const after=L.purchaseTrack(diaper({qty:1,track:before}),1,{today:T,key:'buy:u'}).track;
+ const change={key:'items',id:1,name:'パンパース テープ M',unit:'袋',delta:1,usage:0,track:{before,after}};
+ const state=t=>({items:[diaper({qty:2,track:t})],buys:[],routines:[]});
+ // Keys come back sorted from the server (jsonb): still recognised as unchanged.
+ const sorted=Object.fromEntries(Object.keys(after).sort().map(k=>[k,after[k]]));
+ const undone=inverseCounters(state(sorted),[change]);
+ assert.equal(undone.items[0].qty,1);assert.deepEqual(undone.items[0].track,before);
+ const edited=inverseCounters(state({...after,base:5}),[change]);
+ assert.equal(edited.items[0].qty,1);assert.equal(edited.items[0].track.base,5);assert.equal(edited.items[0].track.check,'purchase_undo');
+ assert.deepEqual(L.estimate(edited.items[0],T),{status:'unknown',reason:'purchase_undo'});
+ // A purchase that started the product's first estimate-less row keeps working as before.
+ const plain=inverseCounters({items:[diaper({qty:2})],buys:[],routines:[]},[{...change,track:undefined}]);
+ assert.equal(plain.items[0].qty,1);assert.equal('track' in plain.items[0],false);
+});

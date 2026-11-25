@@ -97,6 +97,34 @@ test('v50 P1: partial narrow receipt keeps the full height, while complete paper
 test.describe('receipt photo, on-device OCR', () => {
   test.skip(!ORT_DIST, 'onnxruntime-web is not installed (npm install --no-save onnxruntime-web@1.30.0)');
   test.setTimeout(240000);
+  // Diagnostics only (no waits, retries or pass conditions change): WebKit stalled here twice
+  // (af4ad53, 2cc4f51 run 45598097900) after ~14s normal runs. On failure the log shows the last
+  // progress stage, OCR part requests with timings, and console warnings/errors.
+  const diag = new WeakMap();
+  test.beforeEach(async ({ page }) => {
+    const d = { start: Date.now(), stages: [], requests: [], console: [] };
+    diag.set(page, d);
+    const at = () => Date.now() - d.start;
+    page.on('console', m => { if (['error', 'warning'].includes(m.type())) d.console.push([at(), m.type(), m.text().slice(0, 300)]); });
+    page.on('request', r => { if (/\/ocr\/|onnxruntime/.test(r.url())) d.requests.push([at(), 'start', r.url().split('/').pop()]); });
+    page.on('requestfinished', r => { if (/\/ocr\/|onnxruntime/.test(r.url())) d.requests.push([at(), 'done', r.url().split('/').pop()]); });
+    page.on('requestfailed', r => { if (/\/ocr\/|onnxruntime/.test(r.url())) d.requests.push([at(), 'failed', r.url().split('/').pop(), r.failure()?.errorText]); });
+    page.on('framenavigated', f => { if (f === page.mainFrame()) d.stages.push([at(), 'navigated']); });
+    await page.exposeFunction('__ocrStage', text => d.stages.push([at(), text]));
+    // The progress line is created later by the receipt sheet, so it is read every 250ms.
+    await page.addInitScript(() => {
+      let seen = null;
+      setInterval(() => { const t = document.getElementById('receiptProgressText')?.textContent ?? null; if (t !== seen) { seen = t; window.__ocrStage?.(t); } }, 250);
+    });
+  });
+  test.afterEach(async ({ page }, info) => {
+    if (info.status === info.expectedStatus) return;
+    const d = diag.get(page); if (!d) return;
+    const last = await page.evaluate(() => ({ text: document.getElementById('receiptProgressText')?.textContent || null, hidden: document.getElementById('receiptProgressWrap')?.classList.contains('hide') ?? null, crossOriginIsolated: self.crossOriginIsolated, cores: navigator.hardwareConcurrency })).catch(e => ({ error: String(e) }));
+    const out = { test: info.title, project: info.project.name, ms: Date.now() - d.start, last, stages: d.stages.slice(-40), requests: d.requests.slice(-40), console: d.console.slice(-40), pageErrors: page.__errors };
+    console.log('[ocr-diag] ' + JSON.stringify(out));
+    await info.attach('ocr-diag.json', { body: JSON.stringify(out, null, 1), contentType: 'application/json' });
+  });
 
   test('a sideways photo is turned, read, checked against the item count and saved once', async ({ page, browser }, info) => {
     const png = await receiptPhoto(browser);
