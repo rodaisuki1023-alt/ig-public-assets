@@ -3,7 +3,8 @@
  *  - stock counted as 0 and not yet on the shopping list -> may be added, in one tap, through the
  *    existing shopping owner (AtokoreKitShoppingV50: same-name dedupe, save verification, history);
  *  - several sizes/kinds registered -> "サイズ・種類を選んでください" (nothing is added);
- *  - not registered as stock -> "在庫を確認してください" (unknown is not zero);
+ *  - a consumable not registered as stock -> "在庫を確認してください" (unknown is not zero);
+ *    reusable things (連絡帳, 着替え, 水筒 …) without stock are not stock questions and are not listed;
  *  - already on the shopping list -> shown, never added twice.
  * The checklist itself is read only (its own module owns writes and stale-tab protection).
  */
@@ -19,6 +20,9 @@ function pending(){
  const list=root.AtokorePackingChecklist?.items?.();
  return Array.isArray(list)?list.filter(x=>x&&typeof x.name==='string'&&x.done!==true).slice(0,50):null;
 }
+// Things that run out. An unregistered reusable item (連絡帳, 着替え, 水筒 …) is not a stock
+// question, so only these are asked about when they are not registered.
+const CONSUMABLE=/おむつ|オムツ|パンツ|おしりふき|ミルク|離乳食|ベビーフード|ティッシュ|ウェット|マスク|絆創膏|ばんそうこう|ビニール袋|ゴミ袋|ごみ袋|ポリ袋|母乳パッド|ガーゼ|保湿|ワセリン|麦茶|飲み物/;
 // Pure classification (exported for tests): one line per unticked item that needs attention.
 function classify(names,choices){
  const out={zero:[],choose:[],unknown:[],queued:[]};
@@ -27,7 +31,7 @@ function classify(names,choices){
   const key=String(name).normalize('NFKC').trim();if(!key||seen.has(key))continue;seen.add(key);
   const c=choices(name);if(!c)continue;
   if(c.queued?.length||c.stocks?.some(s=>s.queued)){out.queued.push(name);continue}
-  if(!c.stocks?.length){out.unknown.push(name);continue}
+  if(!c.stocks?.length){if(CONSUMABLE.test(key))out.unknown.push(name);continue}
   if(c.stocks.length>1){out.choose.push(name);continue}
   if(Number(c.stocks[0].qty)===0)out.zero.push(name);
  }

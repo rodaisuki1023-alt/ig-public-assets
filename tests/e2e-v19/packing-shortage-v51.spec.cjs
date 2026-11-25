@@ -16,12 +16,15 @@ test('summary lists zero, ambiguous and unregistered items; one tap adds only th
   await go(page, 'buy');
   const box = page.locator('#atkPackShort');
   await expect(box).toBeVisible();
-  await expect(box.locator('.atk-pack-short-count')).toHaveText('要確認 5件');
+  // A consumable without stock is a question; reusable 連絡帳/着替え/水筒 without stock are not.
+  await page.locator('#atkPackAddInput').fill('ベビーフード');await page.locator('#atkPackAddButton').click();
+  const initialAfterAdd = await stored(page);
+  await expect(box.locator('.atk-pack-short-count')).toHaveText('要確認 3件');
   await box.locator('summary').click();
   await expect(box.locator('li.zero')).toHaveText('在庫0：おしりふき');
   await expect(box.locator('li.choose')).toHaveText('サイズ・種類を選んでください：おむつ');
-  await expect(box.locator('li.unknown')).toHaveText('在庫を確認してください：連絡帳、着替え、水筒');
-  expect(await stored(page)).toEqual(initial); // looking changes nothing
+  await expect(box.locator('li.unknown')).toHaveText('在庫を確認してください：ベビーフード');
+  expect(await stored(page)).toEqual(initialAfterAdd); // looking changes nothing
 
   await box.locator('[data-pack-short-add]').click();
   await expect(box.locator('.atk-pack-short-msg')).toHaveText('1件を買い物リストに追加しました。');
@@ -32,8 +35,8 @@ test('summary lists zero, ambiguous and unregistered items; one tap adds only th
   await expect(box.locator('[data-pack-short-add]')).toHaveCount(0);
 
   // A ticked item is packed: it leaves the summary, and ticking never consumes stock.
-  await page.locator('#atkPackRows input[aria-label="連絡帳を準備済みにする"]').check();
-  await expect(box.locator('li.unknown')).toHaveText('在庫を確認してください：着替え、水筒');
+  await page.locator('#atkPackRows input[aria-label="ベビーフードを準備済みにする"]').check();
+  await expect(box.locator('li.unknown')).toHaveCount(0);
   s = await stored(page);
   expect(s.items).toEqual(initial.items);
   expect(page.__errors).toEqual([]);
