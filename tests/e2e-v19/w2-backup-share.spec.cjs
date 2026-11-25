@@ -156,6 +156,16 @@ test('sharing: restore is refused with guidance, the status matches on home and 
   for(const [deviceId,device] of [['sender',a],['receiver',b]]){
     device.page.on('framenavigated',frame=>{if(frame===device.page.mainFrame())navigation.push({device:deviceId,event:'committed',...keys(frame.url()),at:Date.now()})});
     device.page.on('request',r=>{if(r.isNavigationRequest()&&r.frame()===device.page.mainFrame())navigation.push({device:deviceId,event:'request',...keys(r.url()),from:r.redirectedFrom()?keys(r.redirectedFrom().url()).path:null,at:Date.now()})});
+    // v51: the 2nd sighting (run 45616466115) showed NO main-frame navigation on the sender when
+    // its context was destroyed, so renderer crashes, page close, load events, detached frames and
+    // console errors are recorded as well (diagnostics only; no waits or retries change).
+    device.page.on('crash',()=>navigation.push({device:deviceId,event:'crash',at:Date.now()}));
+    device.page.on('close',()=>navigation.push({device:deviceId,event:'close',at:Date.now()}));
+    device.page.on('domcontentloaded',()=>navigation.push({device:deviceId,event:'domcontentloaded',at:Date.now()}));
+    device.page.on('load',()=>navigation.push({device:deviceId,event:'load',at:Date.now()}));
+    device.page.on('framedetached',f=>navigation.push({device:deviceId,event:'framedetached',main:f===device.page.mainFrame(),at:Date.now()}));
+    device.page.on('console',m=>{if(m.type()==='error')navigation.push({device:deviceId,event:'console-error',text:m.text().slice(0,160),at:Date.now()})});
+    device.page.on('pageerror',e=>navigation.push({device:deviceId,event:'pageerror',text:String(e).slice(0,160),at:Date.now()}));
   }
   try {
     // Before sharing: single use.
@@ -215,7 +225,7 @@ test('sharing: restore is refused with guidance, the status matches on home and 
       try{await a.page.evaluate(()=>AtokoreHousehold.syncNow())}catch(error){
         // Let the navigation event that destroyed the context arrive before logging it.
         await a.page.waitForLoadState('domcontentloaded').catch(()=>{});
-        console.log('PHOTO_QA_NAVIGATION',JSON.stringify({navigation,url:keys(a.page.url())}));throw error}
+        console.log('PHOTO_QA_NAVIGATION',JSON.stringify({failedAt:Date.now(),closed:a.page.isClosed(),navigation,url:keys(a.page.url())}));throw error}
       const res=await request.post(EMU+'/__test/sql',{data:{sql:"SELECT fields->>'photoPath' AS path FROM atokore_private.records WHERE kind='item' AND NOT deleted AND fields->>'name'='卵'"}});
       expect(res.ok()).toBe(true);
       const rows=await res.json();
