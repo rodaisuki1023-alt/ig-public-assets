@@ -94,3 +94,15 @@ for (const width of [320, 393, 430]) test(`prep sets fit at ${width}px`, async (
     return { right: r.right, min: Math.min(...t), scroll: document.documentElement.scrollWidth - innerWidth }; });
   expect(f.right).toBeLessThanOrEqual(width); expect(f.min).toBeGreaterThanOrEqual(44); expect(f.scroll).toBeLessThanOrEqual(0);
 });
+
+test('a redraw while typing keeps the typed text (a family update must not wipe input)', async ({ page }) => {
+  await open(page, { [KEY]: stock() });
+  await go(page, 'buy');
+  await box(page).locator('summary').first().click();
+  await box(page).locator('[data-prep-kid-name]').fill('上の子');
+  await page.evaluate(() => AtokorePrepSets.refresh());
+  await expect(box(page).locator('[data-prep-kid-name]')).toHaveValue('上の子');
+  await box(page).locator('[data-prep-add-child]').click();
+  await expect(box(page).locator('.atk-prep-kid')).toHaveCount(1);
+  await expect(box(page).locator('[data-prep-kid-name]')).toHaveValue('');
+});

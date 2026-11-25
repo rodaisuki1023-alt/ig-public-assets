@@ -32,6 +32,7 @@ const SIGNATURES = {
   hh_push: [['p_ops', 'jsonb'], ['p_device', 'text']], hh_pull: [['p_since', 'bigint'], ['p_limit', 'int']], hh_changes: [['p_limit', 'int']],
   hh_entitlements: [], hh_consume: [['p_feature', 'text'], ['p_event_key', 'text']],
   hh_undo_purchases: [['p_ops','jsonb']],
+  hh_prep_get: [['p_day', 'date']], hh_prep_put: [['p_doc', 'jsonb'], ['p_expected_rev', 'int']], hh_prep_tick: [['p_day', 'date'], ['p_instance', 'text'], ['p_done', 'boolean']],
   hh_buy_assign: [['p_buy', 'text'], ['p_assignee', 'uuid'], ['p_expected_rev', 'int']], hh_buy_respond: [['p_buy', 'text'], ['p_decision', 'text'], ['p_expected_rev', 'int']], hh_buy_assignments: [],
   hh_receipt_claim: [['p_fingerprint', 'text'], ['p_force', 'boolean']], hh_receipt_finish: [['p_fingerprint', 'text'], ['p_done', 'boolean']],
 };

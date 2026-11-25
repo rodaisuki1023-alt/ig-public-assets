@@ -294,6 +294,11 @@ async function respondBuy(localId,decision){
  await refreshAssignments();
  return {status:r?.status||'error'};
 }
+// ---------------------------------------------------------------- v51 shared preparation (draft RPCs)
+function prepEnabled(){return cfg.prepSharing===true&&!!household&&!!session}
+async function prepGet(day){if(!prepEnabled())return null;return rpc('hh_prep_get',{p_day:day})}
+async function prepPut(doc,rev){if(!prepEnabled())throw Error('共有の設定が使えません。');return rpc('hh_prep_put',{p_doc:doc,p_expected_rev:rev})}
+async function prepTick(day,instance,done){if(!prepEnabled())throw Error('共有の設定が使えません。');return rpc('hh_prep_tick',{p_day:day,p_instance:instance,p_done:done})}
 async function refreshChanges(){
  const target=household&&session?household.id+':'+session.user.id:null;
  if(!target)return;
@@ -765,5 +770,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

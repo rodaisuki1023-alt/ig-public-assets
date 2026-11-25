@@ -12,12 +12,13 @@ const gatewayModule=import('../../supabase/functions/_shared/photo-gateway-handl
 const photoProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposals/atokore-photo-gateway-v50.sql'),'utf8');
 // v51 draft shopping assignments (isolated emulator only; the real project does not have them).
 const assignmentProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposals/atokore-buy-assignment-v51.sql'),'utf8');
+const prepShareProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposals/atokore-prep-share-v51.sql'),'utf8');
 const { createDb, call, asRole } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
 let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory, photos;
 let photoEvents=[];
-async function reset() { db = await createDb(); await db.exec(photoProposal); await db.exec(assignmentProposal); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map();photoEvents=[]; }
+async function reset() { db = await createDb(); await db.exec(photoProposal); await db.exec(assignmentProposal); await db.exec(prepShareProposal); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map();photoEvents=[]; }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
