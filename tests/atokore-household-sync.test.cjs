@@ -270,3 +270,35 @@ for(const failure of ['metadata','lost-response'])test('retrying a summed adopti
   await b.engine.adopt(choices);await a.engine.sync();await b.engine.sync();
   assert.equal(qtyOf(a,'パンパース テープ M'),8);assert.equal(qtyOf(b,'パンパース テープ M'),8);assert.equal(b.engine.status().pending,0);
 });
+
+
+test('acceptance: two independent offline iPhone state stores each add +1 and converge to exactly +2 after reconnect/reload',async()=>{
+ const {db,a,b}=await household(start());
+ await b.engine.adopt({useShared:true});
+ const before=qtyOf(a,'パンパース テープ M');
+ assert.equal(before,3);
+ a.net.mode='down'; b.net.mode='down';
+ a.edit(s=>{s.items[0].qty+=1;});
+ b.edit(s=>{s.items[0].qty+=1;});
+ await assert.rejects(a.engine.sync(),/offline/);
+ await assert.rejects(b.engine.sync(),/offline/);
+ assert.equal(qtyOf(a,'パンパース テープ M'),before+1);
+ assert.equal(qtyOf(b,'パンパース テープ M'),before+1);
+ // Each simulated device restarts from its OWN persistent localStorage.
+ a.boot(); b.boot();
+ assert.equal(a.net.mode,'down');
+ assert.equal(b.net.mode,'down');
+ a.net.mode='up'; b.net.mode='up';
+ await Promise.all([a.engine.sync(),b.engine.sync()]);
+ await a.engine.sync();
+ await b.engine.sync();
+ assert.equal(qtyOf(a,'パンパース テープ M'),before+2);
+ assert.equal(qtyOf(b,'パンパース テープ M'),before+2);
+ // Independently verify the persisted server counter; retries must not duplicate adds.
+ const server=await call(db,A,'hh_pull',{p_since:0});
+ const rows=server.records.filter(r=>r.kind==='item'&&r.fields?.name==='パンパース テープ M');
+ assert.equal(rows.length,1);
+ assert.equal(Number(rows[0].qty),before+2);
+ assert.equal(a.engine.status().pending,0);
+ assert.equal(b.engine.status().pending,0);
+});

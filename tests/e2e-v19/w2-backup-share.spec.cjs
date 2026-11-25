@@ -6,7 +6,7 @@ const zlib = require('node:zlib');
 const { test, expect } = require('@playwright/test');
 const { open, go, stored, baseState, KEY, appConfirm } = require('./helpers.cjs');
 const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
-const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false };
+const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false, photoGatewayEnabled:true };
 const DB = 'atokorePreviewProductPhotosV19';
 
 function crc32(data) { let crc = 0xffffffff; for (const b of data) { crc ^= b; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); } return (crc ^ 0xffffffff) >>> 0; }
@@ -148,6 +148,15 @@ test('sharing: restore is refused with guidance, the status matches on home and 
   await request.post(EMU + '/__test/reset');
   async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 } }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
   const a = await device(baseState()), b = await device({ items: [], buys: [], routines: [] });
+  const navigation=[];
+  // Diagnostics for the intermittent CI "execution context destroyed": every main-frame
+  // navigation with its query KEYS only (never values: they can carry an auth code), and every
+  // navigation request with the URL it was redirected from. Synthetic emulator data only.
+  const keys=u=>{try{const x=new URL(u);return {path:x.pathname,query:[...x.searchParams.keys()].sort(),hash:!!x.hash}}catch(_){return {path:'?'}}};
+  for(const [deviceId,device] of [['sender',a],['receiver',b]]){
+    device.page.on('framenavigated',frame=>{if(frame===device.page.mainFrame())navigation.push({device:deviceId,event:'committed',...keys(frame.url()),at:Date.now()})});
+    device.page.on('request',r=>{if(r.isNavigationRequest()&&r.frame()===device.page.mainFrame())navigation.push({device:deviceId,event:'request',...keys(r.url()),from:r.redirectedFrom()?keys(r.redirectedFrom().url()).path:null,at:Date.now()})});
+  }
   try {
     // Before sharing: single use.
     await expect(a.page.locator('#atkHomeLastSync')).toHaveText('この端末だけで利用中');
@@ -172,12 +181,78 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     await expect(b.page.locator(`#stockList [data-stock-id="${(await findDiaper(b.page)).id}"] .atk-user-photo`)).toBeVisible();
 
     // A photo set while sharing is shared at once.
-    await setPhoto(a.page, 3, 40);
-    await expect.poll(async () => { await a.page.evaluate(() => AtokoreHousehold.syncNow()); return !!(await stored(a.page)).items.find(x => x.id === 3).photoPath; }, { timeout: 20000 }).toBe(true);
-    await b.page.evaluate(() => AtokoreHousehold.syncNow());
+    // Delay the app's fetch BEFORE the real request reaches the emulator.
+    // This works without Playwright route interception or service-worker races.
+    await a.page.evaluate(()=>{
+      const original=window.fetch,gate={observed:0};
+      let release;const wait=new Promise(resolve=>{release=resolve});
+      gate.release=()=>{window.fetch=original;release()};
+      window.__photoWriteGate=gate;
+      window.fetch=async function(input,init){
+        const url=typeof input==='string'?input:input?.url||String(input);
+        let body;try{body=JSON.parse(init?.body||'{}')}catch{}
+        if(url.endsWith('/functions/v1/atokore-photo-gateway')&&body?.operation==='write'){
+          gate.observed++;await wait;
+        }
+        return original.call(this,input,init);
+      };
+    });
+    try{
+      await setPhoto(a.page, 3, 40);
+      // Local image is visible and saved, even while the request is delayed.
+      expect((await stored(a.page)).items.find(x=>x.id===3).photoPath??null).toBeNull();
+      await expect.poll(async()=>{
+        const seen=await a.page.evaluate(()=>window.__photoWriteGate.observed);
+        if(!seen)await a.page.evaluate(()=>{void AtokoreHousehold.syncNow();});
+        return seen>0;
+      },{timeout:20000}).toBe(true);
+    }finally{await a.page.evaluate(()=>window.__photoWriteGate?.release())}
+    // Local photoPath can appear before the asynchronous hh_push has been
+    // acknowledged. Observe the authoritative server row, then the receiving
+    // device's exact reference, before checking the actual rendered image.
+    let serverPath;
+    await expect.poll(async()=>{
+      try{await a.page.evaluate(()=>AtokoreHousehold.syncNow())}catch(error){
+        // Let the navigation event that destroyed the context arrive before logging it.
+        await a.page.waitForLoadState('domcontentloaded').catch(()=>{});
+        console.log('PHOTO_QA_NAVIGATION',JSON.stringify({navigation,url:keys(a.page.url())}));throw error}
+      const res=await request.post(EMU+'/__test/sql',{data:{sql:"SELECT fields->>'photoPath' AS path FROM atokore_private.records WHERE kind='item' AND NOT deleted AND fields->>'name'='卵'"}});
+      expect(res.ok()).toBe(true);
+      const rows=await res.json();
+      expect(rows).toHaveLength(1);
+      serverPath=rows[0].path;
+      return typeof serverPath==='string'&&serverPath.endsWith('.jpg');
+    },{timeout:20000}).toBe(true);
+    expect((await stored(a.page)).items.find(x=>x.id===3).photoPath).toBe(serverPath);
+    await expect.poll(async()=>{
+      await b.page.evaluate(()=>AtokoreHousehold.syncNow());
+      return (await stored(b.page)).items.find(x=>x.name==='卵')?.photoPath??null;
+    },{timeout:20000}).toBe(serverPath);
     const eggB = (await stored(b.page)).items.find(x => x.name === '卵');
     await go(b.page, 'stock');
-    await expect(b.page.locator(`#stockList [data-stock-id="${eggB.id}"] .atk-user-photo`)).toBeVisible();
+    const receivedRow=b.page.locator(`#stockList [data-stock-id="${eggB.id}"]`);
+    await expect(receivedRow).toBeVisible();
+    // Verify transport separately, without touching the UI's object-URL cache.
+    // If this fails the issue is the receiver authorization/transport, not DOM.
+    const received=await b.page.evaluate(async({id,path})=>{
+      try{const blob=await AtokoreHousehold.fetchPhoto(id,path);return {ok:!!blob,type:blob?.type||null,bytes:blob?.size||0}}
+      catch(e){return {ok:false,error:String(e.message||e)}}
+    },{id:eggB.id,path:serverPath});
+    if(!received.ok){
+      const scope=await b.page.evaluate(id=>AtokoreHousehold.photoScope(id),eggB.id);
+      const events=await (await request.get(EMU+'/__test/photo-events')).json();
+      console.log('PHOTO_QA_RECEIVE',JSON.stringify({
+        // Synthetic local fixture only. No user/token/image bytes in logs.
+        scopeMatches:!!scope&&serverPath.startsWith(scope.household+'/'+scope.sid+'/'),
+        enabled:await b.page.evaluate(()=>AtokoreHousehold.photoSharingEnabled()),
+        received,events
+      }));
+    }
+    expect(received).toMatchObject({ok:true,type:'image/jpeg'});
+    expect(received.bytes).toBeGreaterThan(0);
+    const receivedImage=receivedRow.locator('.atk-user-photo');
+    await expect(receivedImage).toBeVisible();
+    await expect.poll(()=>receivedImage.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
 
     // Status: same summary on home and in the dialog, with names and "this device".
     await go(a.page, 'home');
@@ -241,6 +316,57 @@ test('sharing: restore is refused with guidance, the status matches on home and 
     expect(await stored(b.page)).toEqual(before);
     await b.page.getByRole('button', { name: '共有を抜けてから復元する' }).click();
     await expect(b.page.locator('#atkHouseholdStatus')).toBeVisible();
+    expect(a.page.__errors).toEqual([]); expect(b.page.__errors).toEqual([]);
+  } finally { await a.ctx.close(); await b.ctx.close(); }
+});
+
+// v51 A2: the gateway names every upload itself. When the sync right after an upload cannot
+// confirm it (push lost), the photo stays "not yet shared" and is retried. The retry must reuse
+// the uploaded path and only confirm it: a second upload would get a new path, the family would
+// read a reference that is no longer current (denied) and the first file would be orphaned.
+test('photo share retried after an unconfirmed sync uploads once and both phones keep one path', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  await request.post(EMU + '/__test/reset');
+  async function device(state) { const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 } }); const page = await ctx.newPage(); await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG); await open(page, { [KEY]: state }); return { ctx, page }; }
+  const a = await device(baseState()), b = await device({ items: [], buys: [], routines: [] });
+  const writes = async () => (await (await request.get(EMU + '/__test/photo-events')).json()).filter(e => e.operation === 'write' && e.status === 200);
+  const serverPath = async () => { const rows = await (await request.post(EMU + '/__test/sql', { data: { sql: "SELECT fields->>'photoPath' AS path FROM atokore_private.records WHERE kind='item' AND NOT deleted AND fields->>'name'='卵'" } })).json(); return rows[0]?.path ?? null; };
+  try {
+    await go(a.page, 'premium'); await a.page.click('#atkHouseholdCard');
+    await a.page.getByRole('button', { name: 'Googleでログイン', exact: true }).click();
+    await a.page.fill('#atkHhName', 'パパ'); await a.page.getByRole('button', { name: '世帯を作る', exact: true }).click(); await appConfirm(a.page, true);
+    await expect(a.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
+    await a.page.getByRole('button', { name: /家族を招待する/ }).click();
+    const link = await a.page.locator('#atkHhInviteLink').inputValue();
+    await b.page.goto(link); await b.page.fill('#atkHhGuestName', 'ママ');
+    await b.page.getByRole('button', { name: 'Googleなしで共有に参加する', exact: true }).click();
+    await expect(b.page.locator('#atkHouseholdStatus')).toHaveText(/^(\d+人で共有中|家族と共有中)$/);
+    await b.page.getByRole('button', { name: '閉じる', exact: true }).click();
+    await a.page.getByRole('button', { name: '閉じる', exact: true }).click();
+    await a.page.evaluate(() => AtokoreHousehold.syncNow());
+
+    // The upload succeeds, but the push that would record it on the server is lost.
+    await request.post(EMU + '/__test/drop-push', { data: { email: 'google@example.test', enabled: true } });
+    await setPhoto(a.page, 3, 40);
+    await expect.poll(async () => (await writes()).length, { timeout: 20000 }).toBe(1);
+    const uploaded = (await writes())[0].path;
+    await expect.poll(async () => (await request.post(EMU + '/__test/drop-push', { data: { email: 'google@example.test', enabled: true } }).then(r => r.json())).attempts, { timeout: 20000 }).toBeGreaterThan(0);
+    expect(await serverPath()).toBeNull();
+
+    // Connection back: every later sync re-runs the share queue. It must confirm, not re-upload.
+    await request.post(EMU + '/__test/drop-push', { data: { email: 'google@example.test', enabled: false } });
+    await expect.poll(async () => { await a.page.evaluate(() => AtokoreHousehold.syncNow()); return serverPath(); }, { timeout: 20000 }).toBe(uploaded);
+    for (let i = 0; i < 3; i++) await a.page.evaluate(() => AtokoreHousehold.syncNow());
+    expect((await writes()).map(w => w.path)).toEqual([uploaded]);
+    expect((await stored(a.page)).items.find(x => x.id === 3).photoPath).toBe(uploaded);
+    // The device record is marked shared once the family has the photo, so no later scan resends it.
+    await expect.poll(() => a.page.evaluate(() => new Promise(res => { const r = indexedDB.open('atokorePreviewProductPhotosV19', 1); r.onsuccess = () => { const q = r.result.transaction('photos').objectStore('photos').getAll(); q.onsuccess = () => { res(q.result.filter(v => v && v.bytes && v.pending === true).length); r.result.close(); }; }; })), { timeout: 20000 }).toBe(0);
+
+    // The partner receives exactly that reference and may read it.
+    await expect.poll(async () => { await b.page.evaluate(() => AtokoreHousehold.syncNow()); return (await stored(b.page)).items.find(x => x.name === '卵')?.photoPath ?? null; }, { timeout: 20000 }).toBe(uploaded);
+    const eggB = (await stored(b.page)).items.find(x => x.name === '卵');
+    const received = await b.page.evaluate(async ({ id, path }) => { const blob = await AtokoreHousehold.fetchPhoto(id, path); return { type: blob?.type, bytes: blob?.size || 0 }; }, { id: eggB.id, path: uploaded });
+    expect(received.type).toBe('image/jpeg'); expect(received.bytes).toBeGreaterThan(0);
     expect(a.page.__errors).toEqual([]); expect(b.page.__errors).toEqual([]);
   } finally { await a.ctx.close(); await b.ctx.close(); }
 });

@@ -12,6 +12,8 @@ const COUNTERS={item:true,buy:true,routine:false};
 
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v))}
 function same(a,b){return JSON.stringify(a)===JSON.stringify(b)}
+function wireFields(fields,managed){if(!managed)return fields;const out={...fields};delete out.photoPath;return out}
+function legacyPhotoMutation(o){return o.field==='photoPath'||Object.prototype.hasOwnProperty.call(o.fields||{},'photoPath')||Object.prototype.hasOwnProperty.call(o.item_fields||{},'photoPath')}
 function intQty(v){const n=Math.round(Number(v));return Number.isFinite(n)&&n>0?Math.min(n,99999):0}
 
 // Saved app state → {"item:12": {kind, local, fields, qty}}
@@ -52,13 +54,14 @@ function diff(prev,next,map,opts={}){
   const old=a[key];
   if(!old){
    if(!m[key])m[key]=newSid(r.kind,rand);
-   created.push(op({type:'create',kind:r.kind,id:m[key],fields:r.fields,qty:r.qty,ts:now,_key:key}));
+   created.push(op({type:'create',kind:r.kind,id:m[key],fields:wireFields(r.fields,opts.managedPhotos),qty:r.qty,ts:now,_key:key}));
    continue;
   }
   // Present before but never shared (e.g. saved while sharing was off): send it as a new record.
-  if(!m[key]){m[key]=newSid(r.kind,rand);created.push(op({type:'create',kind:r.kind,id:m[key],fields:r.fields,qty:r.qty,ts:now,_key:key}));continue}
+  if(!m[key]){m[key]=newSid(r.kind,rand);created.push(op({type:'create',kind:r.kind,id:m[key],fields:wireFields(r.fields,opts.managedPhotos),qty:r.qty,ts:now,_key:key}));continue}
   if(COUNTERS[r.kind]&&r.qty!==old.qty)adds.push(op({type:'add',kind:r.kind,id:m[key],delta:r.qty-old.qty,_key:key}));
   for(const k of new Set([...Object.keys(old.fields),...Object.keys(r.fields)])){
+   if(opts.managedPhotos&&k==='photoPath')continue;
    if(same(old.fields[k],r.fields[k]))continue;
    op({type:'set',kind:r.kind,id:m[key],field:k,value:r.fields[k]===undefined?null:r.fields[k],ts:now});
   }
@@ -183,7 +186,7 @@ function createEngine(io){
   recoverApply();
   if(!meta.shadow)return 0;
   const cur=io.readState();if(!cur)return 0;
-  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand});
+  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand,managedPhotos:io.managedPhotos===true});
   if(!ops.length)return 0;
   save({...meta,outbox:[...meta.outbox,...ops],map,shadow:clone(cur)});
   return ops.length;
@@ -191,6 +194,7 @@ function createEngine(io){
  async function push(){
   recoverApply();
   assertResolved();
+  if(io.managedPhotos&&meta.outbox.some(legacyPhotoMutation))throw Object.assign(Error('photo_migration_recovery_needed'),{code:'recovery'});
   while(meta.outbox.length){
    const batch=meta.outbox.slice(0,100);
    const res=await io.rpc('hh_push',{p_ops:batch,p_device:io.device||null});
@@ -209,7 +213,7 @@ function createEngine(io){
   let more=true,base={...meta.base},cursor=meta.cursor;
   while(more){
    const res=await io.rpc('hh_pull',{p_since:cursor});
-   for(const r of res.records||[])base[r.kind+':'+r.id]={kind:r.kind,id:r.id,fields:r.fields||{},qty:Number(r.qty)||0,deleted:!!r.deleted};
+   for(const r of res.records||[])base[r.kind+':'+r.id]={kind:r.kind,id:r.id,fields:r.fields||{},qty:Number(r.qty)||0,deleted:!!r.deleted,...(r.seq!=null&&Number.isSafeInteger(Number(r.seq))?{seq:Number(r.seq)}:{})};
    cursor=Number(res.cursor)||cursor;more=!!res.more&&(res.records||[]).length>0;
   }
   save({...meta,base,cursor});
@@ -247,7 +251,7 @@ function createEngine(io){
   // chosen state is committed, rebuilding "sum" from that state would count it a second time.
   if(meta.shadow){await sync();return io.readState()}
   let more=true,base={},cursor=0;
-  while(more){const res=await io.rpc('hh_pull',{p_since:cursor});for(const r of res.records||[])base[r.kind+':'+r.id]={kind:r.kind,id:r.id,fields:r.fields||{},qty:Number(r.qty)||0,deleted:!!r.deleted};cursor=Number(res.cursor)||cursor;more=!!res.more&&(res.records||[]).length>0}
+  while(more){const res=await io.rpc('hh_pull',{p_since:cursor});for(const r of res.records||[])base[r.kind+':'+r.id]={kind:r.kind,id:r.id,fields:r.fields||{},qty:Number(r.qty)||0,deleted:!!r.deleted,...(r.seq!=null&&Number.isSafeInteger(Number(r.seq))?{seq:Number(r.seq)}:{})};cursor=Number(res.cursor)||cursor;more=!!res.more&&(res.records||[]).length>0}
   const local=records(io.readState()||EMPTY),view=rebase(base,[]),map={},outbox=[];
   for(const c of choices?.add||[]){
    const r=local[c.key];if(!r||c.mode==='skip')continue;
@@ -255,7 +259,7 @@ function createEngine(io){
    if(twin&&c.mode==='sum'){map[c.key]=twin.id;if(r.qty>0&&COUNTERS[r.kind])outbox.push({op_id:uuid(rand),type:'add',kind:r.kind,id:twin.id,delta:r.qty});continue}
    if(twin&&c.mode!=='new'){map[c.key]=twin.id;continue}
    const sid=newSid(r.kind,rand);map[c.key]=sid;
-   outbox.push({op_id:uuid(rand),type:'create',kind:r.kind,id:sid,fields:r.fields,qty:r.qty,ts:now()});
+   outbox.push({op_id:uuid(rand),type:'create',kind:r.kind,id:sid,fields:wireFields(r.fields,io.managedPhotos===true),qty:r.qty,ts:now()});
   }
   // Keep this device's local ids (and their photos) for exact-same products it already had.
   for(const r of Object.values(local)){

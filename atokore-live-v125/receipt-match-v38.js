@@ -1,7 +1,7 @@
 /* Atokore v38 receipt matching — pure logic, no network.
  * Receipt lines are abbreviated ("ﾊﾟﾝﾊﾟｰｽ ｻﾗｻﾗ ﾃｰﾌﾟM 60ﾏｲ"). This suggests products already in stock,
  * but never across a different size, form (tape/pants), content amount or brand (brands from the fixed
- * BRANDS list only; flavour and other attributes are NOT compared): those are
+ * BRANDS list only; recognized explicit flavour and package multipliers are also compared): those are
  * different products even when the names look alike. A match the family confirmed once is stored on
  * the product itself (item.receiptAliases), so it is offered first next time and travels with the
  * product when the household shares data.
@@ -38,6 +38,48 @@ function amounts(s){
  }
  return out.sort();
 }
+// Conservative explicit variant guards: no guess about unspecified flavour,
+// and do not confuse the parser's purchase qty with a printed package multiplier.
+const FLAVOUR_TERMS=[
+ ['soy_sauce',/(?:しょうゆ|しょーゆ|醤油|正油)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['miso',/(?:みそ|味噌)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['salt',/(?:しお|塩)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['strawberry',/(?:いちご|苺|ストロベリー|すとろべりー)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['banana',/(?:バナナ|ばなな)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['chocolate',/(?:チョコレート|ちょこれーと|チョコ|ちょこ)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['vanilla',/(?:バニラ|ばにら)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['plain',/(?:プレーン|ぷれーん)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['apple',/(?:りんご|林檎|アップル|あっぷる)(?:味|風味|ふうみ|フレーバー|ふれーばー)/],
+ ['peach',/(?:もも|桃|ピーチ|ぴーち)(?:味|風味|ふうみ|フレーバー|ふれーばー)/]
+];
+// A receipt often drops the suffix 味. Only infer a bare trailing flavour
+// inside a recognized product context, not a standalone ingredient or brand.
+const BARE_FLAVOURS=[
+ ['soy_sauce',/(?:しょうゆ|しょーゆ|醤油|正油)$/],
+ ['miso',/(?:みそ|味噌)$/],['salt',/(?:しお|塩)$/],
+ ['strawberry',/(?:いちご|苺|すとろべりー)$/],['banana',/ばなな$/],
+ ['chocolate',/(?:ちょこれーと|ちょこ)$/],['vanilla',/ばにら$/],
+ ['plain',/ぷれーん$/],['apple',/(?:りんご|林檎|あっぷる)$/],['peach',/(?:もも|桃|ぴーち)$/]
+];
+function flavours(s){
+ const t=hira(nfkc(s).toLowerCase()).replace(/\s+/g,'');
+ const out=new Set(FLAVOUR_TERMS.filter(([,re])=>re.test(t)).map(([key])=>key));
+ // Remove only trailing explicit package amounts; never remove model numbers.
+ const tail=t.replace(/\d+(?:\.\d+)?(?:kg|ml|g|l|枚|個入|本入|袋入|包|缶|入)(?:[x×*]\d{1,3})?$/,'');
+ if(/らーめん|拉麺|らあめん|かっぷ麺|かっぷめん|よーぐると|ぷろていん|ぜりー|あいす/.test(tail))
+  for(const [key,re] of BARE_FLAVOURS)if(re.test(tail))out.add(key);
+ return [...out].sort();
+}
+function bundles(s){
+ const t=nfkc(s).toLowerCase().replace(/マイ/g,'枚').replace(/\s+/g,'');
+ const result=[];
+ // e.g. 80枚×3, 500ml x 6. A bare "x3" may be a purchase quantity,
+ // so only classify a multiplier attached to an explicit content unit.
+ for(const m of t.matchAll(/\d+(?:\.\d+)?(?:kg|ml|g|l|枚|個入|本入|袋入|包|缶|入)[x×*](\d{1,3})(?!\d)/g)){
+  const count=Number(m[1]);if(count>=1)result.push(count);
+ }
+ return result.sort((a,b)=>a-b);
+}
 function features(name){
  const t=nfkc(name),low=t.toLowerCase();
  const brand=BRANDS.find(b=>t.includes(b)||compact(t).includes(compact(b)))||'';
@@ -48,7 +90,7 @@ function features(name){
  if(!size){const m=low.replace(/[\s　]+/g,'').match(/(?:テープ|パンツ|ﾃｰﾌﾟ|ﾊﾟﾝﾂ|サイズ|ｻｲｽﾞ)(新生児|nb|ss|xl|s|m|l|ビッグより大きい|スーパービッグ|ビッグ|big)(?![a-z])/);if(m)size=m[1]}
  size=size.replace('big','ビッグ').replace('nb','新生児');
  const form=/テープ|ﾃｰﾌﾟ/.test(t)?'tape':/パンツ|ﾊﾟﾝﾂ/.test(t)?'pants':'';
- return {brand,size,form,amounts:amounts(t)};
+ return {brand,size,form,amounts:amounts(t),flavours:flavours(t),bundles:bundles(t)};
 }
 // Content amounts ("80ﾏｲ", "800G") and bundle counts ("x3") are compared separately, not as name text.
 function bigrams(s){const c=compact(s).replace(/\d+(?:\.\d+)?(?:kg|g|ml|l|枚|まい|個入|こいり|本入|袋入|包|缶|入)/g,'').replace(/[x×]\d+/g,'');const out=new Map();for(let i=0;i<c.length-1;i++){const b=c.slice(i,i+2);out.set(b,(out.get(b)||0)+1)}if(c.length===1)out.set(c,1);return out}
@@ -68,6 +110,10 @@ function conflict(a,b){
  // This must also invalidate old remembered aliases: never merge a 2L receipt
  // into a stock row that omitted the volume, or the reverse.
  if((a.amounts.length||b.amounts.length)&&a.amounts.join()!==b.amounts.join())return 'amount';
+ const af=a.flavours||[],bf=b.flavours||[],ab=a.bundles||[],bb=b.bundles||[];
+ // Unknown flavour or multiplier is insufficient for a safe existing-stock link.
+ if((af.length||bf.length)&&af.join()!==bf.join())return 'flavour';
+ if((ab.length||bb.length)&&ab.join()!==bb.join())return 'bundle';
  return '';
 }
 /* candidates(raw, items) → [{item, score, learned, near}] best first, at most 3.
@@ -84,7 +130,7 @@ function candidates(raw,items,{limit=3,min=0.5}={}){
   // The same printed name is rarely read identically twice: a close match to a confirmed name counts too.
   const near=Array.isArray(item.receiptAliases)?Math.max(0,...item.receiptAliases.map(a=>dice(a,key))):0;
   // Only offered (never pre-selected): a near match to a confirmed name may be another product that OCR read
-  // alike (flavour is not compared at all; brands only from BRANDS). Only the exact confirmed text is
+  // alike (unrecognized variants are not exhaustively compared; brands only from BRANDS). Only the exact confirmed text is
   // "learned" and may be pre-selected.
   if(near>=0.75){out.push({item,score:0.9+near/20,learned:false,near:true});continue}
   let s=Math.max(dice(raw,item.name),coverage(raw,item.name)*0.92);
