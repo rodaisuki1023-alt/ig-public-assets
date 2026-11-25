@@ -42,7 +42,17 @@ jobs:
           python-version: '3.12'
       - run: npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
       - name: Focused photo sharing regression in both browsers
-        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs w2-backup-share.spec.cjs --grep 'photos are shared automatically' --repeat-each=2
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs w2-backup-share.spec.cjs --grep 'photos are shared automatically' --repeat-each=2 --trace retain-on-failure
+      - name: Upload the trace of a failed focused photo run (synthetic data only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atokore-photo-focused-trace
+          path: |
+            test-results
+            tests/e2e-v19/test-results
+          if-no-files-found: ignore
+          retention-days: 7
   photo-edge-dependency-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 8
