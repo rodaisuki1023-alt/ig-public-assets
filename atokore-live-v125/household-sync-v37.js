@@ -67,7 +67,7 @@ function localIdFor(kind,sid){
 function membersKey(){return household&&session?household.id+':'+session.user.id:null}
 function rememberMembers(my){
  if(!Array.isArray(my?.members)||!membersKey())return;
- saveMeta({members:my.members.map(m=>({name:String(m.display_name||''),me:!!m.is_me})),membersFor:membersKey(),membersAt:Date.now()});
+ saveMeta({members:my.members.map(m=>({id:typeof m.user_id==='string'?m.user_id:null,name:String(m.display_name||''),me:!!m.is_me})),membersFor:membersKey(),membersAt:Date.now()});
 }
 async function refreshMembers(force){
  // v51 traffic: the member list changes rarely; a changed cursor forces a refresh (see syncNow).
@@ -264,6 +264,36 @@ async function sharePhoto(id,blob,transfer=null,resume=null){
    engine.status().pending===0&&!!confirmed&&(confirmed.fields?.photoPath??null)===path&&
    (readState()?.items.find(x=>String(x.id)===String(id))?.photoPath??null)===path};
 }
+// ---------------------------------------------------------------- v51 shopping assignments (draft RPCs)
+// Enabled only when the server has the reviewed SQL (cfg.buyAssignments===true). The server checks
+// membership and the expected revision; a stale view is refused and the latest state is fetched.
+let assignments=new Map(),assignmentsAt=0;
+function assignmentsEnabled(){return cfg.buyAssignments===true&&!!household&&!!session}
+async function refreshAssignments(){
+ if(!assignmentsEnabled())return;
+ try{const rows=await rpc('hh_buy_assignments',{});if(!Array.isArray(rows))return;
+  assignments=new Map(rows.filter(r=>r&&typeof r.buy_id==='string').map(r=>[r.buy_id,{assignee:r.assignee||null,requester:r.requester||null,response:r.response||'none',rev:Number(r.rev)||0}]));
+  assignmentsAt=Date.now();doc.dispatchEvent(new CustomEvent('atokore-assignments-updated'));
+ }catch(e){root.console?.warn?.('あとこれ 担当の取得',e)}
+}
+function buySid(localId){engine?.flush?.();return engine?.meta?.().map?.['buy:'+localId]||null}
+function assignmentFor(localId){const sid=buySid(localId);return sid?{sid,...(assignments.get(sid)||{assignee:null,requester:null,response:'none',rev:0})}:null}
+function familyMembers(){return (Array.isArray(meta.members)?meta.members:[]).filter(m=>m&&typeof m.id==='string').map(m=>({id:m.id,name:m.name,me:m.me}))}
+async function assignBuy(localId,assigneeId){
+ if(!assignmentsEnabled())throw Error('担当の機能は現在使えません。');
+ const a=assignmentFor(localId);if(!a)throw Error('この買い物はまだ家族に届いていません。同期してからお試しください。');
+ const r=await rpc('hh_buy_assign',{p_buy:a.sid,p_assignee:assigneeId,p_expected_rev:a.rev});
+ if(r?.status==='stale'){await refreshAssignments();return {status:'stale'}}
+ if(r?.status==='ready'||r?.status==='unchanged')await refreshAssignments();
+ return {status:r?.status||'error'};
+}
+async function respondBuy(localId,decision){
+ if(!assignmentsEnabled())throw Error('担当の機能は現在使えません。');
+ const a=assignmentFor(localId);if(!a)throw Error('この買い物はまだ家族に届いていません。');
+ const r=await rpc('hh_buy_respond',{p_buy:a.sid,p_decision:decision,p_expected_rev:a.rev});
+ await refreshAssignments();
+ return {status:r?.status||'error'};
+}
 async function refreshChanges(){
  const target=household&&session?household.id+':'+session.user.id:null;
  if(!target)return;
@@ -353,6 +383,7 @@ async function syncNow(opts){
    const changed=s.cursor!==before.cursor||before.pending>s.pending;
    if(!poll||changed||historyState!=='ready')await refreshChanges();
    if(!s.pending){await refreshMembers(changed||!poll);paint()}
+   if(assignmentsEnabled()&&(changed||!poll||!assignmentsAt))await refreshAssignments();
    pollAfter(changed?'active':'quiet');
   }catch(e){
    if(e.code==='rejected'||e.code==='recovery')setStatus('blocked');
@@ -734,5 +765,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -61,6 +61,7 @@ const APP_SHELL = [
   './family-prep-v51.js',
   './prep-sets-v51.js',
   './entitlements-v51.js',
+  './assign-ui-v51.js',
   './packing-checklist-v50.css',
   './storage-bootstrap-v19.js',
   './data-safety-v19.js',

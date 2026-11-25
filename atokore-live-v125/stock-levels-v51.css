@@ -59,3 +59,19 @@
 .atk-prep-child b{margin-right:6px}
 .atk-prep-note{font-size:12px;color:#6B5249;margin:6px 0}
 .atk-prep-error{font-size:13px;color:#B42318;font-weight:700;margin:6px 0}
+
+/* v51 家族の買い物担当 (assign-ui-v51.js): a compact block above the shopping rows. */
+.atk-assign{margin:8px 0 10px;padding:10px 12px;border:1px solid #E9DAD3;border-radius:12px;background:#FFFDFB}
+.atk-assign-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.atk-assign-head b{font-size:14px;color:#4A3029}
+.atk-assign-toggle{min-height:44px;border:1px solid #E2CFC4;border-radius:10px;background:#fff;color:#704839;font:inherit;font-weight:800;padding:0 12px}
+.atk-assign-list,.atk-assign-edit{list-style:none;margin:6px 0 0;padding:0}
+.atk-assign-list li,.atk-assign-edit li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px;border-top:1px solid #F0E4DE;padding:4px 0}
+.atk-assign-name{font-weight:800;color:#4A3029;overflow-wrap:anywhere}
+.atk-assign-state{font-size:13px;color:#6B5249}
+.atk-assign-reply{display:flex;gap:6px;flex:1 1 100%}
+.atk-assign-reply button{flex:1;min-height:44px;border:0;border-radius:10px;background:#8A5747;color:#fff;font:inherit;font-weight:800}
+.atk-assign-reply button.ghost{background:#F3E8E2;color:#4A3029}
+.atk-assign-edit select{margin-left:auto;min-height:44px;min-width:9em;border:1px solid #D9C6BB;border-radius:10px;padding:0 8px;font-size:16px;background:#fff}
+.atk-assign-note,.atk-assign-msg{margin:6px 0 0;font-size:13px;color:#6B5249}
+.atk-assign-msg{font-weight:700;color:#8A3B2A}
