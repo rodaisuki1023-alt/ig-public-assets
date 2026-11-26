@@ -66,7 +66,7 @@ async function moveAll(f,{finish=true,read=true}={}){
  const m=await f.svc('photo_legacy_begin_v51',[f.household.id,'item-legacy-a1']);
  await f.db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
  await f.svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
- if(read)await f.svc('photo_read_checked_v51',[m.file_id,SHA,900]);
+ if(read)await f.svc('photo_read_checked_v51',[m.file_id,SHA,900,(await f.svc('photo_read_target_v51',[m.file_id])).gen]);
  if(finish){await f.db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);assert.equal(await f.svc('photo_legacy_finish_v51',[m.file_id,true]),true)}
  return m;
 }
@@ -99,7 +99,7 @@ test('stage 2 also refuses an unfinished move (verified but not deleted), a miss
  const m=await moveAll(f,{read:false,finish:false});
  await db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);
  await assert.rejects(close(db),/legacy_migration_unfinished/,'switched, never read');
- await svc('photo_read_checked_v51',[m.file_id,SHA,900]);
+ await svc('photo_read_checked_v51',[m.file_id,SHA,900,(await svc('photo_read_target_v51',[m.file_id])).gen]);
  await assert.rejects(close(db),/legacy_migration_unfinished/,'verified but not finished');
  assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
  // Now consistent: break one condition at a time.
@@ -108,7 +108,7 @@ test('stage 2 also refuses an unfinished move (verified but not deleted), a miss
  await db.query('update atokore_private.photo_ledger_v50 set upload_sha256=$2 where file_id=$1',[m.file_id,SHA]);
  await db.query('delete from atokore_private.photo_read_checks_v51');
  await assert.rejects(close(db),/photo_unread_remain/,'never read');
- await db.query("insert into atokore_private.photo_read_checks_v51(file_id,sha256,bytes,checked_at) values($1,$2,900,now()-interval '1 day')",[m.file_id,SHA]);
+ await db.query("insert into atokore_private.photo_read_checks_v51(file_id,sha256,bytes,checked_at,gen) values($1,$2,900,now()-interval '1 day',atokore_private.photo_object_gen_v51('atokore-private-photos-v2',$3))",[m.file_id,SHA,m.target_path]);
  await db.query("update storage.objects set created_at=now() where bucket_id='atokore-private-photos-v2' and name=$1",[m.target_path]);
  await assert.rejects(close(db),/photo_unread_remain/,'read before the object was (re)written');
  await db.query("update atokore_private.photo_read_checks_v51 set checked_at=now()+interval '1 second',sha256=$2 where file_id=$1",[m.file_id,'b'.repeat(64)]);

@@ -102,12 +102,17 @@ test('right before sending, a notice is dropped when the recipient left or it no
  const due=async()=>(await db.transaction(async tx=>{await tx.exec('set local role service_role');return (await tx.query('SELECT atokore_private.notify_due_v51(50) r')).rows})).at(0).r;
  for(const role of ['anon','authenticated'])
   assert.equal((await db.query("SELECT has_function_privilege($1,'atokore_private.notify_due_v51(integer)','EXECUTE') ok",[role])).rows[0].ok,false);
+ const authorize=async c=>(await db.transaction(async tx=>{await tx.exec('set local role service_role');return (await tx.query('SELECT atokore_private.notify_authorize_v51($1,$2) r',[c.id,c.token])).rows})).at(0).r;
  await call(db,A,'hh_buy_assign',{p_buy:'buy_milk_0001',p_assignee:B,p_expected_rev:0});
- assert.deepEqual((await due()).map(x=>[x.recipient,x.kind]),[[B,'assignment']]);
- // Taken back and asked again before the sender ran: the first notice is stale, the new one is due.
+ const [first]=await due();
+ assert.deepEqual([first.recipient,first.kind],[B,'assignment']);
+ // Taken back and asked again before the sender ran: the held first notice is stale right before
+ // sending (dropped), the new one is due.
  await call(db,A,'hh_buy_assign',{p_buy:'buy_milk_0001',p_assignee:null,p_expected_rev:1});
  await call(db,A,'hh_buy_assign',{p_buy:'buy_milk_0001',p_assignee:B,p_expected_rev:2});
+ assert.deepEqual(await authorize(first),{ok:false,why:'stale'});
  assert.deepEqual((await due()).map(x=>[x.recipient,x.kind]),[[B,'assignment']]);
+ await db.query("UPDATE atokore_private.notify_outbox SET lease_until=now()-interval '1 second'");  // that sender stopped
  // The recipient leaves between queueing and sending (bypassing the trigger, as a race would): dropped.
  await db.query("ALTER TABLE atokore_private.members DISABLE TRIGGER buy_assign_member_left_v51");
  await db.query("UPDATE atokore_private.members SET left_at=now() WHERE user_id=$1",[B]);

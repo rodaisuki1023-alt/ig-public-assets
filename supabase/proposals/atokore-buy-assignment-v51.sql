@@ -17,6 +17,10 @@
 --     unsent notices are dropped (trigger on members.left_at),
 --   * notify_due_v51 re-checks right before a notice would be sent that the recipient is still an
 --     active member and the notice still matches the current assignment (nothing is sent here),
+-- v51 (Work 6th review): a notice is reserved for one sender (notify_claim_v51: lease, expiry, retry
+--   with backoff), re-authorized right before the provider call (notify_authorize_v51), and completed
+--   exactly once (notify_complete_v51; replaces notify_mark_sent_v51). The idempotency key is the
+--   notice id. An ambiguous answer is held, never resent, unless the provider is idempotent.
 --   * every RPC answers only for households on the synthetic trial allowlist (server-side), so the
 --     feature cannot be used by real households before an approved release.
 BEGIN;
@@ -49,7 +53,16 @@ CREATE TABLE atokore_private.notify_outbox (
   created_at timestamptz NOT NULL DEFAULT now(),
   sent_at timestamptz,
   dropped_at timestamptz,
-  drop_reason text CHECK (drop_reason IN ('left','stale','resolved'))
+  drop_reason text CHECK (drop_reason IN ('left','stale','resolved','gave_up')),
+  -- Work 6th: one sender at a time (reservation with a lease), a record that a send may have started,
+  -- a backoff after a definite rejection, and a hold after an ambiguous answer (never resent by itself).
+  claim_token uuid,
+  lease_until timestamptz,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 100),
+  send_started_at timestamptz,
+  next_attempt_at timestamptz,
+  ambiguous_at timestamptz,
+  last_result text CHECK (last_result IN ('sent','failed','retry','ambiguous'))
 );
 ALTER TABLE atokore_private.buy_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE atokore_private.notify_outbox ENABLE ROW LEVEL SECURITY;
@@ -164,52 +177,125 @@ CREATE TRIGGER buy_assign_member_left_v51 AFTER UPDATE OF left_at ON atokore_pri
 FOR EACH ROW WHEN (OLD.left_at IS NULL AND NEW.left_at IS NOT NULL) EXECUTE FUNCTION atokore_private.buy_assign_member_left_v51();
 REVOKE ALL ON FUNCTION atokore_private.buy_assign_member_left_v51() FROM PUBLIC, anon, authenticated;
 
--- Right before a (future, separately approved) sender would deliver: drop notices whose recipient is
--- no longer an active member, or that no longer match the current assignment; return the rest.
--- Marks nothing as sent and sends nothing.
-CREATE FUNCTION atokore_private.notify_due_v51(p_limit integer DEFAULT 50) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
-DECLARE o atokore_private.notify_outbox%ROWTYPE; a atokore_private.buy_assignments%ROWTYPE; k jsonb; out jsonb := '[]'::jsonb; why text;
+-- Why a notice is no longer to be sent (NULL: still current). Used at reservation and again right before
+-- sending, so a change in between (left, taken back, answered, deleted, trial ended) stops it.
+CREATE FUNCTION atokore_private.notify_stale_why_v51(o atokore_private.notify_outbox) RETURNS text
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
+DECLARE a atokore_private.buy_assignments%ROWTYPE; k jsonb := o.id::jsonb;
 BEGIN
-  FOR o IN SELECT * FROM atokore_private.notify_outbox WHERE sent_at IS NULL AND dropped_at IS NULL ORDER BY created_at
-           LIMIT LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200) FOR UPDATE SKIP LOCKED LOOP
-    why := NULL; k := o.id::jsonb;
-    SELECT * INTO a FROM atokore_private.buy_assignments WHERE household_id = o.household_id AND buy_id = k->>1;
-    IF NOT atokore_private.active_member_v51(o.household_id, o.recipient) THEN why := 'left';
-    ELSIF NOT FOUND OR NOT EXISTS (SELECT 1 FROM atokore_private.records r WHERE r.household_id = o.household_id AND r.kind = 'buy' AND r.id = k->>1 AND NOT r.deleted) THEN why := 'resolved';
-    ELSIF o.kind = 'assignment' AND (a.rev <> (k->>2)::int OR a.assignee IS DISTINCT FROM o.recipient OR a.response <> 'pending') THEN why := 'stale';
-    ELSIF o.kind = 'assignment-response' AND a.rev <> (k->>2)::int THEN why := 'stale';
-    END IF;
+  IF NOT atokore_private.active_member_v51(o.household_id, o.recipient) THEN RETURN 'left'; END IF;
+  SELECT * INTO a FROM atokore_private.buy_assignments WHERE household_id = o.household_id AND buy_id = k->>1;
+  IF NOT FOUND OR NOT EXISTS (SELECT 1 FROM atokore_private.records r WHERE r.household_id = o.household_id AND r.kind = 'buy' AND r.id = k->>1 AND NOT r.deleted) THEN RETURN 'resolved'; END IF;
+  IF o.kind = 'assignment' AND (a.rev <> (k->>2)::int OR a.assignee IS DISTINCT FROM o.recipient OR a.response <> 'pending') THEN RETURN 'stale'; END IF;
+  IF o.kind = 'assignment-response' AND a.rev <> (k->>2)::int THEN RETURN 'stale'; END IF;
+  RETURN NULL;
+END $fn$;
+
+-- Reserve notices for ONE sender (Work 6th: two calls handed out the same unsent notice). Rows are
+-- locked with SKIP LOCKED and get a fresh claim token and a lease; while the lease runs nobody else
+-- gets them. An expired lease may be taken over; `in_doubt` then tells the new sender that an earlier
+-- attempt was authorized and may have delivered (only an idempotent provider may send again, with the
+-- same key). Ambiguous answers are never reclaimed here. Nothing is sent by this function.
+CREATE FUNCTION atokore_private.notify_claim_v51(p_limit integer DEFAULT 50, p_lease_seconds integer DEFAULT 120) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
+DECLARE o atokore_private.notify_outbox%ROWTYPE; out jsonb := '[]'::jsonb; why text; t uuid;
+  v_lease interval := make_interval(secs => LEAST(GREATEST(COALESCE(p_lease_seconds, 120), 30), 600));
+  v_max constant integer := 5;   -- attempts before a notice is given up (a notice is a nudge, not a duty)
+BEGIN
+  FOR o IN SELECT * FROM atokore_private.notify_outbox n
+            WHERE n.sent_at IS NULL AND n.dropped_at IS NULL AND n.ambiguous_at IS NULL
+              AND (n.lease_until IS NULL OR n.lease_until <= now()) AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= now())
+              AND atokore_private.trial_allowed_v51(n.household_id)
+            ORDER BY n.created_at LIMIT LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200) FOR UPDATE SKIP LOCKED LOOP
+    why := atokore_private.notify_stale_why_v51(o);
+    IF why IS NULL AND o.attempts >= v_max THEN why := 'gave_up'; END IF;
     IF why IS NOT NULL THEN
-      UPDATE atokore_private.notify_outbox SET dropped_at = now(), drop_reason = why WHERE id = o.id;
-    ELSE
-      out := out || jsonb_build_array(jsonb_build_object('id', o.id, 'recipient', o.recipient, 'kind', o.kind));
+      UPDATE atokore_private.notify_outbox SET dropped_at = now(), drop_reason = why, claim_token = NULL, lease_until = NULL WHERE id = o.id;
+      CONTINUE;
     END IF;
+    t := gen_random_uuid();
+    UPDATE atokore_private.notify_outbox SET claim_token = t, lease_until = now() + v_lease, attempts = o.attempts + 1 WHERE id = o.id;
+    out := out || jsonb_build_array(jsonb_build_object('id', o.id, 'recipient', o.recipient, 'kind', o.kind, 'token', t,
+      'idempotency_key', o.id, 'attempt', o.attempts + 1, 'in_doubt', o.send_started_at IS NOT NULL));
   END LOOP;
   RETURN out;
 END $fn$;
--- After a (future, separately approved) sender delivered one notice: idempotent, exactly once.
--- A dropped notice is never marked sent; a second call answers already_sent and changes nothing.
-CREATE FUNCTION atokore_private.notify_mark_sent_v51(p_id text) RETURNS text
+-- Kept name from the earlier draft: it now reserves (the old version returned the same notice to every
+-- caller). Same fields as before plus the claim.
+CREATE FUNCTION atokore_private.notify_due_v51(p_limit integer DEFAULT 50) RETURNS jsonb
+LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$ SELECT atokore_private.notify_claim_v51(p_limit, 120) $$;
+
+-- Right before the provider call, in its own committed transaction: the caller must still hold the
+-- lease, the household must still be in the trial, and the notice must still be current. Records that a
+-- send may now happen (send_started_at), so a crash after this point is known to be in doubt.
+CREATE FUNCTION atokore_private.notify_authorize_v51(p_id text, p_token uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
+DECLARE o atokore_private.notify_outbox%ROWTYPE; why text;
+BEGIN
+  SELECT * INTO o FROM atokore_private.notify_outbox WHERE id = p_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'why', 'unknown'); END IF;
+  IF o.sent_at IS NOT NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'already_sent'); END IF;
+  IF o.dropped_at IS NOT NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'dropped'); END IF;
+  IF o.ambiguous_at IS NOT NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'ambiguous'); END IF;
+  IF p_token IS NULL OR o.claim_token IS DISTINCT FROM p_token THEN RETURN jsonb_build_object('ok', false, 'why', 'not_owner'); END IF;
+  IF o.lease_until IS NULL OR o.lease_until <= now() THEN RETURN jsonb_build_object('ok', false, 'why', 'lease_expired'); END IF;
+  IF NOT atokore_private.trial_allowed_v51(o.household_id) THEN
+    UPDATE atokore_private.notify_outbox SET claim_token = NULL, lease_until = NULL WHERE id = p_id;
+    RETURN jsonb_build_object('ok', false, 'why', 'not_enabled');
+  END IF;
+  why := atokore_private.notify_stale_why_v51(o);
+  IF why IS NOT NULL THEN
+    UPDATE atokore_private.notify_outbox SET dropped_at = now(), drop_reason = why, claim_token = NULL, lease_until = NULL WHERE id = p_id;
+    RETURN jsonb_build_object('ok', false, 'why', why);
+  END IF;
+  UPDATE atokore_private.notify_outbox SET send_started_at = COALESCE(send_started_at, now()) WHERE id = p_id;
+  RETURN jsonb_build_object('ok', true, 'idempotency_key', o.id, 'recipient', o.recipient, 'kind', o.kind);
+END $fn$;
+
+-- The sender's report, exactly once per outcome:
+--   'sent'      the provider confirmed delivery (accepted from a late earlier attempt too: it only stops sends),
+--   'failed'    the provider definitely did NOT deliver -> retry later with backoff (current holder only),
+--   'retry'     no answer, but the provider is idempotent -> retry later with the same key, still in doubt,
+--   'ambiguous' no answer and the provider is not idempotent -> held for review, never resent by itself.
+CREATE FUNCTION atokore_private.notify_complete_v51(p_id text, p_token uuid, p_result text) RETURNS text
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE o atokore_private.notify_outbox%ROWTYPE;
 BEGIN
+  IF p_result IS NULL OR p_result NOT IN ('sent','failed','retry','ambiguous') THEN
+    RAISE EXCEPTION 'notify_result_invalid' USING ERRCODE = '22023';
+  END IF;
   SELECT * INTO o FROM atokore_private.notify_outbox WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RETURN 'unknown'; END IF;
   IF o.sent_at IS NOT NULL THEN RETURN 'already_sent'; END IF;
+  IF p_result = 'sent' THEN
+    IF o.send_started_at IS NULL THEN RETURN 'not_authorized'; END IF;
+    UPDATE atokore_private.notify_outbox SET sent_at = now(), last_result = 'sent', claim_token = NULL, lease_until = NULL WHERE id = p_id;
+    RETURN 'marked';
+  END IF;
   IF o.dropped_at IS NOT NULL THEN RETURN 'dropped'; END IF;
-  UPDATE atokore_private.notify_outbox SET sent_at = now() WHERE id = p_id;
-  RETURN 'marked';
+  IF p_token IS NULL OR o.claim_token IS DISTINCT FROM p_token THEN RETURN 'stale_token'; END IF;
+  IF p_result = 'ambiguous' THEN
+    UPDATE atokore_private.notify_outbox SET ambiguous_at = now(), last_result = 'ambiguous', claim_token = NULL, lease_until = NULL WHERE id = p_id;
+    RETURN 'held_for_review';
+  END IF;
+  -- Backoff 30 s, 60 s, 120 s ... capped at one hour.
+  UPDATE atokore_private.notify_outbox SET claim_token = NULL, lease_until = NULL, last_result = p_result,
+    send_started_at = CASE WHEN p_result = 'failed' THEN NULL ELSE send_started_at END,
+    next_attempt_at = now() + LEAST(make_interval(secs => 30 * power(2, GREATEST(o.attempts - 1, 0))), interval '1 hour')
+   WHERE id = p_id;
+  RETURN 'retry_scheduled';
 END $fn$;
-REVOKE ALL ON FUNCTION atokore_private.notify_mark_sent_v51(text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION atokore_private.notify_mark_sent_v51(text) TO service_role;
-REVOKE ALL ON FUNCTION atokore_private.notify_due_v51(integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION atokore_private.notify_stale_why_v51(atokore_private.notify_outbox) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION atokore_private.notify_claim_v51(integer, integer), atokore_private.notify_due_v51(integer),
+  atokore_private.notify_authorize_v51(text, uuid), atokore_private.notify_complete_v51(text, uuid, text) FROM PUBLIC, anon, authenticated;
 GRANT USAGE ON SCHEMA atokore_private TO service_role;
-GRANT EXECUTE ON FUNCTION atokore_private.notify_due_v51(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION atokore_private.notify_claim_v51(integer, integer), atokore_private.notify_due_v51(integer),
+  atokore_private.notify_authorize_v51(text, uuid), atokore_private.notify_complete_v51(text, uuid, text) TO service_role;
 
 REVOKE ALL ON FUNCTION public.hh_buy_assign(text, uuid, integer), public.hh_buy_respond(text, text, integer), public.hh_buy_assignments() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.hh_buy_assign(text, uuid, integer), public.hh_buy_respond(text, text, integer), public.hh_buy_assignments() TO authenticated;
 COMMIT;
--- Rollback (after review): REVOKE/DROP the three public functions, active_member_v51, the trigger
--- and its function, notify_due_v51, trial_allowed_v51, and the three
+-- Rollback: rollback/atokore-buy-assignment-v51.rollback.sql (keeps trial_allowed_v51 for the other units);
+-- restore: rollback/atokore-buy-assignment-v51.restore.sql. They drop the public functions, active_member_v51,
+-- the trigger and its function, the notify_* functions, and the two
 -- tables (they hold only assignment state and queued notification ids; no stock or shopping data).

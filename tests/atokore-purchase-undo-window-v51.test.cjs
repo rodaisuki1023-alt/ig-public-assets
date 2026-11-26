@@ -50,16 +50,17 @@ test('offline and delayed: the window starts when the phone bought it, never lat
   // Bought offline 9 minutes before it arrived, arrived 30 s ago: 9:30 elapsed -> still allowed.
   const near=await bought(db,A,{ageS:30,devS:9*60});
   assert.equal((await undo(db,A,[near.op])).undone,1);
-  // The phone's clock runs a day AHEAD: its time is clamped, the server time decides (not longer).
-  const ahead=await bought(db,A,{ageS:601,devS:-24*3600});
-  await assert.rejects(undo(db,A,[ahead.op]),/purchase_undo_expired/);
+  // The phone's clock runs a day AHEAD: its time cannot be trusted (Work 6th) -> refused, never longer.
+  const ahead=await bought(db,A,{ageS:30,devS:-24*3600});
+  await assert.rejects(undo(db,A,[ahead.op]),/purchase_undo_time_invalid/);
   // The phone's clock runs 60 days BEHIND: only shortens (clamped to 30 days) -> refused.
   const behind=await bought(db,A,{ageS:5,devS:60*24*3600});
   await assert.rejects(undo(db,A,[behind.op]),/purchase_undo_expired/);
-  // No phone time at all (older receipts): the server receive time alone.
+  // No phone time at all: the receive time alone could restart an offline purchase's window (Work 6th)
+  // -> refused on the safe side; the stock stays as bought.
   const plain=await bought(db,A,{ageS:120});
   await db.query("UPDATE atokore_private.ops SET body=body-'ts' WHERE op_id=$1",[plain.op]);
-  assert.equal((await undo(db,A,[plain.op])).undone,1);
+  await assert.rejects(undo(db,A,[plain.op]),/purchase_undo_time_invalid/);
  }finally{await db.close()}
 });
 test('a batch with one expired purchase changes nothing; a finished undo still answers its retry after the window',async()=>{
@@ -91,7 +92,7 @@ test('rollback: dropping the new RPC leaves the existing one, the receipts and t
  try{
   const p=await bought(db,A,{ageS:30});
   const ops=(await db.query('SELECT count(*)::int c FROM atokore_private.ops')).rows[0].c;
-  await db.exec('DROP FUNCTION public.hh_undo_purchases_v51(jsonb); DROP FUNCTION atokore_private.purchase_undo_start_v51(timestamptz,jsonb);');
+  await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/proposals/rollback/atokore-purchase-undo-window-v51.rollback.sql'),'utf8'));
   assert.equal((await db.query('SELECT count(*)::int c FROM atokore_private.ops')).rows[0].c,ops);
   assert.equal((await call(db,A,'hh_undo_purchases',{p_ops:[p.op]})).undone,1);
  }finally{await db.close()}

@@ -174,3 +174,110 @@ test('server window on: a fresh undo works through hh_undo_purchases_v51; one th
     expect(page.__errors).toEqual([]);
   } finally { await ctx.close(); }
 });
+
+// Work 6th (E): with the server window on, only the exact answer {status:'not_enabled'} may fall back to
+// the existing RPC. Any other answer of hh_undo_purchases_v51 is refused and nothing is undone.
+for (const [label, answer] of [['null', { status: 200, body: 'null' }], ['empty object', { status: 200, body: '{}' }],
+  ['not_enabled with extra fields', { status: 200, body: '{"status":"not_enabled","undone":1}' }],
+  ['a server error', { status: 500, body: '{"message":"boom"}' }], ['an unknown status', { status: 200, body: '{"status":"later"}' }]])
+test(`server window on: an answer of ${label} never falls back to the old RPC and changes nothing`, async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request, { ...CFG, purchaseUndoWindowV51: true });
+  try {
+    const rpcs = []; page.on('request', r => { const m = /\/rpc\/(hh_undo_purchases\w*)/.exec(r.url()); if (m) rpcs.push(m[1]); });
+    await page.route('**/rest/v1/rpc/hh_undo_purchases_v51', route => route.fulfill({ status: answer.status, contentType: 'application/json', body: answer.body }));
+    const milk0 = await qty(page, MILK);
+    await buy(page, MILK);
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toContainText(/確認できませんでした|戻せません|通信/);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    expect(rpcs).toEqual(['hh_undo_purchases_v51']);
+    expect(await qty(page, MILK)).toBe(milk0 + 1);                                   // still bought
+    expect(page.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+test('server window on: the exact not_enabled answer uses the existing RPC (real households, old servers)', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request, { ...CFG, purchaseUndoWindowV51: true });
+  try {
+    const rpcs = []; page.on('request', r => { const m = /\/rpc\/(hh_undo_purchases\w*)/.exec(r.url()); if (m) rpcs.push(m[1]); });
+    await page.route('**/rest/v1/rpc/hh_undo_purchases_v51', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"not_enabled"}' }));
+    const milk0 = await qty(page, MILK);
+    await buy(page, MILK);
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect.poll(() => qty(page, MILK)).toBe(milk0);
+    expect(rpcs).toEqual(['hh_undo_purchases_v51', 'hh_undo_purchases']);
+    expect(page.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+
+// Work 6th (forecast): the estimate repair after a shared undo must survive a reload or a force-quit.
+async function trackedDiaper(page) {
+  await page.evaluate(() => { const d = new Date(); const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const x = items.find(i => i.id === 2); x.track = { v: 1, base: 60, since: day, perDay: 6, perPack: 60, refillDays: 5, pieceUnit: '枚', confirmedAt: day, t: Date.now() - 60000, seen: [] }; save(); render(); });
+  await page.evaluate(() => window.AtokoreHousehold.syncNow());
+}
+const tpOf = async page => Object.keys((await stored(page)).items.find(x => x.id === 2)).filter(k => /^tp[0-9a-z]+$/.test(k));
+// A reload drops everything held in memory and aborts a request still waiting (like a force-quit).
+async function reopen(ctx, page) {
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await page.reload(); await page.waitForFunction(() => window.AtokoreHousehold?.status?.().state === 'synced', null, { timeout: 30000 });
+  return page;
+}
+test('forecast: the estimate save fails after the server undo, then the app is reloaded -> repaired; stock, list and estimate agree', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request);
+  try {
+    await trackedDiaper(page);
+    const diaper0 = await qty(page, DIAPER);
+    await buy(page, DIAPER);
+    await expect.poll(() => tpOf(page)).toHaveLength(1);
+    await page.evaluate(() => { const orig = Storage.prototype.setItem; let once = true;
+      Storage.prototype.setItem = function (...a) { if (once && /revertEstimate/.test(new Error().stack || '')) { once = false; throw new DOMException('full (test)', 'QuotaExceededError'); } return orig.apply(this, a); }; });
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toContainText('次の同期で自動的にやり直します');
+    expect(await tpOf(page)).toHaveLength(1);
+    const next = await reopen(ctx, page);                                               // reload: memory is gone
+    await expect.poll(() => tpOf(next)).toHaveLength(0);
+    expect(await qty(next, DIAPER)).toBe(diaper0);                                     // stock reverted (server)
+    expect((await stored(next)).buys.filter(b => b.name === DIAPER)).toHaveLength(1);  // back on the list
+    expect(await next.evaluate(() => localStorage.getItem('atokorePreviewUndoRepairV19'))).toBe(null);
+    expect(next.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+test('forecast: force-quit after the server undid it but before the answer arrived -> repaired on the next start', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request);
+  try {
+    await trackedDiaper(page);
+    const diaper0 = await qty(page, DIAPER);
+    await buy(page, DIAPER);
+    await expect.poll(() => tpOf(page)).toHaveLength(1);
+    let reached = false;
+    await page.route('**/rest/v1/rpc/hh_undo_purchases', async route => { await route.fetch(); reached = true; /* the answer never arrives */ });
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect.poll(() => reached).toBe(true);                                       // the server has undone it
+    const next = await reopen(ctx, page);                                               // force-quit and start again
+    await expect.poll(() => tpOf(next)).toHaveLength(0);
+    expect(await qty(next, DIAPER)).toBe(diaper0);
+    expect((await stored(next)).buys.filter(b => b.name === DIAPER)).toHaveLength(1);
+    expect(next.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+test('forecast: an undo the server refused leaves no repair behind and the estimate as bought', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request);
+  try {
+    await trackedDiaper(page);
+    await buy(page, DIAPER);
+    await expect.poll(() => tpOf(page)).toHaveLength(1);
+    await page.route('**/rest/v1/rpc/hh_undo_purchases', route => route.fulfill({ status: 400, contentType: 'application/json', body: '{"message":"purchase_undo_expired","code":"22023"}' }));
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toContainText('10分を過ぎたため');
+    const next = await reopen(ctx, page);
+    await next.waitForTimeout(500);
+    expect(await tpOf(next)).toHaveLength(1);                                          // still bought: estimate kept
+    expect(await next.evaluate(() => localStorage.getItem('atokorePreviewUndoRepairV19'))).toBe(null);
+    expect(next.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
