@@ -9,7 +9,9 @@ const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, emai
 const MILK = '牛乳', DIAPER = 'パンパース さらさらケア おむつ テープ M';
 async function sharedPhone(browser, info, request, cfg = CFG) {
   await request.post(EMU + '/__test/reset');
-  const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 } });
+  // No Service Worker here: WebKit's page.route does not see requests a Service Worker makes, and these
+  // tests must hold the undo request at the network level in both engines.
+  const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const page = await ctx.newPage(); page.__errors = []; page.on('pageerror', e => page.__errors.push(e.message));
   await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, cfg);
   const s = baseState();
@@ -26,15 +28,16 @@ async function sharedPhone(browser, info, request, cfg = CFG) {
 }
 // Holds the FIRST undo request until released (continue = server answer, fail = network/server error).
 async function holdFirstUndo(page) {
-  let release; const held = new Promise(r => { release = r; }); let first = true;
+  let release; const held = new Promise(r => { release = r; }); let first = true, caught = false;
   await page.route('**/rest/v1/rpc/hh_undo_purchases', async route => {
     if (!first) return route.continue();
-    first = false;
+    first = false; caught = true;
     const how = await held;
     if (how === 'fail') return route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"unavailable"}' });
     return route.continue();
   });
-  return how => release(how);
+  // The test fails unless A's request really was held (never a race that did not happen).
+  return async how => { await expect.poll(() => caught, { message: 'the first undo request was held' }).toBe(true); release(how); };
 }
 const qty = async (page, name) => (await stored(page)).items.find(x => x.name === name).qty;
 const ROW = { [MILK]: 20, [DIAPER]: 21 };
@@ -54,7 +57,7 @@ for (const outcome of ['success', 'fail']) test(`A's undo answer (${outcome}) af
     await buy(page, DIAPER);                                                           // B, meanwhile
     await expect(last(page)).toContainText('パンパース');
     await expect(bar(page)).toBeVisible();
-    release(outcome);
+    await release(outcome);
     // A's answer has arrived: B's undo bar and B's button are still there, usable, with no foreign error.
     if (outcome === 'success') await expect.poll(() => qty(page, MILK)).toBe(milk0);
     else await page.waitForTimeout(300);
@@ -93,7 +96,7 @@ test('the same through the shopping-page button, with answers in reversed order 
     // B's undo answers first (double tap -> one undo), A's answer comes last.
     await last(page).getByRole('button', { name: '取り消す' }).evaluate(b => { b.click(); b.click(); });
     await expect.poll(() => qty(page, DIAPER)).toBe(diaper0);
-    release('success');
+    await release('success');
     await expect.poll(() => qty(page, MILK)).toBe(milk0);
     const s = await stored(page);
     expect(s.buys.filter(b => b.name === DIAPER)).toHaveLength(1);
@@ -112,7 +115,7 @@ test('A fails through the shopping-page button after B was bought: the error sta
     const release = await holdFirstUndo(page);
     await last(page).getByRole('button', { name: '取り消す' }).click();
     await buy(page, DIAPER);
-    release('fail');
+    await release('fail');
     await page.waitForTimeout(500);
     await expect(last(page)).toContainText('パンパース');
     await expect(last(page).locator('[role=alert]')).toHaveCount(0);                  // A's error is not shown on B
