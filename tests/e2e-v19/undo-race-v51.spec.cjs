@@ -108,6 +108,9 @@ test('the same through the shopping-page button, with answers in reversed order 
     const s = await stored(page);
     expect(s.buys.filter(b => b.name === DIAPER)).toHaveLength(1);
     expect(s.buys.filter(b => b.name === MILK)).toHaveLength(1);
+    // Diagnostics for the intermittent WebKit case (Work 7th): which purchase a leftover panel shows.
+    await page.waitForTimeout(300);
+    if (await last(page).count()) console.log('LEFTOVER> ' + JSON.stringify(await last(page).evaluate(e => ({ text: e.innerText, for: e.dataset.atkLastFor, busy: !!e.querySelector('button[disabled]') }))));
     await expect(last(page)).toHaveCount(0);
     expect(page.__errors).toEqual([]);
   } finally { await ctx.close(); }
