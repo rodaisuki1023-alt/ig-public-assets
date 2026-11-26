@@ -33,6 +33,7 @@ PRODUCTION_KEYS = {
     'atokorePrepSetsV1': 'atokorePreviewPrepSetsV{v}',
     'atokorePhotoCounterPreviewV1': 'atokorePreviewPhotoCounterPreviewV{v}',
     'atokoreStockCompactPlentyV1': 'atokorePreviewStockCompactPlentyV{v}',
+    'atokoreFamilyTrialV1': 'atokorePreviewFamilyTrialV{v}',
 }
 
 

@@ -156,3 +156,34 @@ body #pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .n
 .atk-photo-trial select{width:100%;min-height:44px;font-size:16px;border-radius:10px;border:1px solid #D9C6BB;background:#fff;padding:0 10px}
 /* Narrow phones: the compact mark says 余裕 ▾ so more of the product name stays readable. */
 @media (max-width:359px){.atk-lv-compact .atk-lv-more-long{display:none}}
+/* 家族機能の試用（合成データ）: お試し page only. */
+.atk-ftrial{margin:16px 0 0;padding:10px 12px;border:1px solid #E5D3CB;border-radius:14px;background:#fff}
+.atk-ftrial>summary{min-height:44px;display:flex;align-items:center;font-weight:800;cursor:pointer}
+.atk-ft-banner{margin:6px 0;padding:8px 10px;border-radius:10px;background:#FFF4E0;font-size:13px;font-weight:700}
+.atk-ft-note{min-height:1em;margin:6px 0;font-size:13px;color:#2F6B3A;font-weight:700}
+.atk-ft-viewer{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.atk-ft-viewer button,.atk-ft-actions button,.atk-ft-short button,.atk-ft-time button,.atk-ftrial [data-ft-deliver],.atk-ft-reset{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid #D8C6BE;background:#fff;font-weight:700;color:#4A3B36}
+.atk-ft-viewer button[aria-pressed="true"]{background:#4A3B36;color:#fff;border-color:#4A3B36}
+.atk-ftrial h4{margin:14px 0 6px;font-size:15px}
+.atk-ft-list,.atk-ft-short,.atk-ft-notes,.atk-ft-ticks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.atk-ft-row,.atk-ft-child{padding:8px;border:1px solid #EFE2DC;border-radius:12px}
+.atk-ft-row.is-done{opacity:.65}
+.atk-ft-name{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;overflow-wrap:anywhere}
+.atk-ft-name small{font-size:12px;color:#6B5B55}
+.atk-ft-state{margin:4px 0;font-size:13px}
+.atk-ft-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.atk-ft-primary{background:#4A3B36!important;color:#fff!important}
+.atk-ft-select{display:flex;align-items:center;gap:6px;font-size:13px}
+.atk-ft-select select{min-height:44px;font-size:16px;border-radius:10px;border:1px solid #D9C6BB;background:#fff;padding:0 8px}
+.atk-ft-ticks label,.atk-ft-check{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer}
+.atk-ft-ticks input,.atk-ft-check input{width:22px;height:22px;flex:none;margin:0}
+.atk-ft-ticks em{margin-left:6px;font-style:normal;font-size:12px;color:#B42318;font-weight:700}
+.atk-ft-short li{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.atk-ft-time{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;font-size:13px}
+.atk-ft-kinds{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 8px;font-size:13px}
+.atk-ft-notes li{padding:8px;border-radius:10px;font-size:13px;background:#FBF7F5}
+.atk-ft-notes li small{display:block;color:#6B5B55}
+.atk-ft-send{background:#EEF6EE!important}
+.atk-ft-drop{color:#6B5B55}
+.atk-ft-help{font-size:12px;color:#6B5B55}
+.atk-ft-reset{margin-top:8px;width:100%}
