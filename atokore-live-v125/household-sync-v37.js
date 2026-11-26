@@ -420,7 +420,7 @@ async function syncNow(opts){
    else if(e.code==='storage')setStatus('storage');
    else if(e.code==='network')setStatus('offline');
    else if(e.code==='auth'||e.status===401)setStatus('auth');
-   else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
+   else if(/not_member/.test(e.message)){household=null;forgetShared();saveMeta({household:null});setStatus('removed')}
    else setStatus('error',e.message);
    if(e.code==='network'||!['rejected','recovery','storage','auth'].includes(e.code))pollAfter('failed');
    if(household&&session){const current=household.id+':'+session.user.id;if(changesFor!==current)changes=[];changesFor=current;historyState='error';paint()}
@@ -705,7 +705,7 @@ async function dashboard(){
  if(!s)return;
  try{
   const my=await rpc('hh_my',{});
-  if(!my?.household){household=null;saveMeta({household:null});setStatus('removed');return chooseHousehold()}
+  if(!my?.household){household=null;forgetShared();saveMeta({household:null});setStatus('removed');return chooseHousehold()}
   rememberMembers(my);paint();
   members.replaceChildren(...my.members.map(m=>el('li',{},[
    el('span',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')}),
@@ -742,11 +742,13 @@ async function leave(){
  const left=engine?engine.status().pending:0;
  if(left){try{await syncNow()}catch(e){}}
  const still=engine?engine.status().pending:0;
- if(!await ask('この世帯から抜けますか？',(still?'まだ家族に送れていない変更が'+still+'件あります。抜けると家族には届きません。':'')+'この端末の在庫はそのまま残ります。','抜ける'))return;
+ if(!await ask('この世帯から抜けますか？',(still?'まだ家族に送れていない変更が'+still+'件あります。抜けると家族には届きません。':'')+'この端末の在庫はそのまま残ります。'+(assignmentsEnabled()?'\nあなたが頼まれていた買い物の担当は外れ、あなたが頼んで返事がまだのお願いは取り下げられます。届いていない通知も送られなくなります。':'')+(prepEnabled()?'\n持ち物の共有は止まり、今の内容はこの端末だけのものとして残ります。':''),'抜ける'))return;
  await rpc('hh_leave',{});
  stop();household=null;saveMeta({household:null,engine:null});setStatus('local');root.closeM?.();notice('世帯から抜けました。この端末の在庫はそのまま残っています');
 }
-function stop(){clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
+// Leaving, being removed or signing out: nothing of the family's shared state stays usable here.
+function forgetShared(){assignments=new Map();assignmentsAt=0;entCache=null;entAt=0}
+function stop(){forgetShared();clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
 async function signOut(){
  const left=engine?engine.status().pending:0;
  if(!await ask('ログアウトしますか？',(left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+(session?.user?.is_anonymous?'Googleなしの参加情報は失われます。戻るには作成者から再招待が必要です。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。','ログアウト'))return;
