@@ -6,6 +6,10 @@
  * - Ticks are kept per date, so tomorrow starts fresh without a reset button.
  * - Nothing here changes stock or the shopping list. 出かける前の確認 reads today's unticked rows.
  * - A change made in another tab is never overwritten: the write is refused and the screen reloads.
+ * - v51 (Work 6th): the person's own list (KEY) and a household's shared list (KEY+':hh:'+id) are kept
+ *   apart. Sharing never writes into the own list; leaving drops every household copy; an answer that
+ *   arrives after leaving is ignored; a new household gets nothing unless the person shares their own
+ *   list with the button (only their own data, never what came from another household).
  */
 (function(root){
 'use strict';
@@ -55,58 +59,92 @@ function pendingToday(state,date){
  return [...out].map(([name,children])=>({name,children}));
 }
 
-let state=empty(),snapshot=null,locked=false,lastError='';
+let state=empty(),snapshot=null,locked=false,lastError='',loadedKey=KEY;
+const HKEY=id=>KEY+':hh:'+id;
 function load(){
- try{const raw=root.localStorage.getItem(KEY);snapshot=raw;if(raw===null){state=empty();locked=false;return}
+ const key=activeKey();loadedKey=key;
+ try{const raw=root.localStorage.getItem(key);snapshot=raw;if(raw===null){state=empty();locked=false;return}
   const parsed=JSON.parse(raw);if(!valid(parsed))throw Error('invalid');state=parsed;locked=false}
- catch(_){locked=true;state=empty()}
+ // An unreadable own list is never overwritten; a household copy is only a cache of the server.
+ catch(_){locked=key===KEY;state=empty()}
+}
+function readOwn(){try{const raw=root.localStorage.getItem(KEY);if(raw===null)return null;const p=JSON.parse(raw);return valid(p)?p:null}catch(_){return null}}
+function dropHouseholdCopies(except){
+ try{for(const k of Object.keys(root.localStorage))if(k.startsWith(KEY+':hh:')&&k!==except)root.localStorage.removeItem(k)}
+ catch(e){root.console?.warn?.('あとこれ 持ち物の家族データ削除',e)}
 }
 // ---- shared mode (draft server functions; only when the household has them: prepEnabled()).
 // The server document is the truth; this device keeps a cache. Settings carry a revision (a stale
 // phone is refused and reloads); ticks are separate, idempotent calls.
-let serverRev=0,lastFetch=0,sharedBusy=false;
+let serverRev=0,lastFetch=0,sharedBusy=false,offerOwn=false;
 function sharedOn(){const h=root.AtokoreHousehold;return !!h?.prepEnabled?.()&&h.homeState?.().joined===true}
+function hid(){return sharedOn()?root.AtokoreHousehold.householdId?.()||null:null}
+function activeKey(){const h=hid();return h?HKEY(h):KEY}
+// The household and sign-in this request belongs to; an answer for another one is dropped.
+function scopeNow(){const h=root.AtokoreHousehold;return hid()+'|'+(h?.sharedEpoch?.()??0)}
 const strip=x=>{const d=JSON.parse(JSON.stringify(x));delete d.done;return d};
-function writeLocal(next){
- const raw=JSON.stringify(next);
- try{root.localStorage.setItem(KEY,raw);if(root.localStorage.getItem(KEY)!==raw)throw Error('verify')}
+function writeLocal(next,household){
+ if(!household||hid()!==household)return false;    // left or switched meanwhile: not this household any more
+ const key=HKEY(household),raw=JSON.stringify(next);
+ try{root.localStorage.setItem(key,raw);if(root.localStorage.getItem(key)!==raw)throw Error('verify')}
  catch(_){lastError='この端末に保存できませんでした。空き容量を確認してください。';paint();return false}
- state=next;snapshot=raw;paint();root.AtokorePackingShortage?.refresh?.();return true;
+ dropHouseholdCopies(key);
+ loadedKey=key;state=next;snapshot=raw;paint();root.AtokorePackingShortage?.refresh?.();return true;
 }
 async function pullShared(force){
- if(!sharedOn()||sharedBusy||locked)return;
+ if(!sharedOn()||sharedBusy)return;
+ if(loadedKey!==activeKey())load();
  if(!force&&Date.now()-lastFetch<60000)return;
+ const household=hid(),scope=scopeNow();
  sharedBusy=true;lastFetch=Date.now();
  try{
   const d=today(),r=await root.AtokoreHousehold.prepGet(d);
+  if(scopeNow()!==scope)return;                       // answered after leaving / switching: ignored
   if(r?.doc){
    const next={...r.doc,done:{[d]:Array.isArray(r.ticks)?r.ticks:[]}};
-   if(valid(next)){serverRev=Number(r.rev)||0;writeLocal(next)}else lastError='家族の持ち物の共有データを読めませんでした（変更はしていません）。';
-  }else if(r&&state.children.length){
-   // First phone to share: its settings become the household's (revision 0 -> 1).
-   const put=await root.AtokoreHousehold.prepPut(strip(state),0);
-   if(put?.status==='ready')serverRev=put.rev;else if(put?.status==='stale'){lastFetch=0;sharedBusy=false;return pullShared(true)}
+   offerOwn=false;
+   if(valid(next)){serverRev=Number(r.rev)||0;writeLocal(next,household)}else lastError='家族の持ち物の共有データを読めませんでした（変更はしていません）。';
+  }else if(r){
+   // Nothing shared in this household yet. Nothing is uploaded by itself: the person may share their
+   // own list (never a list that came from another household) with the button.
+   serverRev=0;offerOwn=!!readOwn()?.children?.length;
   }
- }catch(_){lastError='家族の持ち物を取得できませんでした。通信を確認してください。'}
+ }catch(_){if(scopeNow()===scope)lastError='家族の持ち物を取得できませんでした。通信を確認してください。'}
  finally{sharedBusy=false;paint()}
+}
+async function shareOwn(){
+ const own=readOwn(),household=hid(),scope=scopeNow();
+ if(!own?.children?.length||!household)return;
+ try{
+  const put=await root.AtokoreHousehold.prepPut(strip(own),0);
+  if(scopeNow()!==scope)return;
+  if(put?.status==='ready'){serverRev=put.rev;offerOwn=false;lastError='';writeLocal({...strip(own),done:{}},household);return}
+  if(put?.status==='stale'){offerOwn=false;lastError='家族が先に持ち物を登録しました。家族の内容を表示しています。';await pullShared(true);return}
+  lastError='入力内容を確認してください。';
+ }catch(_){if(scopeNow()===scope)lastError='通信できないため共有できませんでした。つながってからお試しください。'}
+ paint();
 }
 async function editShared(next){
  const d=today(),before=new Set(state.done[d]||[]),after=new Set(next.done[d]||[]);
  const onlyTicks=JSON.stringify(strip(next))===JSON.stringify(strip(state));
+ const household=hid(),scope=scopeNow();
  try{
   if(onlyTicks){
    for(const id of after)if(!before.has(id))await root.AtokoreHousehold.prepTick(d,id,true);
    for(const id of before)if(!after.has(id))await root.AtokoreHousehold.prepTick(d,id,false);
-   lastError='';writeLocal(next);return;
+   if(scopeNow()!==scope)return;
+   lastError='';writeLocal(next,household);return;
   }
   const r=await root.AtokoreHousehold.prepPut(strip(next),serverRev);
-  if(r?.status==='ready'){serverRev=r.rev;lastError='';writeLocal(next);return}
+  if(scopeNow()!==scope)return;
+  if(r?.status==='ready'){serverRev=r.rev;offerOwn=false;lastError='';writeLocal(next,household);return}
   if(r?.status==='stale'){lastError='家族が先に変更しました。最新の内容を表示しています。もう一度操作してください。';await pullShared(true);return}
   lastError='入力内容を確認してください。';paint();
- }catch(_){lastError='通信できないため変更できませんでした（家族と共有中）。つながってからお試しください。';paint()}
+ }catch(_){if(scopeNow()===scope){lastError='通信できないため変更できませんでした（家族と共有中）。つながってからお試しください。';paint()}}
 }
 // Read-modify-write against the bytes this tab last saw; another tab's change wins and reloads.
 function edit(fn){
+ if(loadedKey!==activeKey())load();
  if(locked)return false;
  if(sharedOn()){
   const next=JSON.parse(JSON.stringify(state));fn(next);
@@ -155,6 +193,7 @@ function paint(){
  box.innerHTML='<summary><span>曜日・行事・子どもの持ち物</span><span class="atk-prep-count">'+(rows.length?'今日 '+left+'/'+rows.length:'設定')+'</span></summary>'+
   '<div class="atk-prep-body">'+
   (locked?'<p class="atk-prep-error" role="alert">保存内容を読めないため、変更を止めています（データは消していません）。</p>':'')+
+  (offerOwn&&sharedOn()?'<p class="atk-prep-note">この家族ではまだ持ち物を共有していません。この端末だけに保存していた内容（'+(readOwn()?.children?.length||0)+'人分）を共有できます。</p><button type="button" class="atk-prep-add" data-prep-share-own>この端末の内容を家族と共有する</button>':'')+
   '<p class="atk-prep-day">'+esc(dayLabel)+'の追加</p>'+todayList+
   '<div class="atk-prep-kids" role="group" aria-label="子ども">'+kids.map(c=>'<span class="atk-prep-kid">'+esc(kidLabel(c))+'<button type="button" data-prep-del-child="'+esc(c.id)+'" aria-label="'+esc(c.name)+'を削除">×</button></span>').join('')+
   (kids.length<MAX_CHILDREN?'<span class="atk-prep-addkid"><input type="text" maxlength="20" placeholder="子どもの名前（例：上の子）" aria-label="子どもの名前" data-prep-kid-name><input type="text" maxlength="20" placeholder="園の名前（任意）" aria-label="通っている園の名前（任意）" data-prep-kid-place><button type="button" data-prep-add-child>追加</button></span>':'')+'</div>'+
@@ -185,7 +224,8 @@ if(section){
   }
  });
  section.addEventListener('click',async e=>{
-  const t=e.target.closest?.('[data-prep-add-child],[data-prep-del-child],[data-prep-add],[data-prep-del-week],[data-prep-del-event]');if(!t)return;
+  const t=e.target.closest?.('[data-prep-add-child],[data-prep-del-child],[data-prep-add],[data-prep-del-week],[data-prep-del-event],[data-prep-share-own]');if(!t)return;
+  if(t.hasAttribute('data-prep-share-own')){t.disabled=true;await shareOwn();return}
   if(t.hasAttribute('data-prep-add-child')){
    const name=section.querySelector('[data-prep-kid-name]')?.value.trim().slice(0,20);if(!name)return;
    const place=section.querySelector('[data-prep-kid-place]')?.value.trim().slice(0,20)||'';
@@ -217,9 +257,11 @@ if(section){
   if(t.hasAttribute('data-prep-del-week')){const [c,d,id]=t.getAttribute('data-prep-del-week').split('|');edit(n=>{const r=n.week?.[c]?.[d];if(r)n.week[c][d]=r.filter(x=>x.id!==id)});return}
   if(t.hasAttribute('data-prep-del-event')){const [c,d,id]=t.getAttribute('data-prep-del-event').split('|');edit(n=>{const ev=n.events?.[c]?.[d];if(!ev)return;ev.rows=ev.rows.filter(x=>x.id!==id);if(!ev.rows.length)delete n.events[c][d]});return}
  });
- root.addEventListener?.('storage',e=>{if(e.key===KEY){load();paint();root.AtokorePackingShortage?.refresh?.()}});
+ root.addEventListener?.('storage',e=>{if(e.key===loadedKey){load();paint();root.AtokorePackingShortage?.refresh?.()}});
  section.addEventListener('toggle',e=>{if(e.target?.id==='atkPrepSets'&&e.target.open)void pullShared(true)},true);
- doc.addEventListener('atokore-household-updated',()=>{void pullShared(false)});
+ doc.addEventListener('atokore-household-updated',()=>{if(loadedKey!==activeKey()){load();paint();root.AtokorePackingShortage?.refresh?.()}void pullShared(false)});
+ // Left, removed or signed out: no household copy stays on this phone; the own list comes back.
+ doc.addEventListener('atokore-household-left',()=>{dropHouseholdCopies(null);serverRev=0;offerOwn=false;lastError='';lastFetch=0;loadedKey=null;load();paint();root.AtokorePackingShortage?.refresh?.()});
  paint();
 }
 root.AtokorePrepSets=Object.freeze({KEY,valid,rowsFor,pendingToday,pullShared:()=>pullShared(true),pending:()=>locked?[]:pendingToday(state,today()),refresh:()=>{load();paint()}});

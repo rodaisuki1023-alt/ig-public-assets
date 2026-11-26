@@ -68,13 +68,15 @@ test('notices: marking sent is idempotent and a dropped notice is never marked s
   await call(db,A,'hh_buy_assign',{p_buy:'buy_units_0001',p_assignee:B,p_expected_rev:0});
   const svc=async(sql,args)=>(await db.transaction(async tx=>{await tx.exec('set local role service_role');return (await tx.query(sql,args)).rows})).at(0).r;
   const [due]=await svc('SELECT atokore_private.notify_due_v51(10) r',[]);
-  assert.equal(await svc('SELECT atokore_private.notify_mark_sent_v51($1) r',[due.id]),'marked');
-  assert.equal(await svc('SELECT atokore_private.notify_mark_sent_v51($1) r',[due.id]),'already_sent');
+  assert.equal((await svc('SELECT atokore_private.notify_authorize_v51($1,$2) r',[due.id,due.token])).ok,true);
+  assert.equal(await svc('SELECT atokore_private.notify_complete_v51($1,$2,$3) r',[due.id,due.token,'sent']),'marked');
+  assert.equal(await svc('SELECT atokore_private.notify_complete_v51($1,$2,$3) r',[due.id,due.token,'sent']),'already_sent');
   assert.deepEqual(await svc('SELECT atokore_private.notify_due_v51(10) r',[]),[],'a sent notice is not due again');
   await call(db,A,'hh_buy_assign',{p_buy:'buy_units_0001',p_assignee:null,p_expected_rev:1});
   await call(db,A,'hh_buy_assign',{p_buy:'buy_units_0001',p_assignee:B,p_expected_rev:2});
   await call(db,B,'hh_leave',{});
   const id=(await db.query("SELECT id FROM atokore_private.notify_outbox WHERE sent_at IS NULL")).rows[0].id;
-  assert.equal(await svc('SELECT atokore_private.notify_mark_sent_v51($1) r',[id]),'dropped');
+  assert.equal(await svc('SELECT atokore_private.notify_complete_v51($1,$2,$3) r',[id,null,'failed']),'dropped');
+  assert.equal(await svc('SELECT atokore_private.notify_complete_v51($1,$2,$3) r',[id,null,'sent']),'not_authorized','a dropped notice is never marked sent');
  }finally{await db.close()}
 });

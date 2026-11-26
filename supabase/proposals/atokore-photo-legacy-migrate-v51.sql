@@ -23,7 +23,12 @@
 -- 2) Orphan collection for a trusted worker, re-checked under the same locks right before any deletion.
 -- 3) Read checks: every attached photo of a trial household can be read and hash-checked by the worker;
 --    closing the legacy bucket requires one for each (atokore-photo-legacy-close-reads-v51.sql).
--- Only households on the synthetic trial allowlist; only the two fixed buckets. Service role only.
+-- v51 (Work 6th): every resume of a 'verified' move reads the copy again; the delete is allowed only
+-- when that fresh read, the copy's object generation, the legacy object's generation (unchanged since the
+-- copy), a backup copy of the legacy bytes (fixed backup bucket) and closed legacy write paths all hold;
+-- otherwise it is refused. A failed read takes the move back to 'switched'. A restore works after the
+-- legacy object is gone: the backup bytes go to a NEW managed id and must read back through the gateway.
+-- Only households on the synthetic trial allowlist; only the three fixed buckets. Service role only.
 -- No client grant. No Storage API calls from SQL, no SQL DELETE on storage objects.
 BEGIN;
 DO $req$ BEGIN
@@ -52,6 +57,7 @@ CREATE TABLE atokore_private.photo_legacy_moves_v51 (
   legacy_sha256 text CHECK(legacy_sha256 ~ '^[0-9a-f]{64}$'),
   copy_sha256 text CHECK(copy_sha256 ~ '^[0-9a-f]{64}$'),
   read_sha256 text CHECK(read_sha256 ~ '^[0-9a-f]{64}$'),
+  legacy_gen text,                 -- the legacy object's generation when the move began
   bytes integer CHECK(bytes BETWEEN 1 AND 81920),
   attempts integer NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -71,7 +77,12 @@ CREATE TABLE atokore_private.photo_legacy_backup_v51 (
   record_id text NOT NULL,
   photo_path text NOT NULL,
   record_seq bigint NOT NULL,
-  taken_at timestamptz NOT NULL DEFAULT now()
+  taken_at timestamptz NOT NULL DEFAULT now(),
+  -- a copy of the legacy BYTES in the fixed backup bucket, recorded before the legacy object may go
+  backup_path text,
+  backup_sha256 text CHECK(backup_sha256 ~ '^[0-9a-f]{64}$'),
+  backup_bytes integer CHECK(backup_bytes BETWEEN 1 AND 81920),
+  backup_gen text
 );
 ALTER TABLE atokore_private.photo_legacy_backup_v51 ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON atokore_private.photo_legacy_backup_v51 FROM PUBLIC, anon, authenticated;
@@ -81,6 +92,7 @@ CREATE TABLE atokore_private.photo_read_checks_v51 (
   file_id uuid PRIMARY KEY REFERENCES atokore_private.photo_ledger_v50(file_id),
   sha256 text NOT NULL CHECK(sha256 ~ '^[0-9a-f]{64}$'),
   bytes integer NOT NULL CHECK(bytes BETWEEN 1 AND 81920),
+  gen text NOT NULL,               -- the object generation that was read (any later write invalidates it)
   checked_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE atokore_private.photo_read_checks_v51 ENABLE ROW LEVEL SECURITY;
@@ -89,6 +101,22 @@ REVOKE ALL ON atokore_private.photo_read_checks_v51 FROM PUBLIC, anon, authentic
 -- The system actor of migration ledger rows (no person; never a member).
 CREATE FUNCTION atokore_private.photo_system_actor_v51() RETURNS uuid LANGUAGE sql IMMUTABLE SET search_path=''
 AS $$ SELECT '00000000-0000-0000-0000-000000000000'::uuid $$;
+
+-- The generation of one Storage object: changes whenever the object is written again at that path
+-- (Supabase updates updated_at and the eTag in metadata). NULL when the object does not exist.
+CREATE FUNCTION atokore_private.photo_object_gen_v51(p_bucket text,p_name text) RETURNS text
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $$ SELECT md5(o.id::text||'|'||coalesce(o.updated_at::text,'')||'|'||coalesce(o.metadata->>'eTag','')||'|'||coalesce(o.metadata->>'size',''))
+  FROM storage.objects o WHERE o.bucket_id=p_bucket AND o.name=p_name $$;
+
+-- No client role can write the legacy bucket any more (stage 1 applied: no INSERT/UPDATE/ALL policy on
+-- storage.objects that names it). Storage has no conditional delete, so without this the object could be
+-- written again between the last check and the delete; the delete is refused instead.
+CREATE FUNCTION atokore_private.photo_legacy_writes_closed_v51() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $$ SELECT NOT EXISTS(SELECT 1 FROM pg_policies p WHERE p.schemaname='storage' AND p.tablename='objects'
+  AND p.cmd IN ('INSERT','UPDATE','ALL')
+  AND (p.policyname='atokore_photo_insert' OR coalesce(p.qual,'')||coalesce(p.with_check,'') LIKE '%atokore-product-photos%')) $$;
 
 -- A reference is legacy when no attached ledger row has exactly that path for that record.
 CREATE FUNCTION atokore_private.photo_is_legacy_ref_v51(p_h uuid,p_r text,p_path text) RETURNS boolean
@@ -144,7 +172,8 @@ BEGIN
   VALUES(p_h,p_r,atokore_private.photo_system_actor_v51(),gen_random_uuid(),v_old,v_rec.seq,'uploading',clock_timestamp()+interval '1 day')
   RETURNING * INTO v_row;
  INSERT INTO atokore_private.photo_legacy_backup_v51(file_id,household_id,record_id,photo_path,record_seq) VALUES(v_row.file_id,p_h,p_r,v_old,v_rec.seq);
- INSERT INTO atokore_private.photo_legacy_moves_v51(household_id,record_id,legacy_path,file_id) VALUES(p_h,p_r,v_old,v_row.file_id) RETURNING * INTO v_move;
+ INSERT INTO atokore_private.photo_legacy_moves_v51(household_id,record_id,legacy_path,file_id,legacy_gen)
+  VALUES(p_h,p_r,v_old,v_row.file_id,atokore_private.photo_object_gen_v51('atokore-product-photos',v_old)) RETURNING * INTO v_move;
  RETURN atokore_private.photo_legacy_move_json_v51(v_move,false);
 END $fn$;
 
@@ -171,6 +200,12 @@ BEGIN
  IF v_move.state IN ('abandoned','restored') THEN RETURN jsonb_build_object('status',v_move.state,'reused',true); END IF;
  IF NOT EXISTS(SELECT 1 FROM storage.objects WHERE bucket_id='atokore-private-photos-v2' AND name=v_path)
  THEN RAISE EXCEPTION 'photo_storage_unconfirmed' USING ERRCODE='55000'; END IF;
+ -- The legacy object itself was written again after the move began: the copy may be of other bytes.
+ IF atokore_private.photo_object_gen_v51('atokore-product-photos',v_move.legacy_path) IS DISTINCT FROM v_move.legacy_gen THEN
+  UPDATE atokore_private.photo_ledger_v50 SET state='retired' WHERE file_id=p_file;
+  UPDATE atokore_private.photo_legacy_moves_v51 SET state='abandoned',updated_at=clock_timestamp() WHERE file_id=p_file;
+  RETURN jsonb_build_object('status','abandoned','why','legacy_changed','reused',false);
+ END IF;
  -- The person changed or removed the photo (or the product) while copying: keep their change,
  -- abandon the move; the copy is retired and collected as an orphan. Nothing is overwritten.
  IF v_rec.id IS NULL OR v_rec.deleted OR v_rec.seq IS DISTINCT FROM v_row.expected_seq
@@ -208,11 +243,12 @@ BEGIN
    AND atokore_private.trial_allowed_v51(l.household_id)
    AND EXISTS(SELECT 1 FROM atokore_private.members m WHERE m.household_id=h.id AND m.left_at IS NULL);
  IF NOT FOUND THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
- RETURN jsonb_build_object('path',atokore_private.photo_object_path_v50(v_row),'sha',v_row.upload_sha256,'bytes',v_row.actual_bytes);
+ RETURN jsonb_build_object('path',atokore_private.photo_object_path_v50(v_row),'sha',v_row.upload_sha256,'bytes',v_row.actual_bytes,
+  'gen',atokore_private.photo_object_gen_v51('atokore-private-photos-v2',atokore_private.photo_object_path_v50(v_row)));
 END $fn$;
 
 -- Records a successful read (bytes hashed by the worker). For a move it must equal the legacy bytes.
-CREATE FUNCTION atokore_private.photo_read_checked_v51(p_file uuid,p_sha text,p_bytes integer)
+CREATE FUNCTION atokore_private.photo_read_checked_v51(p_file uuid,p_sha text,p_bytes integer,p_gen text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
 DECLARE v_row atokore_private.photo_ledger_v50%ROWTYPE; v_move atokore_private.photo_legacy_moves_v51%ROWTYPE; v_t jsonb;
@@ -221,36 +257,91 @@ BEGIN
  IF NOT FOUND THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
  PERFORM atokore_private.photo_legacy_lock_v51(v_row.household_id,v_row.record_id);
  v_t:=atokore_private.photo_read_target_v51(p_file);   -- still readable now, under the lock
+ -- The generation the worker saw when it started reading must still be the object's generation now:
+ -- a write in between (same path, other bytes) makes the read meaningless.
  IF p_sha IS NULL OR p_sha IS DISTINCT FROM v_t->>'sha' OR p_bytes IS DISTINCT FROM (v_t->>'bytes')::int
+   OR p_gen IS NULL OR p_gen IS DISTINCT FROM v_t->>'gen'
  THEN RAISE EXCEPTION 'photo_read_mismatch' USING ERRCODE='55000'; END IF;
  SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_file FOR UPDATE;
- IF FOUND AND v_move.state='switched' THEN
+ IF FOUND AND v_move.state IN ('switched','verified') THEN
   IF p_sha IS DISTINCT FROM v_move.legacy_sha256 THEN RAISE EXCEPTION 'photo_read_mismatch' USING ERRCODE='55000'; END IF;
   UPDATE atokore_private.photo_legacy_moves_v51 SET state='verified',read_sha256=p_sha,updated_at=clock_timestamp() WHERE file_id=p_file;
  END IF;
- INSERT INTO atokore_private.photo_read_checks_v51(file_id,sha256,bytes) VALUES(p_file,p_sha,p_bytes)
-  ON CONFLICT (file_id) DO UPDATE SET sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,checked_at=now();
+ INSERT INTO atokore_private.photo_read_checks_v51(file_id,sha256,bytes,gen) VALUES(p_file,p_sha,p_bytes,p_gen)
+  ON CONFLICT (file_id) DO UPDATE SET sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,gen=EXCLUDED.gen,checked_at=now();
  RETURN jsonb_build_object('ok',true,'move',COALESCE((SELECT state FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_file),'none'));
+END $fn$;
+
+-- A read that failed (502, timeout, other bytes): the earlier check no longer counts, and a verified move
+-- goes back to 'switched' (its legacy photo stays until a new read succeeds).
+CREATE FUNCTION atokore_private.photo_read_failed_v51(p_file uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE v_row atokore_private.photo_ledger_v50%ROWTYPE;
+BEGIN
+ SELECT * INTO v_row FROM atokore_private.photo_ledger_v50 WHERE file_id=p_file;
+ IF NOT FOUND THEN RETURN jsonb_build_object('ok',false); END IF;
+ PERFORM atokore_private.photo_legacy_lock_v51(v_row.household_id,v_row.record_id);
+ DELETE FROM atokore_private.photo_read_checks_v51 WHERE file_id=p_file;
+ UPDATE atokore_private.photo_legacy_moves_v51 SET state='switched',updated_at=clock_timestamp() WHERE file_id=p_file AND state='verified';
+ RETURN jsonb_build_object('ok',true);
+END $fn$;
+
+-- The worker copied the legacy bytes to the fixed backup bucket (path = the move's target form) and
+-- hashed them; they must be the legacy bytes. Recorded with the backup object's generation.
+CREATE FUNCTION atokore_private.photo_legacy_backup_recorded_v51(p_file uuid,p_sha text,p_bytes integer)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE v_move atokore_private.photo_legacy_moves_v51%ROWTYPE; v_path text;
+BEGIN
+ SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_file;
+ IF NOT FOUND THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
+ PERFORM atokore_private.photo_legacy_lock_v51(v_move.household_id,v_move.record_id);
+ SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_file FOR UPDATE;
+ v_path:=v_move.household_id::text||'/'||v_move.record_id||'/'||p_file::text||'.jpg';
+ IF v_move.state NOT IN ('switched','verified') OR p_sha IS NULL OR p_sha IS DISTINCT FROM v_move.legacy_sha256
+   OR p_bytes IS DISTINCT FROM v_move.bytes OR atokore_private.photo_object_gen_v51('atokore-photo-backup-v51',v_path) IS NULL
+ THEN RAISE EXCEPTION 'photo_backup_unverified' USING ERRCODE='55000'; END IF;
+ UPDATE atokore_private.photo_legacy_backup_v51 SET backup_path=v_path,backup_sha256=p_sha,backup_bytes=p_bytes,
+   backup_gen=atokore_private.photo_object_gen_v51('atokore-photo-backup-v51',v_path) WHERE file_id=p_file;
+ RETURN jsonb_build_object('ok',true,'path',v_path);
 END $fn$;
 
 -- Immediately before the Storage API delete of a legacy object, under the photo locks.
 CREATE FUNCTION atokore_private.photo_legacy_delete_ok_v51(p_file uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
-DECLARE v_move atokore_private.photo_legacy_moves_v51%ROWTYPE;
+DECLARE v_move atokore_private.photo_legacy_moves_v51%ROWTYPE; v_c atokore_private.photo_read_checks_v51%ROWTYPE;
+ v_b atokore_private.photo_legacy_backup_v51%ROWTYPE; v_row atokore_private.photo_ledger_v50%ROWTYPE;
 BEGIN
  SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_file;
  IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'why','unknown'); END IF;
  PERFORM atokore_private.photo_legacy_lock_v51(v_move.household_id,v_move.record_id);
  SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_file FOR UPDATE;
+ SELECT * INTO v_row FROM atokore_private.photo_ledger_v50 WHERE file_id=p_file;
+ SELECT * INTO v_c FROM atokore_private.photo_read_checks_v51 WHERE file_id=p_file;
+ SELECT * INTO v_b FROM atokore_private.photo_legacy_backup_v51 WHERE file_id=p_file;
  IF v_move.state='done' THEN RETURN jsonb_build_object('ok',false,'why','done'); END IF;
  IF v_move.state<>'verified' THEN RETURN jsonb_build_object('ok',false,'why','not_verified'); END IF;
+ -- A fresh read (this run), of the copy as it is now.
+ IF v_c.file_id IS NULL OR v_c.checked_at<clock_timestamp()-interval '10 minutes' OR v_c.sha256 IS DISTINCT FROM v_row.upload_sha256
+   OR v_c.gen IS DISTINCT FROM atokore_private.photo_object_gen_v51('atokore-private-photos-v2',atokore_private.photo_object_path_v50(v_row))
+ THEN RETURN jsonb_build_object('ok',false,'why','read_not_fresh'); END IF;
+ -- The legacy object is still the one that was copied.
+ IF atokore_private.photo_object_gen_v51('atokore-product-photos',v_move.legacy_path) IS DISTINCT FROM v_move.legacy_gen
+   AND atokore_private.photo_object_gen_v51('atokore-product-photos',v_move.legacy_path) IS NOT NULL
+ THEN RETURN jsonb_build_object('ok',false,'why','legacy_changed'); END IF;
+ -- A backup of the legacy bytes exists, unchanged.
+ IF v_b.backup_sha256 IS NULL OR v_b.backup_gen IS DISTINCT FROM atokore_private.photo_object_gen_v51('atokore-photo-backup-v51',v_b.backup_path)
+ THEN RETURN jsonb_build_object('ok',false,'why','no_backup'); END IF;
+ -- No client can write the legacy bucket (no conditional delete in Storage).
+ IF NOT atokore_private.photo_legacy_writes_closed_v51() THEN RETURN jsonb_build_object('ok',false,'why','legacy_writes_open'); END IF;
  -- Another product (even a deleted one, which a restore could bring back) still points at it.
  IF EXISTS(SELECT 1 FROM atokore_private.records WHERE fields->>'photoPath'=v_move.legacy_path)
  THEN RETURN jsonb_build_object('ok',false,'why','still_referenced'); END IF;
  IF EXISTS(SELECT 1 FROM atokore_private.photo_legacy_moves_v51 WHERE legacy_path=v_move.legacy_path AND file_id<>p_file AND state IN ('copying','switched'))
  THEN RETURN jsonb_build_object('ok',false,'why','other_move_open'); END IF;
- RETURN jsonb_build_object('ok',true,'bucket','atokore-product-photos','path',v_move.legacy_path);
+ RETURN jsonb_build_object('ok',true,'bucket','atokore-product-photos','path',v_move.legacy_path,'gen',v_move.legacy_gen);
 END $fn$;
 
 -- After the worker removed the legacy object through the Storage API.
@@ -271,13 +362,15 @@ BEGIN
  RETURN true;
 END $fn$;
 
--- Rehearsal / rollback of one move while the legacy object still exists: the product points at its
--- legacy photo again (from the backup), the managed copy is retired and collected later.
+-- Rehearsal / rollback of one move. While the legacy object exists, the product points at it again (from
+-- the backup row). After it is gone, a NEW managed id is prepared for the backup bytes (status
+-- copy_backup): the worker copies the backup object there and calls restore_commit; the product then points
+-- at the new id, which must read back through the gateway like any photo.
 CREATE FUNCTION atokore_private.photo_legacy_restore_v51(p_file uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
 DECLARE v_move atokore_private.photo_legacy_moves_v51%ROWTYPE; v_b atokore_private.photo_legacy_backup_v51%ROWTYPE;
- v_rec atokore_private.records%ROWTYPE; v_row atokore_private.photo_ledger_v50%ROWTYPE; v_seq bigint;
+ v_rec atokore_private.records%ROWTYPE; v_row atokore_private.photo_ledger_v50%ROWTYPE; v_new atokore_private.photo_ledger_v50%ROWTYPE; v_seq bigint;
 BEGIN
  SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_file;
  IF NOT FOUND THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
@@ -286,20 +379,64 @@ BEGIN
  SELECT * INTO v_b FROM atokore_private.photo_legacy_backup_v51 WHERE file_id=p_file;
  SELECT * INTO v_row FROM atokore_private.photo_ledger_v50 WHERE file_id=p_file FOR UPDATE;
  IF v_move.state='restored' THEN RETURN jsonb_build_object('status','restored','reused',true); END IF;
- IF v_move.state NOT IN ('switched','verified') THEN RAISE EXCEPTION 'photo_restore_not_possible' USING ERRCODE='55000'; END IF;
- IF NOT EXISTS(SELECT 1 FROM storage.objects WHERE bucket_id='atokore-product-photos' AND name=v_b.photo_path)
- THEN RAISE EXCEPTION 'photo_legacy_object_missing' USING ERRCODE='55000'; END IF;
+ IF v_move.state NOT IN ('switched','verified','done') THEN RAISE EXCEPTION 'photo_restore_not_possible' USING ERRCODE='55000'; END IF;
  IF v_rec.id IS NULL OR v_rec.deleted OR v_rec.fields->>'photoPath' IS DISTINCT FROM atokore_private.photo_object_path_v50(v_row)
  THEN RAISE EXCEPTION 'photo_stale_reference' USING ERRCODE='40001'; END IF;
- PERFORM set_config('atokore.photo_legacy_restore',p_file::text,true);
- UPDATE atokore_private.records SET fields=jsonb_set(fields,'{photoPath}',to_jsonb(v_b.photo_path),true),
+ IF EXISTS(SELECT 1 FROM storage.objects WHERE bucket_id='atokore-product-photos' AND name=v_b.photo_path) THEN
+  PERFORM set_config('atokore.photo_legacy_restore',p_file::text,true);
+  UPDATE atokore_private.records SET fields=jsonb_set(fields,'{photoPath}',to_jsonb(v_b.photo_path),true),
+    seq=nextval('atokore_private.change_seq'),updated_at=clock_timestamp()
+   WHERE household_id=v_move.household_id AND kind='item' AND id=v_move.record_id RETURNING seq INTO v_seq;
+  PERFORM set_config('atokore.photo_legacy_restore','',true);
+  UPDATE atokore_private.photo_ledger_v50 SET state='retired' WHERE file_id=p_file;
+  DELETE FROM atokore_private.photo_read_checks_v51 WHERE file_id=p_file;
+  UPDATE atokore_private.photo_legacy_moves_v51 SET state='restored',updated_at=clock_timestamp() WHERE file_id=p_file;
+  RETURN jsonb_build_object('status','restored','path',v_b.photo_path,'seq',v_seq,'reused',false);
+ END IF;
+ -- The legacy object is gone: restore from the backup bytes to a new id.
+ IF v_b.backup_sha256 IS NULL OR v_b.backup_gen IS DISTINCT FROM atokore_private.photo_object_gen_v51('atokore-photo-backup-v51',v_b.backup_path)
+ THEN RAISE EXCEPTION 'photo_backup_missing' USING ERRCODE='55000'; END IF;
+ SELECT * INTO v_new FROM atokore_private.photo_ledger_v50 WHERE household_id=v_move.household_id AND record_id=v_move.record_id
+  AND state='uploading' AND operation_id=p_file;                 -- an earlier, unfinished restore of this move
+ IF NOT FOUND THEN
+  INSERT INTO atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_path,expected_seq,state,expires_at)
+   VALUES(v_move.household_id,v_move.record_id,atokore_private.photo_system_actor_v51(),p_file,v_rec.fields->>'photoPath',v_rec.seq,'uploading',clock_timestamp()+interval '1 day')
+   RETURNING * INTO v_new;
+ END IF;
+ RETURN jsonb_build_object('status','copy_backup','file_id',v_new.file_id,'backup_path',v_b.backup_path,'target_path',atokore_private.photo_object_path_v50(v_new));
+END $fn$;
+
+CREATE FUNCTION atokore_private.photo_legacy_restore_commit_v51(p_move uuid,p_new uuid,p_bytes integer,p_sha text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE v_move atokore_private.photo_legacy_moves_v51%ROWTYPE; v_b atokore_private.photo_legacy_backup_v51%ROWTYPE;
+ v_rec atokore_private.records%ROWTYPE; v_new atokore_private.photo_ledger_v50%ROWTYPE; v_path text; v_seq bigint;
+BEGIN
+ SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_move;
+ IF NOT FOUND THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
+ v_rec:=atokore_private.photo_legacy_lock_v51(v_move.household_id,v_move.record_id);
+ SELECT * INTO v_move FROM atokore_private.photo_legacy_moves_v51 WHERE file_id=p_move FOR UPDATE;
+ SELECT * INTO v_b FROM atokore_private.photo_legacy_backup_v51 WHERE file_id=p_move;
+ SELECT * INTO v_new FROM atokore_private.photo_ledger_v50 WHERE file_id=p_new AND operation_id=p_move AND household_id=v_move.household_id AND record_id=v_move.record_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'photo_denied' USING ERRCODE='42501'; END IF;
+ v_path:=atokore_private.photo_object_path_v50(v_new);
+ IF v_move.state='restored' AND v_new.state='attached' THEN RETURN jsonb_build_object('status','restored','path',v_path,'reused',true); END IF;
+ IF p_sha IS NULL OR p_sha IS DISTINCT FROM v_b.backup_sha256 OR p_bytes IS DISTINCT FROM v_b.backup_bytes
+   OR atokore_private.photo_object_gen_v51('atokore-private-photos-v2',v_path) IS NULL
+ THEN RAISE EXCEPTION 'photo_copy_unverified' USING ERRCODE='22023'; END IF;
+ IF v_rec.seq IS DISTINCT FROM v_new.expected_seq OR v_rec.fields->>'photoPath' IS DISTINCT FROM v_new.expected_path
+ THEN RAISE EXCEPTION 'photo_stale_reference' USING ERRCODE='40001'; END IF;
+ -- The ordinary v50 rule: retire the current attached photo, attach the new one, switch in one step.
+ UPDATE atokore_private.photo_ledger_v50 SET state='retired' WHERE household_id=v_move.household_id AND record_id=v_move.record_id
+  AND state='attached' AND atokore_private.photo_object_path_v50(photo_ledger_v50)=v_rec.fields->>'photoPath';
+ UPDATE atokore_private.photo_ledger_v50 SET state='attached',actual_bytes=p_bytes,upload_sha256=p_sha WHERE file_id=p_new;
+ UPDATE atokore_private.records SET fields=jsonb_set(fields,'{photoPath}',to_jsonb(v_path),true),
    seq=nextval('atokore_private.change_seq'),updated_at=clock_timestamp()
-  WHERE household_id=v_move.household_id AND kind='item' AND id=v_move.record_id RETURNING seq INTO v_seq;
- PERFORM set_config('atokore.photo_legacy_restore','',true);
- UPDATE atokore_private.photo_ledger_v50 SET state='retired' WHERE file_id=p_file;
- DELETE FROM atokore_private.photo_read_checks_v51 WHERE file_id=p_file;
- UPDATE atokore_private.photo_legacy_moves_v51 SET state='restored',updated_at=clock_timestamp() WHERE file_id=p_file;
- RETURN jsonb_build_object('status','restored','path',v_b.photo_path,'seq',v_seq,'reused',false);
+  WHERE household_id=v_move.household_id AND kind='item' AND id=v_move.record_id AND seq=v_rec.seq RETURNING seq INTO v_seq;
+ IF NOT FOUND THEN RAISE EXCEPTION 'photo_stale_reference' USING ERRCODE='40001'; END IF;
+ DELETE FROM atokore_private.photo_read_checks_v51 WHERE file_id=p_move;
+ UPDATE atokore_private.photo_legacy_moves_v51 SET state='restored',updated_at=clock_timestamp() WHERE file_id=p_move;
+ RETURN jsonb_build_object('status','restored','path',v_path,'seq',v_seq,'file_id',p_new,'reused',false);
 END $fn$;
 
 -- Lets the migration commit and the restore rehearsal (and only they) replace a path. The rest of the
@@ -368,7 +505,7 @@ AS $fn$
    SELECT jsonb_build_object('action','purge','file_id',l.file_id,'path',atokore_private.photo_object_path_v50(l)),2,l.reserved_at
     FROM atokore_private.photo_ledger_v50 l WHERE l.state IN ('retired','purging') AND atokore_private.trial_allowed_v51(l.household_id)
    UNION ALL
-   SELECT jsonb_build_object('action','orphan_object','path',o.name),3,o.created_at
+   SELECT jsonb_build_object('action','orphan_object','path',o.name,'gen',atokore_private.photo_object_gen_v51(o.bucket_id,o.name)),3,o.created_at
     FROM storage.objects o WHERE o.bucket_id='atokore-private-photos-v2' AND o.created_at<=clock_timestamp()-p_grace
      AND o.name ~ '^[0-9a-f-]{36}/'
      AND EXISTS(SELECT 1 FROM atokore_private.trial_households_v51 t WHERE t.household_id::text=split_part(o.name,'/',1))
@@ -384,14 +521,15 @@ $fn$;
 
 -- Right before deleting an unledgered object: a trial household's, still unledgered, referenced by no
 -- record. The same global lock as reserve/begin, so an upload cannot be reserved in between.
-CREATE FUNCTION atokore_private.photo_orphan_object_ok_v51(p_path text)
+CREATE FUNCTION atokore_private.photo_orphan_object_ok_v51(p_path text,p_gen text)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
 BEGIN
  PERFORM 1 FROM atokore_private.photo_quota_lock_v50 WHERE singleton FOR UPDATE;
  RETURN p_path IS NOT NULL AND p_path ~ '^[0-9a-f-]{36}/[A-Za-z0-9_-]{8,64}/[0-9a-f-]{36}\.jpg$'
   AND EXISTS(SELECT 1 FROM atokore_private.trial_households_v51 t WHERE t.household_id::text=split_part(p_path,'/',1))
-  AND EXISTS(SELECT 1 FROM storage.objects WHERE bucket_id='atokore-private-photos-v2' AND name=p_path)
+  -- the very object that was listed (a write since then makes it something else: keep it)
+  AND p_gen IS NOT NULL AND atokore_private.photo_object_gen_v51('atokore-private-photos-v2',p_path)=p_gen
   AND NOT EXISTS(SELECT 1 FROM atokore_private.photo_ledger_v50 l WHERE atokore_private.photo_object_path_v50(l)=p_path)
   AND NOT EXISTS(SELECT 1 FROM atokore_private.records WHERE fields->>'photoPath'=p_path);
 END $fn$;
@@ -404,23 +542,29 @@ AS $fn$
   SELECT l.file_id FROM atokore_private.photo_ledger_v50 l
    LEFT JOIN atokore_private.photo_read_checks_v51 c ON c.file_id=l.file_id
    WHERE l.state='attached' AND atokore_private.trial_allowed_v51(l.household_id)
-     AND (c.file_id IS NULL OR c.sha256 IS DISTINCT FROM l.upload_sha256)
+     AND (c.file_id IS NULL OR c.sha256 IS DISTINCT FROM l.upload_sha256
+          OR c.gen IS DISTINCT FROM atokore_private.photo_object_gen_v51('atokore-private-photos-v2',atokore_private.photo_object_path_v50(l)))
    ORDER BY l.reserved_at LIMIT least(greatest(coalesce(p_limit,50),1),200)) l
 $fn$;
 
 REVOKE ALL ON FUNCTION atokore_private.photo_system_actor_v51(),atokore_private.photo_is_legacy_ref_v51(uuid,text,text),
+ atokore_private.photo_object_gen_v51(text,text),atokore_private.photo_legacy_writes_closed_v51(),
  atokore_private.photo_legacy_lock_v51(uuid,text),atokore_private.photo_legacy_move_json_v51(atokore_private.photo_legacy_moves_v51,boolean),
  atokore_private.photo_legacy_begin_v51(uuid,text),atokore_private.photo_legacy_commit_v51(uuid,integer,text,text),
- atokore_private.photo_read_target_v51(uuid),atokore_private.photo_read_checked_v51(uuid,text,integer),
+ atokore_private.photo_read_target_v51(uuid),atokore_private.photo_read_checked_v51(uuid,text,integer,text),atokore_private.photo_read_failed_v51(uuid),
+ atokore_private.photo_legacy_backup_recorded_v51(uuid,text,integer),
  atokore_private.photo_legacy_delete_ok_v51(uuid),atokore_private.photo_legacy_finish_v51(uuid,boolean),
- atokore_private.photo_legacy_restore_v51(uuid),atokore_private.photo_orphans_v51(integer,interval),
- atokore_private.photo_orphan_object_ok_v51(text),atokore_private.photo_read_check_due_v51(integer) FROM PUBLIC,anon,authenticated;
+ atokore_private.photo_legacy_restore_v51(uuid),atokore_private.photo_legacy_restore_commit_v51(uuid,uuid,integer,text),
+ atokore_private.photo_orphans_v51(integer,interval),
+ atokore_private.photo_orphan_object_ok_v51(text,text),atokore_private.photo_read_check_due_v51(integer) FROM PUBLIC,anon,authenticated;
 GRANT USAGE ON SCHEMA atokore_private TO service_role;
 GRANT EXECUTE ON FUNCTION atokore_private.photo_legacy_begin_v51(uuid,text),atokore_private.photo_legacy_commit_v51(uuid,integer,text,text),
- atokore_private.photo_read_target_v51(uuid),atokore_private.photo_read_checked_v51(uuid,text,integer),
+ atokore_private.photo_read_target_v51(uuid),atokore_private.photo_read_checked_v51(uuid,text,integer,text),atokore_private.photo_read_failed_v51(uuid),
+ atokore_private.photo_legacy_backup_recorded_v51(uuid,text,integer),
  atokore_private.photo_legacy_delete_ok_v51(uuid),atokore_private.photo_legacy_finish_v51(uuid,boolean),
- atokore_private.photo_legacy_restore_v51(uuid),atokore_private.photo_orphans_v51(integer,interval),
- atokore_private.photo_orphan_object_ok_v51(text),atokore_private.photo_read_check_due_v51(integer),
+ atokore_private.photo_legacy_restore_v51(uuid),atokore_private.photo_legacy_restore_commit_v51(uuid,uuid,integer,text),
+ atokore_private.photo_orphans_v51(integer,interval),
+ atokore_private.photo_orphan_object_ok_v51(text,text),atokore_private.photo_read_check_due_v51(integer),
  atokore_private.photo_retire_expired_v50(uuid),atokore_private.photo_claim_purge_v50(uuid),
  atokore_private.photo_finish_purge_v50(uuid,boolean) TO service_role;
 COMMIT;

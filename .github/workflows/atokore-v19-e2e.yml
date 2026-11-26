@@ -109,6 +109,10 @@ jobs:
         env:
           ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
         run: node tests/household/photo-legacy-close-postgres.cjs
+      - name: Real PostgreSQL Work 6th fixes (photo generation, notice reservations, undo window on every entry)
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/safety3-postgres.cjs
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -178,6 +182,10 @@ jobs:
           node --test tests/atokore-stock-levels-v51.test.cjs tests/atokore-tools-v51.test.cjs tests/atokore-units-v51.test.cjs
           node --test tests/atokore-prep-sets-v51.test.cjs tests/atokore-entitlements-v51.test.cjs tests/atokore-notify-policy-v51.test.cjs tests/atokore-usage-monitor-v51.test.cjs
           node --test --test-concurrency=1 tests/atokore-buy-assignment-v51.test.cjs tests/atokore-prep-share-v51.test.cjs tests/atokore-photo-legacy-closure-v51.test.cjs
+          # v51 SQL drafts and their Work 6th regressions (photo move/close, notices, undo window, per-unit rollback)
+          node --test --test-concurrency=1 tests/atokore-photo-legacy-migrate-v51.test.cjs tests/atokore-photo-regressions-v51.test.cjs \
+            tests/atokore-notify-claim-v51.test.cjs tests/atokore-purchase-undo-window-v51.test.cjs tests/atokore-undo-window-guard-v51.test.cjs \
+            tests/atokore-sql-units-rollback-v51.test.cjs tests/atokore-safe-trial-build.test.cjs
           node --test tests/atokore-buy-duplicates-v48.test.cjs
           node --test tests/atokore-baby-food-search-v48.test.cjs
           node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \

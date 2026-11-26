@@ -40,6 +40,8 @@ async function setup(){
   CREATE TABLE IF NOT EXISTS storage.objects(bucket_id text,name text,UNIQUE(bucket_id,name));
   ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS metadata jsonb;
   ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+  ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS id uuid NOT NULL DEFAULT gen_random_uuid();
+  ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
   ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
   GRANT USAGE ON SCHEMA storage TO anon,authenticated;GRANT SELECT,INSERT,DELETE ON storage.objects TO authenticated;`);
  if(!await has("SELECT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='storage' AND tablename='objects' AND policyname='atokore_photo_read') ok"))

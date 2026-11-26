@@ -123,17 +123,48 @@ doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')
 root.addEventListener?.('pageshow',()=>renderLastPurchase());
 doc.addEventListener('atokore-page-changed',()=>clearUndo());
 doc.addEventListener('atokore-page-changed',()=>renderLastPurchase());
-// v51 (Work: recovery after a server undo): estimate repairs that could not be saved yet.
-const estimateRepairs=[];
+// v51 (Work 6th: recovery after a server undo must survive a reload or force-quit). Before a shared undo
+// of a purchase that entered an estimate is sent, a repair record tied to the purchase (its shared buy
+// ids) is SAVED; if it cannot be saved, nothing is sent. It is cleared only once the estimate repair is
+// saved, or once a fresh server view shows the purchase was not undone. On every start, sync and return
+// to the app, a fresh server view decides: the buy row is back on the list -> the undo happened -> the
+// estimate fields of that purchase are removed (idempotent: only while they still hold that purchase).
+const REPAIR='atokoreUndoRepairV1';
+const REPAIR_SETTLE_MS=120000;   // an answer may still be on its way this long after a start-over
+const repairing=new Set();       // purchases whose undo is running in this page right now
 function revertEstimate(changes){const cur=snapshot();for(const c of changes)undoEntries(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
-function retryEstimateRepairs(){
- while(estimateRepairs.length){
-  try{revertEstimate(estimateRepairs[0]);estimateRepairs.shift();if(!estimateRepairs.length)message('見積もりも取り消しました')}
-  catch(e){console.error('あとこれ: 見積もりの取り消し（再試行）',e);return}
- }
+function readRepairs(){
+ try{const v=JSON.parse(root.localStorage.getItem(REPAIR)||'[]');return Array.isArray(v)?v.filter(r=>r&&typeof r.id==='string'&&Array.isArray(r.buys)&&r.buys.length&&Array.isArray(r.changes)):[]}
+ catch(e){console.error('あとこれ: 見積もりの修復記録を読めません',e);return []}
 }
-doc.addEventListener('atokore-household-updated',retryEstimateRepairs);
-doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')retryEstimateRepairs()});
+function writeRepairs(list){
+ const raw=JSON.stringify(list);
+ if(list.length){root.localStorage.setItem(REPAIR,raw);if(root.localStorage.getItem(REPAIR)!==raw)throw Error('verify')}
+ else root.localStorage.removeItem(REPAIR);
+}
+function addRepair(r){writeRepairs([...readRepairs().filter(x=>x.id!==r.id),r])}
+function dropRepair(id){try{writeRepairs(readRepairs().filter(x=>x.id!==id))}catch(e){console.error('あとこれ: 見積もりの修復記録',e)}}
+let reconciling=false;
+function reconcileRepairs(){
+ const hh=root.AtokoreHousehold;
+ if(reconciling||!hh?.homeState?.().joined||hh.status?.().state!=='synced')return;   // only from a fresh server view
+ const list=readRepairs();if(!list.length)return;
+ reconciling=true;
+ try{
+  let fixed=0;
+  for(const r of list){
+   if(repairing.has(r.id))continue;
+   if(r.household!==hh.householdId?.()||r.user!==hh.myId?.()){dropRepair(r.id);continue}   // another household: nothing here to repair
+   const back=r.buys.every(sid=>{const lid=hh.localIdFor?.('buy',sid);return lid!=null&&buys.some(b=>String(b.id)===String(lid))});
+   if(back){try{revertEstimate(r.changes)}catch(e){console.error('あとこれ: 見積もりの取り消し（再試行）',e);return}fixed++;dropRepair(r.id)}
+   else if(r.state==='refused'||Date.now()-Number(r.at||0)>REPAIR_SETTLE_MS)dropRepair(r.id);   // not undone: estimate stays as bought
+  }
+  if(fixed)message('見積もりも取り消しました');
+ }finally{reconciling=false}
+}
+doc.addEventListener('atokore-household-updated',reconcileRepairs);
+doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')reconcileRepairs()});
+root.addEventListener?.('pageshow',()=>reconcileRepairs());
 function offerUndo(label,run){
  clearUndo();root.AtokoreNotices.hide();undo=run;
  const node=doc.createElement('div');node.id='atkUndoBar';node.className='atk-undo-bar';
@@ -186,18 +217,34 @@ for(const name of ['buyOneToStockV125H','bought']){
   const undoOnce=async()=>{
    if(shared){
     if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');
-    await hh.undoPurchases(ticket);
-    finish();
-    // The server reverted the counted stock; the estimate is an ordinary field and is reverted here.
-    if(changes.some(c=>c.entries)){
-     try{revertEstimate(changes)}
-     catch(e){
-      // The server already reverted the purchase. The estimate repair is kept and retried on the next
-      // sync or return to the app, until it is saved (never silently dropped).
-      console.error('あとこれ: 見積もりの取り消し',e);estimateRepairs.push(changes);
-      throw Error('「買った」は取り消しましたが、見積もりの保存に失敗しました。次の同期で自動的にやり直します。');
-     }
+    const tracked=changes.filter(c=>c.entries).map(c=>({id:c.id,entries:c.entries}));
+    const rid=ticket.map(x=>x.op).join(',');
+    if(tracked.length){
+     // Saved BEFORE the server is asked: a crash after the server undo still finds it on the next start.
+     try{addRepair({id:rid,household:ticket[0].household,user:ticket[0].user,buys:ticket.map(x=>x.buy).filter(Boolean),changes:tracked,at:Date.now(),state:'pending'})}
+     catch(e){console.error('あとこれ: 見積もりの修復記録',e);throw Error('この端末に保存できないため、取り消しを中止しました（何も変わっていません）。空き容量をご確認ください。')}
     }
+    repairing.add(rid);
+    try{
+     try{await hh.undoPurchases(ticket)}
+     catch(e){
+      // Refused by the server (window, changed purchase): nothing was undone, so nothing to repair. A lost
+      // answer stays recorded; the next fresh server view decides.
+      if(tracked.length&&!/通信|反映を確認|結果を確認/.test(e.message||''))dropRepair(rid);
+      throw e;
+     }
+     finish();
+     // The server reverted the counted stock; the estimate is an ordinary field and is reverted here.
+     if(tracked.length){
+      try{revertEstimate(changes);dropRepair(rid)}
+      catch(e){
+       // The server already reverted the purchase. The saved record repairs it on the next sync, return
+       // to the app or start (never silently dropped).
+       console.error('あとこれ: 見積もりの取り消し',e);
+       throw Error('「買った」は取り消しましたが、見積もりの保存に失敗しました。次の同期で自動的にやり直します。');
+      }
+     }
+    }finally{repairing.delete(rid)}
     return;
    }
    if(root.AtokoreHousehold?.homeState?.().joined)throw Error('家族共有の開始後は、この端末だけの購入を戻せません。');

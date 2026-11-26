@@ -19,6 +19,21 @@
 - 実PostgreSQLで2本の接続から同時に書き込み、240／再送しても240／片方の取り消しで180になることを確認しました（`tests/household/purchase-merge-postgres.cjs`）。
 - どの単位の承認にも依存しません。
 
+## 2026-11-26 追記3：Work第6回の指摘への対応（5単位。どれも実DBには未適用・HOLDのまま）
+
+詳しい内容と証跡は `docs/atokore-v51-safety3-20261126.md` にあります。適用順と依存は追記2と同じです。
+
+| 単位 | 変更したファイル | 主な変更 | 切り戻し／復元 | 根拠（修正前FAIL → 修正後PASS） |
+|---|---|---|---|---|
+| 写真A | `atokore-photo-legacy-migrate-v51.sql`、`photo-orphan-worker-v51.mjs` | verifiedからの再開でも毎回一般ゲート相当の読み取りをやり直す。読み取り記録をオブジェクトの世代（id・updated_at・eTag・size）に結びつける。旧写真は、退避バケット `atokore-photo-backup-v51` へのコピーと記録・旧バケットの書き込み経路が閉じていること・旧オブジェクトがコピー時から変わっていないこと、をすべて確認できたときだけ削除。旧写真がなくても退避から新しいIDへ復元し、通常の読み取りで確認。孤児は一覧時の世代と同じときだけ削除 | 移行を実行する前：関数・テーブルの削除。実行した後：`photo_legacy_restore_v51` → `photo_legacy_restore_commit_v51` で1件ずつ戻す（旧写真がなくても退避から復元） | regressions 3件（A-1 502でも削除→FAIL／A-2 削除後の復元→FAIL）、migrate 15件（障害注入：読み取り後の上書き・読み取り中の上書き・書き込み経路が開いている・旧写真の上書き・削除応答の消失・中断からの再開・孤児の上書き） |
+| 写真B | `atokore-photo-legacy-close-reads-v51.sql` | 読み取り記録の世代が今のオブジェクトと違えば「未読」とみなし、閉鎖を拒否 | 追記2と同じ | regressions B-1（同じパスの上書き後に閉鎖→FAIL）、closure 8件、実PostgreSQL（別接続からの上書きで確認記録が無効になる） |
+| C 担当・通知 | `atokore-buy-assignment-v51.sql`、`notify-sender-v51.mjs`（新規） | `notify_claim_v51`（SKIP LOCKED・リース・期限・試行回数・バックオフ）、`notify_authorize_v51`（送信直前に保持者・リース・試用世帯・担当の一致を再確認）、`notify_complete_v51`（送信済みは1回だけ）。冪等キーは通知ID。`notify_due_v51` は予約を返すようにした。`notify_mark_sent_v51` は `notify_complete_v51` に置き換え。送信モジュールは合成アダプタ以外を拒否（実送信不可） | `rollback/…buy-assignment-v51.rollback.sql`（新しい関数も削除。許可リストは残す）／`.restore.sql`（予約は戻さず、送信開始済みの記録は残す） | notify-claim 10件（旧コードでは二重取得→FAIL）、assignment 8件、rollback 4件、実PostgreSQL（5つの送信者が同時に予約しても重複0件） |
+| D 持ち物 | SQLの変更なし（クライアント `prep-sets-v51.js`、`household-sync-v37.js`） | 自分のデータと世帯のデータを別のキーに保存。離脱・除外・ログアウトで世帯のデータを削除し、遅れて届いた応答は捨てる。新しい世帯へは自動でコピーしない（ボタンで自分のデータだけを共有） | クライアントのフラグ `prepSharing: false` で従来どおり端末のみ | E2E prep-leave（旧コードでは世帯のデータが自分のデータを上書き→FAIL） |
+| E 取消期限 | `atokore-purchase-undo-window-v51.sql`、`rollback/atokore-purchase-undo-window-v51.rollback.sql`（新規） | 受領記録（ops）のトリガーで、試用世帯は**すべての入口**（旧RPCを含む）で10分の期限を強制。端末の時刻が欠けている・整数でない・サーバーより60秒以上先なら拒否（`purchase_undo_time_invalid`）。クライアントは厳密な `{status:'not_enabled'}` のときだけ旧RPCへ | 上記のrollback（トリガーと関数を削除。受領記録・履歴は変えない。許可リストは残す）。再適用できる | guard 6件（旧RPCで期限後に取り消せた→FAIL）、window 5件、E2E（null・空・余分な項目・500・不明な状態で旧RPCに行かない） |
+
+- 共有取消後の予測：SQLの変更なし（`polish-v44.js`）。取り消しをサーバーへ送る**前に**修復記録を保存し、起動時・同期時・画面に戻ったときに、サーバーの最新状態から修復する。E2E（再読み込み・強制終了）で、旧コードでは予測の加算が残る→FAIL。
+- 変異テスト：9つの修正をそれぞれ1つずつ元に戻すと、対応するテストが必ず失敗することを確認しました。
+
 ## 2026-11-26 追記2：Work第5回の指摘への対応（5単位。どれも実DBには未適用）
 
 | 単位 | ファイル（適用順） | 依存 | 切り戻し | 根拠（テスト） |

@@ -1,7 +1,7 @@
 // DRAFT ONLY (v51, photo A): the trusted photo workers. Not deployed, not scheduled.
 // `sql(fn, args)` calls a service-only function in atokore_private (service role, server side only).
 // `storage` is the Storage API: download(bucket, path) -> Uint8Array, remove(bucket, path) -> boolean,
-// and for a move `copy(legacyPath, targetPath)` copies and returns the hashes of the bytes read back.
+// copy(fromBucket, from, toBucket, to) -> {bytes, sourceSha, targetSha} hashed from the bytes read back.
 // All are injected, so the workers are tested against a real database and a fake Storage in isolation.
 //
 // Safety:
@@ -9,7 +9,10 @@
 //    functions additionally refuse anything outside the synthetic trial households.
 //  * A legacy photo is deleted only after the moved photo was READ the way the general gateway reads
 //    it (readVerified: authorization, size, SHA-256, JPEG, re-check) and its bytes equal the legacy
-//    bytes, and only after a locked re-check that nothing else still points at it.
+//    bytes — on EVERY run, also when resuming a 'verified' move (Work 6th: a resume skipped the read and
+//    deleted while the copy answered 502) — after a backup of the legacy bytes, and only after a locked
+//    re-check (fresh read of the current object generation, legacy object unchanged since the copy,
+//    legacy write paths closed, nothing else points at it). A failed read takes the move back.
 //  * Every deletion of a managed object is preceded by a locked re-check (claim_purge refuses a
 //    referenced object; orphan_object_ok re-checks an unledgered one).
 //  * A failure leaves the state where it was, so the next run resumes from it; running a step twice
@@ -17,22 +20,30 @@
 import { readVerified } from './photo-general-v50.mjs';
 export const MANAGED_BUCKET = 'atokore-private-photos-v2';
 export const LEGACY_BUCKET = 'atokore-product-photos';
+export const BACKUP_BUCKET = 'atokore-photo-backup-v51';
 const SCOPED = /^[0-9a-f-]{36}\/[A-Za-z0-9_-]{8,64}\/[0-9a-f-]{36}\.jpg$/;
 const scoped = p => typeof p === 'string' && SCOPED.test(p);
+async function copy(storage, fromBucket, from, toBucket, to) {
+  if (![MANAGED_BUCKET, LEGACY_BUCKET, BACKUP_BUCKET].includes(fromBucket) || ![MANAGED_BUCKET, BACKUP_BUCKET].includes(toBucket) || !scoped(from) || !scoped(to)) throw Error('refused: bucket or path out of scope');
+  const c = await storage.copy(fromBucket, from, toBucket, to);
+  return { bytes: c.bytes, sourceSha: c.sourceSha ?? c.legacySha, targetSha: c.targetSha ?? c.copySha };
+}
 async function remove(storage, bucket, path) {
-  if (![MANAGED_BUCKET, LEGACY_BUCKET].includes(bucket) || !scoped(path)) throw Error('refused: bucket or path out of scope');
+  if (![MANAGED_BUCKET, LEGACY_BUCKET, BACKUP_BUCKET].includes(bucket) || !scoped(path)) throw Error('refused: bucket or path out of scope');
   try { return (await storage.remove(bucket, path)) === true; } catch { return false; }
 }
 
 // Reads one attached photo exactly as the gateway would, and records the check (hash must match).
 export async function checkRead({ sql, storage }, file) {
+  const failed = async why => { await sql('photo_read_failed_v51', [file]).catch(() => null); return { ok: false, why }; };
   const target = await sql('photo_read_target_v51', [file]).catch(() => null);
-  if (!target || !scoped(target.path)) return { ok: false, why: 'not_readable' };
+  if (!target || !scoped(target.path) || typeof target.gen !== 'string') return failed('not_readable');
   let r;
   try { r = await readVerified({ read: () => sql('photo_read_target_v51', [file]), download: p => storage.download(MANAGED_BUCKET, p), path: target.path }); }
-  catch { return { ok: false, why: 'read_failed' }; }
-  if (!r.ok) return { ok: false, why: r.error };
-  try { await sql('photo_read_checked_v51', [file, r.sha, r.bytes.length]); } catch { return { ok: false, why: 'read_mismatch' }; }
+  catch { return failed('read_failed'); }
+  if (!r.ok) return failed(r.error);
+  // The generation seen before the read must still be there: a write in between is not this read.
+  try { await sql('photo_read_checked_v51', [file, r.sha, r.bytes.length, target.gen]); } catch { return failed('read_mismatch'); }
   return { ok: true, sha: r.sha };
 }
 
@@ -40,31 +51,64 @@ export async function checkRead({ sql, storage }, file) {
 export async function moveLegacyPhoto({ sql, storage, household, record }) {
   const m = await sql('photo_legacy_begin_v51', [household, record]);
   let state = m.state;
+  if (!scoped(m.legacy_path) || !scoped(m.target_path)) throw Error('refused: path out of scope');
   if (state === 'copying') {
-    if (!scoped(m.legacy_path) || !scoped(m.target_path)) throw Error('refused: path out of scope');
     let c;
-    try { c = await storage.copy(m.legacy_path, m.target_path); } catch { return { status: 'copying', held: 'copy_failed', file_id: m.file_id }; }
+    try { c = await copy(storage, LEGACY_BUCKET, m.legacy_path, MANAGED_BUCKET, m.target_path); } catch (e) { if (/refused/.test(e.message)) throw e; return { status: 'copying', held: 'copy_failed', file_id: m.file_id }; }
     let done;
-    try { done = await sql('photo_legacy_commit_v51', [m.file_id, c.bytes, c.legacySha, c.copySha]); }
+    try { done = await sql('photo_legacy_commit_v51', [m.file_id, c.bytes, c.sourceSha, c.targetSha]); }
     catch (e) { return { status: 'copying', held: /photo_copy_unverified/.test(e.message) ? 'copy_mismatch' : 'commit_failed', file_id: m.file_id }; }
-    if (done.status !== 'switched') return { status: done.status, file_id: m.file_id };
+    if (done.status !== 'switched') return { status: done.status, held: done.why, file_id: m.file_id };
     state = 'switched';
   }
-  if (state === 'switched') {
-    // The legacy photo stays until the moved one is proven readable with the same bytes.
+  if (state === 'switched' || state === 'verified') {
+    // Read again on every run (a resumed 'verified' move too): the legacy photo stays until the moved one
+    // is proven readable with the same bytes right now.
     const r = await checkRead({ sql, storage }, m.file_id);
     if (!r.ok) return { status: 'switched', held: r.why, file_id: m.file_id };
     state = 'verified';
-  }
-  if (state === 'verified') {
+    // A backup of the legacy bytes before they can go (restore works without the legacy object).
+    const backupPath = m.target_path;   // same scoped form, in the backup bucket
+    try {
+      const b = await copy(storage, LEGACY_BUCKET, m.legacy_path, BACKUP_BUCKET, backupPath);
+      if (b.sourceSha !== b.targetSha) return { status: 'verified', held: 'backup_mismatch', file_id: m.file_id };
+      await sql('photo_legacy_backup_recorded_v51', [m.file_id, b.targetSha, b.bytes]);
+    } catch (e) {
+      // The legacy object may already be gone (an earlier run deleted it and the answer was lost).
+      const gone = !(await storage.download(LEGACY_BUCKET, m.legacy_path).then(() => true, () => false));
+      if (!gone) return { status: 'verified', held: 'backup_failed', file_id: m.file_id };
+    }
     const ok = await sql('photo_legacy_delete_ok_v51', [m.file_id]);
-    if (ok?.ok !== true) return { status: 'verified', held: ok?.why || 'not_ok', file_id: m.file_id };
+    if (ok?.ok !== true) {
+      if (ok?.why === 'legacy_changed' || ok?.why === 'no_backup') {
+        const gone = !(await storage.download(LEGACY_BUCKET, m.legacy_path).then(() => true, () => false));
+        if (gone && (await sql('photo_legacy_finish_v51', [m.file_id, true]))) return { status: 'done', file_id: m.file_id };
+      }
+      return { status: 'verified', held: ok?.why || 'not_ok', file_id: m.file_id };
+    }
     if (ok.bucket !== LEGACY_BUCKET || ok.path !== m.legacy_path) throw Error('refused: unexpected legacy target');
-    if (!(await remove(storage, LEGACY_BUCKET, ok.path))) return { status: 'verified', held: 'remove_failed', file_id: m.file_id };
+    if (!(await remove(storage, LEGACY_BUCKET, ok.path))) {
+      // The delete answer can be lost after the delete happened: then it is simply finished.
+      const gone = !(await storage.download(LEGACY_BUCKET, ok.path).then(() => true, () => false));
+      if (!gone) return { status: 'verified', held: 'remove_failed', file_id: m.file_id };
+    }
     const finished = await sql('photo_legacy_finish_v51', [m.file_id, true]);
     return { status: finished ? 'done' : 'verified', file_id: m.file_id };
   }
   return { status: state, file_id: m.file_id };
+}
+
+// Restore one move (rehearsal / rollback). With the legacy object present the product points at it again;
+// without it, the backup bytes are copied to a NEW managed id, committed, and read back like any photo.
+export async function restoreLegacyPhoto({ sql, storage, file }) {
+  const r = await sql('photo_legacy_restore_v51', [file]);
+  if (r.status !== 'copy_backup') return r;
+  if (!scoped(r.backup_path) || !scoped(r.target_path)) throw Error('refused: path out of scope');
+  const c = await copy(storage, BACKUP_BUCKET, r.backup_path, MANAGED_BUCKET, r.target_path);
+  if (c.sourceSha !== c.targetSha) return { status: 'copy_backup', held: 'copy_mismatch', file_id: r.file_id };
+  const done = await sql('photo_legacy_restore_commit_v51', [file, r.file_id, c.bytes, c.targetSha]);
+  const read = await checkRead({ sql, storage }, r.file_id);
+  return { status: read.ok ? done.status : 'restored_unread', file_id: r.file_id, path: done.path };
 }
 
 // Read checks for every attached photo of the trial households (required before closing legacy reads).
@@ -94,7 +138,7 @@ export async function runOrphanPass({ sql, storage, limit = 50 }) {
         if (await sql('photo_finish_purge_v50', [a.file_id, true])) report.purged.push(a.file_id);
         else report.failed.push({ ...a, why: 'still_present_after_remove' });
       } else if (a.action === 'orphan_object') {
-        if (!(await sql('photo_orphan_object_ok_v51', [a.path]))) { report.kept.push({ ...a, why: 'now_ledgered_or_referenced' }); continue; }
+        if (!(await sql('photo_orphan_object_ok_v51', [a.path, a.gen ?? null]))) { report.kept.push({ ...a, why: 'now_ledgered_referenced_or_changed' }); continue; }
         if (await remove(storage, MANAGED_BUCKET, a.path)) report.removedOrphans.push(a.path);
         else report.failed.push({ ...a, why: 'storage_remove_failed' });
       } else {

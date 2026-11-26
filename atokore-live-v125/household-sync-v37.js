@@ -103,7 +103,7 @@ function capturePurchases(ids){
  if(!engine||!household||!session)return [];
  engine.flush();
  const m=engine.meta(),wanted=new Set(ids.map(id=>m.map['buy:'+id]));
- return m.outbox.filter(o=>o.type==='complete_buy'&&wanted.has(o.buy)).map(o=>({op:o.op_id,household:household.id,user:session.user.id}));
+ return m.outbox.filter(o=>o.type==='complete_buy'&&wanted.has(o.buy)).map(o=>({op:o.op_id,household:household.id,user:session.user.id,buy:o.buy}));
 }
 // A sync that STARTS now: a sync already running may have begun before this purchase was queued, or
 // before the server reverted it, so its result cannot be used (Work: overlapping shared undos).
@@ -116,10 +116,16 @@ async function undoPurchases(ticket){
  // (hh_undo_purchases_v51, synthetic trial households only); elsewhere the existing RPC is used.
  try{
   const ops={p_ops:ticket.map(x=>x.op)};
-  const r=cfg.purchaseUndoWindowV51===true?await rpc('hh_undo_purchases_v51',ops):null;
-  if(!r||r.status==='not_enabled')await rpc('hh_undo_purchases',ops);
+  if(cfg.purchaseUndoWindowV51===true){
+   // Work 6th: only the exact answer {status:'not_enabled'} (a household outside the trial) may use the
+   // existing RPC. null, a missing status, any other answer or an error never falls back to it.
+   const r=await rpc('hh_undo_purchases_v51',ops);
+   const keys=r&&typeof r==='object'&&!Array.isArray(r)?Object.keys(r):[];
+   if(keys.length===1&&r.status==='not_enabled')await rpc('hh_undo_purchases',ops);
+   else if(!(r?.status==='ready'&&Number.isInteger(r.undone)&&r.undone>=0))throw Object.assign(Error('undo_answer_unknown'),{code:'unknown_answer'});
+  }else await rpc('hh_undo_purchases',ops);
  }
- catch(e){throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(e.message||'')?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
+ catch(e){const m=e.message||'';throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(m)?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':/purchase_undo_time_invalid/.test(m)?'「買った」の時刻を確かめられないため、取り消せません。ストックの数量を直接直してください。':e.code==='unknown_answer'?'取り消しの結果を確認できませんでした。現在のストックをご確認ください（再度押しても二重には取り消しません）。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
  await freshSync();
  if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
 }
@@ -282,11 +288,13 @@ async function sharePhoto(id,blob,transfer=null,resume=null){
 // ---------------------------------------------------------------- v51 shopping assignments (draft RPCs)
 // Enabled only when the server has the reviewed SQL (cfg.buyAssignments===true). The server checks
 // membership and the expected revision; a stale view is refused and the latest state is fetched.
-let assignments=new Map(),assignmentsAt=0;
+let assignments=new Map(),assignmentsAt=0,sharedEpoch=0;
 function assignmentsEnabled(){return cfg.buyAssignments===true&&!!household&&!!session}
 async function refreshAssignments(){
  if(!assignmentsEnabled())return;
- try{const rows=await rpc('hh_buy_assignments',{});if(!Array.isArray(rows))return;
+ // An answer that arrives after leaving (or after switching household) belongs to the old household.
+ const ep=sharedEpoch,hid=household?.id;
+ try{const rows=await rpc('hh_buy_assignments',{});if(ep!==sharedEpoch||household?.id!==hid||!Array.isArray(rows))return;
   assignments=new Map(rows.filter(r=>r&&typeof r.buy_id==='string').map(r=>[r.buy_id,{assignee:r.assignee||null,requester:r.requester||null,response:r.response||'none',rev:Number(r.rev)||0}]));
   assignmentsAt=Date.now();doc.dispatchEvent(new CustomEvent('atokore-assignments-updated'));
  }catch(e){root.console?.warn?.('あとこれ 担当の取得',e)}
@@ -300,7 +308,8 @@ function entitlements(){return household&&session?entCache:null}
 async function refreshEntitlements(){
  if(!household||!session)return null;
  if(entCache&&Date.now()-entAt<600000)return entCache;
- try{entCache=await rpc('hh_entitlements',{});entAt=Date.now()}catch(e){console.error('あとこれ: プランの確認',e?.code||e?.message)}
+ const ep=sharedEpoch,hid=household.id;
+ try{const r=await rpc('hh_entitlements',{});if(ep===sharedEpoch&&household?.id===hid){entCache=r;entAt=Date.now()}}catch(e){console.error('あとこれ: プランの確認',e?.code||e?.message)}
  return entCache;
 }
 function familyMembers(){return (Array.isArray(meta.members)?meta.members:[]).filter(m=>m&&typeof m.id==='string').map(m=>({id:m.id,name:m.name,me:m.me}))}
@@ -747,7 +756,11 @@ async function leave(){
  stop();household=null;saveMeta({household:null,engine:null});setStatus('local');root.closeM?.();notice('世帯から抜けました。この端末の在庫はそのまま残っています');
 }
 // Leaving, being removed or signing out: nothing of the family's shared state stays usable here.
-function forgetShared(){assignments=new Map();assignmentsAt=0;entCache=null;entAt=0}
+// sharedEpoch invalidates answers still in flight; the event tells the prep list to drop its household copy.
+function forgetShared(){
+ sharedEpoch++;assignments=new Map();assignmentsAt=0;entCache=null;entAt=0;
+ try{doc.dispatchEvent(new CustomEvent('atokore-household-left'));doc.dispatchEvent(new CustomEvent('atokore-assignments-updated'))}catch(e){root.console?.warn?.('あとこれ 共有の後片付け',e)}
+}
 function stop(){forgetShared();clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
 async function signOut(){
  const left=engine?engine.status().pending:0;
@@ -797,5 +810,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,householdId:()=>household&&session?household.id:null,sharedEpoch:()=>sharedEpoch,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
 })(typeof globalThis!=='undefined'?globalThis:this);

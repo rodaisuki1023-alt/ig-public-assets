@@ -15,6 +15,7 @@ from pathlib import Path
 
 PRODUCTION_KEYS = {
     'atokoreTrialV4': 'atokorePreviewTrialV{v}',
+    'atokoreUndoRepairV1': 'atokorePreviewUndoRepairV{v}',
     'atokoreHistoryV1': 'atokorePreviewHistoryV{v}',
     'atokoreDisplayPrefsV1': 'atokorePreviewDisplayPrefsV{v}',
     'atokoreReceiptAliases': 'atokorePreviewReceiptAliasesV{v}',

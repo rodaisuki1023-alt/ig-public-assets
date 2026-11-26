@@ -17,7 +17,8 @@ BEGIN;
 --   * no unfinished legacy move (atokore-photo-legacy-migrate-v51.sql; verified-but-not-deleted counts),
 --   * ledger, references and objects agree: each attached row has its live record pointing at it,
 --     its object in the managed bucket, and the hash and size the general gateway checks,
---   * every attached photo was read like the gateway reads it, with that hash (read checks),
+--   * every attached photo was read like the gateway reads it, with that hash, and the read is of the
+--     object generation that is there now (read checks; Work 6th: same-path overwrite after a check),
 --   * stage 1 already applied.
 -- Two people running this at once: the advisory lock serializes them, and the second one finds the
 -- read policy already gone and changes nothing. A record write or a legacy move commit that runs at the
@@ -64,7 +65,10 @@ BEGIN
              LEFT JOIN atokore_private.photo_read_checks_v51 c ON c.file_id = l.file_id
              LEFT JOIN storage.objects o ON o.bucket_id = 'atokore-private-photos-v2' AND o.name = atokore_private.photo_object_path_v50(l)
              WHERE l.state = 'attached' AND (c.file_id IS NULL OR c.sha256 IS DISTINCT FROM l.upload_sha256
-               OR c.bytes IS DISTINCT FROM l.actual_bytes OR c.checked_at < o.created_at)) THEN
+               OR c.bytes IS DISTINCT FROM l.actual_bytes OR c.checked_at < o.created_at
+               -- the read was of THIS object generation; any write at that path since (other bytes, an
+               -- outside operation, an unknown state) makes it count as unread
+               OR c.gen IS NULL OR c.gen IS DISTINCT FROM atokore_private.photo_object_gen_v51('atokore-private-photos-v2', atokore_private.photo_object_path_v50(l)))) THEN
     RAISE EXCEPTION 'photo_unread_remain' USING ERRCODE = '55000',
       HINT = 'Run the read checks (runReadChecks) and fix every photo that cannot be read before closing.';
   END IF;
