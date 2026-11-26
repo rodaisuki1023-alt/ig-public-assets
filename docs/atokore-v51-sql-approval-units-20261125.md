@@ -19,6 +19,25 @@
 - 実PostgreSQLで2本の接続から同時に書き込み、240／再送しても240／片方の取り消しで180になることを確認しました（`tests/household/purchase-merge-postgres.cjs`）。
 - どの単位の承認にも依存しません。
 
+## 2026-11-26 追記：Work第4回の指摘への対応（どれも実DBには未適用）
+
+| 単位 | 追加・変更したファイル | 主な変更 | 根拠（テスト） |
+|---|---|---|---|
+| 写真A | `atokore-photo-legacy-migrate-v51.sql`（新規）、`photo-orphan-worker-v51.mjs`（新規） | 旧参照から新台帳への移行（begin → コピー → SHA照合 → CASで切り替え → 旧オブジェクトの削除 → finish）。どの段階も再実行できる。コピー中に商品が変わったら移行を中止し、コピーは孤児として回収する。孤児回収の1回分の処理：期限切れの予約の退役、退役済みの写真の削除、台帳にない古いオブジェクトの削除（削除の直前にロックを取って再確認し、参照中のものは消さない）。止まったアップロードは報告だけする | `atokore-photo-legacy-migrate-v51.test.cjs`（5件） |
+| 写真B | `atokore-photo-legacy-close-reads-v51.sql`（段階2を変更） | 閉鎖の条件に次を追加：旧参照が0件（削除済みの商品の参照も数える）／未完了の移行がない／台帳・参照・実体が一致している。条件はアドバイザリーロックとSHAREロックの下で確認する | `atokore-photo-legacy-closure-v51.test.cjs`（8件）、実PostgreSQL `tests/household/photo-legacy-close-postgres.cjs`（CIに追加） |
+| 担当 | `atokore-buy-assignment-v51.sql` | NULL・空白・前後に空白がある返信・未知の語を拒否（`NULL NOT IN (...)` がNULLになって素通りしていた）。家族から抜けたときは、担当の解除・その人が出した未回答の依頼の取り下げ・未送信の通知の破棄を行う（membersのトリガー）。`notify_due_v51` は送信の直前に、所属と担当の一致を確認し直す（送信はしない）。合成世帯の許可リストに入っている世帯しか使えない | `atokore-buy-assignment-v51.test.cjs`（8件） |
+| 持ち物共有 | `atokore-prep-share-v51.sql` | 文書全体をサーバー側で検証（必須項目の欠落・空白の名前・IDの形式と重複・存在しない子ども・未知のキー・不正な日付）。比較はすべてNULLを安全に扱う。チェックは「この世帯の、その日の行」だけを受け付ける（作ったIDや別の世帯の行は拒否）。合成世帯の許可リストで制限する | `atokore-prep-share-v51.test.cjs`（7件） |
+| 購入の取り消し期限（新規の小さな単位） | `atokore-purchase-undo-window-v51.sql` | `hh_undo_purchases` に、サーバーの時計で10分の期限を追加（10:00以降は `purchase_undo_expired` を返し、何も変えない）。既に取り消し済みのものの再送には、従来どおり応答する | `atokore-purchase-undo-window-v51.test.cjs`（3件。9:59は取り消せる・10:00と10:01は拒否・まとめて送ったうちの1件が期限切れなら全体を戻す） |
+
+- **変異テスト**：次の修正をそれぞれ1つずつ元に戻すと、対応するテストが失敗することを確認しました。
+  - 写真Bの旧参照の確認
+  - 実PostgreSQLのLOCK
+  - 写真Aのコピー照合
+  - 担当のNULL返信の拒否
+- **確認できていないこと**
+  - 旧URLがCDNから消えたかどうか（A1）。隔離環境のSQL試験に合格しても、それだけでは合格にしません。
+  - 実HTTPでの受入、Storage APIを使うワーカーの実環境での動作、通知の実送信。いずれも未実施で、別の承認が必要です。
+
 ## 写真A：Workの前回指摘への対応
 
 | 指摘 | 対応 | 根拠（テスト） | 残り |
