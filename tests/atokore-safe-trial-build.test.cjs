@@ -41,3 +41,12 @@ test('safe trial: a source that would ship a key or turn OCR on is refused',()=>
   }
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });
+test('photos are switched on by the trial build stamp, never by the serving path; the production copy stays off',()=>{
+ const js=fs.readFileSync(path.join(src,'product-photos-v30.js'),'utf8');
+ assert.doesNotMatch(js,/preview-baby-v19/,'no serving-path condition');
+ assert.match(js,/getElementById\('atkBuildInfo'\)\?\.dataset\.build/);
+ assert.match(fs.readFileSync(path.join(src,'index.html'),'utf8'),/data-build="__ATOKORE_BUILD__"/,'the source / production copy is unstamped (photos off)');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'atk-safe-stamp-'));
+ try{build(src,path.join(dir,'x'));assert.match(fs.readFileSync(path.join(dir,'x','index.html'),'utf8'),/data-build="trial-v19-0123456"/)}
+ finally{fs.rmSync(dir,{recursive:true,force:true})}
+});

@@ -191,6 +191,11 @@ jobs:
           # Check the critical shared-data/auth paths first, then all remaining tests once.
           npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium household-google-v40 household-sync-v37
           npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium --grep-invert 'household-(google-v40|sync-v37)\.spec\.cjs'
+      - name: Safe trial as shipped (built, served from another path, photo flow, no outside requests)
+        run: |
+          rm -rf /tmp/safe-trial && mkdir -p /tmp/safe-trial/some/other
+          ATOKORE_BUILD_SHA="$GITHUB_SHA" python3 -I scripts/atokore/build-safe-trial.py atokore-live-v125 /tmp/safe-trial/some/other/review 19
+          node scripts/atokore/check-safe-trial.cjs /tmp/safe-trial some/other/review
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

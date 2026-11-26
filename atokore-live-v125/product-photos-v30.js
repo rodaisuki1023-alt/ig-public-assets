@@ -468,8 +468,12 @@ function photoReferences(){
  try{return JSON.stringify(items.map(x=>[key(x),x.photoPath??null]))}catch(_){return ''}
 }
 function install(){
- // Never enable this UI in the normal app or another trial sharing this origin.
- if(!/\/preview-baby-v19\//.test(root.location?.pathname||''))return;
+ // Never enable this UI in the normal app. Decided by the build, not by where it is served (Work 5th:
+ // a trial served from another path silently had no photos): only a trial build stamps #atkBuildInfo
+ // (build-preview.py / build-safe-trial.py); the production copy keeps the unreplaced placeholder.
+ // Each trial build has its own photo database name, so trials on one origin never share photos.
+ const stamp=doc.getElementById('atkBuildInfo')?.dataset.build||'';
+ if(!/^trial-v[0-9]+-([0-9a-f]{7}|local)$/.test(stamp))return;
  for(const name of ['renderHome','renderStock','renderBuy']){
   const prior=root[name];if(typeof prior==='function')root[name]=function(...args){const result=prior.apply(this,args);decorate();return result};
  }

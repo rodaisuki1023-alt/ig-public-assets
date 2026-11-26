@@ -41,12 +41,32 @@ server.listen(0, async () => {
       }
       // Main actions on synthetic data: add a product, buy from the list, open the family trial.
       await page.evaluate(() => window.go('add'));
-      await page.evaluate(() => { items.push({ id: 900 + Math.floor(Math.random() * 99), name: '合成 おしりふき', cat: 'ベビー', qty: 1, unit: 'パック' }); save(); window.render?.(); });
+      await page.evaluate(() => { if (!items.some(x => x.name === '合成 おしりふき')) items.push({ id: 900 + Math.floor(Math.random() * 99), name: '合成 おしりふき', cat: 'ベビー', qty: 1, unit: 'パック' }); save(); window.render?.(); });
       await page.evaluate(() => window.go('premium'));
       await page.locator('#atkFamilyTrial > summary').click();
       const trialOk = await page.locator('#atkFamilyTrial').innerText();
+      // The normal photo path, exactly as shipped (any serving path): stock row -> detail -> 写真を設定 -> counter.
       await page.evaluate(() => window.go('stock'));
       if (shots) await page.screenshot({ path: path.join(shots, `safe-${width}-stock.png`), fullPage: false });
+      await page.locator('#stockList [data-stock-id] .name').first().click();
+      const photoBtn = page.locator('#sheet .atk-photo-open');
+      const photoOk = await photoBtn.isVisible().catch(() => false);
+      let counter = '', trial = '';
+      if (photoOk) {
+        await photoBtn.click();
+        await page.locator('#atkPhotoCount').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+        counter = await page.locator('#atkPhotoCount').innerText().catch(() => '');
+        await page.locator('.atk-photo-trial > summary').click().catch(() => {});
+        await page.locator('.atk-photo-trial-plan').selectOption('free').catch(() => {});
+        await page.waitForFunction(() => /試用表示/.test(document.getElementById('atkPhotoCount')?.textContent || ''), null, { timeout: 5000 }).catch(() => {});
+        trial = await page.locator('#atkPhotoCount').innerText().catch(() => '');
+        if (shots && width === 393) await page.screenshot({ path: path.join(shots, `safe-${width}-photo.png`), fullPage: false });
+        await page.locator('.atk-photo-trial-plan').selectOption('').catch(() => {});
+        await page.evaluate(() => window.closeM?.());
+      }
+      check(photoOk, `${width}px: 写真を設定 is offered in the product detail (served at /${sub})`);
+      check(/この端末だけに保存されます/.test(counter), `${width}px: photo counter shows device-only wording`);
+      check(/^【試用表示・合成データ】共有写真 0\/5枚/.test(trial), `${width}px: trial counter switch works (${trial.slice(0, 30)})`);
       await page.evaluate(() => window.go('premium'));
       if (shots) await page.screenshot({ path: path.join(shots, `safe-${width}-premium.png`), fullPage: false });
       const after = await page.evaluate(async () => ({ keys: Object.keys(localStorage), csp: window.__csp, scroll: document.documentElement.scrollWidth - innerWidth,
