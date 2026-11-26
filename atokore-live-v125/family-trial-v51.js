@@ -114,12 +114,14 @@ function html(){
  const btn=(attr,label,extra='')=>'<button type="button" '+attr+extra+'>'+esc(label)+'</button>';
  const who=id=>id?NAME[id]+(id===M&&s.mamaLeft?'（抜けた）':''):'なし';
  const buyRows=s.buys.map(b=>{
-  const state=b.bought?'買いました':b.assignee?who(b.assignee)+'：'+({pending:'返事待ち',accepted:'買えるよ',declined:'今回は難しい'}[b.response]||''):b.response==='declined'?'担当なし（'+who(b.requester&&b.requester===me?null:b.requester)+'への返事：今回は難しい）':'担当なし';
+  // Who asked, in words that read naturally from this phone (never "なしへの返事").
+  const asker=b.requester===me?'あなた':b.requester?NAME[b.requester]||'家族':'家族';
+  const state=b.bought?'買いました':b.assignee?who(b.assignee)+'：'+({pending:'返事待ち',accepted:'買えるよ',declined:'今回は難しい'}[b.response]||''):b.response==='declined'?'担当なし（'+asker+'のお願いに「今回は難しい」と返事がありました）':'担当なし';
   const mineToAnswer=!b.bought&&b.assignee===me&&b.response==='pending'&&b.requester!==me;
   return '<li class="atk-ft-row'+(b.bought?' is-done':'')+'"><div class="atk-ft-name"><b>'+esc(b.name)+'</b> '+b.qty+esc(b.unit)+(b.fromPrep?'<small>明日の準備の不足分</small>':'')+'</div><p class="atk-ft-state">担当：'+esc(state)+'</p>'+
    (b.bought?'':'<div class="atk-ft-actions">'+
     (mineToAnswer?btn('data-ft-respond="'+b.id+'|accept"','買えるよ',' class="atk-ft-primary"')+btn('data-ft-respond="'+b.id+'|decline"','今回は難しい'):'')+
-    '<label class="atk-ft-select">頼む人<select data-ft-assign="'+b.id+'"><option value="">なし</option><option value="'+P+'"'+(b.assignee===P?' selected':'')+'>パパ</option><option value="'+M+'"'+(b.assignee===M?' selected':'')+'>ママ</option></select></label>'+
+    '<label class="atk-ft-select">頼む人<select data-ft-assign="'+b.id+'"><option value="">なし</option><option value="'+P+'"'+(b.assignee===P?' selected':'')+'>パパ</option><option value="'+M+'"'+(b.assignee===M?' selected':'')+(s.mamaLeft?' disabled':'')+'>ママ'+(s.mamaLeft?'（抜けました）':'')+'</option></select></label>'+
     btn('data-ft-bought="'+b.id+'"','買った')+'</div>')+'</li>';
  }).join('');
  const prep=s.children.map(c=>{
@@ -134,8 +136,11 @@ function html(){
   (g.status==='queued'?'（買い物リストに'+g.queued+esc(g.unit)+'あり）':'')+'</span>'+(g.additional>0?btn('data-ft-addshort="'+esc(g.stockId)+'"','不足の'+g.additional+g.unit+'を買い物に追加'):'')+'</li>').join('')||'<li>不足はありません</li>';
  const kindToggle=k=>'<label class="atk-ft-check"><input type="checkbox" data-ft-pref="'+k+'"'+(s.prefs[me]?.[k]===false?'':' checked')+(s.prefs[me]?.all===false?' disabled':'')+'><span>'+KIND[k]+'</span></label>';
  const time=new Date(s.now+JST);
- const notes=[...pv.send.map(x=>'<li class="atk-ft-send"><b>届く：</b>'+esc(x.body)+'<small>（'+x.ids.length+'件をまとめて1通・ロック画面には商品名を出しません）</small></li>'),
-  ...pv.defer.map(x=>'<li class="atk-ft-defer"><b>あとで：</b>'+x.ids.length+'件 — '+esc(WHY[x.reason]||x.reason)+'</li>'),
+ const ev=id=>pv.events.find(y=>y.id===id);
+ const each=ids=>'<ul class="atk-ft-each">'+ids.map(id=>{const e=ev(id);return '<li>'+esc(KIND[e?.kind]||'')+'：'+esc(N.GENERIC[e?.kind]||'')+'</li>'}).join('')+'</ul>';
+ const hm=ms=>{const d=new Date(ms+JST);return (d.getUTCMonth()+1)+'/'+d.getUTCDate()+' '+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')};
+ const notes=[...pv.send.map(x=>'<li class="atk-ft-send"><b>届く：</b>'+esc(x.body)+'<small>（'+(x.ids.length>1?x.ids.length+'件をまとめて1通':'1通')+'・ロック画面には商品名を出しません）</small>'+each(x.ids)+'</li>'),
+  ...pv.defer.map(x=>'<li class="atk-ft-defer"><b>あとで：</b>'+x.ids.length+'件 — '+esc(WHY[x.reason]||x.reason)+'<small>（'+esc(hm(x.until))+' に届く予定）</small>'+each(x.ids)+'</li>'),
   ...pv.drop.map(x=>{const e=pv.events.find(y=>y.id===x.id);return '<li class="atk-ft-drop"><b>送らない：</b>'+esc(KIND[e?.kind]||'')+' — '+esc(WHY[x.reason]||x.reason)+'</li>'})].join('')||'<li>いま届く通知はありません</li>';
  return '<p class="atk-ft-banner" role="note">【試用・合成データ】この端末の中だけで動きます。実際の家族共有、在庫・買い物リストの変更、通知の送信は行いません。</p>'+
   (lastNote?'<p class="atk-ft-note" role="status">'+esc(lastNote)+'</p>':'<p class="atk-ft-note" role="status"></p>')+
@@ -180,10 +185,20 @@ doc.addEventListener('change',e=>{
  if(t.dataset.ftAssign!=null)assign(t.dataset.ftAssign,t.value);
  else if(t.dataset.ftPrepby)setPrepBy(t.dataset.ftPrepby,t.value);
  else if(t.dataset.ftTick){const id=t.dataset.ftTick;s.ticks=t.checked?[...new Set([...s.ticks,id])]:s.ticks.filter(x=>x!==id)}
- else if(t.hasAttribute('data-ft-left')){s.mamaLeft=t.checked;
-  // Leaving: what ママ was asked to buy is released and the preparation goes to パパ (as the server does).
-  if(t.checked){for(const b of s.buys)if(!b.bought&&(b.assignee===M||(b.requester===M&&b.response==='pending')))Object.assign(b,{assignee:null,response:'none',rev:b.rev+1});
-   for(const c of s.children)if(c.prepBy===M)c.prepBy=P;if(s.viewer===M)s.viewer=P;note('ママが抜けた場合：担当と準備はパパに戻り、ママへの通知は送りません')}}
+ else if(t.hasAttribute('data-ft-left')){
+  if(!t.checked){s.mamaLeft=false;save();render();return}
+  // Before leaving, say what will happen (as the real app's leave confirmation does).
+  t.checked=false;
+  const asked=s.buys.filter(b=>!b.bought&&b.assignee===M).length,requested=s.buys.filter(b=>!b.bought&&b.requester===M&&b.response==='pending').length,prep=s.children.filter(c=>c.prepBy===M).map(c=>c.name);
+  const text='ママが家族から抜けると：'+(asked?'ママが頼まれていた買い物'+asked+'件の担当が外れます。':'')+(requested?'ママが頼んで返事がまだのお願い'+requested+'件は取り下げられます。':'')+(prep.length?prep.join('・')+'の準備の担当はパパになります。':'')+'まだ届いていない通知は送られません。（試用・合成データ）';
+  const apply=()=>{s.mamaLeft=true;
+   // What ママ was asked to buy is released and the preparation goes to パパ (as the server does).
+   for(const b of s.buys)if(!b.bought&&(b.assignee===M||(b.requester===M&&b.response==='pending')))Object.assign(b,{assignee:null,response:'none',rev:b.rev+1});
+   for(const c of s.children)if(c.prepBy===M)c.prepBy=P;if(s.viewer===M)s.viewer=P;note('ママが抜けた場合：担当と準備はパパに戻り、ママへの通知は送りません');save();render()};
+  const ask=root.AtokoreConfirm?.ask;
+  if(typeof ask==='function'){ask('ママが抜けた場合を試しますか？',text,'抜けた場合を試す').then(ok=>{if(ok)apply()});return}
+  apply();return;
+ }
  else if(t.hasAttribute('data-ft-all')){s.prefs[s.viewer]={...s.prefs[s.viewer],all:t.checked}}
  else if(t.dataset.ftPref){s.prefs[s.viewer]={...s.prefs[s.viewer],[t.dataset.ftPref]:t.checked}}
  save();render();

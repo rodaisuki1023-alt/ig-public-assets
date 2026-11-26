@@ -2,7 +2,7 @@
 // Everything is synthetic and on this device: no network, no change to the real stock or shopping list,
 // no real family sharing and nothing sent.
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, baseState, KEY } = require('./helpers.cjs');
+const { open, go, stored, baseState, KEY, appConfirm } = require('./helpers.cjs');
 const trial = page => page.locator('#atkFamilyTrial');
 async function start(page) {
   const external = [];
@@ -27,8 +27,10 @@ test('assignment and reply: ママ asks パパ, パパ answers 今回は難し�
   await viewer(page, 'パパ');
   await expect(notes(page)).toContainText('届く：');                                                      // パパ: the request (combined)
   await row(page, 'おしりふき').getByRole('button', { name: '今回は難しい' }).click();
-  await expect(row(page, 'おしりふき')).toContainText('担当なし');
+  await expect(row(page, 'おしりふき')).toContainText('担当なし（ママのお願いに「今回は難しい」と返事がありました）');
   await viewer(page, 'ママ');
+  await expect(row(page, 'おしりふき')).toContainText('担当なし（あなたのお願いに「今回は難しい」と返事がありました）');
+  await expect(row(page, 'おしりふき')).not.toContainText('なしへの返事');
   await expect(notes(page)).toContainText('届く：');
   expect(JSON.stringify(await page.evaluate(() => AtokoreFamilyTrial.preview().events.map(e => e.kind)))).toContain('assignment-response');
   // A second reply to the same request is refused by the rule (no longer pending).
@@ -67,8 +69,11 @@ test('notification preview: quiet hours, everything off, a kind off, settled ite
   await viewer(page, 'ママ');
   await expect(notes(page)).toContainText('届く：家族から');                               // refill (diapers, milk) + prep, combined into one
   await expect(notes(page)).toContainText('ロック画面には商品名を出しません');
+  await expect(notes(page)).toContainText('補充の予測：そろそろ補充が必要な物があります');    // each notice's own text
+  await expect(notes(page)).toContainText('明日の保育園準備：明日の準備を確認してください');
   await trial(page).getByRole('button', { name: '22時', exact: true }).click();
   await expect(notes(page)).toContainText('夜間（21時〜7時）なので朝7時に');
+  await expect(notes(page)).toContainText('07:00 に届く予定');                         // the planned time is shown
   await trial(page).getByRole('button', { name: '8時', exact: true }).click();
   await expect(notes(page)).toContainText('届く：');
   // Buying the milk settles the milk refill prediction.
@@ -84,8 +89,12 @@ test('notification preview: quiet hours, everything off, a kind off, settled ite
   await trial(page).getByRole('button', { name: '届いたことにする（試用）' }).click();
   await expect(notes(page)).not.toContainText('届く：');
   // ママ leaves: what she was asked is released and nothing is sent to her.
-  await trial(page).locator('[data-ft-left]').check();
+  await trial(page).locator('[data-ft-left]').click();
+  const said = await appConfirm(page, true);                                         // what happens is said first
+  expect(said).toContain('まだ届いていない通知は送られません');
   await expect(trial(page).locator('.atk-ft-note')).toContainText('ママへの通知は送りません');
+  await expect(row(page, 'おしりふき').locator('[data-ft-assign] option', { hasText: 'ママ' })).toHaveAttribute('disabled', '');
+  await expect(row(page, 'おしりふき').locator('[data-ft-assign] option', { hasText: 'ママ' })).toHaveText('ママ（抜けました）');
   await viewer(page, 'ママ');
   await expect(notes(page)).toContainText('家族から抜けたので送りません');
   await expect(notes(page)).not.toContainText('届く：');

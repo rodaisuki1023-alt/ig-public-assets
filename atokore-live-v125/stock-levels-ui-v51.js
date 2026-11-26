@@ -117,7 +117,9 @@ doc.addEventListener('input',e=>{const fs=e.target.closest?.('[data-atk-rate]');
 doc.addEventListener('change',e=>{const fs=e.target.closest?.('[data-atk-rate]');if(fs)refreshRate(fs)});
 // Display only (the stored value is never rewritten here): an amount saved by an older build through a
 // stepping input can be a single-precision artefact such as 5.599999904632568; show it as 5.6.
-const amount=n=>{const v=Number(n);return Number.isFinite(v)?String(Math.round(v*100)/100):''};
+// Lossless: only representation noise is removed (L.clean), so 0.125 stays 0.125 and editing it does not
+// silently save a rounded 0.13 (Muse 5th); 5.599999904632568 still shows as 5.6.
+const amount=n=>{const v=Number(n);return Number.isFinite(v)?String(L.clean(v)):''};
 function settingsText(track,unit){
  const parts=[];
  if(track.perPack)parts.push('1'+(unit.container||'袋')+track.perPack+unit.piece);
