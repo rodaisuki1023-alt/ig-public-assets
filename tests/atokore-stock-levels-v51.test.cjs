@@ -196,3 +196,36 @@ test('undo on screen (polish): clears exactly the purchase field; asks only if a
  const plain=inverseCounters({items:[diaper({qty:2})],buys:[],routines:[]},[{...change,entries:undefined}]).items[0];
  assert.equal(plain.qty,1);
 });
+
+// Muse N-1b: the way of entering the daily use is explicit; the chosen numbers are always used.
+test('daily use mode: total and per-child are explicit, nothing is silently ignored or lost',()=>{
+ const today='2026-11-20';
+ const base={units:100,today,now:Date.parse(today+'T03:00:00Z')};
+ assert.deepEqual(L.startTrack({...base,mode:'total',perDay:6,perChild:[4,3]}).track.perDay,6);
+ const kept=L.startTrack({...base,mode:'total',perDay:6,perChild:[4,3]}).track;
+ assert.deepEqual([kept.rateMode,kept.perChild],['total',[4,3]],'children amounts kept, unused');
+ const kids=L.startTrack({...base,mode:'children',perDay:6,perChild:[4,3]}).track;
+ assert.deepEqual([kids.rateMode,kids.perDay,kids.perChild],['children',7,[4,3]]);
+ assert.match(L.startTrack({...base,perDay:6,perChild:[4,3]}).error,/入れ方/,'both without a mode is ambiguous, refused');
+ assert.match(L.startTrack({...base,mode:'children',perDay:6,perChild:[null,null]}).error,/子どもごと/);
+ assert.equal(L.startTrack({...base,mode:'children',perChild:[2.5,3.1]}).track.perDay,5.6);
+ assert.equal(L.startTrack({...base,mode:'children',perChild:[5]}).track.perDay,5,'one child is allowed');
+ // Older tracks: perChild meant per-child entry; no perChild means total.
+ assert.equal(L.readTrack({v:1,base:10,since:today,perDay:7,perChild:[4,3]}).rateMode,'children');
+ assert.equal(L.readTrack({v:1,base:10,since:today,perDay:7}).rateMode,'total');
+ assert.equal(L.readTrack({v:1,base:10,since:today,perDay:7,rateMode:'children'}).rateMode,'total','children without amounts cannot be used');
+ // Editing: total with saved children uses the typed total.
+ const item={id:2,name:'おむつ',qty:2,unit:'袋',track:{v:1,base:120,since:today,perDay:7,perPack:60,perChild:[4,3]}};
+ const e=L.editTrack(item,{mode:'total',perDay:'6',perChild:[4,3],today,now:base.now});
+ assert.deepEqual([e.track.perDay,e.track.rateMode,e.track.perChild],[6,'total',[4,3]]);
+ const back=L.editTrack({...item,track:e.track},{mode:'children',perDay:'6',perChild:[4,3],today,now:base.now});
+ assert.deepEqual([back.track.perDay,back.track.rateMode],[7,'children']);
+});
+test('float clean-up removes representation noise only',()=>{
+ assert.equal(L.clean(5.599999904632568),5.6,'Math.fround(5.6) from an older stepping input');
+ assert.equal(L.clean(2.5+3.1),5.6);
+ for(const v of [6,5.6,0.125,7,1234.5678,0.01,9999])assert.equal(L.clean(v),v,String(v));
+ const old={id:2,name:'おむつ',qty:2,unit:'袋',track:{v:1,base:120,since:'2026-11-20',perDay:5.599999904632568,perPack:60}};
+ assert.equal(L.readTrack(old.track).perDay,5.599999904632568,'not rewritten on read');
+ assert.equal(L.editTrack(old,{mode:'total',perDay:'',today:'2026-11-20',now:1}).track.perDay,5.6,'normalized when saved');
+});

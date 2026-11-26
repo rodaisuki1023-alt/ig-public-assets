@@ -48,6 +48,35 @@ const dayOf=t=>new Date(t).toISOString().slice(0,10);
 const between=(a,b)=>Math.round((Date.parse(b+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/DAY);
 const num=(v,max,{min=0,int=false}={})=>{const n=Number(v);return Number.isFinite(n)&&n>=min&&n<=max&&(!int||Number.isInteger(n))?n:null};
 const round1=n=>Math.round(n*10)/10;
+// Removes only representation noise, never a value the person meant: binary sums such as
+// 2.5+3.1=5.6000000000000005 (12 significant digits) and single-precision copies such as
+// 5.599999904632568 = Math.fround(5.6) left by an older stepping input. 6, 5.6 and 0.125 stay as is.
+const clean=n=>{if(!Number.isFinite(n))return n;const s7=Number(n.toPrecision(7));return s7!==n&&Math.fround(s7)===n?s7:Number(n.toPrecision(12))};
+// How the daily use was entered: 'total' (one number for everyone) or 'children' (each child's own
+// amount, summed). Always explicit from v51.8; older tracks with perChild were per-child entries.
+const RATE_MODES=Object.freeze(['total','children']);
+function kidList(perChild){return Array.isArray(perChild)?perChild.filter(v=>v!==null&&v!==''&&v!==undefined):[]}
+function validKids(kids){return kids.length>=1&&kids.length<=6&&kids.every(n=>num(n,MAX_PER_DAY,{min:0.01})!==null)?kids.map(n=>clean(Number(n))):null}
+/** The daily rate from an explicit mode. Never ignores the number of the mode that was chosen. */
+function rateFrom({mode,perDay,perChild,fallback=null}){
+ const kids=kidList(perChild);
+ if(mode==null){
+  // Callers that do not say the mode (older code): both given is ambiguous, so it is refused.
+  const hasDay=perDay!=null&&perDay!=='';
+  if(hasDay&&kids.length)return {error:'1日の量の入れ方（合計／子どもごと）を選んでください'};
+  mode=kids.length?'children':'total';
+ }
+ if(!RATE_MODES.includes(mode))return {error:'1日の量の入れ方を確認できませんでした'};
+ if(mode==='children'){
+  const pc=validKids(kids);
+  if(!pc)return {error:'子どもごとの量を、1人以上、0より大きい数で入力してください'};
+  return {perDay:combinedPerDay(pc),perChild:pc,rateMode:'children'};
+ }
+ const d=perDay==null||perDay===''?fallback:num(perDay,MAX_PER_DAY,{min:0.01});
+ if(d===null)return {error:'1日に使う量は0より大きい数で入力してください'};
+ // Per-child amounts typed or saved before are kept (not used) so switching back loses nothing.
+ return {perDay:clean(d),perChild:validKids(kids),rateMode:'total'};
+}
 
 /** Valid track or null. Never throws; corrupt data simply means "no estimate". */
 function readTrack(t){
@@ -62,19 +91,18 @@ function readTrack(t){
  const check=CHECKS.includes(t.check)?t.check:null;
  // Older tracks have no observation time: the start of their base day (any time zone) is used.
  const at=Number.isSafeInteger(t.t)&&t.t>0?t.t:Date.parse(t.since+'T00:00:00Z')-14*3600000;
- const perChild=Array.isArray(t.perChild)&&t.perChild.length>=2&&t.perChild.length<=6&&t.perChild.every(n=>num(n,MAX_PER_DAY,{min:0.01})!==null)?t.perChild.map(Number):null;
- return {v:1,base,since:t.since,perDay,perPack,refillDays,pieceUnit,perChild,size:typeof t.size==='string'?t.size.slice(0,40):null,
+ const perChild=Array.isArray(t.perChild)?validKids(t.perChild):null;
+ const rateMode=RATE_MODES.includes(t.rateMode)?(t.rateMode==='children'&&!perChild?'total':t.rateMode):perChild?'children':'total';
+ return {v:1,base,since:t.since,perDay,perPack,refillDays,pieceUnit,perChild,rateMode,size:typeof t.size==='string'?t.size.slice(0,40):null,
   snoozeUntil:isDay(t.snoozeUntil)?t.snoozeUntil:null,confirmedAt:isDay(t.confirmedAt)?t.confirmedAt:t.since,t:at,seen,check};
 }
 
 /** Start detailed tracking. Either units, or packs × perPack. Returns {track} or {error}. */
-function startTrack({units=null,packs=null,perPack=null,perDay,perChild=null,refillDays=DEFAULT_REFILL_DAYS,size=null,pieceUnit=null,today,now=Date.now(),seen=[]}={}){
+function startTrack({units=null,packs=null,perPack=null,perDay,perChild=null,mode=null,refillDays=DEFAULT_REFILL_DAYS,size=null,pieceUnit=null,today,now=Date.now(),seen=[]}={}){
  if(!isDay(today))return {error:'日付を確認できませんでした'};
  // Several children: each child's own daily use is summed (the sum is what the estimate uses).
- const kids=Array.isArray(perChild)?perChild.filter(v=>v!==null&&v!==''&&v!==undefined):[];
- if(kids.length===1)perDay=kids[0];
- if(kids.length>=2){const sum=combinedPerDay(kids);if(sum===null)return {error:'子どもごとの量は0より大きい数で入力してください'};perDay=sum}
- const d=num(perDay,MAX_PER_DAY,{min:0.01});if(d===null)return {error:'1日に使う量は0より大きい数で入力してください'};
+ const rate=rateFrom({mode,perDay,perChild});if(rate.error)return rate;
+ const d=rate.perDay;
  const r=num(refillDays,MAX_REFILL,{min:1,int:true});if(r===null)return {error:'補充ラインは1〜'+MAX_REFILL+'日で入力してください'};
  let base,pp=null;
  if(packs!=null){
@@ -87,8 +115,7 @@ function startTrack({units=null,packs=null,perPack=null,perDay,perChild=null,ref
   if(perPack!=null){pp=num(perPack,MAX_PER_PACK,{min:1,int:true});if(pp===null)return {error:'1袋の枚数（個数）を整数で入力してください'}}
  }
  const pu=typeof pieceUnit==='string'&&pieceUnit.length<=4?pieceUnit:null;
- const pc=kids.length>=2?kids.map(Number):null;
- return {track:{v:1,base,since:today,perDay:d,perPack:pp,refillDays:r,pieceUnit:pu,perChild:pc,size:size?String(size).slice(0,40):null,snoozeUntil:null,confirmedAt:today,t:now,seen:[...seen].slice(-40),check:null}};
+ return {track:{v:1,base,since:today,perDay:d,perPack:pp,refillDays:r,pieceUnit:pu,perChild:rate.perChild,rateMode:rate.rateMode,size:size?String(size).slice(0,40):null,snoozeUntil:null,confirmedAt:today,t:now,seen:[...seen].slice(-40),check:null}};
 }
 
 /** Estimate for one item on `today`. Never reads or changes item.qty for the estimate itself. */
@@ -239,25 +266,23 @@ function staleEntries(item){
 /** Change the pieces per bag and/or the daily use later. The estimate continues from what it
  * shows today (past days keep the old rate); purchases already counted stay counted. When the
  * estimate cannot decide (unknown, stale, a purchase to check) it asks to check first. */
-function editTrack(item,{perPack,perDay,perChild=null,today,now=Date.now()}={}){
+function editTrack(item,{perPack,perDay,perChild=null,mode=null,today,now=Date.now()}={}){
  const t=readTrack(item?.track);if(!t)return {error:'見積もりの設定がありません'};
  const e=estimate(item,today);
  if(e.status!=='estimate')return {error:'今の残りが分からないため変更できません。先に「まだある」で残りを入れてください'};
- const kids=Array.isArray(perChild)?perChild.filter(v=>v!==null&&v!==''&&v!==undefined):[];
- let d=perDay==null||perDay===''?t.perDay:num(perDay,MAX_PER_DAY,{min:0.01});
- if(kids.length>=2){d=combinedPerDay(kids);if(d===null)return {error:'子どもごとの量は0より大きい数で入力してください'}}
- else if(kids.length===1)d=num(kids[0],MAX_PER_DAY,{min:0.01});
- if(d===null)return {error:'1日に使う量は0より大きい数で入力してください'};
+ // A blank total keeps the current rate (normalized); the mode the person chose is always followed.
+ const rate=rateFrom({mode,perDay,perChild,fallback:t.perDay});if(rate.error)return rate;
+ const d=rate.perDay;
  let pp=t.perPack;
  if(perPack!=null&&perPack!==''){pp=num(perPack,MAX_PER_PACK,{min:1,int:true});if(pp===null)return {error:'1袋の枚数（個数）を整数で入力してください'}}
- return {track:{...t,base:e.remaining,since:today,perDay:d,perPack:pp,perChild:kids.length>=2?kids.map(Number):null,t:now,seen:seenKeys(item),check:null}};
+ return {track:{...t,base:e.remaining,since:today,perDay:d,perPack:pp,perChild:rate.perChild,rateMode:rate.rateMode,t:now,seen:seenKeys(item),check:null}};
 }
 
 /** Several children: the household rate is the sum of each child's own daily use. */
 function combinedPerDay(rates){
  if(!Array.isArray(rates)||!rates.length||rates.length>6)return null;
  let sum=0;for(const r of rates){const n=num(r,MAX_PER_DAY,{min:0.01});if(n===null)return null;sum+=n}
- return round1(sum*100)/100;
+ return clean(sum);
 }
 
 /** A changed size (e.g. diaper M -> L) keeps the actual count but resets the estimate. */
@@ -274,7 +299,7 @@ function units(item){
  const piece=container?(brand||(/おむつ|オムツ|パンツ|テープ|おしりふき/.test(String(item?.name||''))?'枚':'個')):unit;
  return {unit,container,piece};
 }
-const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,editTrack,addPurchase,entryField,readEntry,entries,seenKeys,purchaseEntry,staleEntries,combinedPerDay,changeSize});
+const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,RATE_MODES,clean,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,editTrack,addPurchase,entryField,readEntry,entries,seenKeys,purchaseEntry,staleEntries,combinedPerDay,changeSize});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreStockLevels=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

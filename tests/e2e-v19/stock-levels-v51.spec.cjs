@@ -102,11 +102,18 @@ for (const width of [320, 393, 430]) test(`かんたん管理 fits at ${width}px
   await level(page).locator('.atk-level-detail > summary').click();
   const facts = await page.evaluate(() => {
     const box = document.querySelector('#sheet .atk-level');
-    const targets = [...box.querySelectorAll('button,summary,input')].filter(e => e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().height);
+    // A radio's touch target is its whole label row (tapping anywhere on it selects it), so the
+    // label is measured; the label must contain the radio and be at least 44px too.
+    const target = e => e.type === 'radio' ? e.closest('label') : e;
+    const shown = [...box.querySelectorAll('button,summary,input')].filter(e => e.getBoundingClientRect().width > 0);
+    const targets = shown.map(e => target(e).getBoundingClientRect().height);
+    const radios = shown.filter(e => e.type === 'radio').map(e => target(e).getBoundingClientRect().width);
     const r = box.getBoundingClientRect();
-    return { min: Math.min(...targets), right: r.right, scroll: document.documentElement.scrollWidth - innerWidth };
+    return { min: Math.min(...targets), radios: radios.length, radioMinWidth: Math.min(...radios), right: r.right, scroll: document.documentElement.scrollWidth - innerWidth };
   });
   expect(facts.min).toBeGreaterThanOrEqual(44);
+  expect(facts.radios).toBe(2);
+  expect(facts.radioMinWidth).toBeGreaterThanOrEqual(200);
   expect(facts.right).toBeLessThanOrEqual(width);
   expect(facts.scroll).toBeLessThanOrEqual(0);
 });
@@ -204,7 +211,7 @@ test('a correction can be put back; a chosen level shows its date and asks again
   await expect(level(page).locator('[data-atk-level-undo]')).toHaveCount(0);
   // Old level: dated and asks again; it still decides nothing on its own.
   await detail(page, 3);
-  await expect(level(page).locator('.atk-level-detail')).toContainText('全員分を足した量'); // start form of an untracked item
+  await expect(level(page).locator('.atk-level-detail')).toContainText('1日に使う量（全員の合計）'); // start form of an untracked item
   await expect(level(page).locator('.atk-level-stale')).toContainText('40日たったので');
   await detail(page, 4);
   await expect(level(page).locator('.atk-level-stale')).toContainText('在庫数は0になっています');
@@ -244,11 +251,12 @@ test('daily use: 6 stays 6 (also after stepping), 5.6 stays 5.6, children sum ex
   expect(t.perDay).toBe(5.6);
   // Children 4 + 3 = 7 and 2.5 + 3.1 = 5.6 (the sum, not a float artefact).
   await level(page).locator('.atk-level-edit > summary').click();
-  await level(page).locator('.atk-level-edit [data-atk-level-edit-day]').fill('');
-  await level(page).locator('.atk-level-edit .atk-level-kids > summary').click();
+  await level(page).locator('.atk-level-edit [data-atk-rate-mode][value="children"]').check();
   await level(page).locator('.atk-level-edit [data-atk-level-kid="0"]').fill('4');
   await level(page).locator('.atk-level-edit [data-atk-level-kid="1"]').fill('3');
   await level(page).locator('[data-atk-level-edit]').click();
+  await appConfirm(page, true);                                   // the way of entering changes: confirmed
+  await expect.poll(async () => (await stored(page)).items.find(x => x.id === 2).track.rateMode).toBe('children');
   t = (await stored(page)).items.find(x => x.id === 2).track;
   expect([t.perDay, t.perChild]).toEqual([7, [4, 3]]);
   await level(page).locator('.atk-level-edit > summary').click();
@@ -414,5 +422,80 @@ test('last purchase deadline: a double tap starts one undo only', async ({ page 
   const s = await stored(page);
   expect(s.items.find(x => x.id === 2).qty).toBe(2);
   expect(s.buys.filter(b => b.id === 20)).toHaveLength(1);
+  expect(page.__errors).toEqual([]);
+});
+
+// Muse N-1b: with per-child amounts saved, a typed total was silently ignored. The way of entering
+// is now an explicit choice; the chosen numbers are always used and the others are kept.
+async function rateState(page, track) {
+  const s = baseState();
+  s.items[1].track = { v: 1, base: 120, since: localDay(), perPack: 60, refillDays: 5, pieceUnit: '枚', confirmedAt: localDay(), ...track };
+  await open(page, { [KEY]: s });
+  await detail(page, 2);
+  await level(page).locator('.atk-level-edit > summary').click();
+}
+const trackOf = async page => (await stored(page)).items.find(x => x.id === 2).track;
+test('daily use mode: older per-child data opens as 子どもごと; switching to 合計 uses the typed 6, keeps 4＋3, survives reload, and can be put back', async ({ page }) => {
+  await rateState(page, { perDay: 7, perChild: [4, 3] });          // saved before the mode existed
+  const ed = level(page).locator('.atk-level-edit');
+  await expect(ed.locator('[data-atk-rate-mode][value="children"]')).toBeChecked();
+  await expect(ed.locator('[data-atk-rate-sum]')).toHaveText('計算に使う量：1日7枚（4＋3）');
+  await expect(ed.locator('[data-atk-level-edit-day]')).toBeHidden();
+  await ed.locator('[data-atk-rate-mode][value="total"]').check();
+  await expect(ed.locator('[data-atk-level-kid="0"]')).toBeHidden();
+  await expect(ed.locator('[data-atk-level-edit-day]')).toHaveValue('7');     // the current total, visible
+  await ed.locator('[data-atk-level-edit-day]').fill('6');
+  await expect(ed.locator('[data-atk-rate-sum]')).toContainText('計算に使う量：1日6枚（合計で入力）');
+  await expect(ed.locator('[data-atk-rate-sum]')).toContainText('子どもごとの量（4＋3）は消さずに残しています');
+  await ed.locator('[data-atk-level-edit]').click();
+  const text = await appConfirm(page, true);
+  expect(text).toContain('1日6枚');
+  expect(text).toContain('（4＋3）は消さずに残します');
+  await expect.poll(async () => (await trackOf(page)).perDay).toBe(6);
+  expect(await trackOf(page)).toMatchObject({ perDay: 6, perChild: [4, 3], rateMode: 'total' });
+  await expect(level(page).locator('.atk-level-estimate')).toContainText('1日6枚で計算');
+  await page.reload();
+  await detail(page, 2);
+  await expect(level(page).locator('.atk-level-estimate')).toContainText('1日6枚で計算');
+  await level(page).locator('.atk-level-edit > summary').click();
+  await expect(ed.locator('[data-atk-rate-mode][value="total"]')).toBeChecked();
+  await expect(ed).toContainText('1日6枚（合計で入力）');
+  // Switching back restores the kept children's amounts (nothing was lost).
+  await ed.locator('[data-atk-rate-mode][value="children"]').check();
+  await expect(ed.locator('[data-atk-level-kid="0"]')).toHaveValue('4');
+  await expect(ed.locator('[data-atk-level-kid="1"]')).toHaveValue('3');
+  expect(page.__errors).toEqual([]);
+});
+test('daily use mode: 合計 → 子どもごと, cancel changes nothing, confirm uses 4＋3=7, then 変える前の設定に戻す restores 6', async ({ page }) => {
+  await rateState(page, { perDay: 6, rateMode: 'total' });
+  const ed = level(page).locator('.atk-level-edit');
+  await expect(ed.locator('[data-atk-rate-mode][value="total"]')).toBeChecked();
+  await ed.locator('[data-atk-rate-mode][value="children"]').check();
+  await ed.locator('[data-atk-level-kid="0"]').fill('4');
+  await ed.locator('[data-atk-level-kid="1"]').fill('3');
+  await expect(ed.locator('[data-atk-rate-sum]')).toHaveText('計算に使う量：1日7枚（4＋3）');
+  await ed.locator('[data-atk-level-edit]').click();
+  await appConfirm(page, false);
+  expect(await trackOf(page)).toMatchObject({ perDay: 6, rateMode: 'total' });
+  await ed.locator('[data-atk-level-edit]').click();
+  await appConfirm(page, true);
+  await expect.poll(async () => (await trackOf(page)).perDay).toBe(7);
+  expect(await trackOf(page)).toMatchObject({ perDay: 7, perChild: [4, 3], rateMode: 'children' });
+  await level(page).locator('[data-atk-level-undo]').click();
+  await expect.poll(async () => (await trackOf(page)).perDay).toBe(6);
+  expect((await trackOf(page)).rateMode).toBe('total');
+  expect(page.__errors).toEqual([]);
+});
+test('daily use mode: 5.6 typed as the total stays 5.6; an empty 子どもごと is refused with a message, never ignored', async ({ page }) => {
+  await rateState(page, { perDay: 6, rateMode: 'total' });
+  const ed = level(page).locator('.atk-level-edit');
+  await ed.locator('[data-atk-level-edit-day]').fill('5.6');
+  await ed.locator('[data-atk-level-edit]').click();
+  await expect.poll(async () => (await trackOf(page)).perDay).toBe(5.6);
+  await level(page).locator('.atk-level-edit > summary').click();
+  await ed.locator('[data-atk-rate-mode][value="children"]').check();
+  await ed.locator('[data-atk-level-edit]').click();
+  await expect(level(page).locator('.atk-level-error')).toContainText('子どもごとの量を、1人以上');
+  expect((await trackOf(page)).perDay).toBe(5.6);
   expect(page.__errors).toEqual([]);
 });

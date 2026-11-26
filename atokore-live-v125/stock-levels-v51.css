@@ -98,6 +98,15 @@
 .atk-level-kids,.atk-level-edit{margin:8px 0}
 .atk-level-kids summary,.atk-level-edit summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}
 .atk-level-kid-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.atk-level-kid-grid[hidden],.atk-level-field[hidden]{display:none!important}
+/* Daily use: one explicit way of entering it (total or per child); the chosen way is always used. */
+.atk-level-rate{margin:8px 0;padding:8px;border:1px solid #E5D3CB;border-radius:12px;min-width:0}
+.atk-level-rate legend{padding:0 4px;font-weight:700;font-size:14px}
+.atk-level-mode{display:grid;gap:6px;margin-bottom:6px}
+.atk-level-mode-opt{display:flex;align-items:center;gap:8px;min-height:44px;padding:4px 10px;border:1px solid #D8C6BE;border-radius:12px;background:#fff;font-weight:700;cursor:pointer}
+.atk-level-mode-opt:has(input:checked){border-color:#4A3B36;background:#FBF1EC}
+.atk-level-mode-opt input{width:22px;height:22px;margin:0;flex:none}
+.atk-level-rate-sum{font-weight:700}
 .atk-build-info{margin:16px 0 0;font-size:12px;color:#7A6A64;overflow-wrap:anywhere}
 .atk-prep-addkid{flex-wrap:wrap}
 .atk-prep-addkid input{flex:1 1 40%}

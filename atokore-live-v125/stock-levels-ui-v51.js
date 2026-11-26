@@ -78,19 +78,50 @@ function manualNote(x,t){
  if(x.level==='plenty'&&Number(x.qty)===0)return '<p class="atk-level-note atk-level-stale" role="note">'+esc(when)+'。在庫数は0になっています。どちらが正しいか確認してください。</p>';
  return '<p class="atk-level-note">'+esc(when)+'</p>';
 }
-// Each child's own daily use (up to 4); the estimate uses the sum.
-function kidsHTML(values,pu){
- return '<details class="atk-level-kids"'+(values?' open':'')+'><summary>子どもごとに入れる（自動で合計）</summary><div class="atk-level-kid-grid">'+
-  [0,1,2,3].map(i=>'<label class="atk-level-field">'+(i+1)+'人目<input type="number" inputmode="decimal" min="0" step="any" data-atk-level-kid="'+i+'" value="'+esc(values?.[i]==null?'':amount(values[i]))+'"><span>'+pu+'</span></label>').join('')+
-  '</div></details>';
+// v51 (Muse N-1b): the daily use is entered in one of two explicit ways, and the chosen one is
+// always used. Switching only shows the other inputs; nothing typed or saved is discarded.
+function rateHTML(kind,id,track,pu){
+ const mode=track?.rateMode||'total',kids=track?.perChild||[],name='atkRate'+kind+id;
+ const radio=(v,label)=>'<label class="atk-level-mode-opt"><input type="radio" name="'+name+'" value="'+v+'" data-atk-rate-mode'+(mode===v?' checked':'')+'><span>'+label+'</span></label>';
+ const day=kind==='edit'?'data-atk-level-edit-day':'data-atk-level-per-day';
+ return '<fieldset class="atk-level-rate" data-atk-rate><legend>1日に使う量の入れ方</legend>'+
+  '<div class="atk-level-mode">'+radio('total','合計を直接入れる')+radio('children','子どもごとに入れる（自動で合計）')+'</div>'+
+  '<label class="atk-level-field" data-atk-rate-total'+(mode==='total'?'':' hidden')+'>1日に使う量（全員の合計）<input type="number" inputmode="decimal" min="0" step="any" '+day+' value="'+esc(track?amount(track.perDay):'')+'"'+(kind==='start'?' placeholder="例：6"':'')+'><span>'+pu+'</span></label>'+
+  '<div class="atk-level-kid-grid" data-atk-rate-kids'+(mode==='children'?'':' hidden')+'>'+
+   Array.from({length:Math.max(4,kids.length)},(_,i)=>'<label class="atk-level-field">'+(i+1)+'人目<input type="number" inputmode="decimal" min="0" step="any" data-atk-level-kid="'+i+'" value="'+esc(kids[i]==null?'':amount(kids[i]))+'"><span>'+pu+'</span></label>').join('')+
+  '</div><p class="atk-level-note atk-level-rate-sum" role="status" aria-live="polite" data-atk-rate-sum>'+esc(rateSummary(mode,track?amount(track.perDay):'',kids.map(amount),pu))+'</p></fieldset>';
 }
+function rateSummary(mode,day,kids,pu){
+ const filled=kids.filter(v=>v!==''&&v!=null);
+ if(mode==='children'){
+  const sum=L.combinedPerDay(filled.map(Number));
+  return sum==null?'子どもごとの量を入れると、合計を計算します。':'計算に使う量：1日'+amount(sum)+pu+'（'+filled.join('＋')+'）';
+ }
+ const d=Number(day);
+ return (day!==''&&Number.isFinite(d)&&d>0?'計算に使う量：1日'+amount(d)+pu+'（合計で入力）':'1日に使う量を入れてください。')+
+  (filled.length?'。子どもごとの量（'+filled.join('＋')+'）は消さずに残しています（今は使いません）':'');
+}
+function readRate(fs){
+ const mode=fs.querySelector('[data-atk-rate-mode]:checked')?.value||'total';
+ const day=fs.querySelector('[data-atk-level-edit-day],[data-atk-level-per-day]')?.value??'';
+ const kids=[...fs.querySelectorAll('[data-atk-level-kid]')].map(i=>i.value===''?null:Number(i.value));
+ return {mode,perDay:day===''?null:day,perChild:kids};
+}
+function refreshRate(fs){
+ const r=readRate(fs),pu=fs.querySelector('[data-atk-level-kid]')?.nextElementSibling?.textContent||'';
+ fs.querySelector('[data-atk-rate-total]').hidden=r.mode!=='total';
+ fs.querySelector('[data-atk-rate-kids]').hidden=r.mode!=='children';
+ fs.querySelector('[data-atk-rate-sum]').textContent=rateSummary(r.mode,r.perDay??'',r.perChild.map(v=>v==null?'':String(v)),pu);
+}
+doc.addEventListener('input',e=>{const fs=e.target.closest?.('[data-atk-rate]');if(fs)refreshRate(fs)});
+doc.addEventListener('change',e=>{const fs=e.target.closest?.('[data-atk-rate]');if(fs)refreshRate(fs)});
 // Display only (the stored value is never rewritten here): an amount saved by an older build through a
 // stepping input can be a single-precision artefact such as 5.599999904632568; show it as 5.6.
 const amount=n=>{const v=Number(n);return Number.isFinite(v)?String(Math.round(v*100)/100):''};
 function settingsText(track,unit){
  const parts=[];
  if(track.perPack)parts.push('1'+(unit.container||'袋')+track.perPack+unit.piece);
- parts.push('1日'+amount(track.perDay)+unit.piece+(track.perChild?'（'+track.perChild.length+'人の合計：'+track.perChild.map(amount).join('＋')+'）':''));
+ parts.push('1日'+amount(track.perDay)+unit.piece+(track.rateMode==='children'?'（子どもごと：'+track.perChild.map(amount).join('＋')+'）':'（合計で入力）'));
  return '設定：'+parts.join('・');
 }
 function sectionHTML(x){
@@ -108,18 +139,16 @@ function sectionHTML(x){
     '<div class="atk-level-fix" role="group" aria-label="見積もりを直す"><button type="button" data-atk-level-fix="still">まだある</button><button type="button" data-atk-level-fix="usedUp">使い切った</button><button type="button" data-atk-level-fix="later">後で確認</button></div>'+
     '<details class="atk-level-edit"><summary>設定を変える（1袋の数・1日の量）</summary><p class="atk-level-note">'+esc(settingsText(track,unit))+'</p>'+
      (u.container?'<label class="atk-level-field">1'+esc(u.unit)+'あたり<input type="number" inputmode="numeric" min="1" step="1" data-atk-level-edit-pack value="'+esc(track.perPack??'')+'"><span>'+pu+'</span></label>':'')+
-     '<label class="atk-level-field">1日に使う量<input type="number" inputmode="decimal" min="0" step="any" data-atk-level-edit-day value="'+esc(track.perChild?'':amount(track.perDay))+'"><span>'+pu+'</span></label>'+
-     kidsHTML(track.perChild,pu)+
+     rateHTML('edit',id,track,pu)+
      '<button type="button" class="btn atk-level-start" data-atk-level-edit>この設定に変える</button><p class="atk-level-note">今日の見積もりから新しい設定で数え直します。</p></details>'+
-    (fixUndoable(x)?'<button type="button" class="atk-level-link" data-atk-level-undo>直す前の見積もりに戻す</button>':'')+
+    (fixUndoable(x)?'<button type="button" class="atk-level-link" data-atk-level-undo>'+(lastFix.kind==='edit'?'変える前の設定に戻す':'直す前の見積もりに戻す')+'</button>':'')+
     '<label class="atk-level-field">残り（わかれば）<input type="number" inputmode="decimal" min="0" step="1" data-atk-level-left placeholder="未入力でもOK"><span>'+pu+'</span></label>'+
     '<button type="button" class="atk-level-link" data-atk-level-stop>見積もりをやめる</button>'
    :'<p class="atk-level-note">入れた数から、毎日入力しなくても残りを見積もります。見積もりは実際の在庫数を変えません。</p>'+
     (u.container?'<label class="atk-level-field">'+esc(u.unit)+'の数<input type="number" inputmode="numeric" min="0" step="1" data-atk-level-packs value="'+esc(Number.isSafeInteger(Number(x.qty))?x.qty:'')+'"><span>'+esc(u.unit)+'</span></label>'+
      '<label class="atk-level-field">1'+esc(u.unit)+'あたり<input type="number" inputmode="numeric" min="1" step="1" data-atk-level-per-pack placeholder="例：60"><span>'+pu+'</span></label>'
      :'<label class="atk-level-field">今の残り<input type="number" inputmode="decimal" min="0" step="1" data-atk-level-units value="'+esc(Number.isFinite(Number(x.qty))?x.qty:'')+'"><span>'+pu+'</span></label>')+
-    '<label class="atk-level-field">1日に使う量<input type="number" inputmode="decimal" min="0" step="any" data-atk-level-per-day placeholder="例：6"><span>'+pu+'</span></label>'+
-    '<p class="atk-level-note">2人以上で使うときは、全員分を足した量か、下で子どもごとに入れてください。</p>'+kidsHTML(null,pu)+
+    rateHTML('start',id,null,pu)+
     '<label class="atk-level-field">補充ライン<input type="number" inputmode="numeric" min="1" max="60" step="1" data-atk-level-refill value="'+L.DEFAULT_REFILL_DAYS+'"><span>日前</span></label>'+
     '<button type="button" class="btn atk-level-start" data-atk-level-start>この内容で見積もる</button>')+
   '</details><p class="atk-level-error" role="alert" hidden></p></section>';
@@ -146,7 +175,7 @@ doc.addEventListener('click',event=>{
  }
  if(t.hasAttribute('data-atk-level-clear')){if(update(id,item=>Object.assign(item,L.clearLevel().patch)))paint(id);return}
  if(t.hasAttribute('data-atk-level-start')){
-  const u=L.units(x),kids=[...box.querySelectorAll('.atk-level-detail > .atk-level-kids [data-atk-level-kid]')].map(i=>i.value===''?null:Number(i.value)),common={perChild:kids,perDay:val('[data-atk-level-per-day]'),refillDays:val('[data-atk-level-refill]')??L.DEFAULT_REFILL_DAYS,size:x.size||null,pieceUnit:u.piece,today:today(),now:Date.now(),seen:L.seenKeys(x)};
+  const u=L.units(x),rate=readRate(box.querySelector('.atk-level-detail > [data-atk-rate]')),common={...rate,refillDays:val('[data-atk-level-refill]')??L.DEFAULT_REFILL_DAYS,size:x.size||null,pieceUnit:u.piece,today:today(),now:Date.now(),seen:L.seenKeys(x)};
   // Bags/boxes: the number of containers (prefilled with the counted stock) × pieces in one.
   const r=u.container?(val('[data-atk-level-per-pack]')==null?{error:'1'+u.unit+'あたりの'+u.piece+'数を入力してください'}
     :L.startTrack({...common,packs:val('[data-atk-level-packs]')??0,perPack:val('[data-atk-level-per-pack]')}))
@@ -155,11 +184,23 @@ doc.addEventListener('click',event=>{
   if(update(id,item=>{item.track=r.track;tidy(item)}))paint(id);return;
  }
  if(t.hasAttribute('data-atk-level-edit')){
-  const ed=box.querySelector('.atk-level-edit');
-  const kids=[...ed.querySelectorAll('[data-atk-level-kid]')].map(i=>i.value===''?null:Number(i.value));
-  const r=L.editTrack(x,{perPack:ed.querySelector('[data-atk-level-edit-pack]')?.value??null,perDay:ed.querySelector('[data-atk-level-edit-day]')?.value??null,perChild:kids,today:today(),now:Date.now()});
+  const ed=box.querySelector('.atk-level-edit'),rate=readRate(ed.querySelector('[data-atk-rate]'));
+  const r=L.editTrack(x,{perPack:ed.querySelector('[data-atk-level-edit-pack]')?.value??null,...rate,today:today(),now:Date.now()});
   if(r.error)return error(id,r.error);
-  if(update(id,item=>{item.track=r.track;tidy(item)}))paint(id);return;
+  const before=x.track,was=L.readTrack(before)?.rateMode;
+  const save=()=>{
+   if(!update(id,item=>{item.track=r.track;tidy(item)}))return;
+   // Any settings change can be put back once, while nothing else changed the estimate.
+   lastFix={id,kind:'edit',before:JSON.parse(JSON.stringify(before)),after:JSON.parse(JSON.stringify(r.track))};
+   paint(id);
+  };
+  const ask=root.AtokoreConfirm?.ask;
+  if(was&&was!==rate.mode&&typeof ask==='function'){
+   const unit=L.units(x).piece,kids=(r.track.perChild||[]).map(amount).join('＋');
+   ask('1日の量の入れ方を変えますか？',(rate.mode==='children'?'「子どもごと」に変えます。計算に使う量は1日'+amount(r.track.perDay)+unit+'（'+kids+'）になります。':'「合計を直接入れる」に変えます。計算に使う量は1日'+amount(r.track.perDay)+unit+'になります。'+(kids?'子どもごとの量（'+kids+'）は消さずに残します。':''))+'変えた後も「変える前の設定に戻す」で戻せます。','変える').then(ok=>{if(ok)save()});
+   return;
+  }
+  save();return;
  }
  if(t.hasAttribute('data-atk-level-stop')){if(update(id,item=>{item.track=undefined}))paint(id);return}
  if(t.hasAttribute('data-atk-level-undo')){
