@@ -16,12 +16,22 @@
 const doc=typeof document!=='undefined'?document:null;
 const section=doc&&doc.getElementById('atkPackingMvp');
 const core=root.AtokorePrepProposal;
-const KEY='atokorePrepSetsV1:'+(root.location?.pathname||'/');
+// Work 7th (D): #112 wrote a household's shared list into atokorePrepSetsV1, so what that key holds has no
+// known origin on a phone that used family sharing. The person's own list now lives under its own key with
+// its origin recorded (PROV: 'own' | 'unknown'). The old key is never deleted or rewritten; it is copied once.
+const PATH_KEY=(root.location?.pathname||'/');
+const LEGACY_KEY='atokorePrepSetsV1:'+PATH_KEY;
+const KEY='atokorePrepOwnV2:'+PATH_KEY;
+const PROV=KEY+':prov';
 const DAYS=['日','月','火','水','木','金','土'];
 const MAX_CHILDREN=4,MAX_ROWS=30,MAX_NAME=40;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=p=>p+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
-const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const localDay=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const today=()=>localDay(new Date());
+// Yesterday on this phone's calendar (not the UTC date of 24 hours ago, which is two days back in Japan
+// from 0:00 to 9:00 and dropped yesterday's ticks).
+const yesterday=()=>{const d=new Date();d.setDate(d.getDate()-1);return localDay(d)};
 const isDay=s=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s+'T00:00:00Z'))&&new Date(Date.parse(s+'T00:00:00Z')).toISOString().slice(0,10)===s;
 const empty=()=>({v:1,children:[],week:{},events:{},done:{}});
 
@@ -61,16 +71,46 @@ function pendingToday(state,date){
 
 let state=empty(),snapshot=null,locked=false,lastError='',loadedKey=KEY;
 const HKEY=id=>KEY+':hh:'+id;
+// Any trace that this phone used family sharing (the household-sync record or a #113 household copy).
+function familyHistory(){
+ try{
+  // The household record exists on every phone with the feature; it shows a past household only through
+  // the fields written when one was joined (sharedFor / sharedSince, kept after leaving) or a current one.
+  const raw=root.localStorage.getItem('atokoreHouseholdSyncV1');
+  if(raw!==null){let m;try{m=JSON.parse(raw)}catch(_){return true}
+   if(!m||typeof m!=='object'||m.household||m.sharedFor||m.sharedSince||Array.isArray(m.members)&&m.members.length||m.pendingJoin)return true}
+  return Object.keys(root.localStorage).some(k=>k.startsWith(LEGACY_KEY+':hh:'));
+ }catch(_){return true}                 // unknown counts as "maybe": the safe side
+}
+// One copy of the old key to the own key, with its origin. The origin is written first, so an interrupted
+// copy can only ever be "unknown"; it is retried on the next start (idempotent: never copied twice).
+function migrateLegacy(){
+ try{
+  if(root.localStorage.getItem(KEY)!==null)return;
+  const raw=root.localStorage.getItem(LEGACY_KEY);if(raw===null)return;
+  let parsed;try{parsed=JSON.parse(raw)}catch(_){return}
+  if(!valid(parsed))return;
+  root.localStorage.setItem(PROV,familyHistory()?'unknown':'own');
+  root.localStorage.setItem(KEY,raw);
+  if(root.localStorage.getItem(KEY)!==raw)throw Error('verify');
+ }catch(e){root.console?.warn?.('あとこれ 持ち物の移行（次回やり直します）',e)}
+}
+function provenance(){try{return root.localStorage.getItem(PROV)==='own'?'own':'unknown'}catch(_){return 'unknown'}}
+function legacyUnreadable(){try{const raw=root.localStorage.getItem(LEGACY_KEY);if(raw===null)return false;return !valid(JSON.parse(raw))}catch(_){return true}}
 function load(){
  const key=activeKey();loadedKey=key;
- try{const raw=root.localStorage.getItem(key);snapshot=raw;if(raw===null){state=empty();locked=false;return}
+ if(key===KEY)migrateLegacy();
+ // An old list that cannot be read is kept as it is and stops the own list from being started over it.
+ try{const raw=root.localStorage.getItem(key);snapshot=raw;if(raw===null){state=empty();locked=key===KEY&&legacyUnreadable();return}
   const parsed=JSON.parse(raw);if(!valid(parsed))throw Error('invalid');state=parsed;locked=false}
  // An unreadable own list is never overwritten; a household copy is only a cache of the server.
  catch(_){locked=key===KEY;state=empty()}
 }
-function readOwn(){try{const raw=root.localStorage.getItem(KEY);if(raw===null)return null;const p=JSON.parse(raw);return valid(p)?p:null}catch(_){return null}}
+// Only data whose origin is this person on this phone can be shared; an old list of unknown origin is
+// kept and usable here, but never offered or sent to a household.
+function readOwn(){if(provenance()!=='own')return null;try{const raw=root.localStorage.getItem(KEY);if(raw===null)return null;const p=JSON.parse(raw);return valid(p)?p:null}catch(_){return null}}
 function dropHouseholdCopies(except){
- try{for(const k of Object.keys(root.localStorage))if(k.startsWith(KEY+':hh:')&&k!==except)root.localStorage.removeItem(k)}
+ try{for(const k of Object.keys(root.localStorage))if((k.startsWith(KEY+':hh:')||k.startsWith(LEGACY_KEY+':hh:'))&&k!==except)root.localStorage.removeItem(k)}
  catch(e){root.console?.warn?.('あとこれ 持ち物の家族データ削除',e)}
 }
 // ---- shared mode (draft server functions; only when the household has them: prepEnabled()).
@@ -148,7 +188,7 @@ function edit(fn){
  if(locked)return false;
  if(sharedOn()){
   const next=JSON.parse(JSON.stringify(state));fn(next);
-  const keep=new Set([today(),new Date(Date.now()-86400000).toISOString().slice(0,10)]);
+  const keep=new Set([today(),yesterday()]);
   for(const d of Object.keys(next.done))if(!keep.has(d))delete next.done[d];
   if(!valid(next)){lastError='入力内容を確認してください。';paint();return false}
   void editShared(next);return true;
@@ -157,11 +197,15 @@ function edit(fn){
  if(current!==snapshot){load();lastError='別の画面で変更されたため、最新の内容を読み直しました。もう一度操作してください。';paint();return false}
  const next=JSON.parse(JSON.stringify(state));fn(next);
  // Keep ticks only for today and yesterday.
- const keep=new Set([today(),new Date(Date.now()-86400000).toISOString().slice(0,10)]);
+ const keep=new Set([today(),yesterday()]);
  for(const d of Object.keys(next.done))if(!keep.has(d))delete next.done[d];
  if(!valid(next)){lastError='入力内容を確認してください。';paint();return false}
  const raw=JSON.stringify(next);
- try{root.localStorage.setItem(KEY,raw);if(root.localStorage.getItem(KEY)!==raw)throw Error('verify')}
+ try{
+  // Origin: a list started on this phone (nothing before it) or emptied of every child is the person's own.
+  if(current===null||!next.children.length)root.localStorage.setItem(PROV,'own');
+  root.localStorage.setItem(KEY,raw);if(root.localStorage.getItem(KEY)!==raw)throw Error('verify');
+ }
  catch(_){lastError='この端末に保存できませんでした。空き容量を確認してください。';paint();return false}
  state=next;snapshot=raw;lastError='';paint();root.AtokorePackingShortage?.refresh?.();return true;
 }
@@ -264,6 +308,6 @@ if(section){
  doc.addEventListener('atokore-household-left',()=>{dropHouseholdCopies(null);serverRev=0;offerOwn=false;lastError='';lastFetch=0;loadedKey=null;load();paint();root.AtokorePackingShortage?.refresh?.()});
  paint();
 }
-root.AtokorePrepSets=Object.freeze({KEY,valid,rowsFor,pendingToday,pullShared:()=>pullShared(true),pending:()=>locked?[]:pendingToday(state,today()),refresh:()=>{load();paint()}});
+root.AtokorePrepSets=Object.freeze({KEY,LEGACY_KEY,PROV,provenance,valid,rowsFor,pendingToday,pullShared:()=>pullShared(true),pending:()=>locked?[]:pendingToday(state,today()),refresh:()=>{load();paint()}});
 if(typeof module!=='undefined'&&module.exports)module.exports={valid,rowsFor,pendingToday};
 })(typeof globalThis!=='undefined'?globalThis:this);

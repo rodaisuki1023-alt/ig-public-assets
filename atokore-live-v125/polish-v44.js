@@ -93,7 +93,7 @@ const mono=()=>root.performance&&typeof root.performance.now==='function'?root.p
 function stamp(){return {wall:Date.now(),mono:mono()}}
 function elapsed(at){const w=Date.now()-at.wall,m=mono()-at.mono;return Number.isFinite(m)?Math.max(w,m):w}
 function withinUndo(at){const e=elapsed(at);return e>=0&&e<LAST_PURCHASE_MS}
-let lastPurchase=null,lastTimer=null;
+let lastPurchase=null,lastTimer=null,lastSeq=0;   // lastSeq: each purchase's own identity on the shopping page
 function renderLastPurchase(){
  clearTimeout(lastTimer);lastTimer=null;
  const anchor=doc.getElementById('buyList');let b=doc.getElementById('atkLastPurchaseUndo');
@@ -104,6 +104,8 @@ function renderLastPurchase(){
  if(!live){if(lastPurchase&&undo===lastPurchase.run)clearUndo();lastPurchase=null}
  if(!anchor||!live){b?.remove();return}
  if(!b){b=doc.createElement('div');b.id='atkLastPurchaseUndo';b.className='atk-last-purchase';anchor.before(b)}
+ // Which purchase this panel is (Work 7th, WebKit): A's late answer can never redraw it as A.
+ b.dataset.atkLastFor=String(lastPurchase.seq);
  const e=elapsed(lastPurchase.at),min=Math.max(1,Math.round(e/60000));
  b.innerHTML='<span>直前の「買った」：'+esc(lastPurchase.label)+'（約'+min+'分前・あと'+Math.max(1,Math.ceil((LAST_PURCHASE_MS-e)/60000))+'分取り消せます）</span><button type="button" data-atk-last-undo'+(lastBusy?' disabled':'')+'>'+(lastBusy?'取り消し中…':'取り消す')+'</button>'+(lastPurchase.error?'<p role="alert">'+esc(lastPurchase.error)+'</p>':'');
  // Redraw at the deadline (and each minute for the label). Timers stall in the background, so
@@ -117,24 +119,23 @@ doc.addEventListener('click',async e=>{
  // Whatever happens, only THIS purchase's state is touched when the answer comes back.
  try{await lp.run();if(lastPurchase===lp)lastPurchase=null;clearUndo(lp.run);message('直前の「買った」を取り消しました')}
  catch(err){lp.error=err.message||'取り消せませんでした。'}
- finally{lp.busy=false;renderLastPurchase()}
+ finally{lp.busy=false;if(lastPurchase===lp||!lastPurchase)renderLastPurchase()}
 });
 doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')renderLastPurchase()});
 root.addEventListener?.('pageshow',()=>renderLastPurchase());
 doc.addEventListener('atokore-page-changed',()=>clearUndo());
 doc.addEventListener('atokore-page-changed',()=>renderLastPurchase());
-// v51 (Work 6th: recovery after a server undo must survive a reload or force-quit). Before a shared undo
-// of a purchase that entered an estimate is sent, a repair record tied to the purchase (its shared buy
-// ids) is SAVED; if it cannot be saved, nothing is sent. It is cleared only once the estimate repair is
-// saved, or once a fresh server view shows the purchase was not undone. On every start, sync and return
-// to the app, a fresh server view decides: the buy row is back on the list -> the undo happened -> the
-// estimate fields of that purchase are removed (idempotent: only while they still hold that purchase).
+// v51 estimate after a shared undo (Work 7th). Where the reviewed undo SQL runs (trial households:
+// AtokoreHousehold.serverUndoEstimate()), the server removes this purchase's estimate entries in the SAME
+// transaction as the stock and the shopping row; the phone only syncs, nothing is inferred or repaired here.
+// Elsewhere the phone removes them itself, only after the server CONFIRMED the undo. If that save fails,
+// the confirmed repair is kept (persisted) and applied on the next start, sync or return to the app,
+// idempotently (only while the field still holds that purchase). An undo whose outcome is unknown is never
+// repaired by guess (no time limits, no shopping-row inference).
 const REPAIR='atokoreUndoRepairV1';
-const REPAIR_SETTLE_MS=120000;   // an answer may still be on its way this long after a start-over
-const repairing=new Set();       // purchases whose undo is running in this page right now
 function revertEstimate(changes){const cur=snapshot();for(const c of changes)undoEntries(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
 function readRepairs(){
- try{const v=JSON.parse(root.localStorage.getItem(REPAIR)||'[]');return Array.isArray(v)?v.filter(r=>r&&typeof r.id==='string'&&Array.isArray(r.buys)&&r.buys.length&&Array.isArray(r.changes)):[]}
+ try{const v=JSON.parse(root.localStorage.getItem(REPAIR)||'[]');return Array.isArray(v)?v.filter(r=>r&&typeof r.id==='string'&&r.state==='confirmed'&&Array.isArray(r.changes)):[]}
  catch(e){console.error('あとこれ: 見積もりの修復記録を読めません',e);return []}
 }
 function writeRepairs(list){
@@ -142,29 +143,33 @@ function writeRepairs(list){
  if(list.length){root.localStorage.setItem(REPAIR,raw);if(root.localStorage.getItem(REPAIR)!==raw)throw Error('verify')}
  else root.localStorage.removeItem(REPAIR);
 }
-function addRepair(r){writeRepairs([...readRepairs().filter(x=>x.id!==r.id),r])}
-function dropRepair(id){try{writeRepairs(readRepairs().filter(x=>x.id!==id))}catch(e){console.error('あとこれ: 見積もりの修復記録',e)}}
+function keepConfirmedRepair(r){try{writeRepairs([...readRepairs().filter(x=>x.id!==r.id),r]);return true}catch(e){console.error('あとこれ: 見積もりの修復記録',e);return false}}
 let reconciling=false;
-function reconcileRepairs(){
- const hh=root.AtokoreHousehold;
- if(reconciling||!hh?.homeState?.().joined||hh.status?.().state!=='synced')return;   // only from a fresh server view
+function applyConfirmedRepairs(){
+ if(reconciling)return;
  const list=readRepairs();if(!list.length)return;
+ const hh=root.AtokoreHousehold;
  reconciling=true;
  try{
-  let fixed=0;
+  const left=[];let fixed=0;
   for(const r of list){
-   if(repairing.has(r.id))continue;
-   if(r.household!==hh.householdId?.()||r.user!==hh.myId?.()){dropRepair(r.id);continue}   // another household: nothing here to repair
-   const back=r.buys.every(sid=>{const lid=hh.localIdFor?.('buy',sid);return lid!=null&&buys.some(b=>String(b.id)===String(lid))});
-   if(back){try{revertEstimate(r.changes)}catch(e){console.error('あとこれ: 見積もりの取り消し（再試行）',e);return}fixed++;dropRepair(r.id)}
-   else if(r.state==='refused'||Date.now()-Number(r.at||0)>REPAIR_SETTLE_MS)dropRepair(r.id);   // not undone: estimate stays as bought
+   // Only in the household (and as the person) that confirmed it; never applied to another household.
+   if(!hh?.homeState?.().joined||r.household!==hh.householdId?.()||r.user!==hh.myId?.()){left.push(r);continue}
+   // Applied again on every pass (idempotent) and kept until a synced state with nothing pending shows
+   // the entries gone: a sync that wrote the server's view meanwhile cannot lose the repair.
+   try{revertEstimate(r.changes)}catch(e){console.error('あとこれ: 見積もりの取り消し（再試行）',e);left.push(r);continue}
+   const st=hh.status?.()||{},cur=snapshot();
+   const gone=r.changes.every(c=>{const row=cur.items.find(x=>String(x.id)===String(c.id));return !row||c.entries.every(e=>!row[e.field]||row[e.field].k!==e.k)});
+   if(gone&&st.state==='synced'&&!st.pending){fixed++;continue}
+   left.push(r);
   }
+  try{writeRepairs(left)}catch(e){console.error('あとこれ: 見積もりの修復記録',e)}
   if(fixed)message('見積もりも取り消しました');
  }finally{reconciling=false}
 }
-doc.addEventListener('atokore-household-updated',reconcileRepairs);
-doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')reconcileRepairs()});
-root.addEventListener?.('pageshow',()=>reconcileRepairs());
+doc.addEventListener('atokore-household-updated',applyConfirmedRepairs);
+doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')applyConfirmedRepairs()});
+root.addEventListener?.('pageshow',()=>applyConfirmedRepairs());
 function offerUndo(label,run){
  clearUndo();root.AtokoreNotices.hide();undo=run;
  const node=doc.createElement('div');node.id='atkUndoBar';node.className='atk-undo-bar';
@@ -217,34 +222,18 @@ for(const name of ['buyOneToStockV125H','bought']){
   const undoOnce=async()=>{
    if(shared){
     if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');
+    await hh.undoPurchases(ticket);          // throws when refused or unconfirmed: nothing is repaired then
+    finish();
     const tracked=changes.filter(c=>c.entries).map(c=>({id:c.id,entries:c.entries}));
-    const rid=ticket.map(x=>x.op).join(',');
-    if(tracked.length){
-     // Saved BEFORE the server is asked: a crash after the server undo still finds it on the next start.
-     try{addRepair({id:rid,household:ticket[0].household,user:ticket[0].user,buys:ticket.map(x=>x.buy).filter(Boolean),changes:tracked,at:Date.now(),state:'pending'})}
-     catch(e){console.error('あとこれ: 見積もりの修復記録',e);throw Error('この端末に保存できないため、取り消しを中止しました（何も変わっていません）。空き容量をご確認ください。')}
-    }
-    repairing.add(rid);
-    try{
-     try{await hh.undoPurchases(ticket)}
+    if(tracked.length&&!hh.serverUndoEstimate?.()){
+     // Confirmed by the server: the phone removes this purchase's estimate entries (idempotent).
+     try{revertEstimate(changes)}
      catch(e){
-      // Refused by the server (window, changed purchase): nothing was undone, so nothing to repair. A lost
-      // answer stays recorded; the next fresh server view decides.
-      if(tracked.length&&!/通信|反映を確認|結果を確認/.test(e.message||''))dropRepair(rid);
-      throw e;
+      console.error('あとこれ: 見積もりの取り消し',e);
+      keepConfirmedRepair({id:ticket.map(x=>x.op).join(','),household:ticket[0].household,user:ticket[0].user,changes:tracked,state:'confirmed'});
+      throw Error('「買った」は取り消しましたが、見積もりの保存に失敗しました。次の同期で自動的にやり直します。');
      }
-     finish();
-     // The server reverted the counted stock; the estimate is an ordinary field and is reverted here.
-     if(tracked.length){
-      try{revertEstimate(changes);dropRepair(rid)}
-      catch(e){
-       // The server already reverted the purchase. The saved record repairs it on the next sync, return
-       // to the app or start (never silently dropped).
-       console.error('あとこれ: 見積もりの取り消し',e);
-       throw Error('「買った」は取り消しましたが、見積もりの保存に失敗しました。次の同期で自動的にやり直します。');
-      }
-     }
-    }finally{repairing.delete(rid)}
+    }
     return;
    }
    if(root.AtokoreHousehold?.homeState?.().joined)throw Error('家族共有の開始後は、この端末だけの購入を戻せません。');
@@ -254,7 +243,7 @@ for(const name of ['buyOneToStockV125H','bought']){
    finish();
   };
   offerUndo(removed.length+'商品を「買った」にしました',runUndo);
-  lastPurchase={label:removed.map(x=>x.name).slice(0,2).join('、')+(removed.length>2?' ほか'+(removed.length-2)+'商品':''),run:runUndo,at};
+  lastPurchase={label:removed.map(x=>x.name).slice(0,2).join('、')+(removed.length>2?' ほか'+(removed.length-2)+'商品':''),run:runUndo,at,seq:++lastSeq};
   renderLastPurchase();
   return result;
  };

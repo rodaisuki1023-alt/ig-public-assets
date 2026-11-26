@@ -17,7 +17,10 @@ async function fixture(){
  const sql=async(fn,args=[])=>(await db.transaction(async tx=>{await tx.exec('set local role service_role');
   return (await tx.query('SELECT atokore_private.'+fn+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') r',args)).rows})).at(0).r;
  const row=async()=>(await db.query('SELECT * FROM atokore_private.notify_outbox ORDER BY created_at DESC LIMIT 1')).rows[0];
- return {db,h,sql,row};
+ // One transaction for fence + provider call + outcome (what the sender needs since Work 7th).
+ const tx=fn=>db.transaction(async t=>{await t.exec('set local role service_role');
+  return fn(async(f,args=[])=>(await t.query('SELECT atokore_private.'+f+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') r',args)).rows[0].r)});
+ return {db,h,sql,row,tx};
 }
 // A synthetic provider: never reaches a network. `idempotent` adapters de-duplicate by key, like a
 // provider that documents an idempotency key; `answers` scripts each call's outcome.
@@ -118,11 +121,11 @@ test('C: a crashed sender after authorization -> the next claim is in doubt',asy
  }finally{await db.close()}
 });
 test('sender: an unverified provider is never used (no claim, no send)',async()=>{
- const {db,sql,row}=await fixture();
+ const {db,sql,row,tx}=await fixture();
  try{
   const {runNotifySender}=await sender;
   for(const p of [null,{send:async()=>({status:'delivered'})},{synthetic:'yes',idempotent:true,send:async()=>({})},{synthetic:true,send:async()=>({})}]){
-   assert.deepEqual(await runNotifySender({sql,provider:p}),{status:'refused',why:'provider_not_verified'});
+   assert.deepEqual(await runNotifySender({sql,tx,provider:p}),{status:'refused',why:'provider_not_verified'});
   }
   assert.equal((await row()).claim_token,null,'nothing was even claimed');
  }finally{await db.close()}
@@ -132,45 +135,45 @@ test('sender: lost answer after delivery -> idempotent provider retries with the
  try{
   const {runNotifySender}=await sender;
   const p=synthetic({idempotent:true,answers:['lost_after_delivery','delivered']});
-  let r=await runNotifySender({sql:f.sql,provider:p});
+  let r=await runNotifySender({sql:f.sql,tx:f.tx,provider:p});
   assert.deepEqual(r.retry.length,1);
   await f.db.query("UPDATE atokore_private.notify_outbox SET next_attempt_at=now()-interval '1 second'");
-  r=await runNotifySender({sql:f.sql,provider:p});
+  r=await runNotifySender({sql:f.sql,tx:f.tx,provider:p});
   assert.equal(r.sent.length,1);
   assert.equal(p.calls.length,2);assert.equal(p.calls[0].key,p.calls[1].key,'stable idempotency key');
   assert.deepEqual([...p.delivered.values()],[1],'delivered once');
-  assert.equal((await runNotifySender({sql:f.sql,provider:p})).sent.length,0,'not sent again');
+  assert.equal((await runNotifySender({sql:f.sql,tx:f.tx,provider:p})).sent.length,0,'not sent again');
  }finally{await f.db.close()}
  const g=await fixture();
  try{
   const {runNotifySender}=await sender;
   const p=synthetic({idempotent:false,answers:['lost_after_delivery']});
-  let r=await runNotifySender({sql:g.sql,provider:p});
+  let r=await runNotifySender({sql:g.sql,tx:g.tx,provider:p});
   assert.equal(r.held.length,1,'ambiguous: held for review, not resent');
   await g.db.query("UPDATE atokore_private.notify_outbox SET lease_until=NULL,next_attempt_at=NULL");
-  r=await runNotifySender({sql:g.sql,provider:p});
+  r=await runNotifySender({sql:g.sql,tx:g.tx,provider:p});
   assert.equal(p.calls.length,1,'never a second call');
   // A crash after authorization with a non-idempotent provider: the in-doubt claim is held, not sent.
   await call(g.db,A,'hh_buy_assign',{p_buy:'buy_milk_0001',p_assignee:null,p_expected_rev:1});
   await call(g.db,A,'hh_buy_assign',{p_buy:'buy_milk_0001',p_assignee:B,p_expected_rev:2});
   const [c]=await g.sql('notify_claim_v51',[10,60]);await g.sql('notify_authorize_v51',[c.id,c.token]);
   await g.db.query("UPDATE atokore_private.notify_outbox SET lease_until=now()-interval '1 second' WHERE id=$1",[c.id]);
-  r=await runNotifySender({sql:g.sql,provider:p});
+  r=await runNotifySender({sql:g.sql,tx:g.tx,provider:p});
   assert.deepEqual([r.held.length,p.calls.length],[1,1]);
  }finally{await g.db.close()}
 });
 test('sender: a definite rejection is retried later and then delivered once',async()=>{
- const {db,sql}=await fixture();
+ const {db,sql,tx}=await fixture();
  try{
   const {runNotifySender}=await sender;
   const p=synthetic({idempotent:false,answers:['rejected','delivered']});
-  assert.equal((await runNotifySender({sql,provider:p})).retry.length,1);
+  assert.equal((await runNotifySender({sql,tx,provider:p})).retry.length,1);
   await db.query("UPDATE atokore_private.notify_outbox SET next_attempt_at=now()-interval '1 second'");
-  assert.equal((await runNotifySender({sql,provider:p})).sent.length,1);
+  assert.equal((await runNotifySender({sql,tx,provider:p})).sent.length,1);
   assert.deepEqual([...p.delivered.values()],[1]);
  }finally{await db.close()}
 });
-test('C rollback/restore alone: an in-doubt send stays in doubt; reservations are not restored; D untouched',async()=>{
+test('C rollback/restore alone: a send that may have started stays unclear (never resent); reservations are not restored; D untouched',async()=>{
  const {db,sql}=await fixture();
  const P=f=>fs.readFileSync(path.join(__dirname,'../supabase/proposals',f),'utf8');
  try{
@@ -179,9 +182,46 @@ test('C rollback/restore alone: an in-doubt send stays in doubt; reservations ar
   assert.equal((await db.query("SELECT to_regprocedure('atokore_private.notify_claim_v51(integer,integer)') IS NULL gone")).rows[0].gone,true);
   assert.equal((await db.query("SELECT to_regprocedure('atokore_private.trial_allowed_v51(uuid)') IS NOT NULL kept")).rows[0].kept,true,'shared allowlist kept for D');
   await db.exec(SQL);await db.exec(P('rollback/atokore-buy-assignment-v51.restore.sql'));
-  const r=(await db.query('SELECT claim_token,lease_until,send_started_at IS NOT NULL started FROM atokore_private.notify_outbox')).rows[0];
-  assert.deepEqual(r,{claim_token:null,lease_until:null,started:true});
-  const [d]=await sql('notify_claim_v51',[10,60]);
-  assert.equal(d.in_doubt,true);
+  const r=(await db.query('SELECT claim_token,lease_until,send_started_at IS NOT NULL started,ambiguous_at IS NOT NULL unclear FROM atokore_private.notify_outbox')).rows[0];
+  assert.deepEqual(r,{claim_token:null,lease_until:null,started:true,unclear:true});
+  // Work 7th: a rollback records it as unclear; it is never claimed (or sent) again by itself.
+  assert.deepEqual(await sql('notify_claim_v51',[10,60]),[]);
+ }finally{await db.close()}
+});
+
+// ---------------------------------------------------------------- Work 7th
+test('C (Work 7th): the recipient leaves right after the SQL re-authorization -> the provider is never called',async()=>{
+ const {db,sql,tx}=await fixture();
+ try{
+  const {runNotifySender}=await sender;
+  const p=synthetic({idempotent:false});
+  // Injected right after notify_authorize_v51 committed, before the provider call.
+  const racing=async(fn,args)=>{const r=await sql(fn,args);if(fn==='notify_authorize_v51')await call(db,B,'hh_leave',{});return r};
+  const r=await runNotifySender({sql:racing,tx,provider:p});
+  assert.equal(p.calls.length,0,'no call: the leave was before the accept point');
+  assert.equal(r.sent.length,0);
+  const o=(await db.query('SELECT sent_at,dropped_at IS NOT NULL dropped FROM atokore_private.notify_outbox')).rows[0];
+  assert.deepEqual(o,{sent_at:null,dropped:true});
+ }finally{await db.close()}
+});
+test('C (Work 7th): without one transaction for fence + call + outcome nothing is sent',async()=>{
+ const {db,sql}=await fixture();
+ try{
+  const {runNotifySender}=await sender;
+  const p=synthetic({idempotent:true});
+  assert.deepEqual(await runNotifySender({sql,provider:p}),{status:'refused',why:'no_transaction'});
+  assert.equal(p.calls.length,0);
+ }finally{await db.close()}
+});
+test('C rollback (Work 7th): a send that may have started is recorded as unclear and never sent again after restore',async()=>{
+ const {db,sql}=await fixture();
+ const P=f=>fs.readFileSync(path.join(__dirname,'../supabase/proposals',f),'utf8');
+ try{
+  const [c]=await sql('notify_claim_v51',[10,60]);await sql('notify_authorize_v51',[c.id,c.token]);
+  await db.exec(P('rollback/atokore-buy-assignment-v51.rollback.sql'));
+  assert.equal((await db.query("SELECT ambiguous_at IS NOT NULL a FROM atokore_private.rollback_notify_outbox_v51")).rows[0].a,true);
+  await db.exec(SQL);await db.exec(P('rollback/atokore-buy-assignment-v51.restore.sql'));
+  await db.query("UPDATE atokore_private.notify_outbox SET next_attempt_at=NULL");
+  assert.deepEqual(await sql('notify_claim_v51',[10,60]),[],'held for review, never claimed again');
  }finally{await db.close()}
 });

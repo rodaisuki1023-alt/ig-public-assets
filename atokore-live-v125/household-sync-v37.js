@@ -125,7 +125,7 @@ async function undoPurchases(ticket){
    else if(!(r?.status==='ready'&&Number.isInteger(r.undone)&&r.undone>=0))throw Object.assign(Error('undo_answer_unknown'),{code:'unknown_answer'});
   }else await rpc('hh_undo_purchases',ops);
  }
- catch(e){const m=e.message||'';throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(m)?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':/purchase_undo_time_invalid/.test(m)?'「買った」の時刻を確かめられないため、取り消せません。ストックの数量を直接直してください。':e.code==='unknown_answer'?'取り消しの結果を確認できませんでした。現在のストックをご確認ください（再度押しても二重には取り消しません）。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
+ catch(e){const m=e.message||'';throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(m)?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':/purchase_undo_unprovable|purchase_undo_time_invalid/.test(m)?'この「買った」は記録の時刻をサーバーで確かめられないため（通信できない間の記録など）、家族共有では取り消せません。ストックの数量を直接直してください。':e.code==='unknown_answer'?'取り消しの結果を確認できませんでした。現在のストックをご確認ください（再度押しても二重には取り消しません）。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
  await freshSync();
  if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
 }
@@ -289,6 +289,28 @@ async function sharePhoto(id,blob,transfer=null,resume=null){
 // Enabled only when the server has the reviewed SQL (cfg.buyAssignments===true). The server checks
 // membership and the expected revision; a stale view is refused and the latest state is fetched.
 let assignments=new Map(),assignmentsAt=0,sharedEpoch=0;
+// ---------------------------------------------------------------- v51 undo window proof (Work 7th)
+// The server proves when an undo window starts only from a clock ticket it issued BEFORE the purchase
+// (hh_clock_ticket_v51, trial households with the reviewed SQL). The phone keeps the latest ticket while
+// the app is open and sends it with each purchase; a purchase without one cannot be undone in sharing.
+let clockTicket=null,clockSupported=null;
+const TICKET_REFRESH_MS=120000;          // a fresher ticket only shortens the window less
+function purchaseTicket(){
+ const t=clockTicket;if(!t||!household||!session)return null;
+ return t.household===household.id&&t.user===session.user.id?t.ticket:null;
+}
+async function refreshClockTicket(force){
+ if(!household||!session||clockSupported===false)return;
+ if(!force&&clockTicket&&clockTicket.household===household.id&&Date.now()-clockTicket.at<TICKET_REFRESH_MS)return;
+ const ep=sharedEpoch,hid=household.id,uid=session.user.id;
+ try{
+  const r=await rpc('hh_clock_ticket_v51',{});
+  if(ep!==sharedEpoch||household?.id!==hid||session?.user?.id!==uid)return;   // another household by now
+  if(r?.status==='ready'&&typeof r.ticket==='string'){clockTicket={ticket:r.ticket,household:hid,user:uid,at:Date.now()};clockSupported=true}
+  else if(r?.status==='not_enabled')clockSupported=false;
+ }catch(e){if(e.status===404||/hh_clock_ticket_v51|PGRST202|function/i.test(e.message||''))clockSupported=false}
+}
+function serverUndoEstimate(){return clockSupported===true}
 function assignmentsEnabled(){return cfg.buyAssignments===true&&!!household&&!!session}
 async function refreshAssignments(){
  if(!assignmentsEnabled())return;
@@ -357,13 +379,26 @@ const saveMeta=patch=>{const next={...meta,...patch};if(!writeJSON(META_KEY,next
 
 // ---------------------------------------------------------------- network (Supabase Auth + PostgREST RPC)
 class NetError extends Error{constructor(m,code,status){super(m);this.code=code;this.status=status}}
+// Every request ends within a time limit, also while reading the answer (v51: a connection that never
+// settled kept the sync guard forever, so later syncs returned the same stuck promise — the "Chromium
+// sync stops now and then" case). A timed-out push is safe to send again: hh_push is idempotent by op_id.
+let requestTimeouts=0;
 async function request(path,body,auth,signal){
- let res;
- try{res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.anonKey,...(auth?{Authorization:'Bearer '+auth}:{})},body:JSON.stringify(body||{}),...(signal?{signal}:{})})}
- catch(e){throw new NetError('offline','network',0)}
- const text=await res.text();let data=null;try{data=text?JSON.parse(text):null}catch(e){}
- if(!res.ok)throw new NetError(data?.message||data?.msg||data?.error_description||('HTTP '+res.status),data?.code||'http',res.status);
- return data;
+ const controller=new root.AbortController();
+ const limit=Number(cfg.requestTimeoutMs)>0?Number(cfg.requestTimeoutMs):20000;
+ let timedOut=false;const timer=setTimeout(()=>{timedOut=true;controller.abort()},limit);
+ const follow=()=>controller.abort();
+ if(signal){if(signal.aborted)controller.abort();else signal.addEventListener?.('abort',follow,{once:true})}
+ try{
+  let res;
+  try{res=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.anonKey,...(auth?{Authorization:'Bearer '+auth}:{})},body:JSON.stringify(body||{}),signal:controller.signal})}
+  catch(e){if(timedOut)requestTimeouts++;throw new NetError('offline','network',0)}
+  let text;
+  try{text=await res.text()}catch(e){if(timedOut)requestTimeouts++;throw new NetError('offline','network',0)}
+  let data=null;try{data=text?JSON.parse(text):null}catch(e){}
+  if(!res.ok)throw new NetError(data?.message||data?.msg||data?.error_description||('HTTP '+res.status),data?.code||'http',res.status);
+  return data;
+ }finally{clearTimeout(timer);signal?.removeEventListener?.('abort',follow)}
 }
 function keepSession(s){
  if(!s?.access_token||!s?.refresh_token||!s?.user?.id)throw new NetError('bad_session','auth',0);
@@ -396,7 +431,7 @@ function writeState(state){
  return true;
 }
 function makeEngine(){
- engine=core.createEngine({readState,writeState,readMeta:()=>meta.engine||null,writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
+ engine=core.createEngine({readState,writeState,purchaseTicket,readMeta:()=>{const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return meta.engine||null},writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
  return engine;
 }
 function setStatus(state,detail){status={state,detail,pending:engine?engine.status().pending:0};paint()}
@@ -423,6 +458,7 @@ async function syncNow(opts){
    if(!poll||changed||historyState!=='ready')await refreshChanges();
    if(!s.pending){await refreshMembers(changed||!poll);paint()}
    if(assignmentsEnabled()&&(changed||!poll||!assignmentsAt))await refreshAssignments();
+   if(!poll||root.document?.visibilityState!=='hidden')await refreshClockTicket(false);
    pollAfter(changed?'active':'quiet');
   }catch(e){
    if(e.code==='rejected'||e.code==='recovery')setStatus('blocked');
@@ -467,6 +503,20 @@ function pollAfter(kind){
 }
 root.addEventListener?.('online',()=>{pollAfter('active');syncNow()});
 doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible'){pollAfter('active');syncNow()}});
+// Another tab of this app wrote the data or the sync record (Work 7th): adopt it here, so this tab never
+// saves its older copy over it or diffs against an older shadow (which re-sent that tab's change).
+root.addEventListener?.('storage',e=>{
+ try{
+  if(e.key===META_KEY){const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return}
+  if(e.key!==DATA_KEY||e.newValue==null||e.newValue===lastRaw)return;
+  const s=JSON.parse(e.newValue);
+  if(!s||!Array.isArray(s.items)||!Array.isArray(s.buys)||!Array.isArray(s.routines))return;
+  lastRaw=e.newValue;items=s.items;buys=s.buys;routines=s.routines;
+  root.render?.();
+ }catch(err){root.console?.warn?.('あとこれ 別のタブの変更',err)}
+});
+// A fresh clock ticket before the next purchase (Work 7th), e.g. when the shopping page opens.
+doc.addEventListener('atokore-page-changed',()=>{void refreshClockTicket(false)});
 
 // ---------------------------------------------------------------- UI helpers (DOM + textContent only)
 function el(tag,props,children){
@@ -758,7 +808,7 @@ async function leave(){
 // Leaving, being removed or signing out: nothing of the family's shared state stays usable here.
 // sharedEpoch invalidates answers still in flight; the event tells the prep list to drop its household copy.
 function forgetShared(){
- sharedEpoch++;assignments=new Map();assignmentsAt=0;entCache=null;entAt=0;
+ sharedEpoch++;assignments=new Map();assignmentsAt=0;entCache=null;entAt=0;clockTicket=null;clockSupported=null;
  try{doc.dispatchEvent(new CustomEvent('atokore-household-left'));doc.dispatchEvent(new CustomEvent('atokore-assignments-updated'))}catch(e){root.console?.warn?.('あとこれ 共有の後片付け',e)}
 }
 function stop(){forgetShared();clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
@@ -810,5 +860,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,householdId:()=>household&&session?household.id:null,sharedEpoch:()=>sharedEpoch,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{})})});
+root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,householdId:()=>household&&session?household.id:null,serverUndoEstimate,refreshClockTicket:()=>refreshClockTicket(true),sharedEpoch:()=>sharedEpoch,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{}),timeouts:requestTimeouts})});
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -10,7 +10,8 @@ const hhPort = Number(process.env.E2E_HH_PORT || 4720);
 process.env.E2E_HH_PORT = String(hhPort);
 process.env.E2E_SITE_ROOT = process.env.E2E_SITE_ROOT || path.join(os.tmpdir(), 'atokore-e2e-site');
 const chromiumLaunch = process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {};
-const iphone = { isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: 'ja-JP' };
+// E2E_TZ runs the browsers in another time zone (e.g. Asia/Tokyo; Work tests in Japan, CI runs in UTC).
+const iphone = { isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: 'ja-JP', ...(process.env.E2E_TZ ? { timezoneId: process.env.E2E_TZ } : {}) };
 
 module.exports = defineConfig({
   testDir: __dirname,
@@ -22,7 +23,7 @@ module.exports = defineConfig({
   use: { baseURL: `http://127.0.0.1:${port}`, viewport: { width: 390, height: 844 }, ...iphone },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], ...iphone, viewport: { width: 390, height: 844 }, launchOptions: chromiumLaunch } },
-    ...(process.env.E2E_SKIP_WEBKIT ? [] : [{ name: 'webkit', use: { ...devices['iPhone 13'], locale: 'ja-JP' } }]),
+    ...(process.env.E2E_SKIP_WEBKIT ? [] : [{ name: 'webkit', use: { ...devices['iPhone 13'], locale: 'ja-JP', ...(process.env.E2E_TZ ? { timezoneId: process.env.E2E_TZ } : {}) } }]),
   ],
   webServer: [{
     command: `node ${JSON.stringify(path.join(__dirname, 'server.cjs'))}`,

@@ -252,6 +252,43 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'idempotency_key', o.id, 'recipient', o.recipient, 'kind', o.kind);
 END $fn$;
 
+-- Work 7th (P1): the linearization point between "the member leaves" and "the provider accepts the
+-- notice". notify_authorize_v51 commits that a send may start (so a crash is known to be in doubt). Then the
+-- sender opens ONE transaction, calls notify_fence_v51 in it, calls the provider, records the outcome with
+-- notify_complete_v51 and commits. notify_fence_v51 takes a SHARE lock on the recipient's membership row:
+--   * a leave/removal committed before the fence -> the fence answers 'left' and the provider is NOT called;
+--   * a leave/removal that starts while the lock is held waits until the sender committed: the notice was
+--     accepted before the member left (an accepted notice cannot be recalled; its arrival time is the
+--     provider's, not guaranteed here).
+-- External delivery and the database are NOT made atomic: a crash between the provider's acceptance and
+-- the commit leaves send_started_at (committed by authorize) -> the next claim is in doubt, and a provider
+-- that is not idempotent never sends it again.
+CREATE FUNCTION atokore_private.notify_fence_v51(p_id text, p_token uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
+DECLARE o atokore_private.notify_outbox%ROWTYPE; why text;
+BEGIN
+  SELECT * INTO o FROM atokore_private.notify_outbox WHERE id = p_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'why', 'unknown'); END IF;
+  -- Held until this transaction ends: hh_leave / hh_remove_member (UPDATE of members) wait for it.
+  PERFORM 1 FROM atokore_private.members m WHERE m.household_id = o.household_id AND m.user_id = o.recipient AND m.left_at IS NULL FOR SHARE;
+  IF o.sent_at IS NOT NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'already_sent'); END IF;
+  IF o.dropped_at IS NOT NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'dropped'); END IF;
+  IF o.ambiguous_at IS NOT NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'ambiguous'); END IF;
+  IF p_token IS NULL OR o.claim_token IS DISTINCT FROM p_token THEN RETURN jsonb_build_object('ok', false, 'why', 'not_owner'); END IF;
+  IF o.lease_until IS NULL OR o.lease_until <= now() THEN RETURN jsonb_build_object('ok', false, 'why', 'lease_expired'); END IF;
+  IF o.send_started_at IS NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'not_authorized'); END IF;
+  IF NOT atokore_private.trial_allowed_v51(o.household_id) THEN RETURN jsonb_build_object('ok', false, 'why', 'not_enabled'); END IF;
+  why := atokore_private.notify_stale_why_v51(o);
+  IF why IS NOT NULL THEN
+    -- Not sent: nothing was handed to the provider, so it is safe to drop (no doubt about delivery).
+    UPDATE atokore_private.notify_outbox SET dropped_at = now(), drop_reason = why, claim_token = NULL, lease_until = NULL, send_started_at = NULL WHERE id = p_id;
+    RETURN jsonb_build_object('ok', false, 'why', why);
+  END IF;
+  RETURN jsonb_build_object('ok', true, 'idempotency_key', o.id, 'recipient', o.recipient, 'kind', o.kind);
+END $fn$;
+REVOKE ALL ON FUNCTION atokore_private.notify_fence_v51(text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION atokore_private.notify_fence_v51(text, uuid) TO service_role;
+
 -- The sender's report, exactly once per outcome:
 --   'sent'      the provider confirmed delivery (accepted from a late earlier attempt too: it only stops sends),
 --   'failed'    the provider definitely did NOT deliver -> retry later with backoff (current holder only),

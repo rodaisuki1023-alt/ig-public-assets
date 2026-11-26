@@ -42,6 +42,25 @@ async function fixture(opts={}){const {trial=true}=opts;
  const storage={failRemove:false,failCopy:false,corrupt:null,removed:[],
   async download(bucket,p){const b=bytes.get(bucket+':'+p);if(!b)throw Error('absent');return this.corrupt===p?photo(99):b},
   async remove(bucket,p){if(this.failRemove)return false;this.removed.push(bucket+':'+p);bytes.delete(bucket+':'+p);await db.query('delete from storage.objects where bucket_id=$1 and name=$2',[bucket,p]);return true},
+  // Synthetic adapter that DECLARES and implements the guarantees the worker needs (Work 7th): a delete
+  // conditioned on the generation, atomic in one statement, and an authoritative look-up. beforeRemove runs
+  // after the last SQL decision and right before the external delete (the race point); removeError and
+  // statError simulate lost / unclear answers.
+  capabilities:{conditionalRemove:opts.capable!==false,authoritativeStat:opts.capable!==false},beforeRemove:null,removeError:null,statError:null,removeAfterError:false,
+  async removeIfGeneration(bucket,p,gen){
+   if(this.beforeRemove){const f=this.beforeRemove;this.beforeRemove=null;await f(bucket,p)}
+   if(this.removeError&&!this.removeAfterError)throw Error(this.removeError);
+   const r=(await db.query('delete from storage.objects where bucket_id=$1 and name=$2 and atokore_private.photo_object_gen_v51(bucket_id,name) is not distinct from $3 returning name',[bucket,p,gen])).rows;
+   let out;
+   if(r.length){this.removed.push(bucket+':'+p);bytes.delete(bucket+':'+p);out={status:'deleted'}}
+   else out=(await db.query('select 1 from storage.objects where bucket_id=$1 and name=$2',[bucket,p])).rows.length?{status:'mismatch'}:{status:'absent'};
+   if(this.removeError&&this.removeAfterError)throw Error(this.removeError);   // done, answer lost
+   return out},
+  async stat(bucket,p){
+   if(this.statError)throw Error(this.statError);
+   if(!(await db.query('select 1 from storage.buckets where id=$1',[bucket])).rows.length)throw Error('unknown bucket');
+   const r=(await db.query('select atokore_private.photo_object_gen_v51($1,$2) g',[bucket,p])).rows[0].g;
+   return r==null?{exists:false,gen:null}:{exists:true,gen:r}},
   async copy(fb,from,tb,to){if(this.failCopy&&tb===V2)throw Error('network');const b=bytes.get(fb+':'+from);if(!b)throw Error('absent');
    if(!bytes.has(tb+':'+to)){bytes.set(tb+':'+to,b);await db.query('insert into storage.objects(bucket_id,name) values($1,$2)',[tb,to])}
    const back=bytes.get(tb+':'+to);return {bytes:back.length,sourceSha:sha(b),targetSha:sha(back),legacySha:sha(b),copySha:sha(back)}}};
@@ -130,11 +149,11 @@ test('recovery from every step: copy failure, lost commit answer, crash after th
   assert.deepEqual(await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]),{status:'switched',path:m.target_path,reused:true});
   const resumed=await f.sql('photo_legacy_begin_v51',[f.h,id]);
   assert.deepEqual([resumed.state,resumed.file_id,resumed.reused],['switched',m.file_id,true],'Work: resume used to fail with photo_not_legacy');
-  // The legacy delete fails: stays verified, legacy kept; the next run deletes and finishes.
-  f.storage.failRemove=true;
-  r=await run();assert.deepEqual([r.status,r.held],['verified','remove_failed']);
+  // The legacy delete answers 503 and the look-up 502: nothing is assumed, it stays verified (fenced), kept.
+  f.storage.removeError='503';f.storage.statError='502';
+  r=await run();assert.deepEqual([r.status,r.held],['verified','delete_unconfirmed']);
   assert.ok((await f.objects(LEGACY)).includes(f.legacy[id]));
-  f.storage.failRemove=false;
+  f.storage.removeError=null;f.storage.statError=null;
   r=await run();assert.equal(r.status,'done');
   // finish answered but lost: finishing again is still true and changes nothing.
   assert.equal(await f.sql('photo_legacy_finish_v51',[m.file_id,true]),true);
@@ -154,7 +173,7 @@ test('a legacy photo still used by another product is kept until that product is
   assert.deepEqual([r1.status,r1.held],['verified','still_referenced']);
   assert.ok((await f.objects(LEGACY)).includes(f.legacy.item_move_0001));
   const r3=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:'item_move_0003'});
-  assert.equal(r3.status,'done');
+  assert.equal(r3.status,'done',JSON.stringify(r3));
   assert.equal((await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:'item_move_0001'})).status,'done');
   for(const id of ['item_move_0001','item_move_0003'])assert.equal((await f.gatewayRead('A',(await f.rec(id)).p)).status,200,id);
  }finally{await f.db.close()}
@@ -162,14 +181,20 @@ test('a legacy photo still used by another product is kept until that product is
 test('backup and restore rehearsal: the product points at its legacy photo again and the copy is collected',async()=>{
  const f=await fixture();
  try{
-  const {runOrphanPass}=(await mods)[0];
+  const {runOrphanPass,restoreLegacyPhoto}=(await mods)[0];
   const id='item_move_0002',before=await f.rec(id);
   const m=await f.sql('photo_legacy_begin_v51',[f.h,id]);
   const backup=(await f.db.query('select photo_path,record_seq from atokore_private.photo_legacy_backup_v51 where file_id=$1',[m.file_id])).rows[0];
   assert.deepEqual([backup.photo_path,String(backup.record_seq)],[before.p,String(before.seq)]);
   const c=await f.storage.copy(LEGACY,m.legacy_path,V2,m.target_path);
   await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]);
-  const r=await f.sql('photo_legacy_restore_v51',[m.file_id]);
+  // Work 7th: back onto the legacy photo only after reading it (same bytes as moved).
+  assert.equal((await f.sql('photo_legacy_restore_v51',[m.file_id])).status,'verify_legacy','SQL alone does not switch');
+  f.storage.corrupt=before.p;
+  assert.deepEqual((await restoreLegacyPhoto({sql:f.sql,storage:f.storage,file:m.file_id})).held,'legacy_mismatch');
+  assert.equal((await f.rec(id)).p,m.target_path,'a legacy object with other bytes is not restored');
+  f.storage.corrupt=null;
+  const r=await restoreLegacyPhoto({sql:f.sql,storage:f.storage,file:m.file_id});
   assert.equal(r.status,'restored');
   assert.equal((await f.rec(id)).p,before.p);
   assert.equal((await f.ledger(m.file_id)).state,'retired');
@@ -190,10 +215,10 @@ test('if the product changes while copying, the person\'s change wins and the co
   assert.equal((await call(f.db,A,'hh_push',{p_ops:[{op_id:oid(),type:'delete',kind:'item',id,ts:Date.now()+2000}]})).results[0].status,'applied');
   assert.deepEqual(await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]),{status:'abandoned',reused:false});
   assert.equal((await f.ledger(m.file_id)).state,'retired');
-  f.storage.failRemove=true;
+  f.storage.removeError='502';f.storage.statError='timeout';
   let r=await runOrphanPass({sql:f.sql,storage:f.storage});
-  assert.equal(r.failed.length,1,'Storage failed: the row stays purging for the next pass');
-  f.storage.failRemove=false;
+  assert.deepEqual(r.failed.map(x=>x.why),['delete_unconfirmed'],'unclear: the row stays purging (fenced) for the next pass');
+  f.storage.removeError=null;f.storage.statError=null;
   r=await runOrphanPass({sql:f.sql,storage:f.storage});
   assert.deepEqual(r.purged,[m.file_id]);
   assert.ok((await f.objects(LEGACY)).includes(f.legacy[id]),'legacy objects are never touched by the clean-up');

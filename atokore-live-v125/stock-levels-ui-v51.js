@@ -10,7 +10,11 @@
 const L=root.AtokoreStockLevels,doc=typeof document!=='undefined'?document:null;
 if(!L||!doc)return;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const localDay=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const today=()=>localDay(new Date());
+// The calendar day (on this phone) a level was set. levelAt is an ISO time in UTC; its first 10
+// characters are the UTC date, which is the previous day in Japan from 0:00 to 9:00 (Work 7th: 41日).
+const levelDay=x=>{const t=typeof x?.levelAt==='string'?Date.parse(x.levelAt):NaN;return Number.isFinite(t)?localDay(new Date(t)):''};
 function list(){try{return Array.isArray(items)?items:[]}catch(_){return []}}
 function find(id){return list().find(x=>Number(x.id)===Number(id))}
 
@@ -63,14 +67,14 @@ function fixUndoable(x){return lastFix&&lastFix.id===Number(x.id)&&same(x.track,
 // A level the person chose is shown with its date; after STALE_DAYS it asks to be checked again.
 // 'stale' (chosen long ago) or 'conflict' (余裕あり while the count is 0): shown, never auto-fixed.
 function manualState(x,t){
- const at=typeof x?.levelAt==='string'?x.levelAt.slice(0,10):'';
+ const at=levelDay(x);
  if(!L.LEVELS.includes(x?.level)||!/^\d{4}-\d{2}-\d{2}$/.test(at))return null;
  if(Math.round((Date.parse(t+'T00:00:00Z')-Date.parse(at+'T00:00:00Z'))/86400000)>L.STALE_DAYS)return 'stale';
  if(x.level==='plenty'&&Number(x.qty)===0)return 'conflict';
  return null;
 }
 function manualNote(x,t){
- const at=typeof x.levelAt==='string'?x.levelAt.slice(0,10):'';
+ const at=levelDay(x);
  if(!/^\d{4}-\d{2}-\d{2}$/.test(at))return '';
  const days=Math.round((Date.parse(t+'T00:00:00Z')-Date.parse(at+'T00:00:00Z'))/86400000);
  const when=at.slice(5).replace('-','/')+'に設定';

@@ -9,6 +9,10 @@ DO $g$ BEGIN
     RAISE EXCEPTION 'assignment_backup_exists' USING ERRCODE = '55000', HINT = 'Restore or archive the earlier backup first.';
   END IF;
 END $g$;
+-- Work 7th: sending stops with this rollback (the functions go). A notice whose send may have started and
+-- was not confirmed is recorded as unclear (ambiguous) first, so a later restore never sends it again.
+UPDATE atokore_private.notify_outbox SET ambiguous_at = COALESCE(ambiguous_at, now()), last_result = 'ambiguous', claim_token = NULL, lease_until = NULL
+ WHERE send_started_at IS NOT NULL AND sent_at IS NULL AND dropped_at IS NULL;
 CREATE TABLE atokore_private.rollback_buy_assignments_v51 AS SELECT *, now() AS backed_up_at FROM atokore_private.buy_assignments;
 CREATE TABLE atokore_private.rollback_notify_outbox_v51 AS SELECT *, now() AS backed_up_at FROM atokore_private.notify_outbox;
 ALTER TABLE atokore_private.rollback_buy_assignments_v51 ENABLE ROW LEVEL SECURITY;
@@ -19,6 +23,7 @@ DROP FUNCTION IF EXISTS public.hh_buy_assign(text, uuid, integer), public.hh_buy
   atokore_private.buy_assign_member_left_v51(), atokore_private.notify_due_v51(integer),
   atokore_private.notify_claim_v51(integer, integer), atokore_private.notify_authorize_v51(text, uuid),
   atokore_private.notify_complete_v51(text, uuid, text), atokore_private.notify_stale_why_v51(atokore_private.notify_outbox),
+  atokore_private.notify_fence_v51(text, uuid),
   atokore_private.notify_mark_sent_v51(text),   -- earlier draft only (IF EXISTS)
   atokore_private.active_member_v51(uuid, uuid);
 DROP TABLE atokore_private.buy_assignments, atokore_private.notify_outbox;

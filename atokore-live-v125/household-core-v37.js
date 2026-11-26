@@ -81,6 +81,15 @@ function diff(prev,next,map,opts={}){
   const target=add||made;if(!target||!del._qty)continue;
   const done={type:'complete_buy',buy:del.id,item:target.id,delta:del._qty,ts:now};
   if(made)done.item_fields=made.fields;
+  // v51 (Work 7th): the server clock ticket held before this purchase (proves when the undo window
+  // starts), and the estimate entries this purchase added to the product, so a server-side undo removes
+  // exactly them in the same transaction as the stock and the shopping row.
+  const ck=typeof opts.purchaseTicket==='function'?opts.purchaseTicket():null;
+  if(typeof ck==='string'&&/^[0-9a-f-]{36}$/.test(ck))done.ck=ck;
+  const est=ops.filter(x=>x.type==='set'&&x.id===target.id&&/^tp[0-9a-z]{1,13}$/.test(x.field)&&x.value&&typeof x.value.k==='string'&&x.value.k.length<=80)
+   .map(x=>({field:x.field,k:x.value.k}));
+  if(made)for(const [f,v] of Object.entries(made.fields||{}))if(/^tp[0-9a-z]{1,13}$/.test(f)&&v&&typeof v.k==='string'&&v.k.length<=80)est.push({field:f,k:v.k});
+  if(est.length)done.est=est.slice(0,8);
   Object.assign(del,done);delete del.kind;delete del.id;
   ops.splice(ops.indexOf(target),1);
   if(add)adds.splice(adds.indexOf(add),1);else created.splice(created.indexOf(made),1);
@@ -184,13 +193,31 @@ function createEngine(io){
   recoverApply();
  }
  // Local changes since the last check become operations (persisted before anything is sent).
+ const sending=new Set();   // op ids in an hh_push request right now (never changed while in flight)
+ // Another tab of the same phone may have advanced the sync record (shadow, outbox) since this one read
+ // it; diffing against a stale shadow would send that tab's change again (Work 7th: a second undo).
+ function reloadMeta(){const m=io.readMeta();if(m)meta={...freshMeta(),...m}}
  function flush(){
+  reloadMeta();
   recoverApply();
   if(!meta.shadow)return 0;
   const cur=io.readState();if(!cur)return 0;
-  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand,managedPhotos:io.managedPhotos===true});
+  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand,managedPhotos:io.managedPhotos===true,purchaseTicket:io.purchaseTicket});
   if(!ops.length)return 0;
-  save({...meta,outbox:[...meta.outbox,...ops],map,shadow:clone(cur)});
+  // v51 (Work 7th): the estimate entry of a purchase is often saved right after the purchase itself (a
+  // later diff). It is attached to that product's latest complete_buy while it is still unsent, so the
+  // server can remove it in the same transaction as an undo. An op already being sent is never changed.
+  const outbox=meta.outbox.slice();
+  for(const x of ops){
+   if(x.type!=='set'||!/^tp[0-9a-z]{1,13}$/.test(x.field)||!x.value||typeof x.value.k!=='string'||x.value.k.length>80)continue;
+   for(let i=outbox.length-1;i>=0;i--){
+    const o=outbox[i];if(o.type!=='complete_buy'||o.item!==x.id)continue;
+    if(!sending.has(o.op_id)){const est=Array.isArray(o.est)?o.est.slice():[];
+     if(est.length<8&&!est.some(e=>e.field===x.field&&e.k===x.value.k)){est.push({field:x.field,k:x.value.k});outbox[i]={...o,est}}}
+    break;
+   }
+  }
+  save({...meta,outbox:[...outbox,...ops],map,shadow:clone(cur)});
   return ops.length;
  }
  async function push(){
@@ -199,7 +226,10 @@ function createEngine(io){
   if(io.managedPhotos&&meta.outbox.some(legacyPhotoMutation))throw Object.assign(Error('photo_migration_recovery_needed'),{code:'recovery'});
   while(meta.outbox.length){
    const batch=meta.outbox.slice(0,100);
-   const res=await io.rpc('hh_push',{p_ops:batch,p_device:io.device||null});
+   for(const o of batch)sending.add(o.op_id);
+   let res;
+   try{res=await io.rpc('hh_push',{p_ops:batch,p_device:io.device||null})}
+   finally{for(const o of batch)sending.delete(o.op_id)}
    const answered=new Map((res?.results||[]).map(r=>[String(r.op_id),r.status]));
    const rejected=[...meta.rejected];
    for(const o of batch){const s=answered.get(o.op_id);if(s&&s.startsWith('rejected'))rejected.push({op:o,status:s,at:now()})}

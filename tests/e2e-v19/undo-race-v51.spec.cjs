@@ -40,6 +40,13 @@ async function holdFirstUndo(page) {
   return async how => { await expect.poll(() => caught, { message: 'the first undo request was held' }).toBe(true); release(how); };
 }
 const qty = async (page, name) => (await stored(page)).items.find(x => x.name === name).qty;
+// A household outside the trial (no reviewed undo SQL for it): the phone repairs the estimate itself, but
+// only after the server confirmed the undo (Work 7th). The emulator puts every household in the trial.
+async function outsideTrial(page, request) {
+  await request.post(EMU + '/__test/sql', { data: { sql: 'DELETE FROM atokore_private.trial_households_v51' } });
+  await page.evaluate(() => window.AtokoreHousehold.refreshClockTicket());
+  expect(await page.evaluate(() => window.AtokoreHousehold.serverUndoEstimate())).toBe(false);
+}
 const ROW = { [MILK]: 20, [DIAPER]: 21 };
 const buy = (page, name) => page.locator(`#buyList [data-buy-id="${ROW[name]}"]`).getByRole('button', { name: /を買った$/ }).click();
 const bar = page => page.locator('#atkUndoBar');
@@ -101,6 +108,9 @@ test('the same through the shopping-page button, with answers in reversed order 
     const s = await stored(page);
     expect(s.buys.filter(b => b.name === DIAPER)).toHaveLength(1);
     expect(s.buys.filter(b => b.name === MILK)).toHaveLength(1);
+    // Diagnostics for the intermittent WebKit case (Work 7th): which purchase a leftover panel shows.
+    await page.waitForTimeout(300);
+    if (await last(page).count()) console.log('LEFTOVER> ' + JSON.stringify(await last(page).evaluate(e => ({ text: e.innerText, for: e.dataset.atkLastFor, busy: !!e.querySelector('button[disabled]') }))));
     await expect(last(page)).toHaveCount(0);
     expect(page.__errors).toEqual([]);
   } finally { await ctx.close(); }
@@ -114,10 +124,17 @@ test('A fails through the shopping-page button after B was bought: the error sta
     await go(page, 'home'); await go(page, 'buy');
     const release = await holdFirstUndo(page);
     await last(page).getByRole('button', { name: '取り消す' }).click();
+    const aFor = await last(page).getAttribute('data-atk-last-for');
     await buy(page, DIAPER);
+    // B is registered and shown BEFORE A's answer (a capture/timing failure is told apart from a wrong panel).
+    await expect(last(page)).toContainText('パンパース');
+    const bFor = await last(page).getAttribute('data-atk-last-for');
+    expect(bFor).not.toBe(aFor);
     await release('fail');
     await page.waitForTimeout(500);
+    await expect(last(page)).toHaveAttribute('data-atk-last-for', bFor);               // still B's panel
     await expect(last(page)).toContainText('パンパース');
+    await expect(last(page)).not.toContainText('牛乳');
     await expect(last(page).locator('[role=alert]')).toHaveCount(0);                  // A's error is not shown on B
     await expect(last(page).getByRole('button', { name: '取り消す' })).toBeEnabled();
     await last(page).getByRole('button', { name: '取り消す' }).click();
@@ -125,15 +142,16 @@ test('A fails through the shopping-page button after B was bought: the error sta
     expect(page.__errors).toEqual([]);
   } finally { await ctx.close(); }
 });
-test('server undo succeeded but saving the estimate failed: the repair is kept and applied on the next return to the app', async ({ browser, request }, info) => {
+test('outside the trial: server undo succeeded but saving the estimate failed: the confirmed repair is kept and applied on the next return to the app', async ({ browser, request }, info) => {
   test.setTimeout(120000);
   const { ctx, page } = await sharedPhone(browser, info, request);
   try {
+    await outsideTrial(page, request);
     // A tracked product, so the purchase also enters the estimate (a tp… field).
     await page.evaluate(() => { const d = new Date(); const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
       const x = items.find(i => i.id === 2); x.track = { v: 1, base: 60, since: day, perDay: 6, perPack: 60, refillDays: 5, pieceUnit: '枚', confirmedAt: day, t: Date.now() - 60000, seen: [] }; save(); render(); });
     await page.evaluate(() => window.AtokoreHousehold.syncNow());
-    const tp = async () => Object.keys((await stored(page)).items.find(x => x.id === 2)).filter(k => /^tp[0-9a-z]+$/.test(k));
+    const tp = async () => { const x = (await stored(page)).items.find(i => i.id === 2); return Object.keys(x).filter(k => /^tp[0-9a-z]+$/.test(k) && x[k]); };
     await buy(page, DIAPER);
     await expect.poll(tp).toHaveLength(1);
     // Exactly the estimate save fails once (as on a full device).
@@ -165,7 +183,8 @@ test('server window on: a fresh undo works through hh_undo_purchases_v51; one th
     // B is bought; on the server it is 11 minutes old (e.g. it arrived late from an offline phone).
     await buy(page, DIAPER);
     await page.evaluate(() => window.AtokoreHousehold.syncNow());
-    await request.post(EMU + '/__test/sql', { data: { sql: "UPDATE atokore_private.ops SET at=now()-interval '11 minutes', body=jsonb_set(body,'{ts}',to_jsonb(((extract(epoch FROM now())*1000)::bigint)-660000)) WHERE type='complete_buy' AND body->>'_undo_done' IS NULL" } });
+    // Work 7th: the server measures from its clock ticket held before buying: make it 11 minutes old.
+    await request.post(EMU + '/__test/sql', { data: { sql: "UPDATE atokore_private.purchase_clock_tickets_v51 SET issued_at=now()-interval '11 minutes'" } });
     await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
     await expect(bar(page)).toContainText('10分を過ぎたため、取り消せません');
     await page.evaluate(() => window.AtokoreHousehold.syncNow());
@@ -217,17 +236,19 @@ async function trackedDiaper(page) {
     const x = items.find(i => i.id === 2); x.track = { v: 1, base: 60, since: day, perDay: 6, perPack: 60, refillDays: 5, pieceUnit: '枚', confirmedAt: day, t: Date.now() - 60000, seen: [] }; save(); render(); });
   await page.evaluate(() => window.AtokoreHousehold.syncNow());
 }
-const tpOf = async page => Object.keys((await stored(page)).items.find(x => x.id === 2)).filter(k => /^tp[0-9a-z]+$/.test(k));
+// Estimate entries that count (a key left with null is no entry: readEntry(null) is nothing).
+const tpOf = async page => { const x = (await stored(page)).items.find(i => i.id === 2); return Object.keys(x).filter(k => /^tp[0-9a-z]+$/.test(k) && x[k]); };
 // A reload drops everything held in memory and aborts a request still waiting (like a force-quit).
 async function reopen(ctx, page) {
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   await page.reload(); await page.waitForFunction(() => window.AtokoreHousehold?.status?.().state === 'synced', null, { timeout: 30000 });
   return page;
 }
-test('forecast: the estimate save fails after the server undo, then the app is reloaded -> repaired; stock, list and estimate agree', async ({ browser, request }, info) => {
+test('forecast, outside the trial: the estimate save fails after a confirmed undo, then the app is reloaded -> repaired; stock, list and estimate agree', async ({ browser, request }, info) => {
   test.setTimeout(120000);
   const { ctx, page } = await sharedPhone(browser, info, request);
   try {
+    await outsideTrial(page, request);
     await trackedDiaper(page);
     const diaper0 = await qty(page, DIAPER);
     await buy(page, DIAPER);
@@ -241,7 +262,8 @@ test('forecast: the estimate save fails after the server undo, then the app is r
     await expect.poll(() => tpOf(next)).toHaveLength(0);
     expect(await qty(next, DIAPER)).toBe(diaper0);                                     // stock reverted (server)
     expect((await stored(next)).buys.filter(b => b.name === DIAPER)).toHaveLength(1);  // back on the list
-    expect(await next.evaluate(() => localStorage.getItem('atokorePreviewUndoRepairV19'))).toBe(null);
+    // The confirmed repair is kept until a synced state with nothing pending shows it done, then cleared.
+    await expect.poll(async () => { await next.evaluate(() => window.AtokoreHousehold.syncNow()); return next.evaluate(() => localStorage.getItem('atokorePreviewUndoRepairV19')); }).toBe(null);
     expect(next.__errors).toEqual([]);
   } finally { await ctx.close(); }
 });
@@ -279,5 +301,59 @@ test('forecast: an undo the server refused leaves no repair behind and the estim
     expect(await tpOf(next)).toHaveLength(1);                                          // still bought: estimate kept
     expect(await next.evaluate(() => localStorage.getItem('atokorePreviewUndoRepairV19'))).toBe(null);
     expect(next.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+
+// Work 7th (forecast): with the reviewed undo SQL the server removes the purchase's estimate entry in the
+// SAME transaction as the stock and the shopping row; nothing on the phone has to be remembered or guessed.
+test('forecast (Work 7th): server-owned estimate -> one undo changes stock, list and estimate together; a saving failure on the phone does not matter', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request);
+  try {
+    expect(await page.evaluate(() => window.AtokoreHousehold.serverUndoEstimate())).toBe(true);
+    await trackedDiaper(page);
+    const diaper0 = await qty(page, DIAPER);
+    await buy(page, DIAPER);
+    await expect.poll(() => tpOf(page)).toHaveLength(1);
+    await page.evaluate(() => { const orig = Storage.prototype.setItem;      // the phone cannot save an estimate now
+      Storage.prototype.setItem = function (...a) { if (/revertEstimate/.test(new Error().stack || '')) throw new DOMException('full (test)', 'QuotaExceededError'); return orig.apply(this, a); }; });
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toHaveCount(0);
+    const next = await reopen(ctx, page);
+    await expect.poll(() => tpOf(next)).toHaveLength(0);
+    expect(await qty(next, DIAPER)).toBe(diaper0);
+    expect((await stored(next)).buys.filter(b => b.name === DIAPER)).toHaveLength(1);
+    expect(await next.evaluate(() => localStorage.getItem('atokorePreviewUndoRepairV19'))).toBe(null);
+    expect(next.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+test('forecast (Work 7th): the undo answer arrives late while another tab runs 121 s ahead -> stock, list and estimate still agree', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request);
+  try {
+    await trackedDiaper(page);
+    const diaper0 = await qty(page, DIAPER);
+    await buy(page, DIAPER);
+    await expect.poll(() => tpOf(page)).toHaveLength(1);
+    let release; const held = new Promise(r => { release = r; }); let reached = false;
+    await page.route('**/rest/v1/rpc/hh_undo_purchases', async route => { const resp = await route.fetch(); reached = true; await held; await route.fulfill({ response: resp }).catch(() => {}); });
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect.poll(() => reached).toBe(true);
+    // Another tab of the same phone with its clock 121 s ahead runs its start and sync meanwhile.
+    const other = await ctx.newPage(); other.__errors = []; other.on('pageerror', e => other.__errors.push(e.message));
+    await other.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG);
+    await other.clock.install({ time: Date.now() + 121000 });
+    await other.goto(page.url()); await other.waitForFunction(() => window.AtokoreHousehold?.status?.().state === 'synced', null, { timeout: 30000 });
+    await other.evaluate(() => window.AtokoreHousehold.syncNow());
+    release();
+    await expect(bar(page)).toHaveCount(0);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    for (const p of [page, other]) {
+      await p.evaluate(() => window.AtokoreHousehold.syncNow());
+      await expect.poll(() => tpOf(p)).toHaveLength(0);
+      expect(await qty(p, DIAPER)).toBe(diaper0);
+      expect((await stored(p)).buys.filter(b => b.name === DIAPER)).toHaveLength(1);
+    }
+    expect(page.__errors).toEqual([]); expect(other.__errors).toEqual([]);
   } finally { await ctx.close(); }
 });
