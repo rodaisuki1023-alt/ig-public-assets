@@ -389,19 +389,10 @@ function parsePhotos(list,restoredItems){
  }
  return out;
 }
-// お試し: photo-slot trial display (off by default; this device only; changes nothing else).
+// お試し: photo-slot trial display (off by default; this device only; changes nothing else). The
+// switch itself lives in build-info-v51.js: photo code never writes to localStorage.
 const PREVIEW_KEY='atokorePhotoCounterPreviewV1';
 function previewPlan(){try{const v=root.localStorage.getItem(PREVIEW_KEY);return ['free','premium','ended'].includes(v)?v:null}catch(_){return null}}
-function previewSetting(){
- const page=doc?.getElementById('pg-premium');if(!page||doc.getElementById('atkPhotoPreview'))return;
- const box=doc.createElement('div');box.id='atkPhotoPreview';box.className='atk-photo-preview-setting';
- box.innerHTML='<label for="atkPhotoPreviewPlan"><b>写真枠の試用表示（合成データ）</b></label>'+
-  '<p class="atk-photo-note">写真画面の「共有写真 n/5枚」などの表示を、この端末の写真を使って確かめるための設定です。実際の家族共有・契約・サーバー上限は変わりません。</p>'+
-  '<select id="atkPhotoPreviewPlan"><option value="">オフ（通常）</option><option value="free">無料プラン（5枚）として表示</option><option value="premium">有料プラン（20枚）として表示</option><option value="ended">有料プラン終了後（5枚）として表示</option></select>';
- const anchor=doc.getElementById('atkBuildInfo');if(anchor)anchor.before(box);else page.append(box);
- const sel=box.querySelector('select');sel.value=previewPlan()||'';
- sel.addEventListener('change',()=>{try{if(sel.value)root.localStorage.setItem(PREVIEW_KEY,sel.value);else root.localStorage.removeItem(PREVIEW_KEY)}catch(_){root.notifyAtokoreV125H?.('この設定を保存できませんでした')}});
-}
 async function countPhotos(list){
  let n=0;
  for(const item of list){
@@ -480,7 +471,7 @@ function install(){
   else if(changed){decorate();detailPhoto()}
   shareWaiting();
  });
- decorate();detailPhoto();previewSetting();
+ decorate();detailPhoto();
  root.addEventListener('pagehide',()=>{dispose();resetShared();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
 }
