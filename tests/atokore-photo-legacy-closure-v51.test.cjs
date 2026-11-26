@@ -49,27 +49,70 @@ test('inventory is service-only and separates referenced objects from orphans',a
  await db.query("update atokore_private.records set deleted=true where id='item-legacy-a1'");
  assert.equal((await service(db,'select count(*)::int c from atokore_private.legacy_photo_inventory() where referenced')).at(0).c,0);
 });
+// Stage 2 needs the ledger to tell a legacy reference from a managed one. The legacy reference is
+// created before the v50 lifecycle trigger exists, as it was written by pre-gateway clients.
+async function ledgerFixture(){
+ const f=await fixture();
+ await f.db.exec('CREATE TABLE auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz)');
+ await f.db.exec('ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()');
+ for(const x of ['atokore-photo-reservation-v50.sql','atokore-photo-lifecycle-v50.sql','atokore-photo-legacy-migrate-v51.sql'])await f.db.exec(SQL(x));
+ await f.db.query("INSERT INTO storage.buckets(id,name,public) VALUES('atokore-private-photos-v2','atokore-private-photos-v2',false) ON CONFLICT(id) DO NOTHING");
+ const svc=async(fn,args)=>(await f.db.transaction(async tx=>{await tx.exec('set local role service_role');return (await tx.query('select atokore_private.'+fn+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') r',args)).rows})).at(0).r;
+ return {...f,svc};
+}
+const policyNames=async db=>(await db.query("select policyname from pg_policies where schemaname='storage' and tablename='objects' order by 1")).rows.map(r=>r.policyname);
+const close=db=>db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')).finally(()=>db.exec('rollback').catch(()=>{}));
+const SHA='a'.repeat(64);
 test('stage 2 refuses while any legacy object remains or stage 1 is missing, and changes nothing',async()=>{
- const {db,name}=await fixture();
- await assert.rejects(db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')),/legacy_photos_remain/);
- await db.exec('rollback').catch(()=>{});
+ const {db,name,svc,household}=await ledgerFixture();
+ await assert.rejects(close(db),/legacy_photos_remain/);
+ // Move the reference properly, then remove the object: only stage 1 is now missing.
+ const m=await svc('photo_legacy_begin_v51',[household.id,'item-legacy-a1']);
+ await db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
+ await svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
  await db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);
- await assert.rejects(db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')),/legacy_stage1_missing/);
- await db.exec('rollback').catch(()=>{});
- const policies=(await db.query("select policyname from pg_policies where schemaname='storage' and tablename='objects' order by 1")).rows.map(r=>r.policyname);
- assert.deepEqual(policies,['atokore_photo_delete','atokore_photo_insert','atokore_photo_read']);
+ assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
+ await assert.rejects(close(db),/legacy_stage1_missing/);
+ assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_insert','atokore_photo_read']);
  assert.ok(name);
 });
-test('full order: switch + Storage API delete, then stage 2 closes every client path; the gateway check still works',async()=>{
- const {db,household,name}=await fixture();
+test('Work 4th: 0 legacy objects but 1 legacy reference is refused (the product would show a broken photo)',async()=>{
+ const {db}=await ledgerFixture();
  await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
- // Stand-ins for the separately approved steps: CAS switch to the gateway path, Storage API delete.
- const next=household.id+'/item-legacy-a1/'+oid()+'.jpg';
- await db.query("update atokore_private.records set fields=fields||jsonb_build_object('photoPath',$1::text) where id='item-legacy-a1'",[next]);
- await db.query("delete from storage.objects where bucket_id=$1 and name=$2",[LEGACY,name]);
+ await db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);       // object gone, reference left
+ await assert.rejects(close(db),/legacy_references_remain/);
+ assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read'],'nothing closed');
+ // A deleted product still holding a legacy path counts too (a restore would bring it back).
+ await db.query("update atokore_private.records set deleted=true where id='item-legacy-a1'");
+ await assert.rejects(close(db),/legacy_references_remain/);
+});
+test('stage 2 also refuses an unfinished move and a ledger that does not match its objects',async()=>{
+ const {db,svc,household}=await ledgerFixture();
+ await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
+ const m=await svc('photo_legacy_begin_v51',[household.id,'item-legacy-a1']);
+ await db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
+ await svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
+ await db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);
+ await assert.rejects(close(db),/legacy_migration_unfinished/,'switched but not finished');
+ assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
+ await db.query("delete from storage.objects where bucket_id='atokore-private-photos-v2' and name=$1",[m.target_path]);
+ await assert.rejects(close(db),/photo_ledger_inconsistent/,'attached row without its object');
+ assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read']);
+});
+test('full order: copy, verify, switch, delete the legacy object, finish; then stage 2 closes every client path; the gateway check still works',async()=>{
+ const {db,household,name,svc}=await ledgerFixture();
+ await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
+ const m=await svc('photo_legacy_begin_v51',[household.id,'item-legacy-a1']);
+ assert.equal(m.legacy_path,name);
+ await db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
+ assert.equal((await svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA])).status,'switched');
+ const next=m.target_path;
+ await db.query("delete from storage.objects where bucket_id=$1 and name=$2",[LEGACY,name]);   // Storage API stand-in
+ assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
  await db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql'));
- const policies=(await db.query("select policyname from pg_policies where schemaname='storage' and tablename='objects'")).rows;
- assert.equal(policies.length,0);
+ assert.deepEqual(await policyNames(db),[]);
+ // Running it again (a second operator) changes nothing and does not fail.
+ await db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql'));
  // Even if a legacy row reappeared (e.g. a restore), no client role can read or remove it.
  await db.query("insert into storage.objects(bucket_id,name) values($1,$2)",[LEGACY,name]);
  assert.equal((await objects(db,A)).length,0);
@@ -99,7 +142,7 @@ test('every draft applies together in the documented order, and the v51 RPCs sti
  const db=await createDb();
  await db.exec('CREATE TABLE auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz)');
  for(const f of ['atokore-photo-gateway-v50.sql','atokore-photo-reservation-v50.sql','atokore-photo-lifecycle-v50.sql','atokore-photo-service-v50.sql',
-  'atokore-buy-assignment-v51.sql','atokore-prep-share-v51.sql','atokore-photo-legacy-close-writes-v51.sql'])await db.exec(SQL(f));
+  'atokore-photo-legacy-migrate-v51.sql','atokore-buy-assignment-v51.sql','atokore-prep-share-v51.sql','atokore-photo-legacy-close-writes-v51.sql'])await db.exec(SQL(f));
  await call(db,A,'hh_create',{p_name:'家族',p_display_name:'親'});
  const {code}=await call(db,A,'hh_invite_create');await call(db,B,'hh_join',{p_code:code,p_display_name:'家族'});
  await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'buy',id:'buy-all-drafts',fields:{name:'おしりふき'},qty:1,ts:Date.now()}]});

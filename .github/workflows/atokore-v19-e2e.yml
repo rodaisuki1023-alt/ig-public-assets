@@ -105,6 +105,10 @@ jobs:
         env:
           ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
         run: node tests/household/purchase-merge-postgres.cjs
+      - name: Real PostgreSQL legacy photo close under concurrent writes (draft)
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/photo-legacy-close-postgres.cjs
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
