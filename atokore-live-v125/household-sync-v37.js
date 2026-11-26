@@ -110,7 +110,7 @@ async function undoPurchases(ticket){
  await syncNow();
  if(status.state!=='synced')throw Error('通信できません。つながってから「元に戻す」を押してください。');
  try{await rpc('hh_undo_purchases',{p_ops:ticket.map(x=>x.op)})}
- catch(e){throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
+ catch(e){throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(e.message||'')?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
  await syncNow();
  if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
 }

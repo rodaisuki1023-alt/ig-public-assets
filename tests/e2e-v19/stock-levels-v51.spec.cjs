@@ -315,3 +315,104 @@ test('last purchase: the bar and the shopping-page button never undo the same pu
   expect(s.buys.filter(b => b.id === 20)).toHaveLength(1);
   expect(page.__errors).toEqual([]);
 });
+
+// Work P1: the deadline is decided when the undo starts, not only when the button is drawn. A page
+// left open (timers frozen in the background, simulated with setSystemTime, which moves the clock
+// without running timers) must not undo at 10:00 or later, from the button or from the bar.
+async function buyDiaper(page) {
+  await page.clock.install();
+  await open(page, { [KEY]: purchaseState(tracked()) });
+  await go(page, 'buy');
+  await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
+  expect((await est(page, 2)).remaining).toBe(180);
+  return page.evaluate(() => Date.now());
+}
+async function unchangedAfterRefusal(page) {
+  const s = await stored(page);
+  expect(s.items.find(x => x.id === 2).qty).toBe(4);
+  expect((await est(page, 2)).remaining).toBe(180);
+  expect(s.buys.map(b => b.id)).toEqual([21]);
+}
+test('last purchase deadline: 9:59 still undoes (count, estimate and the shopping row come back)', async ({ page }) => {
+  await buyDiaper(page);
+  await page.clock.fastForward('09:59');
+  const last = page.locator('#atkLastPurchaseUndo');
+  await expect(last).toContainText('あと1分取り消せます');
+  await last.getByRole('button', { name: '取り消す' }).click();
+  await expect(last).toHaveCount(0);
+  const s = await stored(page);
+  expect(s.items.find(x => x.id === 2).qty).toBe(2);
+  expect((await est(page, 2)).remaining).toBe(60);
+  expect(s.buys.map(b => b.id).sort()).toEqual([20, 21]);
+  expect(page.__errors).toEqual([]);
+});
+for (const at of ['10:00', '10:01']) {
+  test(`last purchase deadline: a button left on screen is refused at ${at} and changes nothing`, async ({ page }) => {
+    const t0 = await buyDiaper(page);
+    const last = page.locator('#atkLastPurchaseUndo');
+    await expect(last).toBeVisible();
+    const [m, s] = at.split(':').map(Number);
+    await page.clock.setSystemTime(t0 + (m * 60 + s) * 1000);       // no timer runs: the stale button stays
+    await expect(last).toBeVisible();
+    await last.getByRole('button', { name: '取り消す' }).click();
+    await expect(page.locator('#stableToastV125h')).toContainText('10分を過ぎたため、取り消せません');
+    await expect(last).toHaveCount(0);
+    await unchangedAfterRefusal(page);
+    expect(page.__errors).toEqual([]);
+  });
+}
+test('last purchase deadline: the 20-second bar, if frozen on screen, is refused after 10:00 too', async ({ page }) => {
+  const t0 = await buyDiaper(page);
+  const bar = page.locator('#atkUndoBar');
+  await expect(bar).toBeVisible();
+  await page.clock.setSystemTime(t0 + 601000);
+  await bar.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(bar).toContainText('10分を過ぎたため、取り消せません');
+  await unchangedAfterRefusal(page);
+  // The refusal is final: pressing again does not undo either.
+  await bar.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await unchangedAfterRefusal(page);
+  expect(page.__errors).toEqual([]);
+});
+test('last purchase deadline: staying on the screen removes the button at 10:00; returning from the background re-checks', async ({ page }) => {
+  const t0 = await buyDiaper(page);
+  const last = page.locator('#atkLastPurchaseUndo');
+  await page.clock.fastForward('09:59');
+  await expect(last).toBeVisible();
+  await page.clock.fastForward('00:01');                          // the deadline timer fires on screen
+  await expect(last).toHaveCount(0);
+  await unchangedAfterRefusal(page);
+  // A second purchase; the phone sleeps past the deadline (timers frozen) and comes back.
+  await page.locator('#buyList [data-buy-id="21"]').getByRole('button', { name: /を買った$/ }).click();
+  await expect(last).toBeVisible();
+  const t1 = await page.evaluate(() => Date.now());
+  await page.clock.setSystemTime(t1 + 600000);
+  await expect(last).toBeVisible();
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(last).toHaveCount(0);
+  expect((await stored(page)).items.find(x => x.id === 1).qty).toBe(2);   // the milk purchase stays
+  expect(page.__errors).toEqual([]);
+});
+test('last purchase deadline: setting the phone clock back does not extend the window', async ({ page }) => {
+  await buyDiaper(page);
+  const last = page.locator('#atkLastPurchaseUndo');
+  await page.clock.runFor(360000);                                   // 6:00 really passed
+  const t6 = await page.evaluate(() => Date.now());
+  await page.clock.setSystemTime(t6 - 300000);                       // the clock is moved back 5 minutes
+  await page.clock.runFor(1000);
+  await expect(last).toBeVisible();                                  // still within 10 minutes (6:01)
+  await page.clock.runFor(240000);                                   // 10:01 really passed; the wall clock says 5:01
+  await expect(last).toHaveCount(0);
+  await unchangedAfterRefusal(page);
+  expect(page.__errors).toEqual([]);
+});
+test('last purchase deadline: a double tap starts one undo only', async ({ page }) => {
+  await buyDiaper(page);
+  const button = page.locator('#atkLastPurchaseUndo').getByRole('button', { name: '取り消す' });
+  await button.evaluate(b => { b.click(); b.click(); });
+  await expect(page.locator('#atkLastPurchaseUndo')).toHaveCount(0);
+  const s = await stored(page);
+  expect(s.items.find(x => x.id === 2).qty).toBe(2);
+  expect(s.buys.filter(b => b.id === 20)).toHaveLength(1);
+  expect(page.__errors).toEqual([]);
+});

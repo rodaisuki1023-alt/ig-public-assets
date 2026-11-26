@@ -77,24 +77,46 @@ function clearUndo(){undo=null;clearTimeout(undoTimer);doc.getElementById('atkUn
 // the shopping page, for at most LAST_PURCHASE_MS and only once. The same undo runs as from the
 // bar: it refuses when the products changed, checks the shared ticket on the server while sharing,
 // and also takes the purchase out of the estimate. Kept in memory only (a reload ends it).
+// v51 (Work P1): the deadline is decided when the undo starts, by both the bar and the button, not
+// only when the button is drawn, so a screen left open (or frozen in the background) cannot undo
+// after 10:00. Undo is allowed while elapsed < 10:00; 10:00 itself is refused. An undo that started
+// before the deadline is finished, never stopped half-way: stopping after the server answered would
+// leave the stock and the estimate out of step. Elapsed time is the larger of the wall clock and the
+// monotonic clock, so setting the phone's clock back cannot extend the window (setting it forward
+// only ends it early). While sharing, the server applies the same window to its own receive time
+// (proposal atokore-purchase-undo-window-v51.sql), which is the strict guarantee across phones.
 const LAST_PURCHASE_MS=10*60*1000;
-let lastPurchase=null,lastBusy=false;
+const EXPIRED_TEXT='「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。';
+const mono=()=>root.performance&&typeof root.performance.now==='function'?root.performance.now():NaN;
+function stamp(){return {wall:Date.now(),mono:mono()}}
+function elapsed(at){const w=Date.now()-at.wall,m=mono()-at.mono;return Number.isFinite(m)?Math.max(w,m):w}
+function withinUndo(at){const e=elapsed(at);return e>=0&&e<LAST_PURCHASE_MS}
+let lastPurchase=null,lastBusy=false,lastTimer=null;
 function renderLastPurchase(){
+ clearTimeout(lastTimer);lastTimer=null;
  const anchor=doc.getElementById('buyList');let b=doc.getElementById('atkLastPurchaseUndo');
- const live=lastPurchase&&Date.now()-lastPurchase.at<LAST_PURCHASE_MS;
- if(!live)lastPurchase=null;
+ // An undo already running is drawn as busy until it finishes, even across the deadline.
+ const live=lastPurchase&&(lastBusy||withinUndo(lastPurchase.at));
+ if(!live){if(lastPurchase&&undo===lastPurchase.run)clearUndo();lastPurchase=null}
  if(!anchor||!live){b?.remove();return}
  if(!b){b=doc.createElement('div');b.id='atkLastPurchaseUndo';b.className='atk-last-purchase';anchor.before(b)}
- const min=Math.max(1,Math.round((Date.now()-lastPurchase.at)/60000));
- b.innerHTML='<span>直前の「買った」：'+esc(lastPurchase.label)+'（約'+min+'分前）</span><button type="button" data-atk-last-undo'+(lastBusy?' disabled':'')+'>取り消す</button>'+(lastPurchase.error?'<p role="alert">'+esc(lastPurchase.error)+'</p>':'');
+ const e=elapsed(lastPurchase.at),min=Math.max(1,Math.round(e/60000));
+ b.innerHTML='<span>直前の「買った」：'+esc(lastPurchase.label)+'（約'+min+'分前・あと'+Math.max(1,Math.ceil((LAST_PURCHASE_MS-e)/60000))+'分取り消せます）</span><button type="button" data-atk-last-undo'+(lastBusy?' disabled':'')+'>'+(lastBusy?'取り消し中…':'取り消す')+'</button>'+(lastPurchase.error?'<p role="alert">'+esc(lastPurchase.error)+'</p>':'');
+ // Redraw at the deadline (and each minute for the label). Timers stall in the background, so
+ // returning to the page also redraws (visibilitychange/pageshow below), and the start re-checks.
+ if(!lastBusy)lastTimer=setTimeout(renderLastPurchase,Math.max(50,Math.min(60000,LAST_PURCHASE_MS-e)));
 }
 doc.addEventListener('click',async e=>{
  const t=e.target.closest?.('[data-atk-last-undo]');if(!t||lastBusy||!lastPurchase)return;
- const run=lastPurchase.run;lastBusy=true;renderLastPurchase();
+ const run=lastPurchase.run;
+ if(!withinUndo(lastPurchase.at)){renderLastPurchase();message(EXPIRED_TEXT);return}
+ lastBusy=true;renderLastPurchase();
  try{await run();lastPurchase=null;clearUndo();message('直前の「買った」を取り消しました')}
  catch(err){if(lastPurchase)lastPurchase.error=err.message||'取り消せませんでした。'}
  finally{lastBusy=false;renderLastPurchase()}
 });
+doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')renderLastPurchase()});
+root.addEventListener?.('pageshow',()=>renderLastPurchase());
 doc.addEventListener('atokore-page-changed',clearUndo);
 doc.addEventListener('atokore-page-changed',()=>renderLastPurchase());
 function offerUndo(label,run){
@@ -133,12 +155,14 @@ for(const name of ['buyOneToStockV125H','bought']){
    const e=addedEntries(a,b),track=e.length?{entries:e}:{};
    return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0,...(a?{}:{created:true}),...track}]:[]});
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined,ticket=shared?hh.capturePurchases?.(removed.map(x=>x.id)):null;
-  let done=false,running=false;
+  let done=false,running=false;const at=stamp();
   const finish=()=>{done=true;if(lastPurchase?.run===runUndo)lastPurchase=null;renderLastPurchase()};
   const runUndo=async()=>{
-   // One undo per purchase, from the bar or the shopping-page button, never twice or at once.
+   // One undo per purchase, from the bar or the shopping-page button, never twice or at once, and
+   // only before the deadline. Checked here, before any change, so every entry point obeys it.
    if(done)throw Error('この購入はすでに取り消しました。');
    if(running)throw Error('取り消しを処理しています。');
+   if(!withinUndo(at)){if(lastPurchase?.run===runUndo)lastPurchase=null;renderLastPurchase();throw Error(EXPIRED_TEXT)}
    running=true;try{await undoOnce()}finally{running=false}
   };
   const undoOnce=async()=>{
@@ -160,7 +184,7 @@ for(const name of ['buyOneToStockV125H','bought']){
    finish();
   };
   offerUndo(removed.length+'商品を「買った」にしました',runUndo);
-  lastPurchase={label:removed.map(x=>x.name).slice(0,2).join('、')+(removed.length>2?' ほか'+(removed.length-2)+'商品':''),run:runUndo,at:Date.now()};
+  lastPurchase={label:removed.map(x=>x.name).slice(0,2).join('、')+(removed.length>2?' ほか'+(removed.length-2)+'商品':''),run:runUndo,at};
   renderLastPurchase();
   return result;
  };
