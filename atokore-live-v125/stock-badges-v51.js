@@ -13,9 +13,10 @@ if(!doc||!L||!UI)return;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let open=null,recent=null,recentTimer=0;
 const UNDO_MS=8000;
-// Comparison prototype (Muse): in 横1列, products judged 余裕あり may be shown as ONE short line
-// (label + 「変える」); そろそろ／買う／要確認 keep the three one-tap buttons. Off by default and
-// per device; it never replaces the current layout unless the person turns it on.
+// Display setting (Muse 4th; was a comparison prototype): in 横1列, products judged 余裕あり may be
+// shown as ONE short line; そろそろ／買う／要確認 keep the three one-tap buttons. Off by default (the
+// standard keeps one tap for every product), remembered on this device, offered next to the
+// 写真付き3列／横1列 switch. Long names are cut to one line there; the detail shows the full name.
 const COMPACT_KEY='atokoreStockCompactPlentyV1';
 function compactOn(){try{return root.localStorage.getItem(COMPACT_KEY)==='1'}catch(_){return false}}
 function list(){try{return Array.isArray(items)?items:[]}catch(_){return []}}
@@ -31,27 +32,31 @@ function mark(x,listMode){
  // A level just changed by mistake can be put back for a few seconds (Muse N-2).
  const undo=recent&&recent.id===id?'<button type="button" class="atk-lv-undo" data-atk-lv-undo aria-label="'+esc(name+'の目安の変更を元に戻す')+'">元に戻す</button>':'';
  if(listMode&&compactOn()&&level==='plenty'&&open!==id&&!undo)
-  return '<div class="atk-lv atk-lv-compact" data-atk-lv="'+id+'"><span class="atk-lv-src atk-lv-plenty">'+esc(label+(src?'（'+src+'）':''))+'</span><button type="button" class="atk-lv-more" data-atk-lv-open aria-label="'+esc(say+'。タップで変更')+'">余裕あり ▾</button></div>';
+  return '<div class="atk-lv atk-lv-compact" data-atk-lv="'+id+'"><span class="atk-lv-src atk-lv-plenty">'+esc(label+(src?'（'+src+'）':''))+'</span><button type="button" class="atk-lv-more" data-atk-lv-open aria-label="'+esc(say+'。タップで3つの目安を表示')+'">余裕<span class="atk-lv-more-long">あり</span> ▾</button></div>';
  if(listMode||open===id)return '<div class="atk-lv atk-lv-open" data-atk-lv="'+id+'" role="group" aria-label="'+esc(say)+'"><span class="atk-lv-src atk-lv-'+level+'">'+esc(src||label)+'</span>'+L.LEVELS.map(btn).join('')+undo+'</div>';
  return '<div class="atk-lv" data-atk-lv="'+id+'"><button type="button" class="atk-lv-mark atk-lv-'+level+'" data-atk-lv-open aria-label="'+esc(say+'。タップで変更')+'">'+esc(label)+(src?'<small>'+esc(src)+'</small>':'')+'</button></div>';
 }
-// The prototype switch lives on the お試し page (not in the stock list): it is a comparison, and
-// it was not adopted as default (it costs one more tap for 余裕あり products; see docs).
+// The setting sits under the 写真付き3列／横1列 switch and is shown in 横1列 only (it changes nothing
+// in the 3-column view). A labelled checkbox: the whole 44px row is the touch target.
 function toggleHTML(){
- const page=doc.getElementById('pg-premium');if(!page)return;
+ const page=doc.getElementById('pg-stock'),view=doc.getElementById('atkStockView');if(!page||!view)return;
  let t=doc.getElementById('atkCompactPlenty');
  if(!t){t=doc.createElement('label');t.id='atkCompactPlenty';t.className='atk-compact-toggle';
-  t.innerHTML='<input type="checkbox" data-atk-compact> 試作：横1列で「余裕あり」の商品を短く表示する（変更は2タップになります）';
-  const anchor=doc.getElementById('atkBuildInfo');if(anchor)anchor.before(t);else page.append(t)}
+  t.innerHTML='<input type="checkbox" data-atk-compact><span><b>「余裕あり」を1行で短く表示</b><small>多くの商品を1画面で見られます。「余裕あり」の商品の変更は2タップになります。</small></span>'}
+ if(t.previousElementSibling!==view)view.after(t);
+ t.hidden=!page.classList.contains('atk-stock-list-mode');
  t.querySelector('input').checked=compactOn();
+ page.classList.toggle('atk-stock-compact',compactOn()&&!t.hidden);
 }
 function decorate(){
+ toggleHTML();
  const listMode=doc.getElementById('pg-stock')?.classList.contains('atk-stock-list-mode');
  const data=new Map(list().map(x=>[String(x.id),x]));
  for(const row of doc.querySelectorAll('#stockList [data-stock-id]')){
   const x=data.get(row.dataset.stockId);row.querySelectorAll(':scope > .atk-lv, .atk-lv-tag').forEach(n=>n.remove());if(!x)continue;
   const w=doc.createElement('div');w.innerHTML=mark(x,listMode);
   const art=listMode?null:row.querySelector('.atk-row-brand');
+  row.classList.toggle('atk-row-compact',listMode&&!!w.querySelector('.atk-lv-compact'));
   if(art)art.append(w.firstElementChild);else row.append(w.firstElementChild);
  }
 }
@@ -78,11 +83,12 @@ doc.addEventListener('click',e=>{
 },true);
 doc.addEventListener('change',e=>{
  if(!e.target.matches?.('[data-atk-compact]'))return;
- try{if(e.target.checked)root.localStorage.setItem(COMPACT_KEY,'1');else root.localStorage.removeItem(COMPACT_KEY)}catch(_){}
+ try{if(e.target.checked)root.localStorage.setItem(COMPACT_KEY,'1');else root.localStorage.removeItem(COMPACT_KEY)}
+ catch(_){e.target.checked=compactOn();root.notifyAtokoreV125H?.('表示の設定を保存できませんでした');return}
  open=null;decorate();
 });
 const base=root.renderStock;
 if(typeof base==='function')root.renderStock=function(...args){const r=base.apply(this,args);try{decorate()}catch(err){console.error('あとこれ: 残りの目安',err)}return r};
-toggleHTML();decorate();
+decorate();
 root.AtokoreStockBadges=Object.freeze({refresh:decorate});
 })(typeof globalThis!=='undefined'?globalThis:this);

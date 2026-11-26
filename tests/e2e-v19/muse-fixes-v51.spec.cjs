@@ -200,21 +200,56 @@ test('a level changed by mistake can be put back from the same row; close button
   expect(page.__errors).toEqual([]);
 });
 
-test('compact 余裕あり prototype: off by default; when turned on in お試し, other levels keep one-tap buttons', async ({ page }) => {
+test('compact 余裕あり display setting: off by default, next to the 横1列 switch, other levels keep one-tap buttons, remembered after reload', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
   await go(page, 'stock');
+  const setting = page.locator('#atkCompactPlenty');
+  await expect(setting).toBeHidden();                                     // 写真付き3列: not offered
   await page.locator('[data-atk-view="list"]').click();
+  await expect(setting).toBeVisible();
+  await expect(setting).not.toContainText('試作');
+  await expect(page.locator('#pg-premium [data-atk-compact]')).toHaveCount(0);   // not on the お試し page any more
   const egg = page.locator('#stockList [data-stock-id="3"]');            // 6個: 余裕あり by count
-  await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(3);          // default: unchanged
-  await go(page, 'premium');
-  await page.locator('[data-atk-compact]').check();
+  await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(3);          // default: unchanged, 1 tap
+  await setting.click();                                                  // the whole label row toggles
+  await expect(page.locator('[data-atk-compact]')).toBeChecked();
+  await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(0);
+  await page.reload();
   await go(page, 'stock');
+  await expect(page.locator('[data-atk-compact]')).toBeChecked();         // remembered on this device
   await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(0);
   await egg.locator('[data-atk-lv-open]').click();                        // 2nd tap needed: the trade-off
   await egg.locator('[data-atk-lv-set="buy"]').click();
   expect((await stored(page)).items.find(x => x.id === 3).level).toBe('buy');
   await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(3);          // not 余裕あり any more: full buttons
-  await go(page, 'premium');
   await page.locator('[data-atk-compact]').uncheck();
+  await page.reload();
+  await go(page, 'stock');
+  await expect(page.locator('[data-atk-compact]')).not.toBeChecked();
+  expect(page.__errors).toEqual([]);
+});
+for (const width of [320, 393]) test(`compact display at ${width}px: long names on one line (full name in the detail), 44px targets, no sideways scroll`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 852 });
+  const s = baseState();
+  s.items.push({ id: 9, name: 'テスト用 とても長い商品名の柔軟剤 詰め替え用 特大サイズ 1200ml ボトル', cat: '日用品', qty: 5, unit: '本', level: 'plenty', levelAt: new Date().toISOString() });
+  await open(page, { [KEY]: s });
+  await go(page, 'stock');
+  await page.locator('[data-atk-view="list"]').click();
+  await page.locator('#atkCompactPlenty').click();
+  const row = page.locator('#stockList [data-stock-id="9"]');
+  await expect(row.locator('.atk-lv-compact')).toBeVisible();
+  const f = await row.evaluate(r => {
+    const n = r.querySelector('.name'), cs = getComputedStyle(n);
+    const targets = [...document.querySelectorAll('#pg-stock #stockList button, #atkCompactPlenty')].filter(e => e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().height);
+    return { lineHeight: parseFloat(cs.lineHeight) || 20, h: n.getBoundingClientRect().height, cut: n.scrollWidth > n.clientWidth, ellipsis: cs.textOverflow, title: n.title, min: Math.min(...targets), scroll: document.documentElement.scrollWidth - innerWidth };
+  });
+  expect(f.ellipsis).toBe('ellipsis');
+  expect(f.cut).toBe(true);
+  expect(f.h).toBeLessThan(f.lineHeight * 1.6);                           // one line
+  expect(f.title).toContain('1200ml ボトル');
+  expect(f.min).toBeGreaterThanOrEqual(44);
+  expect(f.scroll).toBeLessThanOrEqual(0);
+  await row.locator('.name').click();
+  await expect(page.locator('#sheet [data-atk-detail-id] p').first()).toHaveText('テスト用 とても長い商品名の柔軟剤 詰め替え用 特大サイズ 1200ml ボトル');   // the full registered name
   expect(page.__errors).toEqual([]);
 });

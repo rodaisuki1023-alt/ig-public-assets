@@ -204,9 +204,23 @@ function openEditor(id){
   count.dataset.tone=c.tone;count.dataset.preview=plan;count.hidden=false;
  };
  paintCount();
+ // The trial switch right here, under the counter, when nothing is really shared: the person can
+ // check free 5 / paid 20 / full / replace / after the paid plan from the normal photo screen.
+ let trial=null;
+ const realSharedNow=!!root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true;
+ if(!realSharedNow&&root.AtokorePhotoPreview){
+  trial=element('details','atk-photo-trial');if(previewPlan())trial.open=true;
+  const sum=element('summary','','写真枠の試用表示（合成データ）');
+  const help=element('p','atk-photo-note','この端末の写真を「家族と共有している」とみなして、枠の表示だけを確かめます。実際の家族共有・契約・サーバーの上限は変わりません。');
+  const sel=element('select','atk-photo-trial-plan');sel.setAttribute('aria-label','写真枠の試用表示');
+  for(const [v,t] of [['','オフ（この端末だけの表示）'],['free','無料プラン（5枚）として表示'],['premium','有料プラン（20枚）として表示'],['ended','有料プラン終了後（5枚）として表示']]){const o=element('option','',t);o.value=v;sel.append(o)}
+  sel.value=previewPlan()||'';
+  sel.addEventListener('change',()=>{if(!root.AtokorePhotoPreview.set(sel.value))sel.value=previewPlan()||'';delete count.dataset.preview;paintCount()});
+  trial.append(sum,help,sel);
+ }
  if(root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true)
   root.AtokoreHousehold.refreshEntitlements?.().then(()=>{if(count.isConnected)paintCount()}).catch(()=>{});
- panel.append(close,title,name,count,preview,pick,file,status,save,reset,note);sheet.append(panel);
+ panel.append(close,title,name,count,...(trial?[trial]:[]),preview,pick,file,status,save,reset,note);sheet.append(panel);
  const shared=!!(item.photoPath&&root.AtokoreHousehold?.photoScope?.(id));
  const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item),clearSharedPreview(){
   if(!shared||session.blob)return; // A newly chosen local file is still the user's draft.

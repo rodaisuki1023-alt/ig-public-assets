@@ -28,8 +28,19 @@ function previewSetting(){
   '<select id="atkPhotoPreviewPlan"><option value="">オフ（通常）</option><option value="free">無料プラン（5枚）として表示</option><option value="premium">有料プラン（20枚）として表示</option><option value="ended">有料プラン終了後（5枚）として表示</option></select>';
  const anchor=doc.getElementById('atkBuildInfo');if(anchor)anchor.before(box);else page.append(box);
  const sel=box.querySelector('select');sel.value=previewPlan()||'';
- sel.addEventListener('change',()=>{try{if(sel.value)root.localStorage.setItem(PREVIEW_KEY,sel.value);else root.localStorage.removeItem(PREVIEW_KEY)}catch(_){root.notifyAtokoreV125H?.('この設定を保存できませんでした')}});
+ sel.addEventListener('change',()=>{if(!setPreview(sel.value))sel.value=previewPlan()||''});
+ doc.addEventListener('atokore-photo-preview-changed',()=>{sel.value=previewPlan()||''});
 }
+// The same switch is offered inside the normal photo screen (Muse 4th: reach the counter from
+// product detail → 商品の写真). Stored here so the photo module itself never writes localStorage.
+function setPreview(v){
+ if(v&&!['free','premium','ended'].includes(v))return false;
+ try{if(v)root.localStorage.setItem(PREVIEW_KEY,v);else root.localStorage.removeItem(PREVIEW_KEY)}
+ catch(_){root.notifyAtokoreV125H?.('この設定を保存できませんでした');return false}
+ doc.dispatchEvent(new CustomEvent('atokore-photo-preview-changed',{detail:{plan:previewPlan()}}));
+ return true;
+}
+root.AtokorePhotoPreview=Object.freeze({plan:previewPlan,set:setPreview});
 apply();previewSetting();
 // Some older modules write the badge/title once more after loading; keep the single label.
 root.addEventListener?.('load',apply);

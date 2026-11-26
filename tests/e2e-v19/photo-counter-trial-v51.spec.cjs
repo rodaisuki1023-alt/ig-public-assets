@@ -58,3 +58,40 @@ test('photo counter: off by default (device only); trial display shows 5/20, ful
   expect(await counter(page, 7, false)).toContain('この端末だけに保存されます');
   expect(page.__errors).toEqual([]);
 });
+
+// Muse 4th: the counter must be reachable by the normal path only — stock list → tap the product →
+// 写真を設定 (商品の写真) → choose the trial plan right there. No お試し page, no gate, no network.
+test('photo counter: normal path (stock row tap → 商品の写真) with the trial switch inside the photo screen', async ({ page }) => {
+  const requests = [];
+  page.on('request', r => { const u = new URL(r.url()); if (!['127.0.0.1', 'localhost'].includes(u.hostname) && u.protocol.startsWith('http')) requests.push(r.url()); });
+  await open(page, { [KEY]: many() });
+  const photo = async id => {
+    await go(page, 'stock');
+    await page.locator(`#stockList [data-stock-id="${id}"] .name`).first().click();
+    await page.getByRole('button', { name: /写真を(設定|変更)/ }).click();
+    await expect(page.getByRole('heading', { name: '商品の写真' })).toBeVisible();
+  };
+  await photo(1);
+  const c = page.locator('#atkPhotoCount');
+  await expect(c).toContainText('この端末だけに保存されます');
+  await page.locator('.atk-photo-trial > summary').click();
+  await page.locator('.atk-photo-trial-plan').selectOption('free');
+  await expect(c).toHaveText(/^【試用表示・合成データ】共有写真 0\/5枚.*実際の家族共有・契約・サーバーの上限ではありません/);
+  // The choice is remembered (one setting, also shown on the お試し page) and survives a reload.
+  await page.reload();
+  await photo(1);
+  await expect(c).toContainText('【試用表示・合成データ】共有写真 0/5枚');
+  await expect(page.locator('.atk-photo-trial-plan')).toHaveValue('free');
+  await page.locator('.atk-photo-trial-plan').selectOption('premium');
+  await expect(c).toContainText('共有写真 0/20枚・有料プラン');
+  await page.locator('.atk-photo-trial-plan').selectOption('ended');
+  await expect(c).toContainText('【試用表示・合成データ：有料プラン終了後】共有写真 0/5枚');
+  await page.locator('.atk-photo-trial-plan').selectOption('');
+  await expect(c).toContainText('この端末だけに保存されます');
+  await expect(c).not.toContainText('試用表示');
+  await go(page, 'premium');
+  await expect(page.locator('#atkPhotoPreviewPlan')).toHaveValue('');
+  expect(requests).toEqual([]);
+  expect(await page.evaluate(() => [window.AtokoreHousehold?.photoSharingEnabled?.(), window.AtokoreHousehold?.homeState?.().joined])).toEqual([false, false]);
+  expect(page.__errors).toEqual([]);
+});

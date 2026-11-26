@@ -137,10 +137,22 @@
 .atk-lv-compact{flex-wrap:nowrap}
 .atk-lv-compact .atk-lv-src{flex:1 1 auto;text-align:left}
 .atk-lv-more{min-height:44px;min-width:64px;padding:0 12px;border-radius:12px;border:1px solid #E5D3CB;background:#fff;color:#4A3B36;font-weight:700;font-size:13px}
-.atk-compact-toggle{display:flex;align-items:center;gap:8px;min-height:44px;font-size:13px;color:#6B5B55}
-.atk-compact-toggle input{width:22px;height:22px}
-/* Prototype: the compact 余裕あり mark sits on the product line instead of its own line. */
+.atk-compact-toggle{display:flex;align-items:center;gap:10px;min-height:44px;margin:4px 0 8px;padding:6px 10px;border:1px solid #E5D3CB;border-radius:12px;background:#fff;font-size:14px;color:#4A3B36;cursor:pointer}
+.atk-compact-toggle[hidden]{display:none}
+.atk-compact-toggle input{width:22px;height:22px;flex:none;margin:0}
+.atk-compact-toggle span{display:grid;gap:2px;min-width:0}
+.atk-compact-toggle small{font-size:12px;color:#6B5B55}
+/* The compact 余裕あり mark sits on the product line; the name is cut to one line (full name in the detail). */
+/* (!important: polish-v44.css lets list-mode names wrap with !important.) */
+body #pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .name{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .grow{min-width:0}
 #pg-stock.atk-stock-list-mode #stockList [data-stock-id] > .atk-lv.atk-lv-compact{flex:0 0 auto!important;border-top:0;margin-top:0;padding-top:0;width:auto;order:0}
 #pg-stock.atk-stock-list-mode #stockList [data-stock-id]:has(> .atk-lv-compact){flex-wrap:nowrap!important}
 .atk-lv-compact .atk-lv-src{display:none}
 .atk-lv-compact .atk-lv-more{min-width:44px;padding:0 8px;background:#EEF6EE;border-color:#BFDCC0;white-space:nowrap}
+/* Photo-slot trial switch inside the photo screen (synthetic; this device only). */
+.atk-photo-trial{margin:6px 0 10px;padding:8px 10px;border-radius:12px;background:#FBF7F5}
+.atk-photo-trial summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}
+.atk-photo-trial select{width:100%;min-height:44px;font-size:16px;border-radius:10px;border:1px solid #D9C6BB;background:#fff;padding:0 10px}
+/* Narrow phones: the compact mark says 余裕 ▾ so more of the product name stays readable. */
+@media (max-width:359px){.atk-lv-compact .atk-lv-more-long{display:none}}
