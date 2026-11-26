@@ -111,3 +111,27 @@
 .atk-lv-tag.atk-lv-low{background:#FFF4E0;border-color:#F0D29A}
 .atk-lv-tag.atk-lv-buy{background:#FDECEA;border-color:#F3B8B1}
 .atk-lv-tag.atk-lv-unknown{border-style:dashed;color:#B42318}
+.atk-photo-preview-setting{margin:16px 0 0;padding:12px;border-radius:12px;background:#FBF7F5}
+.atk-photo-preview-setting select{width:100%;min-height:44px;font-size:16px;border-radius:10px;border:1px solid #D9C6BB;background:#fff;padding:0 10px}
+.atk-photo-count{margin:6px 0;font-size:13px;font-weight:700;color:#4A3B36}
+.atk-photo-count[data-tone="full"],.atk-photo-count[data-tone="over"]{color:#B42318}
+.atk-last-purchase{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:8px 0;padding:8px 12px;border-radius:12px;background:#FFF7EC;border:1px solid #F0D29A;font-size:13px}
+.atk-last-purchase span{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.atk-last-purchase button{min-height:44px;min-width:44px;padding:0 14px;border-radius:12px;border:1px solid #8A5747;background:#fff;color:#8A5747;font-weight:800}
+.atk-last-purchase p{flex:1 1 100%;margin:0;color:#B42318}
+/* v51 Muse N-2/N-4: the level row is visibly separate from the product area; 要確認 keeps its width. */
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id] > .atk-lv{border-top:1px dashed #EADBD3;padding-top:6px;margin-top:6px}
+.atk-lv-src{flex:0 0 auto;min-width:3.6em;white-space:nowrap;text-align:center}
+.atk-lv-undo{flex:1 1 100%;min-height:44px;border:1px dashed #8A5747;border-radius:12px;background:#FFF7EC;color:#8A5747;font-weight:800}
+/* Close buttons: at least 44px to tap (Muse N-4). */
+#sheet .close,#atkPhotoEditor .close{min-height:44px;min-width:44px;padding:0 14px}
+.atk-lv-compact{flex-wrap:nowrap}
+.atk-lv-compact .atk-lv-src{flex:1 1 auto;text-align:left}
+.atk-lv-more{min-height:44px;min-width:64px;padding:0 12px;border-radius:12px;border:1px solid #E5D3CB;background:#fff;color:#4A3B36;font-weight:700;font-size:13px}
+.atk-compact-toggle{display:flex;align-items:center;gap:8px;min-height:44px;font-size:13px;color:#6B5B55}
+.atk-compact-toggle input{width:22px;height:22px}
+/* Prototype: the compact 余裕あり mark sits on the product line instead of its own line. */
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id] > .atk-lv.atk-lv-compact{flex:0 0 auto!important;border-top:0;margin-top:0;padding-top:0;width:auto;order:0}
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id]:has(> .atk-lv-compact){flex-wrap:nowrap!important}
+.atk-lv-compact .atk-lv-src{display:none}
+.atk-lv-compact .atk-lv-more{min-width:44px;padding:0 8px;background:#EEF6EE;border-color:#BFDCC0;white-space:nowrap}

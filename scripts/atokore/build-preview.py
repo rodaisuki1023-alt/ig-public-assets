@@ -31,6 +31,8 @@ PRODUCTION_KEYS = {
     'atokoreReceiptClaimQueueV1': 'atokorePreviewReceiptClaimQueueV{v}',
     'atokoreQuickAddPendingV1': 'atokorePreviewQuickAddPendingV{v}',
     'atokorePrepSetsV1': 'atokorePreviewPrepSetsV{v}',
+    'atokorePhotoCounterPreviewV1': 'atokorePreviewPhotoCounterPreviewV{v}',
+    'atokoreStockCompactPlentyV1': 'atokorePreviewStockCompactPlentyV{v}',
 }
 
 

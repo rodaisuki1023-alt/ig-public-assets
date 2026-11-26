@@ -103,6 +103,9 @@ const base120=(extra={})=>L.startTrack({packs:2,perPack:60,perDay:6,pieceUnit:'æ
 const buy=(item,key,bags=1,at=NOW)=>{const p=L.purchaseEntry(item,bags,{today:T,now:at,key});return {...item,[p.field]:p.entry}};
 // Field-wise merge as the family sync does it (each field: last writer wins).
 const merge=(...versions)=>Object.assign({},...versions);
+// Undo goes through the single implementation the app uses (polish-v44 inverseCounters/undoEntries).
+const undoVia=(item,field,k)=>require('../atokore-live-v125/polish-v44.js').inverseCounters({items:[{...item,qty:9}],buys:[],routines:[]},
+ [{key:'items',id:item.id,name:item.name,unit:item.unit,delta:1,usage:0,entries:[{field,k}]}]).items[0];
 
 test('two family purchases at once both count; undoing one leaves the other; a resend adds nothing',()=>{
  const start=diaper({qty:2,track:base120()});
@@ -114,13 +117,12 @@ test('two family purchases at once both count; undoing one leaves the other; a r
  assert.deepEqual(both,reversed,'sync order does not matter');
  assert.equal(L.estimate(merge(both,b,a,b),T).remaining,240,'the same purchase sent again adds nothing');
  const fa=L.entryField('buy:A');
- const undo=L.undoEntry(both,fa,'buy:A');
- const afterUndo={...both};for(const [k,v] of Object.entries(undo.patch))if(v===undefined)delete afterUndo[k];else afterUndo[k]=v;
+ const afterUndo=undoVia(both,fa,'buy:A');
  assert.equal(L.estimate(afterUndo,T).remaining,180,'undo one purchase: back to 180');
- assert.equal(undo.patch.track,undefined,'nothing asks: the purchase was never inside the base');
+ assert.deepEqual(afterUndo.track,both.track,'nothing asks: the purchase was never inside the base');
  // A cleared field arriving from the family as null is the same as absent.
  assert.equal(L.estimate({...both,[fa]:null},T).remaining,180);
- assert.equal(L.undoEntry(both,fa,'buy:other').patch,null,'a different purchase in that field is never cleared');
+ assert.deepEqual(undoVia(both,fa,'buy:other')[fa],both[fa],'a different purchase in that field is never cleared');
  assert.notEqual(L.entryField('buy:A'),L.entryField('buy:B'));
  assert.match(L.entryField('buy:'+'x'.repeat(70)),/^tp[0-9a-z]{1,13}$/);
 });
@@ -148,9 +150,9 @@ test('a correction counts the purchases it saw; a family purchase it did not see
  assert.equal(L.estimate({...later,track:fixed.track},T).remaining,90);
  // Undo of a purchase that a correction already counted asks to check (the base cannot be split).
  const counted={...x,track:seenFix.track};
- const u=L.undoEntry(counted,L.entryField('buy:A'),'buy:A');
- assert.equal(u.patch.track.check,'purchase_undo');
- assert.deepEqual(L.estimate({...counted,...u.patch,[L.entryField('buy:A')]:undefined},T),{status:'unknown',reason:'purchase_undo'});
+ const u=undoVia(counted,L.entryField('buy:A'),'buy:A');
+ assert.equal(u.track.check,'purchase_undo');
+ assert.deepEqual(L.estimate(u,T),{status:'unknown',reason:'purchase_undo'});
 });
 test('unknown unit, unit change and size change are never added by guess',()=>{
  const noPack={v:1,base:30,since:T,perDay:6,perPack:null,refillDays:5,pieceUnit:'æžš',size:null,snoozeUntil:null,confirmedAt:T,t:NOW-1000,seen:[]};

@@ -54,7 +54,7 @@ function estimateText(e,unit){
    :'見積もりできません。残りを確認してください。';
  }
  const left=e.packs!=null?'約'+e.packs+unit.container+'（'+e.remaining+unit.piece+'）':'約'+e.remaining+unit.piece;
- return '見積もり：残り'+left+'・あと'+e.range[0]+'〜'+e.range[1]+'日（'+e.since.slice(5).replace('-','/')+'時点の数から1日'+e.perDay+unit.piece+'で計算）。実際の在庫数とは別です。';
+ return '見積もり：残り'+left+'・あと'+e.range[0]+'〜'+e.range[1]+'日（'+e.since.slice(5).replace('-','/')+'時点の数から1日'+amount(e.perDay)+unit.piece+'で計算）。実際の在庫数とは別です。';
 }
 // The last correction (まだある／使い切った) can be put back while nothing else changed the estimate.
 let lastFix=null;
@@ -81,13 +81,16 @@ function manualNote(x,t){
 // Each child's own daily use (up to 4); the estimate uses the sum.
 function kidsHTML(values,pu){
  return '<details class="atk-level-kids"'+(values?' open':'')+'><summary>子どもごとに入れる（自動で合計）</summary><div class="atk-level-kid-grid">'+
-  [0,1,2,3].map(i=>'<label class="atk-level-field">'+(i+1)+'人目<input type="number" inputmode="decimal" min="0.1" step="0.5" data-atk-level-kid="'+i+'" value="'+esc(values?.[i]??'')+'"><span>'+pu+'</span></label>').join('')+
+  [0,1,2,3].map(i=>'<label class="atk-level-field">'+(i+1)+'人目<input type="number" inputmode="decimal" min="0" step="any" data-atk-level-kid="'+i+'" value="'+esc(values?.[i]==null?'':amount(values[i]))+'"><span>'+pu+'</span></label>').join('')+
   '</div></details>';
 }
+// Display only (the stored value is never rewritten here): an amount saved by an older build through a
+// stepping input can be a single-precision artefact such as 5.599999904632568; show it as 5.6.
+const amount=n=>{const v=Number(n);return Number.isFinite(v)?String(Math.round(v*100)/100):''};
 function settingsText(track,unit){
  const parts=[];
  if(track.perPack)parts.push('1'+(unit.container||'袋')+track.perPack+unit.piece);
- parts.push('1日'+track.perDay+unit.piece+(track.perChild?'（'+track.perChild.length+'人の合計：'+track.perChild.join('＋')+'）':''));
+ parts.push('1日'+amount(track.perDay)+unit.piece+(track.perChild?'（'+track.perChild.length+'人の合計：'+track.perChild.map(amount).join('＋')+'）':''));
  return '設定：'+parts.join('・');
 }
 function sectionHTML(x){
@@ -105,7 +108,7 @@ function sectionHTML(x){
     '<div class="atk-level-fix" role="group" aria-label="見積もりを直す"><button type="button" data-atk-level-fix="still">まだある</button><button type="button" data-atk-level-fix="usedUp">使い切った</button><button type="button" data-atk-level-fix="later">後で確認</button></div>'+
     '<details class="atk-level-edit"><summary>設定を変える（1袋の数・1日の量）</summary><p class="atk-level-note">'+esc(settingsText(track,unit))+'</p>'+
      (u.container?'<label class="atk-level-field">1'+esc(u.unit)+'あたり<input type="number" inputmode="numeric" min="1" step="1" data-atk-level-edit-pack value="'+esc(track.perPack??'')+'"><span>'+pu+'</span></label>':'')+
-     '<label class="atk-level-field">1日に使う量<input type="number" inputmode="decimal" min="0.1" step="0.5" data-atk-level-edit-day value="'+esc(track.perChild?'':track.perDay)+'"><span>'+pu+'</span></label>'+
+     '<label class="atk-level-field">1日に使う量<input type="number" inputmode="decimal" min="0" step="any" data-atk-level-edit-day value="'+esc(track.perChild?'':amount(track.perDay))+'"><span>'+pu+'</span></label>'+
      kidsHTML(track.perChild,pu)+
      '<button type="button" class="btn atk-level-start" data-atk-level-edit>この設定に変える</button><p class="atk-level-note">今日の見積もりから新しい設定で数え直します。</p></details>'+
     (fixUndoable(x)?'<button type="button" class="atk-level-link" data-atk-level-undo>直す前の見積もりに戻す</button>':'')+
@@ -115,7 +118,7 @@ function sectionHTML(x){
     (u.container?'<label class="atk-level-field">'+esc(u.unit)+'の数<input type="number" inputmode="numeric" min="0" step="1" data-atk-level-packs value="'+esc(Number.isSafeInteger(Number(x.qty))?x.qty:'')+'"><span>'+esc(u.unit)+'</span></label>'+
      '<label class="atk-level-field">1'+esc(u.unit)+'あたり<input type="number" inputmode="numeric" min="1" step="1" data-atk-level-per-pack placeholder="例：60"><span>'+pu+'</span></label>'
      :'<label class="atk-level-field">今の残り<input type="number" inputmode="decimal" min="0" step="1" data-atk-level-units value="'+esc(Number.isFinite(Number(x.qty))?x.qty:'')+'"><span>'+pu+'</span></label>')+
-    '<label class="atk-level-field">1日に使う量<input type="number" inputmode="decimal" min="0.1" step="0.5" data-atk-level-per-day placeholder="例：6"><span>'+pu+'</span></label>'+
+    '<label class="atk-level-field">1日に使う量<input type="number" inputmode="decimal" min="0" step="any" data-atk-level-per-day placeholder="例：6"><span>'+pu+'</span></label>'+
     '<p class="atk-level-note">2人以上で使うときは、全員分を足した量か、下で子どもごとに入れてください。</p>'+kidsHTML(null,pu)+
     '<label class="atk-level-field">補充ライン<input type="number" inputmode="numeric" min="1" max="60" step="1" data-atk-level-refill value="'+L.DEFAULT_REFILL_DAYS+'"><span>日前</span></label>'+
     '<button type="button" class="btn atk-level-start" data-atk-level-start>この内容で見積もる</button>')+
@@ -224,5 +227,10 @@ function setLevelFor(id,level){
  const r=level?L.setLevel(level,Date.now()):L.clearLevel();if(r.error)return false;
  return update(id,item=>Object.assign(item,r.patch));
 }
-root.AtokoreStockLevelsUI=Object.freeze({sectionHTML,estimateText,manualState,setLevelFor,today});
+/** Put back exactly what was there before (level and its date), e.g. after a mistaken tap. */
+function restoreLevel(id,level,levelAt){
+ if(level!=null&&!L.LEVELS.includes(level))return false;
+ return update(id,item=>{item.level=level??undefined;item.levelAt=level?levelAt:undefined});
+}
+root.AtokoreStockLevelsUI=Object.freeze({sectionHTML,estimateText,manualState,setLevelFor,restoreLevel,today});
 })(typeof globalThis!=='undefined'?globalThis:this);

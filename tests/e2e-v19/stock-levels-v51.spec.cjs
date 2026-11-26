@@ -211,3 +211,107 @@ test('a correction can be put back; a chosen level shows its date and asks again
   expect((await stored(page)).items.find(x => x.id === 4)).toMatchObject({ qty: 0, level: 'plenty' });
   expect(page.__errors).toEqual([]);
 });
+
+// Muse N-1: "6" was saved as 5.6 (shown 5.599999904632568). Cause: min="0.1" step="0.5" made the
+// allowed values 0.1, 0.6 … 5.6, 6.1, so 6 was a step mismatch and any stepping (arrow key, spin
+// button, stepUp/Down, Safari's stepper) snapped it to 5.6; 5.599999904632568 is Math.fround(5.6).
+test('daily use: 6 stays 6 (also after stepping), 5.6 stays 5.6, children sum exactly, reload and corrections keep it', async ({ page }) => {
+  await open(page, { [KEY]: baseState() });
+  await detail(page, 2);
+  await level(page).locator('.atk-level-detail > summary').click();
+  const day = level(page).locator('[data-atk-level-per-day]');
+  await day.fill('6');
+  expect(await day.evaluate(e => ({ v: e.value, mismatch: e.validity.stepMismatch }))).toEqual({ v: '6', mismatch: false });
+  // Stepping must never move a whole number onto a 0.1-based grid.
+  await day.focus(); await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowDown');
+  expect(await day.inputValue()).toBe('6');
+  await level(page).locator('[data-atk-level-packs]').fill('2');
+  await level(page).locator('[data-atk-level-per-pack]').fill('60');
+  await level(page).locator('[data-atk-level-start]').click();
+  let t = (await stored(page)).items.find(x => x.id === 2).track;
+  expect(t.perDay).toBe(6);
+  await expect(level(page).locator('.atk-level-estimate')).toContainText('1日6枚で計算');
+  // Reload: stored and shown as 6.
+  await page.reload();
+  await detail(page, 2);
+  await level(page).locator('.atk-level-edit > summary').click();
+  await expect(level(page).locator('[data-atk-level-edit-day]')).toHaveValue('6');
+  // An intentional decimal is kept exactly.
+  await level(page).locator('[data-atk-level-edit-day]').fill('5.6');
+  expect(await level(page).locator('[data-atk-level-edit-day]').evaluate(e => e.validity.stepMismatch)).toBe(false);
+  await level(page).locator('[data-atk-level-edit]').click();
+  t = (await stored(page)).items.find(x => x.id === 2).track;
+  expect(t.perDay).toBe(5.6);
+  // Children 4 + 3 = 7 and 2.5 + 3.1 = 5.6 (the sum, not a float artefact).
+  await level(page).locator('.atk-level-edit > summary').click();
+  await level(page).locator('.atk-level-edit [data-atk-level-edit-day]').fill('');
+  await level(page).locator('.atk-level-edit .atk-level-kids > summary').click();
+  await level(page).locator('.atk-level-edit [data-atk-level-kid="0"]').fill('4');
+  await level(page).locator('.atk-level-edit [data-atk-level-kid="1"]').fill('3');
+  await level(page).locator('[data-atk-level-edit]').click();
+  t = (await stored(page)).items.find(x => x.id === 2).track;
+  expect([t.perDay, t.perChild]).toEqual([7, [4, 3]]);
+  await level(page).locator('.atk-level-edit > summary').click();
+  await level(page).locator('.atk-level-edit [data-atk-level-kid="0"]').fill('2.5');
+  await level(page).locator('.atk-level-edit [data-atk-level-kid="1"]').fill('3.1');
+  await level(page).locator('[data-atk-level-edit]').click();
+  t = (await stored(page)).items.find(x => x.id === 2).track;
+  expect([t.perDay, t.perChild]).toEqual([5.6, [2.5, 3.1]]);
+  // A correction keeps a sane rate (no float32 artefacts appear).
+  await level(page).locator('[data-atk-level-fix="later"]').click();
+  t = (await stored(page)).items.find(x => x.id === 2).track;
+  expect(String(t.perDay)).toBe('5.6');
+  expect(page.__errors).toEqual([]);
+});
+test('an older saved artefact (5.599999904632568) is shown as 5.6 and is not rewritten until the person saves', async ({ page }) => {
+  const s = baseState();
+  s.items[1].track = { v: 1, base: 120, since: localDay(), perDay: 5.599999904632568, perPack: 60, refillDays: 5, pieceUnit: '枚', confirmedAt: localDay() };
+  await open(page, { [KEY]: s });
+  await detail(page, 2);
+  await expect(level(page).locator('.atk-level-estimate')).toContainText('1日5.6枚で計算');
+  await level(page).locator('.atk-level-edit > summary').click();
+  await expect(level(page).locator('[data-atk-level-edit-day]')).toHaveValue('5.6');
+  expect((await stored(page)).items.find(x => x.id === 2).track.perDay).toBe(5.599999904632568);
+  expect(page.__errors).toEqual([]);
+});
+
+// Muse N-3: the undo bar disappears after ~20 s or when the screen changes; the last purchase can
+// still be undone from the shopping page for 10 minutes, once, restoring count and estimate.
+test('last purchase: undo still possible after leaving the screen, once, count and estimate restored; not after 10 minutes', async ({ page }) => {
+  await page.clock.install();
+  await open(page, { [KEY]: purchaseState(tracked()) });
+  await go(page, 'buy');
+  await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
+  expect((await est(page, 2)).remaining).toBe(180);
+  await go(page, 'stock'); await go(page, 'home');
+  await expect(page.locator('#atkUndoBar')).toHaveCount(0);          // the bar is gone
+  await go(page, 'buy');
+  const last = page.locator('#atkLastPurchaseUndo');
+  await expect(last).toContainText('直前の「買った」');
+  await last.getByRole('button', { name: '取り消す' }).click();
+  await expect(last).toHaveCount(0);
+  const s = await stored(page), diaper = s.items.find(x => x.id === 2);
+  expect(diaper.qty).toBe(2);
+  expect((await est(page, 2)).remaining).toBe(60);
+  expect(s.buys.map(b => b.id).sort()).toEqual([20, 21]);
+  // A later purchase is offered for 10 minutes only.
+  await page.locator('#buyList [data-buy-id="21"]').getByRole('button', { name: /を買った$/ }).click();
+  await go(page, 'home'); await go(page, 'buy');
+  await expect(last).toBeVisible();
+  await page.clock.fastForward('10:30');
+  await go(page, 'home'); await go(page, 'buy');
+  await expect(last).toHaveCount(0);
+  expect((await stored(page)).items.find(x => x.id === 1).qty).toBe(2);   // not undone
+  expect(page.__errors).toEqual([]);
+});
+test('last purchase: the bar and the shopping-page button never undo the same purchase twice', async ({ page }) => {
+  await open(page, { [KEY]: purchaseState(tracked()) });
+  await go(page, 'buy');
+  await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
+  await page.getByRole('button', { name: '元に戻す', exact: true }).click();
+  await expect(page.locator('#atkLastPurchaseUndo')).toHaveCount(0);
+  const s = await stored(page);
+  expect(s.items.find(x => x.id === 2).qty).toBe(2);
+  expect(s.buys.filter(b => b.id === 20)).toHaveLength(1);
+  expect(page.__errors).toEqual([]);
+});

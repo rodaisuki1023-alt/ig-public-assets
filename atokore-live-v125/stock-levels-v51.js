@@ -228,15 +228,8 @@ function purchaseEntry(item,delta,{today,now=Date.now(),key}={}){
  const add=d===null||!sameUnit?null:u.container?(t.perPack?d*t.perPack:null):d;
  return {field:entryField(key),entry:{v:1,k:key,q:d,unit:u.unit,u:add==null||add>MAX_UNITS?null:round1(add),d:today,t:now,pu:u.piece,sz:item.size?String(item.size).slice(0,40):null}};
 }
-/** Undo of one purchase: clear its field (only if it still holds that purchase). When the purchase
- * was already inside a correction's base, the base cannot be taken apart: ask to check. */
-function undoEntry(item,field,key){
- const e=readEntry(item?.[field]);if(!e||e.k!==key)return {patch:null};
- const t=readTrack(item?.track);
- const patch={[field]:undefined};
- if(t&&t.seen.includes(key))patch.track={...item.track,check:'purchase_undo'};
- return {patch};
-}
+// Undo of one purchase lives in ONE place: polish-v44 undoEntries (clears exactly that field; asks
+// to check when a correction already counted it). Muse N-5: the unused duplicate here was removed.
 /** Purchases long before the last observation that may be cleared to keep the item small. */
 function staleEntries(item){
  const t=readTrack(item?.track);if(!t)return [];
@@ -281,7 +274,7 @@ function units(item){
  const piece=container?(brand||(/おむつ|オムツ|パンツ|テープ|おしりふき/.test(String(item?.name||''))?'枚':'個')):unit;
  return {unit,container,piece};
 }
-const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,editTrack,addPurchase,entryField,readEntry,entries,seenKeys,purchaseEntry,undoEntry,staleEntries,combinedPerDay,changeSize});
+const api=Object.freeze({units,LEVELS,LABEL,STALE_DAYS,DEFAULT_REFILL_DAYS,readTrack,startTrack,estimate,displayLevel,setLevel,clearLevel,correct,editTrack,addPurchase,entryField,readEntry,entries,seenKeys,purchaseEntry,staleEntries,combinedPerDay,changeSize});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreStockLevels=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

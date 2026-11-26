@@ -73,7 +73,30 @@ function persist(next){
 }
 function log(title,detail,extra){root.AtokoreHistory?.add(title,detail,'stock','↶',extra)}
 function clearUndo(){undo=null;clearTimeout(undoTimer);doc.getElementById('atkUndoBar')?.remove()}
+// v51 (Muse N-3): the last purchase can still be undone after leaving the screen, from a button on
+// the shopping page, for at most LAST_PURCHASE_MS and only once. The same undo runs as from the
+// bar: it refuses when the products changed, checks the shared ticket on the server while sharing,
+// and also takes the purchase out of the estimate. Kept in memory only (a reload ends it).
+const LAST_PURCHASE_MS=10*60*1000;
+let lastPurchase=null,lastBusy=false;
+function renderLastPurchase(){
+ const anchor=doc.getElementById('buyList');let b=doc.getElementById('atkLastPurchaseUndo');
+ const live=lastPurchase&&Date.now()-lastPurchase.at<LAST_PURCHASE_MS;
+ if(!live)lastPurchase=null;
+ if(!anchor||!live){b?.remove();return}
+ if(!b){b=doc.createElement('div');b.id='atkLastPurchaseUndo';b.className='atk-last-purchase';anchor.before(b)}
+ const min=Math.max(1,Math.round((Date.now()-lastPurchase.at)/60000));
+ b.innerHTML='<span>直前の「買った」：'+esc(lastPurchase.label)+'（約'+min+'分前）</span><button type="button" data-atk-last-undo'+(lastBusy?' disabled':'')+'>取り消す</button>'+(lastPurchase.error?'<p role="alert">'+esc(lastPurchase.error)+'</p>':'');
+}
+doc.addEventListener('click',async e=>{
+ const t=e.target.closest?.('[data-atk-last-undo]');if(!t||lastBusy||!lastPurchase)return;
+ const run=lastPurchase.run;lastBusy=true;renderLastPurchase();
+ try{await run();lastPurchase=null;clearUndo();message('直前の「買った」を取り消しました')}
+ catch(err){if(lastPurchase)lastPurchase.error=err.message||'取り消せませんでした。'}
+ finally{lastBusy=false;renderLastPurchase()}
+});
 doc.addEventListener('atokore-page-changed',clearUndo);
+doc.addEventListener('atokore-page-changed',()=>renderLastPurchase());
 function offerUndo(label,run){
  clearUndo();root.AtokoreNotices.hide();undo=run;
  const node=doc.createElement('div');node.id='atkUndoBar';node.className='atk-undo-bar';
@@ -110,10 +133,19 @@ for(const name of ['buyOneToStockV125H','bought']){
    const e=addedEntries(a,b),track=e.length?{entries:e}:{};
    return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0,...(a?{}:{created:true}),...track}]:[]});
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined,ticket=shared?hh.capturePurchases?.(removed.map(x=>x.id)):null;
-  offerUndo(removed.length+'商品を「買った」にしました',async()=>{
+  let done=false,running=false;
+  const finish=()=>{done=true;if(lastPurchase?.run===runUndo)lastPurchase=null;renderLastPurchase()};
+  const runUndo=async()=>{
+   // One undo per purchase, from the bar or the shopping-page button, never twice or at once.
+   if(done)throw Error('この購入はすでに取り消しました。');
+   if(running)throw Error('取り消しを処理しています。');
+   running=true;try{await undoOnce()}finally{running=false}
+  };
+  const undoOnce=async()=>{
    if(shared){
     if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');
     await hh.undoPurchases(ticket);
+    finish();
     // The server reverted the counted stock; the estimate is an ordinary field and is reverted here.
     if(changes.some(c=>c.entries)){
      try{const cur=snapshot();for(const c of changes)undoEntries(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
@@ -125,7 +157,11 @@ for(const name of ['buyOneToStockV125H','bought']){
    const next=inverseCounters(snapshot(),changes);
    for(const b of removed){if(next.buys.some(x=>String(x.id)===String(b.id)))throw Error('買い物リストが変わったため戻せません。');next.buys.push(copy(b))}
    persist(next);log('「買った」を取り消し',removed.map(x=>x.name).join('、'),{refs:removed.map(x=>({id:x.id,kind:'buy',name:x.name,unit:x.unit})),change:'買い物リストに戻した'});
-  });
+   finish();
+  };
+  offerUndo(removed.length+'商品を「買った」にしました',runUndo);
+  lastPurchase={label:removed.map(x=>x.name).slice(0,2).join('、')+(removed.length>2?' ほか'+(removed.length-2)+'商品':''),run:runUndo,at:Date.now()};
+  renderLastPurchase();
   return result;
  };
 }

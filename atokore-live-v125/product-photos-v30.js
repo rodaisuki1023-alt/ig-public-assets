@@ -186,7 +186,23 @@ function openEditor(id){
   const raw=hh?.entitlements?.();
   const c=E?.photoCounter?.({joined:!!hh?.homeState?.().joined,sharing:hh?.photoSharingEnabled?.()===true,used:list.filter(x=>x&&x.photoPath).length,ent:raw?E.fromServer(raw):null,hasShared:!!item.photoPath});
   if(c){count.textContent=c.text;count.dataset.tone=c.tone;count.hidden=false}else count.hidden=true;
+  const realShared=!!hh?.homeState?.().joined&&hh?.photoSharingEnabled?.()===true;
+  if(!realShared&&previewPlan())paintPreview();
  }catch(e){count.hidden=true;console.error('あとこれ: 写真の枚数',e)}};
+ // Trial display (Muse P2-8): with the お試し setting on and no real sharing, the device's own
+ // photos are counted AS IF shared under the chosen plan, so 5/20, full, replace and "plan ended"
+ // can be checked from the normal photo screen. Clearly labelled; nothing is sent or enforced.
+ const paintPreview=async()=>{
+  const plan=previewPlan(),E=root.AtokoreEntitlements;if(!plan||!E)return;
+  const list=(()=>{try{return Array.isArray(items)?items:[]}catch(_){return []}})();
+  let used=null,has=false;
+  try{used=await countPhotos(list);const r=await readRecord(key(item));has=!!(r&&!r.removed&&recordBlob(r))}catch(_){used=null}
+  if(!count.isConnected||previewPlan()!==plan)return;
+  const ent=plan==='premium'?E.fromServer({plan:'premium'}):E.fromServer({plan:'free'});
+  const c=E.photoCounter({joined:true,sharing:true,used,ent,hasShared:has});
+  count.textContent='【試用表示・合成データ'+(plan==='ended'?'：有料プラン終了後':'')+'】'+c.text+' ※実際の家族共有・契約・サーバーの上限ではありません。';
+  count.dataset.tone=c.tone;count.dataset.preview=plan;count.hidden=false;
+ };
  paintCount();
  if(root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true)
   root.AtokoreHousehold.refreshEntitlements?.().then(()=>{if(count.isConnected)paintCount()}).catch(()=>{});
@@ -373,6 +389,19 @@ function parsePhotos(list,restoredItems){
  }
  return out;
 }
+// お試し: photo-slot trial display (off by default; this device only; changes nothing else).
+const PREVIEW_KEY='atokorePhotoCounterPreviewV1';
+function previewPlan(){try{const v=root.localStorage.getItem(PREVIEW_KEY);return ['free','premium','ended'].includes(v)?v:null}catch(_){return null}}
+function previewSetting(){
+ const page=doc?.getElementById('pg-premium');if(!page||doc.getElementById('atkPhotoPreview'))return;
+ const box=doc.createElement('div');box.id='atkPhotoPreview';box.className='atk-photo-preview-setting';
+ box.innerHTML='<label for="atkPhotoPreviewPlan"><b>写真枠の試用表示（合成データ）</b></label>'+
+  '<p class="atk-photo-note">写真画面の「共有写真 n/5枚」などの表示を、この端末の写真を使って確かめるための設定です。実際の家族共有・契約・サーバー上限は変わりません。</p>'+
+  '<select id="atkPhotoPreviewPlan"><option value="">オフ（通常）</option><option value="free">無料プラン（5枚）として表示</option><option value="premium">有料プラン（20枚）として表示</option><option value="ended">有料プラン終了後（5枚）として表示</option></select>';
+ const anchor=doc.getElementById('atkBuildInfo');if(anchor)anchor.before(box);else page.append(box);
+ const sel=box.querySelector('select');sel.value=previewPlan()||'';
+ sel.addEventListener('change',()=>{try{if(sel.value)root.localStorage.setItem(PREVIEW_KEY,sel.value);else root.localStorage.removeItem(PREVIEW_KEY)}catch(_){root.notifyAtokoreV125H?.('この設定を保存できませんでした')}});
+}
 async function countPhotos(list){
  let n=0;
  for(const item of list){
@@ -451,7 +480,7 @@ function install(){
   else if(changed){decorate();detailPhoto()}
   shareWaiting();
  });
- decorate();detailPhoto();
+ decorate();detailPhoto();previewSetting();
  root.addEventListener('pagehide',()=>{dispose();resetShared();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
 }

@@ -147,7 +147,13 @@ test('settings: pieces per bag and daily use can be changed later; several child
 test('the お試し screen shows which build this is', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
   await go(page, 'premium');
-  await expect(page.locator('#atkBuildInfo')).toHaveText(/^アプリ v51 ・ ビルド trial-v19-(local|[0-9a-f]{7})/);
+  // One label everywhere: version line, tab title and header badge (Muse P3-3).
+  await expect(page.locator('#atkVersionInfo')).toHaveText(/^アプリ v51 ・ ビルド trial-v19-(local|[0-9a-f]{7})$/);
+  await expect(page.locator('#atkBuildInfo')).toBeHidden();
+  await expect(page).toHaveTitle(/^あとこれ v51（trial-v19-(local|[0-9a-f]{7})）$/);
+  // The old header badge is no longer shown by the current header; if present it carries the same label.
+  for (const t of await page.locator('h1 .badge').allTextContents()) expect(t).toBe('試用版 v51');
+  expect(await page.locator('#pg-premium').innerText()).not.toMatch(/v48|機能更新/);
   expect(page.__errors).toEqual([]);
 });
 
@@ -164,5 +170,50 @@ test('two daycares: each child can carry the name of their 園, shown in the lis
   await box.locator('[data-prep-add-child]').click();
   await expect(box.locator('.atk-prep-kid')).toHaveText([/上の子（さくら保育園）/, /下の子（ひまわり園）/]);
   await expect(box.locator('[data-prep-child] option')).toHaveText(['上の子（さくら保育園）', '下の子（ひまわり園）']);
+  expect(page.__errors).toEqual([]);
+});
+
+test('a level changed by mistake can be put back from the same row; close buttons are 44px', async ({ page }) => {
+  const s = baseState();
+  s.items[2] = { ...s.items[2], level: 'low', levelAt: '2026-11-20T00:00:00.000Z' };
+  await open(page, { [KEY]: s });
+  await go(page, 'stock');
+  await page.locator('[data-atk-view="list"]').click();
+  const row = page.locator('#stockList [data-stock-id="3"]');
+  await row.locator('[data-atk-lv-set="buy"]').click();
+  expect((await stored(page)).items.find(x => x.id === 3).level).toBe('buy');
+  await row.locator('[data-atk-lv-undo]').click();
+  const back = (await stored(page)).items.find(x => x.id === 3);
+  expect([back.level, back.levelAt]).toEqual(['low', '2026-11-20T00:00:00.000Z']);
+  await expect(row.locator('[data-atk-lv-undo]')).toHaveCount(0);
+  await expect(page.locator('#sheet .atk-level')).toHaveCount(0);           // never opened the sheet
+  // Product without a level: the undo removes the new level again.
+  const egg = page.locator('#stockList [data-stock-id="1"]');
+  await egg.locator('[data-atk-lv-set="plenty"]').click();
+  await egg.locator('[data-atk-lv-undo]').click();
+  expect('level' in (await stored(page)).items.find(x => x.id === 1)).toBe(false);
+  await page.evaluate(() => window.atkShowDetail(1));
+  const close = await page.locator('#sheet .close').boundingBox();
+  expect(close.height).toBeGreaterThanOrEqual(44);
+  expect(close.width).toBeGreaterThanOrEqual(44);
+  expect(page.__errors).toEqual([]);
+});
+
+test('compact 余裕あり prototype: off by default; when turned on in お試し, other levels keep one-tap buttons', async ({ page }) => {
+  await open(page, { [KEY]: baseState() });
+  await go(page, 'stock');
+  await page.locator('[data-atk-view="list"]').click();
+  const egg = page.locator('#stockList [data-stock-id="3"]');            // 6個: 余裕あり by count
+  await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(3);          // default: unchanged
+  await go(page, 'premium');
+  await page.locator('[data-atk-compact]').check();
+  await go(page, 'stock');
+  await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(0);
+  await egg.locator('[data-atk-lv-open]').click();                        // 2nd tap needed: the trade-off
+  await egg.locator('[data-atk-lv-set="buy"]').click();
+  expect((await stored(page)).items.find(x => x.id === 3).level).toBe('buy');
+  await expect(egg.locator('[data-atk-lv-set]')).toHaveCount(3);          // not 余裕あり any more: full buttons
+  await go(page, 'premium');
+  await page.locator('[data-atk-compact]').uncheck();
   expect(page.__errors).toEqual([]);
 });
