@@ -105,13 +105,16 @@ function capturePurchases(ids){
  const m=engine.meta(),wanted=new Set(ids.map(id=>m.map['buy:'+id]));
  return m.outbox.filter(o=>o.type==='complete_buy'&&wanted.has(o.buy)).map(o=>({op:o.op_id,household:household.id,user:session.user.id}));
 }
+// A sync that STARTS now: a sync already running may have begun before this purchase was queued, or
+// before the server reverted it, so its result cannot be used (Work: overlapping shared undos).
+async function freshSync(){if(syncing){try{await syncing}catch(_){}}return syncNow()}
 async function undoPurchases(ticket){
  if(!ticket?.length||ticket.some(x=>x.household!==household?.id||x.user!==session?.user?.id))throw Error('共有する家族が変わったため、この操作は戻せません。');
- await syncNow();
+ await freshSync();
  if(status.state!=='synced')throw Error('通信できません。つながってから「元に戻す」を押してください。');
  try{await rpc('hh_undo_purchases',{p_ops:ticket.map(x=>x.op)})}
  catch(e){throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(e.message||'')?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
- await syncNow();
+ await freshSync();
  if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
 }
 function photoScope(id){

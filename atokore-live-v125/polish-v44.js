@@ -72,7 +72,9 @@ function persist(next){
  root.render?.();
 }
 function log(title,detail,extra){root.AtokoreHistory?.add(title,detail,'stock','↶',extra)}
-function clearUndo(){undo=null;clearTimeout(undoTimer);doc.getElementById('atkUndoBar')?.remove()}
+// v51 (Work: shared undo race): every bar belongs to one action. A late answer for an older action
+// clears only its own bar (clearUndo(run)), never the bar of a purchase made meanwhile.
+function clearUndo(run){if(run&&undo!==run)return;undo=null;clearTimeout(undoTimer);doc.getElementById('atkUndoBar')?.remove()}
 // v51 (Muse N-3): the last purchase can still be undone after leaving the screen, from a button on
 // the shopping page, for at most LAST_PURCHASE_MS and only once. The same undo runs as from the
 // bar: it refuses when the products changed, checks the shared ticket on the server while sharing,
@@ -91,11 +93,13 @@ const mono=()=>root.performance&&typeof root.performance.now==='function'?root.p
 function stamp(){return {wall:Date.now(),mono:mono()}}
 function elapsed(at){const w=Date.now()-at.wall,m=mono()-at.mono;return Number.isFinite(m)?Math.max(w,m):w}
 function withinUndo(at){const e=elapsed(at);return e>=0&&e<LAST_PURCHASE_MS}
-let lastPurchase=null,lastBusy=false,lastTimer=null;
+let lastPurchase=null,lastTimer=null;
 function renderLastPurchase(){
  clearTimeout(lastTimer);lastTimer=null;
  const anchor=doc.getElementById('buyList');let b=doc.getElementById('atkLastPurchaseUndo');
- // An undo already running is drawn as busy until it finishes, even across the deadline.
+ // An undo already running is drawn as busy until it finishes, even across the deadline. Busy and
+ // errors belong to that purchase only (a newer purchase starts clean).
+ const lastBusy=!!lastPurchase?.busy;
  const live=lastPurchase&&(lastBusy||withinUndo(lastPurchase.at));
  if(!live){if(lastPurchase&&undo===lastPurchase.run)clearUndo();lastPurchase=null}
  if(!anchor||!live){b?.remove();return}
@@ -107,17 +111,17 @@ function renderLastPurchase(){
  if(!lastBusy)lastTimer=setTimeout(renderLastPurchase,Math.max(50,Math.min(60000,LAST_PURCHASE_MS-e)));
 }
 doc.addEventListener('click',async e=>{
- const t=e.target.closest?.('[data-atk-last-undo]');if(!t||lastBusy||!lastPurchase)return;
- const run=lastPurchase.run;
- if(!withinUndo(lastPurchase.at)){renderLastPurchase();message(EXPIRED_TEXT);return}
- lastBusy=true;renderLastPurchase();
- try{await run();lastPurchase=null;clearUndo();message('直前の「買った」を取り消しました')}
- catch(err){if(lastPurchase)lastPurchase.error=err.message||'取り消せませんでした。'}
- finally{lastBusy=false;renderLastPurchase()}
+ const t=e.target.closest?.('[data-atk-last-undo]');const lp=lastPurchase;if(!t||!lp||lp.busy)return;
+ if(!withinUndo(lp.at)){renderLastPurchase();message(EXPIRED_TEXT);return}
+ lp.busy=true;lp.error=null;renderLastPurchase();
+ // Whatever happens, only THIS purchase's state is touched when the answer comes back.
+ try{await lp.run();if(lastPurchase===lp)lastPurchase=null;clearUndo(lp.run);message('直前の「買った」を取り消しました')}
+ catch(err){lp.error=err.message||'取り消せませんでした。'}
+ finally{lp.busy=false;renderLastPurchase()}
 });
 doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')renderLastPurchase()});
 root.addEventListener?.('pageshow',()=>renderLastPurchase());
-doc.addEventListener('atokore-page-changed',clearUndo);
+doc.addEventListener('atokore-page-changed',()=>clearUndo());
 doc.addEventListener('atokore-page-changed',()=>renderLastPurchase());
 function offerUndo(label,run){
  clearUndo();root.AtokoreNotices.hide();undo=run;
@@ -125,12 +129,15 @@ function offerUndo(label,run){
  const text=doc.createElement('span');text.setAttribute('role','status');text.textContent=label;
  const button=doc.createElement('button');button.type='button';button.textContent='元に戻す';
  button.addEventListener('click',async()=>{
-  if(button.disabled||!undo)return;button.disabled=true;clearTimeout(undoTimer);
-  try{await undo();clearUndo();message('直前の操作を元に戻しました')}
-  catch(e){text.textContent=e.message||'戻せませんでした。通信状態をご確認ください。';button.disabled=false;undoTimer=setTimeout(clearUndo,30000)}
+  if(button.disabled||undo!==run)return;button.disabled=true;clearTimeout(undoTimer);
+  try{await run();clearUndo(run);message('直前の操作を元に戻しました')}
+  catch(e){
+   // Only this bar shows the error and gets more time; a newer bar is left as it is.
+   if(undo!==run)return;
+   text.textContent=e.message||'戻せませんでした。通信状態をご確認ください。';button.disabled=false;clearTimeout(undoTimer);undoTimer=setTimeout(()=>clearUndo(run),30000)}
  });
- const close=doc.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','取り消し案内を閉じる');close.addEventListener('click',clearUndo);
- node.append(text,button,close);doc.body.append(node);undoTimer=setTimeout(clearUndo,20000);
+ const close=doc.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','取り消し案内を閉じる');close.addEventListener('click',()=>clearUndo(run));
+ node.append(text,button,close);doc.body.append(node);undoTimer=setTimeout(()=>clearUndo(run),20000);
 }
 function rememberCounter(before,after,key){
  const changes=[];
