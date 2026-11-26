@@ -203,8 +203,8 @@ jobs:
           # Check the critical shared-data/auth paths first, then all remaining tests once.
           npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium household-google-v40 household-sync-v37
           npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium --grep-invert 'household-(google-v40|sync-v37)\.spec\.cjs'
-          # Work 7th: Japan time as well as UTC (stock and prep dates follow the phone's own calendar day).
-          E2E_TZ=Asia/Tokyo npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium date-boundary-v51.spec.cjs stock-levels-v51.spec.cjs prep-sets-v51.spec.cjs
+          # Work 7th: Japan time as well as UTC, for the test runner and the browser alike (Work tests in Japan).
+          TZ=Asia/Tokyo E2E_TZ=Asia/Tokyo npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=chromium date-boundary-v51.spec.cjs stock-levels-v51.spec.cjs prep-sets-v51.spec.cjs
       - name: Safe trial as shipped (built, served from another path, photo flow, no outside requests)
         run: |
           rm -rf /tmp/safe-trial && mkdir -p /tmp/safe-trial/some/other
@@ -247,7 +247,7 @@ jobs:
       - name: WebKit — shopping-page undo of A after B was bought, repeated (Work 7th) and the JST/UTC date boundary
         run: |
           npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=webkit undo-race-v51.spec.cjs --grep 'shopping-page' --repeat-each=5
-          E2E_TZ=Asia/Tokyo npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=webkit date-boundary-v51.spec.cjs stock-levels-v51.spec.cjs
+          TZ=Asia/Tokyo E2E_TZ=Asia/Tokyo npx playwright test -c tests/e2e-v19/playwright.config.cjs --project=webkit date-boundary-v51.spec.cjs stock-levels-v51.spec.cjs
       - name: Upload WebKit screenshots
         if: always()
         uses: actions/upload-artifact@v4
