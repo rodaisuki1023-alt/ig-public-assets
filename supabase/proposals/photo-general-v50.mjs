@@ -70,6 +70,21 @@ export function makeJpegNormalizer(codec){
 // instead of reporting a conflict. Existing photos are never removed by this refusal.
 const mapError=e=>e?.code==='42501'?bad(403,'denied'):e?.code==='55000'&&/photo_plan_limit/.test(String(e?.message||''))?bad(409,'photo_limit'):['23505','40001','55000'].includes(e?.code)?bad(409,'conflict'):bad(503,'unavailable');
 /**
+ * The general gateway's read, shared with the trusted migration / check worker so both apply exactly
+ * the same rules: authorized target (path, size, SHA-256 recorded), the bytes downloaded have that size
+ * and hash and are a JPEG, and the authorization still holds afterwards (re-asked).
+ * @returns {Promise<{ok:true,bytes:Uint8Array,sha:string}|{ok:false,status:number,error:string}>}
+ */
+export async function readVerified({read,download,path}){
+ const a=await read();
+ if(a?.path!==path||!Number.isInteger(a.bytes)||a.bytes<1||a.bytes>MAX||typeof a.sha!=='string'||a.sha.length!==64)return {ok:false,status:403,error:'denied'};
+ const bytes=await download(a.path);
+ if(!bounded(bytes)||bytes.length!==a.bytes||await sha256(bytes)!==a.sha||!jpegFrame(bytes))return {ok:false,status:502,error:'invalid_photo'};
+ const b=await read();
+ if(b?.path!==a.path||b.sha!==a.sha||b.bytes!==a.bytes)return {ok:false,status:403,error:'denied'};
+ return {ok:true,bytes,sha:a.sha};
+}
+/**
  * @param {{verify:Function,db:Function,storage:{download:Function,upload:Function},
  * normalize:Function,admit?:((user:{uid:string,session:string},household:string,operation:string)=>Promise<boolean>)|null}} adapters
  */
@@ -95,13 +110,8 @@ export function createGeneralPhotoHandler({verify,db,storage,normalize,admit=nul
      const x=await run('detach',{...f,p_seq:input.expectedSeq});
      return seq(x?.seq)?{status:200,deleted:true,seq:x.seq}:bad(503,'unavailable');
     }
-    const a=await run('read',f);
-    if(a?.path!==input.path||!Number.isInteger(a.bytes)||a.bytes<1||a.bytes>MAX||typeof a.sha!=='string'||a.sha.length!==64)return bad(403,'denied');
-    const bytes=await storage.download(a.path);
-    if(!bounded(bytes)||bytes.length!==a.bytes||await sha256(bytes)!==a.sha||!jpegFrame(bytes))return bad(502,'invalid_photo');
-    const b=await run('read',f);
-    if(b?.path!==a.path||b.sha!==a.sha||b.bytes!==a.bytes)return bad(403,'denied');
-    return {status:200,bytes};
+    const r=await readVerified({read:()=>run('read',f),download:p=>storage.download(p),path:input.path});
+    return r.ok?{status:200,bytes:r.bytes}:bad(r.status,r.error);
    }
    const h=input.householdId,r=input.recordId,o=input.operationId,expected=input.expectedPath;
    if(!id(h)||!record(r)||!id(o)||!seq(input.expectedSeq)||(expected!==null&&!scopedPath(expected,h,r)))return bad(400,'request');

@@ -19,6 +19,20 @@
 - 実PostgreSQLで2本の接続から同時に書き込み、240／再送しても240／片方の取り消しで180になることを確認しました（`tests/household/purchase-merge-postgres.cjs`）。
 - どの単位の承認にも依存しません。
 
+## 2026-11-26 追記2：Work第5回の指摘への対応（5単位。どれも実DBには未適用）
+
+| 単位 | ファイル（適用順） | 依存 | 切り戻し | 根拠（テスト） |
+|---|---|---|---|---|
+| 写真A | gateway → reservation → lifecycle → **service**（`upload_sha256`）→ `atokore-photo-legacy-migrate-v51.sql` | 適用済みマイグレーション | 移行がまだ1件も実行されていなければ、関数・テーブルを削除し、v50のガードを再適用する。移行を実行した後は、旧写真が残っている間に `photo_legacy_restore_v51` で1件ずつ戻してから削除する | migrate 10件（本物の一般ゲートを使用。取得できない写真は削除しない、各段階からの復旧、別の参照の保護、復元リハーサル、範囲の制限） |
+| 写真B | close-writes（段階1）→ 移行の完了と読み取り確認 → close-reads（段階2） | 写真A | 段階2の後は、v44の読み取りポリシーを再作成する | closure 8件。実PostgreSQL（読めない写真があれば拒否、同時書き込み、同時閉鎖） |
+| C 担当 | `atokore-buy-assignment-v51.sql` | 適用済みマイグレーションのみ | `rollback/atokore-buy-assignment-v51.rollback.sql`（データを退避してから削除。許可リストは残す）／ `.restore.sql` | assignment 8件、rollback 4件 |
+| D 持ち物 | `atokore-prep-share-v51.sql` | 適用済みマイグレーションのみ | `rollback/atokore-prep-share-v51.rollback.sql` ／ `.restore.sql` | prep 7件、rollback 4件 |
+| E 取消の期限 | `atokore-purchase-undo-window-v51.sql`（別のRPC `hh_undo_purchases_v51` を追加。**既存のRPCは置き換えない**） | 適用済みマイグレーションのみ | `DROP FUNCTION public.hh_undo_purchases_v51(jsonb)` | window 5件。E2E（期限切れの表示） |
+
+- 5つの単位は、それぞれ単独で適用できます（`atokore-sql-units-rollback-v51.test.cjs`）。
+- 合成世帯の許可リスト（`trial_households_v51`）は、どの単位も `IF NOT EXISTS` で作り、共有しています。どの単位を切り戻しても、許可リストは残ります。
+- 詳しい内容は `docs/atokore-v51-safety-20261126.md` にあります。
+
 ## 2026-11-26 追記：Work第4回の指摘への対応（どれも実DBには未適用）
 
 | 単位 | 追加・変更したファイル | 主な変更 | 根拠（テスト） |

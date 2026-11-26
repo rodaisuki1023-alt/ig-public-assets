@@ -188,6 +188,21 @@ BEGIN
   END LOOP;
   RETURN out;
 END $fn$;
+-- After a (future, separately approved) sender delivered one notice: idempotent, exactly once.
+-- A dropped notice is never marked sent; a second call answers already_sent and changes nothing.
+CREATE FUNCTION atokore_private.notify_mark_sent_v51(p_id text) RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
+DECLARE o atokore_private.notify_outbox%ROWTYPE;
+BEGIN
+  SELECT * INTO o FROM atokore_private.notify_outbox WHERE id = p_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN 'unknown'; END IF;
+  IF o.sent_at IS NOT NULL THEN RETURN 'already_sent'; END IF;
+  IF o.dropped_at IS NOT NULL THEN RETURN 'dropped'; END IF;
+  UPDATE atokore_private.notify_outbox SET sent_at = now() WHERE id = p_id;
+  RETURN 'marked';
+END $fn$;
+REVOKE ALL ON FUNCTION atokore_private.notify_mark_sent_v51(text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION atokore_private.notify_mark_sent_v51(text) TO service_role;
 REVOKE ALL ON FUNCTION atokore_private.notify_due_v51(integer) FROM PUBLIC, anon, authenticated;
 GRANT USAGE ON SCHEMA atokore_private TO service_role;
 GRANT EXECUTE ON FUNCTION atokore_private.notify_due_v51(integer) TO service_role;

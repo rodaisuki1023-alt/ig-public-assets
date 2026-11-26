@@ -13,12 +13,13 @@ const photoProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposal
 // v51 draft shopping assignments (isolated emulator only; the real project does not have them).
 const assignmentProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposals/atokore-buy-assignment-v51.sql'),'utf8');
 const prepShareProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposals/atokore-prep-share-v51.sql'),'utf8');
+const undoWindowProposal=fs.readFileSync(path.join(__dirname,'../../supabase/proposals/atokore-purchase-undo-window-v51.sql'),'utf8');
 const { createDb, call, asRole } = require('./pg.cjs');
 
 const port = Number(process.env.E2E_HH_PORT || 4720);
 let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory, photos;
 let photoEvents=[];
-async function reset() { db = await createDb(); await db.exec(photoProposal); await db.exec(assignmentProposal); await db.exec(prepShareProposal);
+async function reset() { db = await createDb(); await db.exec(photoProposal); await db.exec(assignmentProposal); await db.exec(prepShareProposal); await db.exec(undoWindowProposal);
   // Every household in this local emulator is a synthetic test household: put it on the drafts'
   // server-side trial allowlist (a real project adds only named QA households, by hand).
   await db.exec(`CREATE FUNCTION atokore_private.emulator_trial_v51() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $f$
@@ -119,7 +120,7 @@ http.createServer(async (req, res) => {
       return send(res, 200, session(uidFor(attempt.email), attempt.email));
     }
     if (url.pathname === '/auth/v1/logout') { tokens.delete(String(req.headers.authorization || '').replace(/^Bearer /, '')); return send(res, 204); }
-    const m = url.pathname.match(/^\/rest\/v1\/rpc\/([a-z_]+)$/);
+    const m = url.pathname.match(/^\/rest\/v1\/rpc\/([a-z0-9_]+)$/);
     if (m && req.method === 'POST') {
       const token = String(req.headers.authorization || '').replace(/^Bearer /, '');
       const uid = tokens.get(token) || null;

@@ -39,7 +39,7 @@ function paint(){
 }
 async function run(task){
  if(busy)return;busy=true;paint();
- try{const r=await task();message=r?.status==='stale'?'家族が先に変更しました。最新の担当を表示しています。':r?.status==='denied'?'この操作はできません（担当の人だけが返事できます）。':r?.status==='gone'?'この買い物はもうリストにありません。':''}
+ try{const r=await task();message=r?.status==='stale'?'家族が先に変更しました。最新の担当を表示しています。':r?.status==='denied'?'この操作はできません（担当の人だけが返事できます）。':r?.status==='gone'?'この買い物はもうリストにありません。':r?.status==='not_enabled'?'この世帯では担当の機能をまだ使えません（試用の世帯だけです）。':r?.status==='invalid'?'内容を確認してから、もう一度お試しください。':''}
  catch(e){message=String(e?.message||'担当を変更できませんでした。通信を確認してください。')}
  finally{busy=false;paint()}
 }

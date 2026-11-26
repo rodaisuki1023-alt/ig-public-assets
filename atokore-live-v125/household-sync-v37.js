@@ -105,13 +105,22 @@ function capturePurchases(ids){
  const m=engine.meta(),wanted=new Set(ids.map(id=>m.map['buy:'+id]));
  return m.outbox.filter(o=>o.type==='complete_buy'&&wanted.has(o.buy)).map(o=>({op:o.op_id,household:household.id,user:session.user.id}));
 }
+// A sync that STARTS now: a sync already running may have begun before this purchase was queued, or
+// before the server reverted it, so its result cannot be used (Work: overlapping shared undos).
+async function freshSync(){if(syncing){try{await syncing}catch(_){}}return syncNow()}
 async function undoPurchases(ticket){
  if(!ticket?.length||ticket.some(x=>x.household!==household?.id||x.user!==session?.user?.id))throw Error('共有する家族が変わったため、この操作は戻せません。');
- await syncNow();
+ await freshSync();
  if(status.state!=='synced')throw Error('通信できません。つながってから「元に戻す」を押してください。');
- try{await rpc('hh_undo_purchases',{p_ops:ticket.map(x=>x.op)})}
+ // v51: with purchaseUndoWindowV51 (default off) the server also checks the 10-minute window
+ // (hh_undo_purchases_v51, synthetic trial households only); elsewhere the existing RPC is used.
+ try{
+  const ops={p_ops:ticket.map(x=>x.op)};
+  const r=cfg.purchaseUndoWindowV51===true?await rpc('hh_undo_purchases_v51',ops):null;
+  if(!r||r.status==='not_enabled')await rpc('hh_undo_purchases',ops);
+ }
  catch(e){throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(e.message||'')?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
- await syncNow();
+ await freshSync();
  if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
 }
 function photoScope(id){
@@ -411,7 +420,7 @@ async function syncNow(opts){
    else if(e.code==='storage')setStatus('storage');
    else if(e.code==='network')setStatus('offline');
    else if(e.code==='auth'||e.status===401)setStatus('auth');
-   else if(/not_member/.test(e.message)){household=null;saveMeta({household:null});setStatus('removed')}
+   else if(/not_member/.test(e.message)){household=null;forgetShared();saveMeta({household:null});setStatus('removed')}
    else setStatus('error',e.message);
    if(e.code==='network'||!['rejected','recovery','storage','auth'].includes(e.code))pollAfter('failed');
    if(household&&session){const current=household.id+':'+session.user.id;if(changesFor!==current)changes=[];changesFor=current;historyState='error';paint()}
@@ -696,7 +705,7 @@ async function dashboard(){
  if(!s)return;
  try{
   const my=await rpc('hh_my',{});
-  if(!my?.household){household=null;saveMeta({household:null});setStatus('removed');return chooseHousehold()}
+  if(!my?.household){household=null;forgetShared();saveMeta({household:null});setStatus('removed');return chooseHousehold()}
   rememberMembers(my);paint();
   members.replaceChildren(...my.members.map(m=>el('li',{},[
    el('span',{text:m.display_name+(m.role==='owner'?'（作成者）':'')+(m.is_me?'・自分':'')}),
@@ -733,11 +742,13 @@ async function leave(){
  const left=engine?engine.status().pending:0;
  if(left){try{await syncNow()}catch(e){}}
  const still=engine?engine.status().pending:0;
- if(!await ask('この世帯から抜けますか？',(still?'まだ家族に送れていない変更が'+still+'件あります。抜けると家族には届きません。':'')+'この端末の在庫はそのまま残ります。','抜ける'))return;
+ if(!await ask('この世帯から抜けますか？',(still?'まだ家族に送れていない変更が'+still+'件あります。抜けると家族には届きません。':'')+'この端末の在庫はそのまま残ります。'+(assignmentsEnabled()?'\nあなたが頼まれていた買い物の担当は外れ、あなたが頼んで返事がまだのお願いは取り下げられます。届いていない通知も送られなくなります。':'')+(prepEnabled()?'\n持ち物の共有は止まり、今の内容はこの端末だけのものとして残ります。':''),'抜ける'))return;
  await rpc('hh_leave',{});
  stop();household=null;saveMeta({household:null,engine:null});setStatus('local');root.closeM?.();notice('世帯から抜けました。この端末の在庫はそのまま残っています');
 }
-function stop(){clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
+// Leaving, being removed or signing out: nothing of the family's shared state stays usable here.
+function forgetShared(){assignments=new Map();assignmentsAt=0;entCache=null;entAt=0}
+function stop(){forgetShared();clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
 async function signOut(){
  const left=engine?engine.status().pending:0;
  if(!await ask('ログアウトしますか？',(left?'まだ家族に送れていない変更が'+left+'件あります。\n':'')+(session?.user?.is_anonymous?'Googleなしの参加情報は失われます。戻るには作成者から再招待が必要です。\n':'')+'ログアウトしますか？この端末の在庫はそのまま残ります。','ログアウト'))return;

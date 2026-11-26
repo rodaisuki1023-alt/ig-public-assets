@@ -499,3 +499,14 @@ test('daily use mode: 5.6 typed as the total stays 5.6; an empty 子どもごと
   expect((await trackOf(page)).perDay).toBe(5.6);
   expect(page.__errors).toEqual([]);
 });
+test('daily use per child: 0.125 is kept exactly (shown, edited and saved without rounding)', async ({ page }) => {
+  await rateState(page, { perDay: 0.25, perChild: [0.125, 0.125], rateMode: 'children' });
+  const ed = level(page).locator('.atk-level-edit');
+  await expect(ed.locator('[data-atk-level-kid="0"]')).toHaveValue('0.125');
+  await expect(ed.locator('[data-atk-rate-sum]')).toHaveText('計算に使う量：1日0.25枚（0.125＋0.125）');
+  await ed.locator('[data-atk-level-kid="1"]').fill('0.1');
+  await ed.locator('[data-atk-level-edit]').click();
+  await expect.poll(async () => (await trackOf(page)).perDay).toBe(0.225);
+  expect((await trackOf(page)).perChild).toEqual([0.125, 0.1]);
+  expect(page.__errors).toEqual([]);
+});
