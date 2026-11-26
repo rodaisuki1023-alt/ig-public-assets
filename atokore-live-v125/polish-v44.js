@@ -123,6 +123,17 @@ doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')
 root.addEventListener?.('pageshow',()=>renderLastPurchase());
 doc.addEventListener('atokore-page-changed',()=>clearUndo());
 doc.addEventListener('atokore-page-changed',()=>renderLastPurchase());
+// v51 (Work: recovery after a server undo): estimate repairs that could not be saved yet.
+const estimateRepairs=[];
+function revertEstimate(changes){const cur=snapshot();for(const c of changes)undoEntries(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
+function retryEstimateRepairs(){
+ while(estimateRepairs.length){
+  try{revertEstimate(estimateRepairs[0]);estimateRepairs.shift();if(!estimateRepairs.length)message('見積もりも取り消しました')}
+  catch(e){console.error('あとこれ: 見積もりの取り消し（再試行）',e);return}
+ }
+}
+doc.addEventListener('atokore-household-updated',retryEstimateRepairs);
+doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')retryEstimateRepairs()});
 function offerUndo(label,run){
  clearUndo();root.AtokoreNotices.hide();undo=run;
  const node=doc.createElement('div');node.id='atkUndoBar';node.className='atk-undo-bar';
@@ -179,8 +190,13 @@ for(const name of ['buyOneToStockV125H','bought']){
     finish();
     // The server reverted the counted stock; the estimate is an ordinary field and is reverted here.
     if(changes.some(c=>c.entries)){
-     try{const cur=snapshot();for(const c of changes)undoEntries(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
-     catch(e){console.error('あとこれ: 見積もりの取り消し',e);throw Error('「買った」は取り消しましたが、見積もりを戻せませんでした。商品の「詳しく管理」で残りを確認してください。')}
+     try{revertEstimate(changes)}
+     catch(e){
+      // The server already reverted the purchase. The estimate repair is kept and retried on the next
+      // sync or return to the app, until it is saved (never silently dropped).
+      console.error('あとこれ: 見積もりの取り消し',e);estimateRepairs.push(changes);
+      throw Error('「買った」は取り消しましたが、見積もりの保存に失敗しました。次の同期で自動的にやり直します。');
+     }
     }
     return;
    }

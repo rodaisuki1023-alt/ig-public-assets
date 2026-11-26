@@ -7,11 +7,11 @@ const { open, go, stored, baseState, KEY, appConfirm } = require('./helpers.cjs'
 const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
 const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false };
 const MILK = '牛乳', DIAPER = 'パンパース さらさらケア おむつ テープ M';
-async function sharedPhone(browser, info, request) {
+async function sharedPhone(browser, info, request, cfg = CFG) {
   await request.post(EMU + '/__test/reset');
   const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage(); page.__errors = []; page.on('pageerror', e => page.__errors.push(e.message));
-  await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, CFG);
+  await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, cfg);
   const s = baseState();
   s.buys = [{ id: 20, name: MILK, qty: 1, unit: '本', stockId: 1 }, { id: 21, name: DIAPER, qty: 1, unit: '袋', stockId: 2 }];
   await open(page, { [KEY]: s });
@@ -119,6 +119,55 @@ test('A fails through the shopping-page button after B was bought: the error sta
     await expect(last(page).getByRole('button', { name: '取り消す' })).toBeEnabled();
     await last(page).getByRole('button', { name: '取り消す' }).click();
     await expect.poll(() => qty(page, DIAPER)).toBe(diaper0);
+    expect(page.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+test('server undo succeeded but saving the estimate failed: the repair is kept and applied on the next return to the app', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request);
+  try {
+    // A tracked product, so the purchase also enters the estimate (a tp… field).
+    await page.evaluate(() => { const d = new Date(); const day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const x = items.find(i => i.id === 2); x.track = { v: 1, base: 60, since: day, perDay: 6, perPack: 60, refillDays: 5, pieceUnit: '枚', confirmedAt: day, t: Date.now() - 60000, seen: [] }; save(); render(); });
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    const tp = async () => Object.keys((await stored(page)).items.find(x => x.id === 2)).filter(k => /^tp[0-9a-z]+$/.test(k));
+    await buy(page, DIAPER);
+    await expect.poll(tp).toHaveLength(1);
+    // Exactly the estimate save fails once (as on a full device).
+    await page.evaluate(() => { const orig = Storage.prototype.setItem; let once = true;
+      Storage.prototype.setItem = function (...a) { if (once && /revertEstimate/.test(new Error().stack || '')) { once = false; throw new DOMException('full (test)', 'QuotaExceededError'); } return orig.apply(this, a); }; });
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toContainText('次の同期で自動的にやり直します');
+    expect(await tp()).toHaveLength(1);                                                 // not saved yet
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await expect.poll(tp).toHaveLength(0);                                              // repaired
+    expect((await stored(page)).buys.filter(b => b.id === 21 || b.name === DIAPER)).toHaveLength(1);
+    expect(page.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+
+// Server-side window (flag purchaseUndoWindowV51, synthetic trial households): the phone still shows the
+// button (its own 10 minutes), but the server measures from its own receipt and the phone's purchase
+// time; when the server says expired, the app says so and nothing changes.
+test('server window on: a fresh undo works through hh_undo_purchases_v51; one the server sees as expired is refused and changes nothing', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request, { ...CFG, purchaseUndoWindowV51: true });
+  try {
+    const rpcs = []; page.on('request', r => { const m = /\/rpc\/(hh_undo_purchases\w*)/.exec(r.url()); if (m) rpcs.push(m[1]); });
+    const milk0 = await qty(page, MILK), diaper0 = await qty(page, DIAPER);
+    await buy(page, MILK);
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect.poll(() => qty(page, MILK)).toBe(milk0);
+    expect(rpcs).toEqual(['hh_undo_purchases_v51']);
+    // B is bought; on the server it is 11 minutes old (e.g. it arrived late from an offline phone).
+    await buy(page, DIAPER);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    await request.post(EMU + '/__test/sql', { data: { sql: "UPDATE atokore_private.ops SET at=now()-interval '11 minutes', body=jsonb_set(body,'{ts}',to_jsonb(((extract(epoch FROM now())*1000)::bigint)-660000)) WHERE type='complete_buy' AND body->>'_undo_done' IS NULL" } });
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toContainText('10分を過ぎたため、取り消せません');
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    expect(await qty(page, DIAPER)).toBe(diaper0 + 1);                                  // stays bought
+    expect((await stored(page)).buys.filter(b => b.id === 21)).toHaveLength(0);
     expect(page.__errors).toEqual([]);
   } finally { await ctx.close(); }
 });

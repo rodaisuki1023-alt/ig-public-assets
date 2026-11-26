@@ -112,7 +112,13 @@ async function undoPurchases(ticket){
  if(!ticket?.length||ticket.some(x=>x.household!==household?.id||x.user!==session?.user?.id))throw Error('共有する家族が変わったため、この操作は戻せません。');
  await freshSync();
  if(status.state!=='synced')throw Error('通信できません。つながってから「元に戻す」を押してください。');
- try{await rpc('hh_undo_purchases',{p_ops:ticket.map(x=>x.op)})}
+ // v51: with purchaseUndoWindowV51 (default off) the server also checks the 10-minute window
+ // (hh_undo_purchases_v51, synthetic trial households only); elsewhere the existing RPC is used.
+ try{
+  const ops={p_ops:ticket.map(x=>x.op)};
+  const r=cfg.purchaseUndoWindowV51===true?await rpc('hh_undo_purchases_v51',ops):null;
+  if(!r||r.status==='not_enabled')await rpc('hh_undo_purchases',ops);
+ }
  catch(e){throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(e.message||'')?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
  await freshSync();
  if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
