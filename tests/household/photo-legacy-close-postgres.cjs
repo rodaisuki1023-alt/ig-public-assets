@@ -33,15 +33,17 @@ async function setup(){
   const dir=path.join(root,'supabase/migrations');
   for(const f of fs.readdirSync(dir).filter(f=>f.endsWith('.sql')&&!f.includes('storage')).sort())await pool.query(fs.readFileSync(path.join(dir,f),'utf8'));
  }
- // The Storage tables Supabase provides (only what the policies and drafts use).
- if(!await has("SELECT to_regclass('storage.objects') IS NOT NULL ok")){
-  await pool.query(`CREATE SCHEMA storage;
-   CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
-   CREATE TABLE storage.objects(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),bucket_id text REFERENCES storage.buckets(id),name text,metadata jsonb,created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(bucket_id,name));
-   ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-   GRANT USAGE ON SCHEMA storage TO anon,authenticated;GRANT SELECT,INSERT,DELETE ON storage.objects TO authenticated;`);
+ // The Storage tables Supabase provides (only what the policies and drafts use). An earlier CI script
+ // may have left a smaller stub (objects only), so each part is completed if missing.
+ await pool.query(`CREATE SCHEMA IF NOT EXISTS storage;
+  CREATE TABLE IF NOT EXISTS storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+  CREATE TABLE IF NOT EXISTS storage.objects(bucket_id text,name text,UNIQUE(bucket_id,name));
+  ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS metadata jsonb;
+  ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+  ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+  GRANT USAGE ON SCHEMA storage TO anon,authenticated;GRANT SELECT,INSERT,DELETE ON storage.objects TO authenticated;`);
+ if(!await has("SELECT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='storage' AND tablename='objects' AND policyname='atokore_photo_read') ok"))
   await pool.query(fs.readFileSync(path.join(root,'supabase/migrations/20261024111742_atokore_photo_storage_v44.sql'),'utf8'));
- }
  if(!await has("SELECT to_regclass('atokore_private.photo_ledger_v50') IS NOT NULL ok"))
   await pool.query(P('atokore-photo-reservation-v50.sql'));
  if(!await has("SELECT to_regprocedure('atokore_private.photo_attach_v50(uuid,text,uuid)') IS NOT NULL ok"))
