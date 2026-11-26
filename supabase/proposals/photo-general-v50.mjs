@@ -70,10 +70,6 @@ export function makeJpegNormalizer(codec){
 // instead of reporting a conflict. Existing photos are never removed by this refusal.
 const mapError=e=>e?.code==='42501'?bad(403,'denied'):e?.code==='55000'&&/photo_plan_limit/.test(String(e?.message||''))?bad(409,'photo_limit'):['23505','40001','55000'].includes(e?.code)?bad(409,'conflict'):bad(503,'unavailable');
 /**
- * @param {{verify:Function,db:Function,storage:{download:Function,upload:Function},
- * normalize:Function,admit?:((user:{uid:string,session:string},household:string,operation:string)=>Promise<boolean>)|null}} adapters
- */
-/**
  * The general gateway's read, shared with the trusted migration / check worker so both apply exactly
  * the same rules: authorized target (path, size, SHA-256 recorded), the bytes downloaded have that size
  * and hash and are a JPEG, and the authorization still holds afterwards (re-asked).
@@ -88,6 +84,10 @@ export async function readVerified({read,download,path}){
  if(b?.path!==a.path||b.sha!==a.sha||b.bytes!==a.bytes)return {ok:false,status:403,error:'denied'};
  return {ok:true,bytes,sha:a.sha};
 }
+/**
+ * @param {{verify:Function,db:Function,storage:{download:Function,upload:Function},
+ * normalize:Function,admit?:((user:{uid:string,session:string},household:string,operation:string)=>Promise<boolean>)|null}} adapters
+ */
 export function createGeneralPhotoHandler({verify,db,storage,normalize,admit=null}){
  if([verify,db,normalize,storage?.download,storage?.upload].some(f=>typeof f!=='function'))throw Error('missing trusted adapter');
  return async function handle(input,token){
