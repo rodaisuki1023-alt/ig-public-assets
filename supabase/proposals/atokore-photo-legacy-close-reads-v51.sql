@@ -19,7 +19,9 @@ BEGIN;
 --     its object in the managed bucket, and the hash and size the general gateway checks,
 --   * every attached photo was read like the gateway reads it, with that hash, and the read is of the
 --     object generation that is there now (read checks; Work 6th: same-path overwrite after a check),
---   * stage 1 already applied.
+--   * stage 1 already applied,
+--   * (Work 7th) the real Storage guarantees were proven and recorded (photo_storage_guarantees_v51), no
+--     delete is still undecided, and every attached photo was read within the last 10 minutes.
 -- Two people running this at once: the advisory lock serializes them, and the second one finds the
 -- read policy already gone and changes nothing. A record write or a legacy move commit that runs at the
 -- same time waits for this transaction (or this one waits for it) because of the SHARE locks.
@@ -74,6 +76,23 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'atokore_photo_insert') THEN
     RAISE EXCEPTION 'legacy_stage1_missing' USING ERRCODE = '55000';
+  END IF;
+  -- Work 7th (last, after every specific check): never closed on database metadata alone (see photo_storage_guarantees_v51 in stage 1).
+  IF to_regclass('atokore_private.photo_storage_guarantees_v51') IS NULL OR NOT EXISTS (
+       SELECT 1 FROM atokore_private.photo_storage_guarantees_v51
+        WHERE generation_proven AND writes_fenced AND gateway_http_proven) THEN
+    RAISE EXCEPTION 'storage_guarantee_unproven' USING ERRCODE = '55000',
+      HINT = 'Prove on the real project (separately approved) that Storage generations change with every write, that no other writer can write the buckets, and that the gateway serves the recorded bytes over HTTP; record it in photo_storage_guarantees_v51.';
+  END IF;
+  -- No delete that is still undecided (a lost or unclear answer leaves its key fenced and pending).
+  IF to_regclass('atokore_private.photo_delete_intents_v51') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM atokore_private.photo_delete_intents_v51 WHERE state = 'pending') THEN
+    RAISE EXCEPTION 'photo_delete_pending' USING ERRCODE = '55000';
+  END IF;
+  -- Every attached photo was read within the last 10 minutes (not just once, long ago).
+  IF EXISTS (SELECT 1 FROM atokore_private.photo_ledger_v50 l LEFT JOIN atokore_private.photo_read_checks_v51 c ON c.file_id = l.file_id
+             WHERE l.state = 'attached' AND (c.file_id IS NULL OR c.checked_at < clock_timestamp() - interval '10 minutes')) THEN
+    RAISE EXCEPTION 'photo_unread_remain' USING ERRCODE = '55000', HINT = 'Run the read checks again right before closing.';
   END IF;
 END $guard$;
 DROP POLICY IF EXISTS atokore_photo_read ON storage.objects;

@@ -95,13 +95,16 @@ async function notifyClaims(){
 }
 
 async function undoGuard(){
- if(!await has("SELECT to_regprocedure('atokore_private.purchase_undo_guard_v51()') IS NOT NULL ok"))await pool.query(P('atokore-purchase-undo-window-v51.sql'));
+ if(!await has("SELECT to_regprocedure('public.hh_clock_ticket_v51()') IS NOT NULL ok"))await pool.query(P('atokore-purchase-undo-window-v51.sql'));
  const {A,hh}=await household('QA safety3 undo');
  async function bought(ageS){
   const item='item-s3-'+randomUUID().slice(0,8),buy='buy-s3-'+randomUUID().slice(0,8);
   await push(A,[{op_id:randomUUID(),type:'create',kind:'item',id:item,qty:1,fields:{name:'合成 ミルク',unit:'缶'},ts:Date.now()},{op_id:randomUUID(),type:'create',kind:'buy',id:buy,qty:2,fields:{name:'合成 ミルク',unit:'缶'},ts:Date.now()}]);
   const at=Date.now()-ageS*1000,op=randomUUID();
-  await push(A,[{op_id:op,type:'complete_buy',buy,item,delta:2,ts:at}]);
+  // Work 7th: the server's clock ticket held before buying (issued 1 s before the receipt).
+  const t=await rpc(A,'SELECT public.hh_clock_ticket_v51() r');
+  await pool.query("UPDATE atokore_private.purchase_clock_tickets_v51 SET issued_at=to_timestamp($1/1000.0) WHERE ticket=$2",[at-1000,t.ticket]);
+  await push(A,[{op_id:op,type:'complete_buy',buy,item,delta:2,ts:at,ck:t.ticket}]);
   await pool.query("UPDATE atokore_private.ops SET at=to_timestamp($1/1000.0) WHERE op_id=$2",[at,op]);
   return {op,item};
  }

@@ -34,6 +34,24 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 $fn$;
 REVOKE ALL ON FUNCTION atokore_private.legacy_photo_inventory() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION atokore_private.legacy_photo_inventory() TO service_role;
+-- Work 7th (P0): the database's object metadata is not proof of the bytes. Stage 2 (closing reads) also
+-- requires a record that the REAL Storage behaviour was proven on the project, separately approved:
+--   generation_proven  — every overwrite changes the generation the database sees, before reads see the bytes,
+--   writes_fenced      — no writer outside these drafts (service role, dashboard, other functions) can
+--                        write the managed or legacy bucket from stage 2 on,
+--   gateway_http_proven — the general gateway answered real HTTP reads with the recorded bytes,
+-- with the evidence. Until that record exists (it is never created by these drafts), closing is refused.
+CREATE TABLE IF NOT EXISTS atokore_private.photo_storage_guarantees_v51 (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  generation_proven boolean NOT NULL DEFAULT false,
+  writes_fenced boolean NOT NULL DEFAULT false,
+  gateway_http_proven boolean NOT NULL DEFAULT false,
+  evidence text NOT NULL CHECK (char_length(evidence) BETWEEN 20 AND 2000),
+  approved_by text NOT NULL CHECK (char_length(approved_by) BETWEEN 1 AND 80),
+  proven_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE atokore_private.photo_storage_guarantees_v51 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON atokore_private.photo_storage_guarantees_v51 FROM PUBLIC, anon, authenticated;
 COMMIT;
 -- Rollback (after review): recreate atokore_photo_insert exactly as in migration
 -- 20261024111742_atokore_photo_storage_v44.sql and drop legacy_photo_inventory().

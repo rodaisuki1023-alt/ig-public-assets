@@ -18,7 +18,7 @@ test('leave: household prep data is removed, own data comes back, a new househol
   const personal = p => p.evaluate(() => JSON.parse(localStorage.getItem(AtokorePrepSets.KEY) || 'null'));
   try {
     // B's own prep list, made before any sharing.
-    await b.page.evaluate(s => { localStorage.setItem(AtokorePrepSets.KEY, JSON.stringify(s)); AtokorePrepSets.refresh(); }, own());
+    await b.page.evaluate(s => { localStorage.setItem(AtokorePrepSets.PROV, 'own'); localStorage.setItem(AtokorePrepSets.KEY, JSON.stringify(s)); AtokorePrepSets.refresh(); }, own());   // entered on this phone
     await go(a.page, 'premium'); await a.page.click('#atkHouseholdCard');
     await a.page.getByRole('button', { name: 'Googleでログイン', exact: true }).click();
     await a.page.fill('#atkHhName', 'パパ'); await a.page.getByRole('button', { name: '世帯を作る', exact: true }).click(); await appConfirm(a.page, true);

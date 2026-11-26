@@ -13,6 +13,7 @@ const url=process.env.ATOKORE_SQL_TEST_DATABASE_URL;
 if(!url||new URL(url).pathname!=='/atokore_ci'||!['localhost','127.0.0.1'].includes(new URL(url).hostname))throw Error('Use an isolated localhost atokore_ci database');
 const pool=new Pool({connectionString:url,max:8});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
+const hasRow=async sql=>(await pool.query(sql)).rows[0].ok;
 const root=path.resolve(__dirname,'../..');
 const P=f=>fs.readFileSync(path.join(root,'supabase/proposals',f),'utf8');
 const LEGACY='atokore-product-photos',V2='atokore-private-photos-v2';
@@ -103,6 +104,14 @@ async function main(){
    COMMIT;`);
  }
  assert.deepEqual(await policies(),['atokore_photo_delete','atokore_photo_read']);
+ // Work 7th: with everything else in order, closing still needs the real-Storage proof (never created by
+ // the drafts). This disposable CI database records a stand-in so the lock behaviour below can be tested.
+ if(!await hasRow("SELECT EXISTS(SELECT 1 FROM atokore_private.photo_storage_guarantees_v51) ok")){
+  assert.match(await runClose(),/storage_guarantee_unproven/);
+  assert.deepEqual(await policies(),['atokore_photo_delete','atokore_photo_read'],'nothing closed without the proof');
+  console.log('PASS: closing is refused until the real Storage guarantees are proven and recorded');
+  await pool.query("INSERT INTO atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by) VALUES(true,true,true,'CI stand-in for the separately approved real-project proof','CI')");
+ }
 
  // 1) A legacy reference committed while the close is starting: the close waits and refuses.
  const w=await pool.connect();

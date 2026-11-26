@@ -62,12 +62,16 @@ async function ledgerFixture(){
  return {...f,svc};
 }
 // begin -> copy (stand-in) -> commit -> read check (the worker's gateway-style read) -> legacy delete -> finish
+const confirmDelete=(f,m)=>f.db.query("insert into atokore_private.photo_delete_intents_v51(bucket,path,gen,purpose,file_id,state,resolved_at) values($1,$2,null,'legacy',$3,'deleted',now())",[LEGACY,m.legacy_path,m.file_id]);
+// What the separately approved real-environment proof would record (never created by the drafts).
+const recordGuarantee=db=>db.query("insert into atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by) values(true,true,true,'synthetic test: stands in for the real-project proof','QA')");
 async function moveAll(f,{finish=true,read=true}={}){
  const m=await f.svc('photo_legacy_begin_v51',[f.household.id,'item-legacy-a1']);
  await f.db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
  await f.svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
  if(read)await f.svc('photo_read_checked_v51',[m.file_id,SHA,900,(await f.svc('photo_read_target_v51',[m.file_id])).gen]);
- if(finish){await f.db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);assert.equal(await f.svc('photo_legacy_finish_v51',[m.file_id,true]),true)}
+ // The worker's confirmed delete (Work 7th: finish needs a confirmed outcome of a fenced delete).
+ if(finish){await f.db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);await confirmDelete(f,m);assert.equal(await f.svc('photo_legacy_finish_v51',[m.file_id,true]),true)}
  return m;
 }
 const policyNames=async db=>(await db.query("select policyname from pg_policies where schemaname='storage' and tablename='objects' order by 1")).rows.map(r=>r.policyname);
@@ -101,6 +105,8 @@ test('stage 2 also refuses an unfinished move (verified but not deleted), a miss
  await assert.rejects(close(db),/legacy_migration_unfinished/,'switched, never read');
  await svc('photo_read_checked_v51',[m.file_id,SHA,900,(await svc('photo_read_target_v51',[m.file_id])).gen]);
  await assert.rejects(close(db),/legacy_migration_unfinished/,'verified but not finished');
+ assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),false,'no confirmed delete yet');
+ await confirmDelete(f,m);
  assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
  // Now consistent: break one condition at a time.
  await db.query('update atokore_private.photo_ledger_v50 set upload_sha256=null where file_id=$1',[m.file_id]);
@@ -124,6 +130,10 @@ test('full order: copy, verify, switch, delete the legacy object, finish; then s
  const m=await moveAll(f);
  assert.equal(m.legacy_path,name);
  const next=m.target_path;
+ // Work 7th: everything else is in order, but the real Storage guarantees are not proven -> refused.
+ await assert.rejects(close(db),/storage_guarantee_unproven/);
+ assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read'],'nothing closed');
+ await recordGuarantee(db);
  await db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql'));
  assert.deepEqual(await policyNames(db),[]);
  // Running it again (a second operator) changes nothing and does not fail.
