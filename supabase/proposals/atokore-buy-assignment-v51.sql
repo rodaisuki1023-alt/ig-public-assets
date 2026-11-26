@@ -11,7 +11,26 @@
 --   * touches the buy record's seq so other devices see a changed cursor and refetch,
 --   * queues a generic notification id in an outbox (nothing is sent; see notify-policy-v51).
 -- Removing a member releases what they were asked to buy (they are no longer active).
+-- v51 (Work 4th review):
+--   * replies other than exactly 'accept'/'decline' (NULL, blank, padded, other words) are invalid,
+--   * a member who leaves (or is removed) loses their assignments at once, and their queued,
+--     unsent notices are dropped (trigger on members.left_at),
+--   * notify_due_v51 re-checks right before a notice would be sent that the recipient is still an
+--     active member and the notice still matches the current assignment (nothing is sent here),
+--   * every RPC answers only for households on the synthetic trial allowlist (server-side), so the
+--     feature cannot be used by real households before an approved release.
 BEGIN;
+-- Synthetic trial households only (added by the operator for an isolated trial; never real people).
+CREATE TABLE IF NOT EXISTS atokore_private.trial_households_v51 (
+  household_id uuid PRIMARY KEY REFERENCES atokore_private.households(id),
+  label text NOT NULL CHECK (label ~ '^(QA|合成|synthetic)'),
+  added_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE atokore_private.trial_households_v51 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON atokore_private.trial_households_v51 FROM PUBLIC, anon, authenticated;
+CREATE OR REPLACE FUNCTION atokore_private.trial_allowed_v51(p_hh uuid) RETURNS boolean
+LANGUAGE sql STABLE SET search_path = '' AS $$ SELECT EXISTS (SELECT 1 FROM atokore_private.trial_households_v51 t WHERE t.household_id = p_hh) $$;
+REVOKE ALL ON FUNCTION atokore_private.trial_allowed_v51(uuid) FROM PUBLIC, anon, authenticated;
 CREATE TABLE atokore_private.buy_assignments (
   household_id uuid NOT NULL REFERENCES atokore_private.households(id),
   buy_id text NOT NULL CHECK (buy_id ~ '^[A-Za-z0-9_-]{8,64}$'),
@@ -28,7 +47,9 @@ CREATE TABLE atokore_private.notify_outbox (
   recipient uuid NOT NULL,
   kind text NOT NULL CHECK (kind IN ('assignment','assignment-response')),
   created_at timestamptz NOT NULL DEFAULT now(),
-  sent_at timestamptz
+  sent_at timestamptz,
+  dropped_at timestamptz,
+  drop_reason text CHECK (drop_reason IN ('left','stale','resolved'))
 );
 ALTER TABLE atokore_private.buy_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE atokore_private.notify_outbox ENABLE ROW LEVEL SECURITY;
@@ -48,6 +69,7 @@ DECLARE v_user uuid := atokore_private.require_user(); v_hh uuid; v_row atokore_
 BEGIN
   v_hh := atokore_private.lock_member(v_user);
   IF v_hh IS NULL THEN RAISE EXCEPTION 'not_member' USING ERRCODE = '42501'; END IF;
+  IF NOT atokore_private.trial_allowed_v51(v_hh) THEN RETURN jsonb_build_object('status', 'not_enabled'); END IF;
   IF p_buy IS NULL OR p_buy !~ '^[A-Za-z0-9_-]{8,64}$' OR p_expected_rev IS NULL OR p_expected_rev < 0 OR p_expected_rev > 99999
   THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   PERFORM 1 FROM atokore_private.records WHERE household_id = v_hh AND kind = 'buy' AND id = p_buy AND NOT deleted FOR UPDATE;
@@ -86,7 +108,10 @@ DECLARE v_user uuid := atokore_private.require_user(); v_hh uuid; v_row atokore_
 BEGIN
   v_hh := atokore_private.lock_member(v_user);
   IF v_hh IS NULL THEN RAISE EXCEPTION 'not_member' USING ERRCODE = '42501'; END IF;
-  IF p_decision NOT IN ('accept','decline') OR p_expected_rev IS NULL THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
+  IF NOT atokore_private.trial_allowed_v51(v_hh) THEN RETURN jsonb_build_object('status', 'not_enabled'); END IF;
+  -- NULL NOT IN (...) is NULL, not true: NULL and blank replies must be refused explicitly.
+  IF p_decision IS NULL OR p_decision NOT IN ('accept','decline') OR p_buy IS NULL OR p_buy !~ '^[A-Za-z0-9_-]{8,64}$'
+     OR p_expected_rev IS NULL OR p_expected_rev < 1 OR p_expected_rev > 99999 THEN RETURN jsonb_build_object('status', 'invalid'); END IF;
   PERFORM 1 FROM atokore_private.records WHERE household_id = v_hh AND kind = 'buy' AND id = p_buy AND NOT deleted FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('status', 'gone'); END IF;
   SELECT * INTO v_row FROM atokore_private.buy_assignments WHERE household_id = v_hh AND buy_id = p_buy FOR UPDATE;
@@ -110,6 +135,7 @@ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE v_user uuid := atokore_private.require_user(); v_hh uuid := atokore_private.my_household(v_user);
 BEGIN
   IF v_hh IS NULL THEN RAISE EXCEPTION 'not_member' USING ERRCODE = '42501'; END IF;
+  IF NOT atokore_private.trial_allowed_v51(v_hh) THEN RETURN '[]'::jsonb; END IF;
   RETURN COALESCE((SELECT jsonb_agg(jsonb_build_object('buy_id', a.buy_id,
       'assignee', CASE WHEN atokore_private.active_member_v51(v_hh, a.assignee) THEN a.assignee END,
       'requester', a.requester, 'response', CASE WHEN a.assignee IS NOT NULL AND NOT atokore_private.active_member_v51(v_hh, a.assignee) THEN 'none' ELSE a.response END,
@@ -119,8 +145,56 @@ BEGIN
     WHERE a.household_id = v_hh), '[]'::jsonb);
 END $fn$;
 
+-- A member who leaves: what they were asked to buy is released, requests they made that were not
+-- answered are withdrawn, and unsent notices to them are dropped. Other devices see the change.
+CREATE FUNCTION atokore_private.buy_assign_member_left_v51() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
+BEGIN
+  WITH changed AS (
+    UPDATE atokore_private.buy_assignments a SET assignee = NULL, response = 'none', rev = LEAST(a.rev + 1, 99999), updated_at = now()
+     WHERE a.household_id = NEW.household_id AND (a.assignee = NEW.user_id OR (a.requester = NEW.user_id AND a.response = 'pending'))
+     RETURNING a.buy_id)
+  UPDATE atokore_private.records r SET seq = nextval('atokore_private.change_seq')
+   FROM changed c WHERE r.household_id = NEW.household_id AND r.kind = 'buy' AND r.id = c.buy_id;
+  UPDATE atokore_private.notify_outbox SET dropped_at = now(), drop_reason = 'left'
+   WHERE household_id = NEW.household_id AND recipient = NEW.user_id AND sent_at IS NULL AND dropped_at IS NULL;
+  RETURN NEW;
+END $fn$;
+CREATE TRIGGER buy_assign_member_left_v51 AFTER UPDATE OF left_at ON atokore_private.members
+FOR EACH ROW WHEN (OLD.left_at IS NULL AND NEW.left_at IS NOT NULL) EXECUTE FUNCTION atokore_private.buy_assign_member_left_v51();
+REVOKE ALL ON FUNCTION atokore_private.buy_assign_member_left_v51() FROM PUBLIC, anon, authenticated;
+
+-- Right before a (future, separately approved) sender would deliver: drop notices whose recipient is
+-- no longer an active member, or that no longer match the current assignment; return the rest.
+-- Marks nothing as sent and sends nothing.
+CREATE FUNCTION atokore_private.notify_due_v51(p_limit integer DEFAULT 50) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
+DECLARE o atokore_private.notify_outbox%ROWTYPE; a atokore_private.buy_assignments%ROWTYPE; k jsonb; out jsonb := '[]'::jsonb; why text;
+BEGIN
+  FOR o IN SELECT * FROM atokore_private.notify_outbox WHERE sent_at IS NULL AND dropped_at IS NULL ORDER BY created_at
+           LIMIT LEAST(GREATEST(COALESCE(p_limit, 50), 1), 200) FOR UPDATE SKIP LOCKED LOOP
+    why := NULL; k := o.id::jsonb;
+    SELECT * INTO a FROM atokore_private.buy_assignments WHERE household_id = o.household_id AND buy_id = k->>1;
+    IF NOT atokore_private.active_member_v51(o.household_id, o.recipient) THEN why := 'left';
+    ELSIF NOT FOUND OR NOT EXISTS (SELECT 1 FROM atokore_private.records r WHERE r.household_id = o.household_id AND r.kind = 'buy' AND r.id = k->>1 AND NOT r.deleted) THEN why := 'resolved';
+    ELSIF o.kind = 'assignment' AND (a.rev <> (k->>2)::int OR a.assignee IS DISTINCT FROM o.recipient OR a.response <> 'pending') THEN why := 'stale';
+    ELSIF o.kind = 'assignment-response' AND a.rev <> (k->>2)::int THEN why := 'stale';
+    END IF;
+    IF why IS NOT NULL THEN
+      UPDATE atokore_private.notify_outbox SET dropped_at = now(), drop_reason = why WHERE id = o.id;
+    ELSE
+      out := out || jsonb_build_array(jsonb_build_object('id', o.id, 'recipient', o.recipient, 'kind', o.kind));
+    END IF;
+  END LOOP;
+  RETURN out;
+END $fn$;
+REVOKE ALL ON FUNCTION atokore_private.notify_due_v51(integer) FROM PUBLIC, anon, authenticated;
+GRANT USAGE ON SCHEMA atokore_private TO service_role;
+GRANT EXECUTE ON FUNCTION atokore_private.notify_due_v51(integer) TO service_role;
+
 REVOKE ALL ON FUNCTION public.hh_buy_assign(text, uuid, integer), public.hh_buy_respond(text, text, integer), public.hh_buy_assignments() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.hh_buy_assign(text, uuid, integer), public.hh_buy_respond(text, text, integer), public.hh_buy_assignments() TO authenticated;
 COMMIT;
--- Rollback (after review): REVOKE/DROP the three public functions, active_member_v51, and the two
+-- Rollback (after review): REVOKE/DROP the three public functions, active_member_v51, the trigger
+-- and its function, notify_due_v51, trial_allowed_v51, and the three
 -- tables (they hold only assignment state and queued notification ids; no stock or shopping data).

@@ -18,7 +18,13 @@ const { createDb, call, asRole } = require('./pg.cjs');
 const port = Number(process.env.E2E_HH_PORT || 4720);
 let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory, photos;
 let photoEvents=[];
-async function reset() { db = await createDb(); await db.exec(photoProposal); await db.exec(assignmentProposal); await db.exec(prepShareProposal); codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map();photoEvents=[]; }
+async function reset() { db = await createDb(); await db.exec(photoProposal); await db.exec(assignmentProposal); await db.exec(prepShareProposal);
+  // Every household in this local emulator is a synthetic test household: put it on the drafts'
+  // server-side trial allowlist (a real project adds only named QA households, by hand).
+  await db.exec(`CREATE FUNCTION atokore_private.emulator_trial_v51() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $f$
+    BEGIN INSERT INTO atokore_private.trial_households_v51(household_id,label) VALUES(NEW.id,'QA emulator') ON CONFLICT DO NOTHING; RETURN NEW; END $f$;
+    CREATE TRIGGER emulator_trial_v51 AFTER INSERT ON atokore_private.households FOR EACH ROW EXECUTE FUNCTION atokore_private.emulator_trial_v51();`);
+  codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map();photoEvents=[]; }
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');

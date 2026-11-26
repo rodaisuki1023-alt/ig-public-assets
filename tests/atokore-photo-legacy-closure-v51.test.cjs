@@ -145,6 +145,7 @@ test('every draft applies together in the documented order, and the v51 RPCs sti
   'atokore-photo-legacy-migrate-v51.sql','atokore-buy-assignment-v51.sql','atokore-prep-share-v51.sql','atokore-photo-legacy-close-writes-v51.sql'])await db.exec(SQL(f));
  await call(db,A,'hh_create',{p_name:'家族',p_display_name:'親'});
  const {code}=await call(db,A,'hh_invite_create');await call(db,B,'hh_join',{p_code:code,p_display_name:'家族'});
+ await db.query("INSERT INTO atokore_private.trial_households_v51(household_id,label) SELECT id,'QA all drafts' FROM atokore_private.households");
  await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'buy',id:'buy-all-drafts',fields:{name:'おしりふき'},qty:1,ts:Date.now()}]});
  const before=(await db.query("select seq from atokore_private.records where id='buy-all-drafts'")).rows[0].seq;
  const r=await call(db,A,'hh_buy_assign',{p_buy:'buy-all-drafts',p_assignee:B,p_expected_rev:0});
