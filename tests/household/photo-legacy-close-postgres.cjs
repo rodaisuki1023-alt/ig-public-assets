@@ -48,6 +48,8 @@ async function setup(){
   await pool.query(P('atokore-photo-reservation-v50.sql'));
  if(!await has("SELECT to_regprocedure('atokore_private.photo_attach_v50(uuid,text,uuid)') IS NOT NULL ok"))
   await pool.query(P('atokore-photo-lifecycle-v50.sql'));
+ if(!await has("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='atokore_private' AND table_name='photo_ledger_v50' AND column_name='upload_sha256') ok"))
+  await pool.query(P('atokore-photo-service-v50.sql'));
  if(!await has("SELECT to_regclass('atokore_private.photo_legacy_moves_v51') IS NOT NULL ok"))
   await pool.query(P('atokore-photo-legacy-migrate-v51.sql'));
  if(!await has("SELECT to_regprocedure('atokore_private.legacy_photo_inventory()') IS NOT NULL ok"))
@@ -87,13 +89,16 @@ async function main(){
  const left=(await pool.query("SELECT count(*)::int c FROM atokore_private.records r WHERE r.fields->>'photoPath' IS NOT NULL AND atokore_private.photo_is_legacy_ref_v51(r.household_id,r.id,r.fields->>'photoPath')")).rows[0].c;
  assert.equal(left,0,'start from a database without legacy references');
  await pool.query('DELETE FROM storage.objects WHERE bucket_id=$1',[LEGACY]);
- // photo-plan-limit-postgres.cjs leaves 'attached' ledger rows with no record reference and no object
- // (it tests only the quota). A real inconsistency like that must stop the close:
+ // Earlier CI scripts leave 'attached' ledger rows (quota stand-ins without a reference/object, and a
+ // real attached photo that was never read through the gateway). Either must stop the close:
  if((await pool.query("SELECT count(*)::int c FROM atokore_private.photo_ledger_v50 WHERE state='attached'")).rows[0].c){
-  assert.match(await runClose(),/photo_ledger_inconsistent/);
-  console.log('PASS: attached ledger rows without their reference/object stop the close');
-  // Those are the other script's quota stand-ins; retire them so this script can test the rest.
-  await pool.query("UPDATE atokore_private.photo_ledger_v50 l SET state='retired' FROM atokore_private.households h WHERE h.id=l.household_id AND h.name='QA photo plan' AND l.state='attached'");
+  assert.match(await runClose(),/photo_ledger_inconsistent|photo_unread_remain/);
+  console.log('PASS: attached photos without a matching reference/object or a gateway read stop the close');
+  // Those belong to the other scripts' QA households; retire them so this script can test the rest.
+  await pool.query(`BEGIN; SET LOCAL session_replication_role = replica;
+   UPDATE atokore_private.records r SET fields=r.fields-'photoPath' FROM atokore_private.households h WHERE h.id=r.household_id AND h.name LIKE 'QA %' AND h.name<>'QA legacy close' AND r.fields ? 'photoPath';
+   UPDATE atokore_private.photo_ledger_v50 l SET state='retired' FROM atokore_private.households h WHERE h.id=l.household_id AND h.name LIKE 'QA %' AND h.name<>'QA legacy close' AND l.state='attached';
+   COMMIT;`);
  }
  assert.deepEqual(await policies(),['atokore_photo_delete','atokore_photo_read']);
 

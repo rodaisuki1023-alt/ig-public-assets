@@ -1,148 +1,244 @@
-// v51 photo A drafts (isolated PGlite; Storage is a fake that only edits storage.objects rows here).
-// Legacy reference -> managed ledger move, its recovery after failures, and the orphan clean-up pass.
+// v51 photo A drafts (isolated PGlite; Storage is an in-memory fake). Legacy reference -> managed ledger
+// move that never deletes a legacy photo before the moved one is read through the general gateway's
+// rules with the same bytes; resume from every step; shared paths; orphan collection; trial-only scope;
+// backup and restore rehearsal.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {createHash,randomUUID}=require('node:crypto'),jpeg=require('jpeg-js');
 const {createDb,call}=require('./household/pg.cjs');
 const SQL=f=>fs.readFileSync(path.join(__dirname,'../supabase/proposals',f),'utf8');
-const A='00000000-0000-4000-8000-0000000002a1',B='00000000-0000-4000-8000-0000000002b1';
-const SA='00000000-0000-4000-9000-0000000002a1';
-const LEGACY='atokore-product-photos',V2='atokore-private-photos-v2',SHA='b'.repeat(64);
+const A='00000000-0000-4000-8000-0000000002a1',B='00000000-0000-4000-8000-0000000002b1',X='00000000-0000-4000-8000-0000000002c1';
+const SA='00000000-0000-4000-9000-0000000002a1',SB='00000000-0000-4000-9000-0000000002b1';
+const LEGACY='atokore-product-photos',V2='atokore-private-photos-v2';
 let n=1;const oid=()=>`30000000-0000-4000-8000-${String(n++).padStart(12,'0')}`;
-const worker=import('../supabase/proposals/photo-orphan-worker-v51.mjs');
-async function fixture(){
+const mods=Promise.all([import('../supabase/proposals/photo-orphan-worker-v51.mjs'),import('../supabase/proposals/photo-general-v50.mjs')]);
+const sha=b=>createHash('sha256').update(b).digest('hex');
+const photo=seed=>{const w=8,h=8,d=Buffer.alloc(w*h*4);for(let i=0;i<w*h;i++){d[i*4]=(seed*37+i)%256;d[i*4+1]=seed*11%256;d[i*4+2]=i*3%256;d[i*4+3]=255}return new Uint8Array(jpeg.encode({data:d,width:w,height:h},80).data)};
+async function fixture({trial=true}={}){
  const db=await createDb();
  await db.exec(SQL('atokore-photo-gateway-v50.sql'));
  await db.exec('CREATE TABLE auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz)');
- await db.query('INSERT INTO auth.sessions VALUES($1,$2,NULL)',[SA,A]);
+ await db.query('INSERT INTO auth.sessions VALUES($1,$2,NULL),($3,$4,NULL)',[SA,A,SB,B]);
  const h=(await call(db,A,'hh_create',{p_name:'QA move',p_display_name:'A'})).household.id;
  const {code}=await call(db,A,'hh_invite_create');await call(db,B,'hh_join',{p_code:code,p_display_name:'B'});
- const legacy={};
- for(const id of ['item_move_0001','item_move_0002']){
+ const bytes=new Map(),legacy={};
+ for(const [i,id] of ['item_move_0001','item_move_0002','item_move_0003'].entries()){
   await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'item',id,fields:{name:'合成 '+id,unit:'個'},qty:1,ts:Date.now()}]});
-  legacy[id]=h+'/'+id+'/'+oid()+'.jpg';
+  legacy[id]=h+'/'+id+'/'+randomUUID()+'.jpg';
+  bytes.set(LEGACY+':'+legacy[id],photo(i+1));
   await db.query("insert into storage.objects(bucket_id,name) values($1,$2)",[LEGACY,legacy[id]]);
+  // Written by pre-gateway clients, before the v50 guard existed.
   await db.query("update atokore_private.records set fields=fields||jsonb_build_object('photoPath',$1::text) where id=$2",[legacy[id],id]);
  }
- for(const f of ['atokore-photo-reservation-v50.sql','atokore-photo-lifecycle-v50.sql','atokore-photo-legacy-migrate-v51.sql'])await db.exec(SQL(f));
+ for(const f of ['atokore-photo-reservation-v50.sql','atokore-photo-lifecycle-v50.sql','atokore-photo-service-v50.sql','atokore-photo-legacy-migrate-v51.sql'])await db.exec(SQL(f));
  await db.query("INSERT INTO storage.buckets(id,name,public) VALUES($1,$1,false) ON CONFLICT(id) DO NOTHING",[V2]);
+ if(trial)await db.query("INSERT INTO atokore_private.trial_households_v51(household_id,label) VALUES($1,'QA move')",[h]);
  const sql=async(fn,args)=>(await db.transaction(async tx=>{await tx.exec('set local role service_role');return (await tx.query('select atokore_private.'+fn+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') r',args)).rows})).at(0).r;
  const objects=async bucket=>(await db.query('select name from storage.objects where bucket_id=$1 order by name',[bucket])).rows.map(r=>r.name);
- const photo=async id=>(await db.query("select fields->>'photoPath' p,seq from atokore_private.records where id=$1",[id])).rows[0];
- const ledger=async file=>(await db.query('select state from atokore_private.photo_ledger_v50 where file_id=$1',[file])).rows[0]?.state;
+ const rec=async id=>(await db.query("select fields->>'photoPath' p,seq from atokore_private.records where id=$1",[id])).rows[0];
+ const ledger=async file=>(await db.query('select state,upload_sha256,actual_bytes from atokore_private.photo_ledger_v50 where file_id=$1',[file])).rows[0];
  const move=async file=>(await db.query('select state,attempts from atokore_private.photo_legacy_moves_v51 where file_id=$1',[file])).rows[0];
- // Fake Storage: remove() can be told to fail; copy() writes the target row and reports hashes.
- const storage={fail:false,removed:[],async remove(bucket,p){if(this.fail)return false;this.removed.push(bucket+':'+p);await db.query('delete from storage.objects where bucket_id=$1 and name=$2',[bucket,p]);return true}};
- const copy=async(from,to)=>{await db.query('insert into storage.objects(bucket_id,name) values($1,$2) on conflict do nothing',[V2,to]);return {bytes:900,legacySha:SHA,copySha:SHA}};
- return {db,h,legacy,sql,objects,photo,ledger,move,storage,copy};
+ // Fake Storage API. failRemove / corrupt can be switched on to simulate failures.
+ const storage={failRemove:false,failCopy:false,corrupt:null,removed:[],
+  async download(bucket,p){const b=bytes.get(bucket+':'+p);if(!b)throw Error('absent');return this.corrupt===p?photo(99):b},
+  async remove(bucket,p){if(this.failRemove)return false;this.removed.push(bucket+':'+p);bytes.delete(bucket+':'+p);await db.query('delete from storage.objects where bucket_id=$1 and name=$2',[bucket,p]);return true},
+  async copy(from,to){if(this.failCopy)throw Error('network');const b=bytes.get(LEGACY+':'+from);if(!b)throw Error('absent');
+   if(!bytes.has(V2+':'+to)){bytes.set(V2+':'+to,b);await db.query('insert into storage.objects(bucket_id,name) values($1,$2)',[V2,to])}
+   const back=bytes.get(V2+':'+to);return {bytes:back.length,legacySha:sha(b),copySha:sha(back)}}};
+ // The real general gateway handler, with members' verified identities and the real service SQL.
+ const [{createGeneralPhotoHandler,makeJpegNormalizer}]=[(await mods)[1]];
+ const identity={A:{uid:A,session:SA},B:{uid:B,session:SB}};
+ const service=(user,action,f)=>db.transaction(async tx=>{await tx.exec('SET LOCAL ROLE service_role');const args={p_uid:user.uid,p_session:user.session,p_action:action,...f};
+  return (await tx.query('SELECT public.hh_photo_service_v50('+Object.keys(args).map((k,i)=>k+'=>$'+(i+1)).join(',')+') r',Object.values(args))).rows[0].r});
+ const gateway=createGeneralPhotoHandler({verify:async t=>identity[t]||null,db:service,storage:{download:p=>storage.download(V2,p),upload:async()=>{throw Error('no upload here')}},normalize:makeJpegNormalizer(jpeg)});
+ const gatewayRead=(who,p)=>gateway({operation:'read',path:p},who);
+ return {db,h,legacy,bytes,sql,objects,rec,ledger,move,storage,gatewayRead};
 }
-test('no client can call the migration or clean-up functions',async()=>{
+test('no client can call the migration, read-check or clean-up functions',async()=>{
  const {db}=await fixture();
  try{
-  for(const role of ['anon','authenticated']){
-   const q=await db.query("select has_function_privilege($1,'atokore_private.photo_legacy_commit_v51(uuid,integer,text,text)','EXECUTE') c,has_function_privilege($1,'atokore_private.photo_orphans_v51(integer,interval)','EXECUTE') o",[role]);
-   assert.deepEqual(q.rows[0],{c:false,o:false});
+  for(const role of ['anon','authenticated'])for(const fn of ['photo_legacy_commit_v51(uuid,integer,text,text)','photo_read_checked_v51(uuid,text,integer)','photo_legacy_delete_ok_v51(uuid)','photo_legacy_restore_v51(uuid)','photo_orphans_v51(integer,interval)'])
+   assert.equal((await db.query("select has_function_privilege($1,'atokore_private."+fn+"','EXECUTE') ok",[role])).rows[0].ok,false,role+' '+fn);
+ }finally{await db.close()}
+});
+test('move: upload_sha256 is set with the switch; the general gateway serves the same bytes; only then is the legacy photo removed',async()=>{
+ const f=await fixture();
+ try{
+  const {moveLegacyPhoto}=(await mods)[0];
+  const id='item_move_0001',original=f.bytes.get(LEGACY+':'+f.legacy[id]);
+  const r=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:id});
+  assert.equal(r.status,'done');
+  const now=await f.rec(id);
+  const l=await f.ledger(r.file_id);
+  assert.deepEqual([l.state,l.upload_sha256,l.actual_bytes],['attached',sha(original),original.length],'Work: upload_sha256 was NULL');
+  for(const who of ['A','B']){                         // both members, through the real gateway
+   const g=await f.gatewayRead(who,now.p);
+   assert.equal(g.status,200,who);assert.equal(sha(g.bytes),sha(original));
   }
- }finally{await db.close()}
+  assert.deepEqual(f.storage.removed,[LEGACY+':'+f.legacy[id]],'the legacy photo was removed once, after the read');
+  assert.equal((await f.move(r.file_id)).state,'done');
+ }finally{await f.db.close()}
 });
-test('move: the record keeps its legacy photo until the verified copy is switched in one step; every step can be retried',async()=>{
- const {db,h,legacy,sql,objects,photo,ledger,move,storage}=await fixture();
+test('regression: when the moved photo cannot be read (hash NULL, wrong bytes, missing), the legacy photo is never deleted',async()=>{
+ const f=await fixture();
  try{
-  const id='item_move_0001',before=await photo(id);
-  const m=await sql('photo_legacy_begin_v51',[h,id]);
-  assert.equal(m.legacy_path,legacy[id]);assert.equal(m.reused,false);
-  // Worker crashed before copying: begin again returns the same target, nothing new is created.
-  const again=await sql('photo_legacy_begin_v51',[h,id]);
-  assert.deepEqual([again.file_id,again.target_path,again.reused],[m.file_id,m.target_path,true]);
-  assert.equal((await move(m.file_id)).attempts,2);
-  // Commit refuses an unverified or missing copy and changes nothing.
-  await assert.rejects(sql('photo_legacy_commit_v51',[m.file_id,900,SHA,'c'.repeat(64)]),/photo_copy_unverified/);
-  await assert.rejects(sql('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]),/photo_storage_unconfirmed/);
-  assert.deepEqual(await photo(id),before);assert.equal(await ledger(m.file_id),'uploading');
-  // A client still cannot write a photoPath of its own (the v50 guard is unchanged).
-  await assert.rejects(call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'set',kind:'item',id,field:'photoPath',value:m.target_path,ts:Date.now()+1000}]}),/photo_reference_requires_gateway/);
-  assert.equal((await photo(id)).p,legacy[id]);
-  await db.query('insert into storage.objects(bucket_id,name) values($1,$2)',[V2,m.target_path]);
-  const done=await sql('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
-  assert.equal(done.status,'switched');
-  assert.equal((await photo(id)).p,m.target_path);assert.ok(Number((await photo(id)).seq)>Number(before.seq),'other phones see the change');
-  assert.equal(await ledger(m.file_id),'attached');
-  // The answer was lost; the retried commit returns the same result and changes nothing.
-  assert.deepEqual(await sql('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]),{status:'switched',path:m.target_path,reused:true});
-  // Finish only after the legacy object is really gone.
-  assert.equal(await sql('photo_legacy_finish_v51',[m.file_id,true]),false);
-  await storage.remove(LEGACY,legacy[id]);
-  assert.equal(await sql('photo_legacy_finish_v51',[m.file_id,false]),false,'needs the Storage API confirmation');
-  assert.equal(await sql('photo_legacy_finish_v51',[m.file_id,true]),true);
-  assert.equal((await move(m.file_id)).state,'done');
-  await assert.rejects(sql('photo_legacy_begin_v51',[h,id]),/photo_not_legacy/,'already managed');
-  assert.deepEqual(await objects(V2),[m.target_path]);
-  // The moved photo is still served to members through the gateway.
-  const ok=(await db.transaction(async tx=>{await tx.exec('set local role authenticated');await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[B]);return (await tx.query("select public.hh_photo_access($1,'read') ok",[m.target_path])).rows})).at(0).ok;
-  assert.equal(ok,true);
- }finally{await db.close()}
+  const {moveLegacyPhoto}=(await mods)[0];
+  // a) Work's case: the ledger hash is missing -> the gateway refuses -> stays switched, legacy kept.
+  const id='item_move_0001';
+  const m=await f.sql('photo_legacy_begin_v51',[f.h,id]);
+  const c=await f.storage.copy(m.legacy_path,m.target_path);
+  await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]);
+  await f.db.query('update atokore_private.photo_ledger_v50 set upload_sha256=null where file_id=$1',[m.file_id]);
+  assert.equal((await f.gatewayRead('A',m.target_path)).status,403);
+  let r=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:id});
+  assert.deepEqual([r.status,r.held],['switched','not_readable']);
+  assert.deepEqual((await f.sql('photo_legacy_delete_ok_v51',[m.file_id])),{ok:false,why:'not_verified'});
+  assert.equal(await f.sql('photo_legacy_finish_v51',[m.file_id,true]),false);
+  assert.deepEqual(f.storage.removed,[]);assert.ok((await f.objects(LEGACY)).includes(f.legacy[id]));
+  // b) The stored copy is not the same bytes: the gateway's hash check fails -> legacy kept.
+  await f.db.query('update atokore_private.photo_ledger_v50 set upload_sha256=$2 where file_id=$1',[m.file_id,c.copySha]);
+  f.storage.corrupt=m.target_path;
+  r=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:id});
+  assert.deepEqual([r.status,r.held],['switched','invalid_photo']);
+  // c) The copy disappeared: the download fails -> legacy kept.
+  f.storage.corrupt=null;f.bytes.delete(V2+':'+m.target_path);
+  r=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:id});
+  assert.deepEqual([r.status,r.held],['switched','read_failed']);
+  assert.deepEqual(f.storage.removed,[],'nothing deleted in any of the three');
+  assert.equal((await f.move(m.file_id)).state,'switched');
+  // A read check with a hash other than the legacy one is refused by the database itself.
+  f.bytes.set(V2+':'+m.target_path,f.bytes.get(LEGACY+':'+m.legacy_path));
+  await assert.rejects(f.sql('photo_read_checked_v51',[m.file_id,'f'.repeat(64),c.bytes]),/photo_read_mismatch/);
+  // Repaired: the next run reads, verifies and completes.
+  r=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:id});
+  assert.equal(r.status,'done');
+ }finally{await f.db.close()}
 });
-test('move: if the product changes while copying, the person\'s change wins and the copy is collected as an orphan',async()=>{
- const {db,h,legacy,sql,objects,photo,ledger,move,storage,copy}=await fixture();
+test('recovery from every step: copy failure, lost commit answer, crash after the switch, failed legacy delete, lost finish',async()=>{
+ const f=await fixture();
  try{
+  const {moveLegacyPhoto}=(await mods)[0];
+  const id='item_move_0002',run=()=>moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:id});
+  f.storage.failCopy=true;
+  let r=await run();assert.deepEqual([r.status,r.held],['copying','copy_failed']);
+  f.storage.failCopy=false;
+  // Commit answered but the answer was lost: the next begin resumes at 'switched' (not photo_not_legacy).
+  const m=await f.sql('photo_legacy_begin_v51',[f.h,id]);assert.equal(m.state,'copying');assert.equal(m.reused,true);
+  const c=await f.storage.copy(m.legacy_path,m.target_path);
+  await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]);
+  assert.deepEqual(await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]),{status:'switched',path:m.target_path,reused:true});
+  const resumed=await f.sql('photo_legacy_begin_v51',[f.h,id]);
+  assert.deepEqual([resumed.state,resumed.file_id,resumed.reused],['switched',m.file_id,true],'Work: resume used to fail with photo_not_legacy');
+  // The legacy delete fails: stays verified, legacy kept; the next run deletes and finishes.
+  f.storage.failRemove=true;
+  r=await run();assert.deepEqual([r.status,r.held],['verified','remove_failed']);
+  assert.ok((await f.objects(LEGACY)).includes(f.legacy[id]));
+  f.storage.failRemove=false;
+  r=await run();assert.equal(r.status,'done');
+  // finish answered but lost: finishing again is still true and changes nothing.
+  assert.equal(await f.sql('photo_legacy_finish_v51',[m.file_id,true]),true);
+  assert.equal((await f.move(m.file_id)).state,'done');
+  assert.equal((await f.gatewayRead('B',(await f.rec(id)).p)).status,200);
+ }finally{await f.db.close()}
+});
+test('a legacy photo still used by another product is kept until that product is moved too',async()=>{
+ const f=await fixture();
+ try{
+  const {moveLegacyPhoto}=(await mods)[0];
+  // item_move_0003 points at the SAME legacy object as item_move_0001 (an old copy of the product).
+  await f.db.query("SET session_replication_role = replica");
+  await f.db.query("update atokore_private.records set fields=fields||jsonb_build_object('photoPath',$1::text) where id='item_move_0003'",[f.legacy.item_move_0001]);
+  await f.db.query("SET session_replication_role = DEFAULT");
+  const r1=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:'item_move_0001'});
+  assert.deepEqual([r1.status,r1.held],['verified','still_referenced']);
+  assert.ok((await f.objects(LEGACY)).includes(f.legacy.item_move_0001));
+  const r3=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:'item_move_0003'});
+  assert.equal(r3.status,'done');
+  assert.equal((await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:'item_move_0001'})).status,'done');
+  for(const id of ['item_move_0001','item_move_0003'])assert.equal((await f.gatewayRead('A',(await f.rec(id)).p)).status,200,id);
+ }finally{await f.db.close()}
+});
+test('backup and restore rehearsal: the product points at its legacy photo again and the copy is collected',async()=>{
+ const f=await fixture();
+ try{
+  const {runOrphanPass}=(await mods)[0];
+  const id='item_move_0002',before=await f.rec(id);
+  const m=await f.sql('photo_legacy_begin_v51',[f.h,id]);
+  const backup=(await f.db.query('select photo_path,record_seq from atokore_private.photo_legacy_backup_v51 where file_id=$1',[m.file_id])).rows[0];
+  assert.deepEqual([backup.photo_path,String(backup.record_seq)],[before.p,String(before.seq)]);
+  const c=await f.storage.copy(m.legacy_path,m.target_path);
+  await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]);
+  const r=await f.sql('photo_legacy_restore_v51',[m.file_id]);
+  assert.equal(r.status,'restored');
+  assert.equal((await f.rec(id)).p,before.p);
+  assert.equal((await f.ledger(m.file_id)).state,'retired');
+  assert.equal((await f.gatewayRead('A',m.target_path)).status,403,'the copy is no longer served');
+  assert.ok((await f.objects(LEGACY)).includes(before.p),'the legacy photo was never touched');
+  assert.deepEqual((await runOrphanPass({sql:f.sql,storage:f.storage})).purged,[m.file_id]);
+  // After a restore the product can be moved again from the start.
+  const again=await f.sql('photo_legacy_begin_v51',[f.h,id]);assert.equal(again.reused,false);
+ }finally{await f.db.close()}
+});
+test('if the product changes while copying, the person\'s change wins and the copy is collected as an orphan',async()=>{
+ const f=await fixture();
+ try{
+  const {runOrphanPass}=(await mods)[0];
   const id='item_move_0002';
-  const m=await sql('photo_legacy_begin_v51',[h,id]);
-  await copy(m.legacy_path,m.target_path);
-  // The person deletes the product meanwhile (an ordinary sync write).
-  assert.equal((await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'delete',kind:'item',id,ts:Date.now()+2000}]})).results[0].status,'applied');
-  assert.deepEqual(await sql('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]),{status:'abandoned',reused:false});
-  assert.equal(await ledger(m.file_id),'retired');assert.equal((await move(m.file_id)).state,'abandoned');
-  assert.equal((await photo(id)).p,legacy[id],'the tombstone keeps its legacy path for review; nothing is overwritten');
-  const {runOrphanPass}=await worker;
-  storage.fail=true;
-  let r=await runOrphanPass({sql,storage});
+  const m=await f.sql('photo_legacy_begin_v51',[f.h,id]);
+  const c=await f.storage.copy(m.legacy_path,m.target_path);
+  assert.equal((await call(f.db,A,'hh_push',{p_ops:[{op_id:oid(),type:'delete',kind:'item',id,ts:Date.now()+2000}]})).results[0].status,'applied');
+  assert.deepEqual(await f.sql('photo_legacy_commit_v51',[m.file_id,c.bytes,c.legacySha,c.copySha]),{status:'abandoned',reused:false});
+  assert.equal((await f.ledger(m.file_id)).state,'retired');
+  f.storage.failRemove=true;
+  let r=await runOrphanPass({sql:f.sql,storage:f.storage});
   assert.equal(r.failed.length,1,'Storage failed: the row stays purging for the next pass');
-  assert.equal(await ledger(m.file_id),'purging');
-  storage.fail=false;
-  r=await runOrphanPass({sql,storage});
-  assert.deepEqual(r.purged,[m.file_id]);assert.equal(await ledger(m.file_id),'purged');
-  assert.deepEqual(await objects(V2),[]);
-  assert.deepEqual(await objects(LEGACY),Object.values(legacy).sort(),'legacy objects are never touched by the clean-up');
-  r=await runOrphanPass({sql,storage});
+  f.storage.failRemove=false;
+  r=await runOrphanPass({sql:f.sql,storage:f.storage});
+  assert.deepEqual(r.purged,[m.file_id]);
+  assert.ok((await f.objects(LEGACY)).includes(f.legacy[id]),'legacy objects are never touched by the clean-up');
+  r=await runOrphanPass({sql:f.sql,storage:f.storage});
   assert.deepEqual([r.purged,r.retired,r.removedOrphans,r.failed],[[],[],[],[]],'a second pass changes nothing');
- }finally{await db.close()}
+ }finally{await f.db.close()}
 });
-test('clean-up pass: retires expired reservations, removes old unledgered objects, never a referenced or attached one, reports stuck uploads',async()=>{
- const {db,h,sql,objects,ledger,storage,copy}=await fixture();
+test('orphan pass and uploads: an object that gets a ledger row between listing and deleting is kept',async()=>{
+ const f=await fixture();
  try{
-  const {runOrphanPass,moveLegacyPhoto}=await worker;
-  // An attached (moved) photo, which must survive every pass.
-  const moved=await moveLegacyPhoto({sql,storage,copy,household:h,record:'item_move_0001'});
-  assert.equal(moved.status,'done');
-  // An expired reservation (never uploaded), an old object with no ledger row, a fresh one, a stuck upload.
-  const res=await db.query("insert into atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_seq,state,expires_at) values($1,'item_move_0002',$2,gen_random_uuid(),1,'reserved',now()-interval '1 minute') returning file_id",[h,A]);
-  const expired=res.rows[0].file_id;
-  const oldOrphan=h+'/item_move_0002/'+oid()+'.jpg',freshOrphan=h+'/item_move_0002/'+oid()+'.jpg';
-  await db.query("insert into storage.objects(bucket_id,name,created_at) values($1,$2,now()-interval '2 days'),($1,$3,now())",[V2,oldOrphan,freshOrphan]);
-  const r=await runOrphanPass({sql,storage});
-  assert.deepEqual(r.retired,[expired]);
-  assert.deepEqual(r.removedOrphans,[oldOrphan]);
-  assert.ok((await objects(V2)).includes(freshOrphan),'within the grace period: kept (it may be an upload in flight)');
-  assert.ok((await objects(V2)).includes(moved.path),'attached photo kept');
-  // The retired reservation is purged on the next pass (no object existed; finish confirms absence).
-  const r2=await runOrphanPass({sql,storage});
-  assert.deepEqual(r2.purged,[expired]);assert.equal(await ledger(expired),'purged');
-  assert.ok((await objects(V2)).includes(moved.path));
-  // A stuck upload is only reported, never retired or deleted by time.
-  const stuck=(await db.query("insert into atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_seq,state,expires_at) values($1,'item_move_0002',$2,gen_random_uuid(),1,'uploading',now()-interval '3 days') returning file_id",[h,A])).rows[0].file_id;
-  const r3=await runOrphanPass({sql,storage});
-  assert.deepEqual(r3.reported.map(x=>[x.action,x.file_id]),[['report_stuck_upload',stuck]]);
-  assert.equal(await ledger(stuck),'uploading');
-  // orphan_object_ok re-checks right before deleting: a path that is attached is refused.
-  assert.equal(await sql('photo_orphan_object_ok_v51',[moved.path]),false);
- }finally{await db.close()}
+  const {runOrphanPass}=(await mods)[0];
+  const file=randomUUID(),p=f.h+'/item_move_0003/'+file+'.jpg';
+  await f.db.query("insert into storage.objects(bucket_id,name,created_at) values($1,$2,now()-interval '2 days')",[V2,p]);
+  // An upload is reserved for exactly that object after the list was made.
+  const racing=async(fn,args)=>{if(fn==='photo_orphan_object_ok_v51')await f.db.query("insert into atokore_private.photo_ledger_v50(file_id,household_id,record_id,actor,operation_id,expected_seq,state,expires_at) values($1,$2,'item_move_0003',$3,gen_random_uuid(),1,'uploading',now()+interval '5 minutes')",[file,f.h,A]);return f.sql(fn,args)};
+  const r=await runOrphanPass({sql:racing,storage:f.storage});
+  assert.deepEqual(r.kept.map(x=>x.why),['now_ledgered_or_referenced']);
+  assert.ok((await f.objects(V2)).includes(p));
+ }finally{await f.db.close()}
 });
-test('with the migrate draft applied, a member who left cannot reserve, and hh_push still cannot clear a legacy path',async()=>{
- const {db,h,legacy}=await fixture();
+test('scope: only synthetic trial households, only the two buckets and scoped paths',async()=>{
+ const f=await fixture({trial:false});
  try{
-  await assert.rejects(call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'set',kind:'item',id:'item_move_0002',field:'photoPath',value:null,ts:Date.now()+3000}]}),/photo_reference_requires_gateway/);
-  assert.equal((await db.query("select fields->>'photoPath' p from atokore_private.records where id='item_move_0002'")).rows[0].p,legacy.item_move_0002);
-  await call(db,A,'hh_remove_member',{p_user:B});
-  const asB=await db.transaction(async tx=>{await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[B]);await tx.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:B,session_id:SA})]);
-   return tx.query("select atokore_private.photo_reserve_v50($1,'item_move_0002',gen_random_uuid(),$2) r",[h,legacy.item_move_0002]).then(()=>'ok',e=>e.message)});
-  assert.match(asB,/photo_denied/);
- }finally{await db.close()}
+  const {runOrphanPass,moveLegacyPhoto}=(await mods)[0];
+  await assert.rejects(f.sql('photo_legacy_begin_v51',[f.h,'item_move_0001']),/photo_not_trial_household/);
+  const stray=f.h+'/item_move_0001/'+randomUUID()+'.jpg';
+  await f.db.query("insert into storage.objects(bucket_id,name,created_at) values($1,$2,now()-interval '2 days')",[V2,stray]);
+  assert.deepEqual(await runOrphanPass({sql:f.sql,storage:f.storage}),{retired:[],purged:[],removedOrphans:[],kept:[],failed:[],reported:[]},'nothing of a non-trial household is listed');
+  assert.equal(await f.sql('photo_orphan_object_ok_v51',[stray]),false);
+  // The worker refuses a target outside the scoped path form even if the database returned one.
+  const bad=async fn=>fn==='photo_legacy_begin_v51'?{file_id:randomUUID(),state:'copying',legacy_path:'../../etc/passwd',target_path:'x'}:null;
+  await assert.rejects(moveLegacyPhoto({sql:bad,storage:f.storage,household:f.h,record:'item_move_0001'}),/out of scope/);
+  assert.deepEqual(f.storage.removed,[]);
+ }finally{await f.db.close()}
+});
+test('read checks cover every attached photo of a trial household; a mismatch is not recorded',async()=>{
+ const f=await fixture();
+ try{
+  const {moveLegacyPhoto,runReadChecks}=(await mods)[0];
+  const r=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:'item_move_0001'});
+  assert.deepEqual(await f.sql('photo_read_check_due_v51',[50]),[],'the move already recorded its read');
+  await f.db.query('delete from atokore_private.photo_read_checks_v51');
+  f.storage.corrupt=(await f.rec('item_move_0001')).p;
+  let c=await runReadChecks({sql:f.sql,storage:f.storage});
+  assert.deepEqual(c.failed.map(x=>x.why),['invalid_photo']);
+  f.storage.corrupt=null;
+  c=await runReadChecks({sql:f.sql,storage:f.storage});
+  assert.deepEqual(c.ok,[r.file_id]);
+ }finally{await f.db.close()}
 });

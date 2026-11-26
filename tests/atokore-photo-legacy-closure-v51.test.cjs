@@ -55,10 +55,20 @@ async function ledgerFixture(){
  const f=await fixture();
  await f.db.exec('CREATE TABLE auth.sessions(id uuid primary key,user_id uuid,not_after timestamptz)');
  await f.db.exec('ALTER TABLE storage.objects ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now()');
- for(const x of ['atokore-photo-reservation-v50.sql','atokore-photo-lifecycle-v50.sql','atokore-photo-legacy-migrate-v51.sql'])await f.db.exec(SQL(x));
+ for(const x of ['atokore-photo-reservation-v50.sql','atokore-photo-lifecycle-v50.sql','atokore-photo-service-v50.sql','atokore-photo-legacy-migrate-v51.sql'])await f.db.exec(SQL(x));
+ await f.db.query("INSERT INTO atokore_private.trial_households_v51(household_id,label) VALUES($1,'QA legacy close')",[f.household.id]);
  await f.db.query("INSERT INTO storage.buckets(id,name,public) VALUES('atokore-private-photos-v2','atokore-private-photos-v2',false) ON CONFLICT(id) DO NOTHING");
  const svc=async(fn,args)=>(await f.db.transaction(async tx=>{await tx.exec('set local role service_role');return (await tx.query('select atokore_private.'+fn+'('+args.map((_,i)=>'$'+(i+1)).join(',')+') r',args)).rows})).at(0).r;
  return {...f,svc};
+}
+// begin -> copy (stand-in) -> commit -> read check (the worker's gateway-style read) -> legacy delete -> finish
+async function moveAll(f,{finish=true,read=true}={}){
+ const m=await f.svc('photo_legacy_begin_v51',[f.household.id,'item-legacy-a1']);
+ await f.db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
+ await f.svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
+ if(read)await f.svc('photo_read_checked_v51',[m.file_id,SHA,900]);
+ if(finish){await f.db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);assert.equal(await f.svc('photo_legacy_finish_v51',[m.file_id,true]),true)}
+ return m;
 }
 const policyNames=async db=>(await db.query("select policyname from pg_policies where schemaname='storage' and tablename='objects' order by 1")).rows.map(r=>r.policyname);
 const close=db=>db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')).finally(()=>db.exec('rollback').catch(()=>{}));
@@ -67,11 +77,7 @@ test('stage 2 refuses while any legacy object remains or stage 1 is missing, and
  const {db,name,svc,household}=await ledgerFixture();
  await assert.rejects(close(db),/legacy_photos_remain/);
  // Move the reference properly, then remove the object: only stage 1 is now missing.
- const m=await svc('photo_legacy_begin_v51',[household.id,'item-legacy-a1']);
- await db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
- await svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
- await db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);
- assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
+ await moveAll({db,svc,household});
  await assert.rejects(close(db),/legacy_stage1_missing/);
  assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_insert','atokore_photo_read']);
  assert.ok(name);
@@ -86,29 +92,38 @@ test('Work 4th: 0 legacy objects but 1 legacy reference is refused (the product 
  await db.query("update atokore_private.records set deleted=true where id='item-legacy-a1'");
  await assert.rejects(close(db),/legacy_references_remain/);
 });
-test('stage 2 also refuses an unfinished move and a ledger that does not match its objects',async()=>{
- const {db,svc,household}=await ledgerFixture();
+test('stage 2 also refuses an unfinished move (verified but not deleted), a missing hash, a missing object, and a photo nobody could read',async()=>{
+ const f=await ledgerFixture();const {db,svc}=f;
  await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
- const m=await svc('photo_legacy_begin_v51',[household.id,'item-legacy-a1']);
- await db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
- await svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA]);
+ // Switched but not read: the legacy object is already gone (Work's case) -> refused.
+ const m=await moveAll(f,{read:false,finish:false});
  await db.query("delete from storage.objects where bucket_id=$1",[LEGACY]);
- await assert.rejects(close(db),/legacy_migration_unfinished/,'switched but not finished');
+ await assert.rejects(close(db),/legacy_migration_unfinished/,'switched, never read');
+ await svc('photo_read_checked_v51',[m.file_id,SHA,900]);
+ await assert.rejects(close(db),/legacy_migration_unfinished/,'verified but not finished');
  assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
+ // Now consistent: break one condition at a time.
+ await db.query('update atokore_private.photo_ledger_v50 set upload_sha256=null where file_id=$1',[m.file_id]);
+ await assert.rejects(close(db),/photo_ledger_inconsistent/,'hash missing: the gateway would refuse it');
+ await db.query('update atokore_private.photo_ledger_v50 set upload_sha256=$2 where file_id=$1',[m.file_id,SHA]);
+ await db.query('delete from atokore_private.photo_read_checks_v51');
+ await assert.rejects(close(db),/photo_unread_remain/,'never read');
+ await db.query("insert into atokore_private.photo_read_checks_v51(file_id,sha256,bytes,checked_at) values($1,$2,900,now()-interval '1 day')",[m.file_id,SHA]);
+ await db.query("update storage.objects set created_at=now() where bucket_id='atokore-private-photos-v2' and name=$1",[m.target_path]);
+ await assert.rejects(close(db),/photo_unread_remain/,'read before the object was (re)written');
+ await db.query("update atokore_private.photo_read_checks_v51 set checked_at=now()+interval '1 second',sha256=$2 where file_id=$1",[m.file_id,'b'.repeat(64)]);
+ await assert.rejects(close(db),/photo_unread_remain/,'read a different hash');
+ await db.query("update atokore_private.photo_read_checks_v51 set sha256=$2 where file_id=$1",[m.file_id,SHA]);
  await db.query("delete from storage.objects where bucket_id='atokore-private-photos-v2' and name=$1",[m.target_path]);
- await assert.rejects(close(db),/photo_ledger_inconsistent/,'attached row without its object');
+ await assert.rejects(close(db),/photo_ledger_inconsistent/,'object missing');
  assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read']);
 });
 test('full order: copy, verify, switch, delete the legacy object, finish; then stage 2 closes every client path; the gateway check still works',async()=>{
- const {db,household,name,svc}=await ledgerFixture();
+ const f=await ledgerFixture();const {db,household,name,svc}=f;
  await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
- const m=await svc('photo_legacy_begin_v51',[household.id,'item-legacy-a1']);
+ const m=await moveAll(f);
  assert.equal(m.legacy_path,name);
- await db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
- assert.equal((await svc('photo_legacy_commit_v51',[m.file_id,900,SHA,SHA])).status,'switched');
  const next=m.target_path;
- await db.query("delete from storage.objects where bucket_id=$1 and name=$2",[LEGACY,name]);   // Storage API stand-in
- assert.equal(await svc('photo_legacy_finish_v51',[m.file_id,true]),true);
  await db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql'));
  assert.deepEqual(await policyNames(db),[]);
  // Running it again (a second operator) changes nothing and does not fail.

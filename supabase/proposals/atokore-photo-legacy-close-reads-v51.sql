@@ -14,9 +14,10 @@ BEGIN;
 -- broken photo. Now all of these must hold, checked under locks so nothing changes in between:
 --   * no object left in the legacy bucket,
 --   * no record (live or deleted) whose photoPath has no attached ledger row (a legacy reference),
---   * no unfinished legacy move (atokore-photo-legacy-migrate-v51.sql),
---   * ledger, references and objects agree: each attached row has its live record pointing at it
---     and its object in the managed bucket,
+--   * no unfinished legacy move (atokore-photo-legacy-migrate-v51.sql; verified-but-not-deleted counts),
+--   * ledger, references and objects agree: each attached row has its live record pointing at it,
+--     its object in the managed bucket, and the hash and size the general gateway checks,
+--   * every attached photo was read like the gateway reads it, with that hash (read checks),
 --   * stage 1 already applied.
 -- Two people running this at once: the advisory lock serializes them, and the second one finds the
 -- read policy already gone and changes nothing. A record write or a legacy move commit that runs at the
@@ -24,9 +25,13 @@ BEGIN;
 SELECT pg_advisory_xact_lock(hashtext('atokore_legacy_photo_close_v51'));
 LOCK TABLE atokore_private.records IN SHARE MODE;
 LOCK TABLE storage.objects IN SHARE MODE;
+LOCK TABLE atokore_private.photo_ledger_v50 IN SHARE MODE;
+LOCK TABLE atokore_private.photo_read_checks_v51 IN SHARE MODE;
+LOCK TABLE atokore_private.photo_legacy_moves_v51 IN SHARE MODE;
 DO $guard$
 BEGIN
-  IF to_regclass('atokore_private.photo_ledger_v50') IS NULL OR to_regclass('atokore_private.photo_legacy_moves_v51') IS NULL THEN
+  IF to_regclass('atokore_private.photo_ledger_v50') IS NULL OR to_regclass('atokore_private.photo_legacy_moves_v51') IS NULL
+     OR to_regclass('atokore_private.photo_read_checks_v51') IS NULL THEN
     RAISE EXCEPTION 'photo_ledger_missing' USING ERRCODE = '55000',
       HINT = 'Apply the reviewed ledger (reservation/lifecycle v50) and legacy-migrate v51 first.';
   END IF;
@@ -40,7 +45,7 @@ BEGIN
     RAISE EXCEPTION 'legacy_references_remain' USING ERRCODE = '55000',
       HINT = 'Some products still point at a legacy photo path. Move them (photo_legacy_begin/commit) or clear them after review.';
   END IF;
-  IF EXISTS (SELECT 1 FROM atokore_private.photo_legacy_moves_v51 WHERE state IN ('copying','switched')) THEN
+  IF EXISTS (SELECT 1 FROM atokore_private.photo_legacy_moves_v51 WHERE state IN ('copying','switched','verified')) THEN
     RAISE EXCEPTION 'legacy_migration_unfinished' USING ERRCODE = '55000';
   END IF;
   IF EXISTS (SELECT 1 FROM atokore_private.photo_ledger_v50 l
@@ -48,8 +53,20 @@ BEGIN
                NOT EXISTS (SELECT 1 FROM atokore_private.records r WHERE r.household_id = l.household_id AND r.kind = 'item'
                            AND r.id = l.record_id AND NOT r.deleted AND r.fields->>'photoPath' = atokore_private.photo_object_path_v50(l))
                OR NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id = 'atokore-private-photos-v2'
-                              AND o.name = atokore_private.photo_object_path_v50(l)))) THEN
+                              AND o.name = atokore_private.photo_object_path_v50(l))
+               OR l.upload_sha256 IS NULL OR l.actual_bytes IS NULL)) THEN
     RAISE EXCEPTION 'photo_ledger_inconsistent' USING ERRCODE = '55000';
+  END IF;
+  -- Every attached photo was READ the way the general gateway reads it (atokore-photo-legacy-migrate-v51
+  -- read checks: authorization, size, SHA-256, JPEG) after its object was written, with the hash and
+  -- size the ledger holds. One photo that nobody could read is enough to refuse.
+  IF EXISTS (SELECT 1 FROM atokore_private.photo_ledger_v50 l
+             LEFT JOIN atokore_private.photo_read_checks_v51 c ON c.file_id = l.file_id
+             LEFT JOIN storage.objects o ON o.bucket_id = 'atokore-private-photos-v2' AND o.name = atokore_private.photo_object_path_v50(l)
+             WHERE l.state = 'attached' AND (c.file_id IS NULL OR c.sha256 IS DISTINCT FROM l.upload_sha256
+               OR c.bytes IS DISTINCT FROM l.actual_bytes OR c.checked_at < o.created_at)) THEN
+    RAISE EXCEPTION 'photo_unread_remain' USING ERRCODE = '55000',
+      HINT = 'Run the read checks (runReadChecks) and fix every photo that cannot be read before closing.';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'atokore_photo_insert') THEN
     RAISE EXCEPTION 'legacy_stage1_missing' USING ERRCODE = '55000';
