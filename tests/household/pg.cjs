@@ -20,7 +20,7 @@ const PRELUDE = `
   grant usage on schema public to anon, authenticated;
   create schema storage;
   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
-  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text,metadata jsonb,unique(bucket_id,name));
+  create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text,metadata jsonb,created_at timestamptz not null default now(),unique(bucket_id,name));
   alter table storage.objects enable row level security;
   grant usage on schema storage to anon,authenticated;
   grant select,insert,delete on storage.objects to authenticated;
@@ -32,6 +32,8 @@ const SIGNATURES = {
   hh_push: [['p_ops', 'jsonb'], ['p_device', 'text']], hh_pull: [['p_since', 'bigint'], ['p_limit', 'int']], hh_changes: [['p_limit', 'int']],
   hh_entitlements: [], hh_consume: [['p_feature', 'text'], ['p_event_key', 'text']],
   hh_undo_purchases: [['p_ops','jsonb']],
+  hh_prep_get: [['p_day', 'date']], hh_prep_put: [['p_doc', 'jsonb'], ['p_expected_rev', 'int']], hh_prep_tick: [['p_day', 'date'], ['p_instance', 'text'], ['p_done', 'boolean']],
+  hh_buy_assign: [['p_buy', 'text'], ['p_assignee', 'uuid'], ['p_expected_rev', 'int']], hh_buy_respond: [['p_buy', 'text'], ['p_decision', 'text'], ['p_expected_rev', 'int']], hh_buy_assignments: [],
   hh_receipt_claim: [['p_fingerprint', 'text'], ['p_force', 'boolean']], hh_receipt_finish: [['p_fingerprint', 'text'], ['p_done', 'boolean']],
 };
 

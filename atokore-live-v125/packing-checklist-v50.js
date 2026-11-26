@@ -150,10 +150,15 @@
       // Inline read-only stock hint, not an extra shopping action or row.
       // Never alter inventory or buy list when checking a packing item.
       const stockChoices = root.AtokoreKitShoppingV50?.choices?.(item.name);
-      if (stockChoices?.stocks?.length) {
+      if (Array.isArray(stockChoices?.stocks)) {
         const hint = make('small', 'atk-pack-stock-inline');
-        hint.textContent = stockChoices.stocks.length > 1
-          ? '在庫：複数登録' : '在庫：' + stockChoices.stocks[0].qty + stockChoices.stocks[0].unit;
+        const stock = stockChoices.stocks;
+        // Unregistered is not equivalent to zero. Multiple matching products
+        // must not be added together (different sizes/units may be involved).
+        hint.textContent = stock.length > 1 ? '在庫：複数登録'
+          : stock.length === 0 ? '在庫：未登録'
+          : '在庫：' + stock[0].qty + stock[0].unit;
+        if (stock.length === 1 && Number(stock[0].qty) === 0) hint.classList.add('atk-pack-stock-empty');
         label.append(hint);
       }
       const remove = make('button', 'atk-pack-remove', '削除');
@@ -209,6 +214,8 @@
   root.AtokorePackingChecklist = Object.freeze({
     key: KEY,
     status: () => ({ active: state.active, items: state.lists[state.active].length, locked }),
+    // Read-only copy of the active list for summaries (v51); writes stay in this module.
+    items: () => locked ? null : state.lists[state.active].map(x => ({ name: x.name, done: x.done })),
     refresh: () => { if (!locked) render(); }
   });
 })(typeof window !== 'undefined' ? window : globalThis);

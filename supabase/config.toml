@@ -1,0 +1,5 @@
+# DRAFT ONLY. Do not deploy while photo CDN revocation P1 remains open.
+# Keep platform JWT verification ON for authenticated user-only calls.
+# The pinned @supabase/server auth:'user' also validates the user's token.
+[functions.atokore-photo-gateway]
+verify_jwt = true

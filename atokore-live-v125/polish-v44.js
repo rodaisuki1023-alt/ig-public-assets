@@ -8,6 +8,23 @@ const CATS=['ベビー','離乳食','食料品','日用品','衛生・薬','子�
 const copy=v=>JSON.parse(JSON.stringify(v));
 function snapshot(){try{return copy({items,buys,routines})}catch(_){return {items:[],buys:[],routines:[]}}}
 function stockLabel(x){return (x.qtyBasis==='unopened'?'未開封 ':'残り ')+x.qty+(x.unit||'個')+(x.qtyBasis==='unopened'&&x.inUse?'・使用中あり':'')}
+// v51: a purchase of a product with a detailed estimate also stored that purchase in its own field
+// (tp…, see stock-levels-v51.js). Undo clears exactly that field when it still holds that purchase;
+// a purchase already counted into a later correction cannot be taken apart, so it asks to check.
+const ENTRY=/^tp[0-9a-z]{1,13}$/;
+function addedEntries(a,b){
+ if(!a||!b)return [];
+ return Object.keys(b).filter(f=>ENTRY.test(f)&&b[f]&&typeof b[f]==='object'&&b[f].k&&(!a[f]||a[f].k!==b[f].k)).map(f=>({field:f,k:b[f].k}));
+}
+function undoEntries(row,c){
+ if(!row||!c.entries)return;
+ for(const {field,k} of c.entries){
+  if(!row[field]||row[field].k!==k)continue;
+  delete row[field];
+  const t=row.track;
+  if(t&&typeof t==='object'&&Array.isArray(t.seen)&&t.seen.includes(k))row.track={...t,check:'purchase_undo'};
+ }
+}
 function inverseCounters(current,changes){
  const next=copy(current);
  for(const c of changes){
@@ -21,6 +38,7 @@ function inverseCounters(current,changes){
   }
   row.qty=Number(row.qty)-c.delta;
   if(c.usage)row.usage=Math.max(0,(Number(row.usage)||0)-c.usage);
+  undoEntries(row,c);
  }
  return next;
 }
@@ -55,7 +73,52 @@ function persist(next){
 }
 function log(title,detail,extra){root.AtokoreHistory?.add(title,detail,'stock','↶',extra)}
 function clearUndo(){undo=null;clearTimeout(undoTimer);doc.getElementById('atkUndoBar')?.remove()}
+// v51 (Muse N-3): the last purchase can still be undone after leaving the screen, from a button on
+// the shopping page, for at most LAST_PURCHASE_MS and only once. The same undo runs as from the
+// bar: it refuses when the products changed, checks the shared ticket on the server while sharing,
+// and also takes the purchase out of the estimate. Kept in memory only (a reload ends it).
+// v51 (Work P1): the deadline is decided when the undo starts, by both the bar and the button, not
+// only when the button is drawn, so a screen left open (or frozen in the background) cannot undo
+// after 10:00. Undo is allowed while elapsed < 10:00; 10:00 itself is refused. An undo that started
+// before the deadline is finished, never stopped half-way: stopping after the server answered would
+// leave the stock and the estimate out of step. Elapsed time is the larger of the wall clock and the
+// monotonic clock, so setting the phone's clock back cannot extend the window (setting it forward
+// only ends it early). While sharing, the server applies the same window to its own receive time
+// (proposal atokore-purchase-undo-window-v51.sql), which is the strict guarantee across phones.
+const LAST_PURCHASE_MS=10*60*1000;
+const EXPIRED_TEXT='「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。';
+const mono=()=>root.performance&&typeof root.performance.now==='function'?root.performance.now():NaN;
+function stamp(){return {wall:Date.now(),mono:mono()}}
+function elapsed(at){const w=Date.now()-at.wall,m=mono()-at.mono;return Number.isFinite(m)?Math.max(w,m):w}
+function withinUndo(at){const e=elapsed(at);return e>=0&&e<LAST_PURCHASE_MS}
+let lastPurchase=null,lastBusy=false,lastTimer=null;
+function renderLastPurchase(){
+ clearTimeout(lastTimer);lastTimer=null;
+ const anchor=doc.getElementById('buyList');let b=doc.getElementById('atkLastPurchaseUndo');
+ // An undo already running is drawn as busy until it finishes, even across the deadline.
+ const live=lastPurchase&&(lastBusy||withinUndo(lastPurchase.at));
+ if(!live){if(lastPurchase&&undo===lastPurchase.run)clearUndo();lastPurchase=null}
+ if(!anchor||!live){b?.remove();return}
+ if(!b){b=doc.createElement('div');b.id='atkLastPurchaseUndo';b.className='atk-last-purchase';anchor.before(b)}
+ const e=elapsed(lastPurchase.at),min=Math.max(1,Math.round(e/60000));
+ b.innerHTML='<span>直前の「買った」：'+esc(lastPurchase.label)+'（約'+min+'分前・あと'+Math.max(1,Math.ceil((LAST_PURCHASE_MS-e)/60000))+'分取り消せます）</span><button type="button" data-atk-last-undo'+(lastBusy?' disabled':'')+'>'+(lastBusy?'取り消し中…':'取り消す')+'</button>'+(lastPurchase.error?'<p role="alert">'+esc(lastPurchase.error)+'</p>':'');
+ // Redraw at the deadline (and each minute for the label). Timers stall in the background, so
+ // returning to the page also redraws (visibilitychange/pageshow below), and the start re-checks.
+ if(!lastBusy)lastTimer=setTimeout(renderLastPurchase,Math.max(50,Math.min(60000,LAST_PURCHASE_MS-e)));
+}
+doc.addEventListener('click',async e=>{
+ const t=e.target.closest?.('[data-atk-last-undo]');if(!t||lastBusy||!lastPurchase)return;
+ const run=lastPurchase.run;
+ if(!withinUndo(lastPurchase.at)){renderLastPurchase();message(EXPIRED_TEXT);return}
+ lastBusy=true;renderLastPurchase();
+ try{await run();lastPurchase=null;clearUndo();message('直前の「買った」を取り消しました')}
+ catch(err){if(lastPurchase)lastPurchase.error=err.message||'取り消せませんでした。'}
+ finally{lastBusy=false;renderLastPurchase()}
+});
+doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')renderLastPurchase()});
+root.addEventListener?.('pageshow',()=>renderLastPurchase());
 doc.addEventListener('atokore-page-changed',clearUndo);
+doc.addEventListener('atokore-page-changed',()=>renderLastPurchase());
 function offerUndo(label,run){
  clearUndo();root.AtokoreNotices.hide();undo=run;
  const node=doc.createElement('div');node.id='atkUndoBar';node.className='atk-undo-bar';
@@ -88,15 +151,41 @@ for(const name of ['buyOneToStockV125H','bought']){
   const removed=before.buys.filter(x=>!after.buys.some(y=>String(y.id)===String(x.id)));
   if(!removed.length)return result;
   // Rows that did not exist before were created by this purchase; undo removes them entirely.
-  const changes=after.items.flatMap(b=>{const a=before.items.find(x=>String(x.id)===String(b.id));const delta=Number(b.qty)-(Number(a?.qty)||0);return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0,...(a?{}:{created:true})}]:[]});
+  const changes=after.items.flatMap(b=>{const a=before.items.find(x=>String(x.id)===String(b.id));const delta=Number(b.qty)-(Number(a?.qty)||0);
+   const e=addedEntries(a,b),track=e.length?{entries:e}:{};
+   return delta>0?[{key:'items',id:b.id,name:b.name,unit:b.unit,delta,usage:0,...(a?{}:{created:true}),...track}]:[]});
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined,ticket=shared?hh.capturePurchases?.(removed.map(x=>x.id)):null;
-  offerUndo(removed.length+'商品を「買った」にしました',async()=>{
-   if(shared){if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');await hh.undoPurchases(ticket);return}
+  let done=false,running=false;const at=stamp();
+  const finish=()=>{done=true;if(lastPurchase?.run===runUndo)lastPurchase=null;renderLastPurchase()};
+  const runUndo=async()=>{
+   // One undo per purchase, from the bar or the shopping-page button, never twice or at once, and
+   // only before the deadline. Checked here, before any change, so every entry point obeys it.
+   if(done)throw Error('この購入はすでに取り消しました。');
+   if(running)throw Error('取り消しを処理しています。');
+   if(!withinUndo(at)){if(lastPurchase?.run===runUndo)lastPurchase=null;renderLastPurchase();throw Error(EXPIRED_TEXT)}
+   running=true;try{await undoOnce()}finally{running=false}
+  };
+  const undoOnce=async()=>{
+   if(shared){
+    if(!ticket?.length)throw Error('共有先を確認できませんでした。履歴から現在の内容をご確認ください。');
+    await hh.undoPurchases(ticket);
+    finish();
+    // The server reverted the counted stock; the estimate is an ordinary field and is reverted here.
+    if(changes.some(c=>c.entries)){
+     try{const cur=snapshot();for(const c of changes)undoEntries(cur.items.find(x=>String(x.id)===String(c.id)),c);persist(cur)}
+     catch(e){console.error('あとこれ: 見積もりの取り消し',e);throw Error('「買った」は取り消しましたが、見積もりを戻せませんでした。商品の「詳しく管理」で残りを確認してください。')}
+    }
+    return;
+   }
    if(root.AtokoreHousehold?.homeState?.().joined)throw Error('家族共有の開始後は、この端末だけの購入を戻せません。');
    const next=inverseCounters(snapshot(),changes);
    for(const b of removed){if(next.buys.some(x=>String(x.id)===String(b.id)))throw Error('買い物リストが変わったため戻せません。');next.buys.push(copy(b))}
    persist(next);log('「買った」を取り消し',removed.map(x=>x.name).join('、'),{refs:removed.map(x=>({id:x.id,kind:'buy',name:x.name,unit:x.unit})),change:'買い物リストに戻した'});
-  });
+   finish();
+  };
+  offerUndo(removed.length+'商品を「買った」にしました',runUndo);
+  lastPurchase={label:removed.map(x=>x.name).slice(0,2).join('、')+(removed.length>2?' ほか'+(removed.length-2)+'商品':''),run:runUndo,at};
+  renderLastPurchase();
   return result;
  };
 }

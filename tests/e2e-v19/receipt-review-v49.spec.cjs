@@ -42,11 +42,9 @@ test('a dated product: the review says "new row without a date", the confirmatio
   expect(page.__errors).toEqual([]);
 });
 
-// Attributes the matcher compares: size and form (diapers), content amount, and brands from a FIXED list only.
-// Flavour is not an attribute, nor is a brand outside that list: such products can still be OFFERED as a
-// candidate when the letters are alike; they are not pre-selected only because the printed text is not the
-// exact confirmed text.
-test('learned receipt texts: exact text pre-selects; near text, other size or amount do not; other flavour / unlisted brand are only offered', async ({ page }) => {
+// Recognized explicit flavours and package multipliers are now compared alongside size/form/capacity.
+// Unlisted brands and unrecognized variants remain a limitation; never treat a fuzzy match as a confirmation.
+test('learned receipt texts: exact text pre-selects; near text, other size or amount do not; recognized flavour mismatch is blocked; unlisted brands are not preselected', async ({ page }) => {
   const initial = { items: [
     { id: 1, name: 'テスト炭酸水 1L', cat: '食料品', qty: 1, unit: '本', place: 'パントリー', expType: '期限なし', exp: '', usage: 1, receiptAliases: ['テスト炭酸水1l'] },
     { id: 2, name: 'テストおむつ テープ M', cat: 'ベビー', qty: 1, unit: '袋', place: '収納', expType: '期限なし', exp: '', usage: 1, receiptAliases: ['テストおむつテープm'] },
@@ -58,7 +56,7 @@ test('learned receipt texts: exact text pre-selects; near text, other size or am
     'テスト炭酸水1L ¥98',          // exactly the confirmed text → pre-selected
     'テスト炭酸水レ ¥98',          // near the confirmed text → offered only
     'テストおむつテープL ¥1,280',  // other size → never offered
-    'テストラーメンみそ味 ¥120',   // other flavour: not detected → may be offered, not pre-selected
+    'テストラーメンみそ味 ¥120',   // recognized flavour mismatch → never offered
     'メーカーB ヨーグルト 400g ¥198', // brand not in the fixed list: not detected → may be offered, not pre-selected
     'メーカーA ヨーグルト 75g ¥98',  // other amount → never offered
     '小計 6点 ¥1,892'].join('\n'));
@@ -73,9 +71,9 @@ test('learned receipt texts: exact text pre-selects; near text, other size or am
   expect(sizeOptions.join()).not.toContain('テストおむつ テープ M');
   expect(await value('テストラーメンみそ味') || '').toBe('');
   expect(await value('メーカーBヨーグルト') || '').toBe('');
-  // The limit, stated: the other flavour IS offered as a candidate (flavour is not compared; the person must not
-  // pick it blindly). Whether an unlisted brand is offered depends only on how alike the letters are (here: not).
-  expect((await rowOf(page, 'テストラーメンみそ味').locator(`${PICK} option`).allTextContents()).join()).toContain('テストラーメン しょうゆ味');
+  // Explicit miso/soy-sauce conflict must never appear as a merge candidate.
+  // Unlisted brands remain subject to fuzzy matching and manual confirmation.
+  expect((await rowOf(page, 'テストラーメンみそ味').locator(`${PICK} option`).allTextContents()).join()).not.toContain('テストラーメン しょうゆ味');
   const amountOptions = await rowOf(page, 'メーカーAヨーグルト75g').locator(`${PICK} option`).allTextContents().catch(() => []);
   expect(amountOptions.join()).not.toContain('メーカーA ヨーグルト 400g');
   // Saving adds only to the exactly matched product.
@@ -306,8 +304,8 @@ test('v50: editing a receipt product name invalidates a learned alias for the ol
  await input.fill('テストラーメン みそ味');
  await input.press('Tab');
  await expect(row.locator('.receiptLinked')).toHaveCount(0);
- await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
- await row.locator('.receiptMergeSeparate').click();
+ await expect(row.locator('[data-receipt-merge-state="none"]')).toContainText('一致するストックは見つかりませんでした');
+ await expect(row.locator('.receiptMergeSeparate')).toHaveCount(0);
  await page.locator('#receiptApplyBtn').click();
  await expect(page.locator('#qaTrayList .qa-review-effect')).toContainText('新しい行');
  await page.locator('#qaCommit').click();
@@ -356,8 +354,8 @@ test('v50: an automatically linked row remains editable and correction does not 
  await input.fill('テストラーメン みそ味');
  await input.press('Tab');
  await expect(row.locator('.receiptLinked')).toHaveCount(0);
- await expect(row.locator('[data-receipt-merge-state="pending"]')).toBeVisible();
- await row.locator('.receiptMergeSeparate').click();
+ await expect(row.locator('[data-receipt-merge-state="none"]')).toContainText('一致するストックは見つかりませんでした');
+ await expect(row.locator('.receiptMergeSeparate')).toHaveCount(0);
  await page.locator('#receiptApplyBtn').click();
  await page.locator('#qaCommit').click();
  const saved=await stored(page);

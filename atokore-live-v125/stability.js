@@ -287,7 +287,8 @@
     const target=norm(name);
     const knownFamily=name==='おむつ'?/おむつ|オムツ/:name==='おしりふき'?/おしりふき/:null;
     const matches=items.filter(x=>x&&typeof x.name==='string'&&
-      (norm(x.name)===target||(knownFamily&&knownFamily.test(x.name)))&&
+      // v51: a brand-only name (パンパース, メリーズ …) is still a diaper (Muse E3).
+      (norm(x.name)===target||(knownFamily&&(knownFamily.test(x.name)||window.AtokoreUnits?.kind?.(x.name)===(name==='おむつ'?'diaper':'wipes'))))&&
       typeof x.id!=='undefined').slice(0,16);
     const queued=buys.filter(x=>x&&typeof x.name==='string'&&
       (norm(x.name)===target||matches.some(m=>Core.sameProduct(x,m))));

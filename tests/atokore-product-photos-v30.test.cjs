@@ -35,15 +35,11 @@ test('shared photo requests never expose a signed/public URL and recheck the int
  const requestEnd=sync.indexOf('\nasync function fetchPhoto(',requestStart);
  assert(requestStart>=0&&requestEnd>requestStart,'missing private photo transport');
  const transport=sync.slice(requestStart,requestEnd);
- assert.match(transport,/root\.fetch\(base\+'\/storage\/v1\/object\/'/);
- assert.match(transport,/method==='GET'\?'authenticated\/':'/);
+ assert.match(transport,/\/functions\/v1\/atokore-photo-gateway/);
  assert.match(transport,/Authorization:'Bearer '\+session\.access_token/);
  assert.match(transport,/cache:'no-store'/);
- assert.match(transport,/'cache-control':'no-cache'/);
- assert.match(transport,/\?v='\+/,'fresh authenticated GETs require a changing query token');
- assert.match(transport,/root\.crypto\?\.randomUUID\?\.\(\)/,'prefer a unique per-request nonce instead of a time-only value');
- assert.match(transport,/Date\.now\(\)/,'old Safari retains a nonce fallback');
- assert.doesNotMatch(transport,/createSignedUrl|createSignedUploadUrl|\/object\/public\/|getPublicUrl/);
+ assert.match(transport,/!photoSharingEnabled\(\)/);
+ assert.doesNotMatch(transport,/\/storage\/v1\/object\/|createSignedUrl|createSignedUploadUrl|\/object\/public\/|getPublicUrl/);
  const fetchStart=sync.indexOf('async function fetchPhoto(');
  const fetchEnd=sync.indexOf('\nasync function sharePhoto(',fetchStart);
  assert(fetchStart>=0&&fetchEnd>fetchStart);
@@ -105,4 +101,55 @@ test('v50: family photo cache identity uses real household scope, even without a
  }};
  vm.runInNewContext(source.replace(hook,'root.__photoRace={scopeKey};'+hook),ctx);
  assert.equal(ctx.__photoRace.scopeKey(),'h2:u2');
+});
+
+test('v50: private photo gateway never falls back; shared path comes from the server',()=>{
+ const sync=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ const request=sync.slice(sync.indexOf('async function photoRequest('),sync.indexOf('\nasync function fetchPhoto('));
+ assert.match(request,/cache:'no-store'/);
+ assert.doesNotMatch(request,/\/storage\/v1\/object\/|max-age=3600|max-age=86400|cache:'force-cache'/);
+ const upload=sync.slice(sync.indexOf('async function sharePhoto('),sync.indexOf('\nasync function refreshChanges('));
+ assert.match(upload,/path=await photoRequest\(path,'POST',blob\)/);
+ assert.doesNotMatch(upload,/\|\|path/);
+});
+
+test('v50: disabled family photo gateway retains local pictures without any shared request',async()=>{
+ const vm=require('node:vm');
+ const source=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
+ const hook='root.AtokoreProductPhotos=api;';
+ const item={id:7,name:'合成商品',unit:'個',photoPath:'old/shared/photo.jpg'};
+ let requests=0;
+ const ctx={items:[item],AtokoreHousehold:{
+  photoSharingEnabled:()=>false,photoScope:()=>({household:'h1',user:'u1',sid:'record'}),
+  homeState:()=>({joined:true,state:'synced'}),fetchPhoto:async()=>{requests++;throw Error('not allowed')},
+  sharePhoto:async()=>{requests++;throw Error('not allowed')}
+ }};
+ vm.runInNewContext(source.replace(hook,'root.__photoTest={loadFor,cache,shareWaiting};'+hook),ctx);
+ ctx.__photoTest.cache.set(api.key(item),'blob:device-photo');
+ assert.equal(await ctx.__photoTest.loadFor(item),'blob:device-photo');
+ await ctx.__photoTest.shareWaiting();
+ assert.equal(requests,0);
+});
+
+test('v50: stale row render cannot overwrite a newer photo, a replaced badge or a removed scope',()=>{
+ const vm=require('node:vm'),source=fs.readFileSync(path.join(dir,'product-photos-v30.js'),'utf8');
+ const hook='root.AtokoreProductPhotos=api;';
+ const item={id:1,name:'合成商品',unit:'個',photoPath:'old.jpg'};
+ const ctx={items:[item],URL:{revokeObjectURL(){}}};
+ vm.runInNewContext(source.replace(hook,'root.__renderTest={beginPhotoRender,resetShared};'+hook),ctx);
+ const {beginPhotoRender,resetShared}=ctx.__renderTest,element={isConnected:true};
+ const old=beginPhotoRender(element,item);assert.equal(old(),true);
+ item.photoPath='new.jpg';assert.equal(old(),false);
+ const next=beginPhotoRender(element,item);assert.equal(next(),true);
+ const newer=beginPhotoRender(element,item);assert.equal(next(),false);assert.equal(newer(),true);
+ element.isConnected=false;assert.equal(newer(),false);
+ element.isConnected=true;resetShared();assert.equal(newer(),false);
+});
+
+test('trial photo upload completion requires authoritative base pointer and empty outbox',()=>{
+ const sync=fs.readFileSync(path.join(dir,'household-sync-v37.js'),'utf8');
+ const body=sync.slice(sync.indexOf('async function sharePhoto('),sync.indexOf('\nasync function refreshChanges('));
+ assert.match(body,/engine\.flush\(\);await syncPhotoFresh\(\)/);
+ assert.match(body,/const confirmed=photoBase\(scope\)/);
+ assert.match(body,/engine\.status\(\)\.pending===0&&!!confirmed/);
 });

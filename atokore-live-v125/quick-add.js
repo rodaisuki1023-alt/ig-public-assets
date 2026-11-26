@@ -177,7 +177,10 @@ function modelKey(x){return [x.cat,x.name,x.unit].join('\u0001')}
 function validateLine(entry){
  if(!entry||typeof entry.name!=='string'||!entry.name.trim()||entry.name.length>120)throw Error('商品名を確認してください');
  if(!entry.cat||!entry.unit)throw Error('カテゴリと単位を確認してください');
- if(!Number.isSafeInteger(entry.qty)||entry.qty<1||entry.qty>maxFor(entry.unit))throw Error('数量は1〜'+maxFor(entry.unit).toLocaleString('ja-JP')+'で指定してください');
+ // v51 (Muse E3): a NEW product may be registered with 0 (known to be out of stock) when the
+ // person explicitly lowers it to 0; everything else still needs at least 1.
+ const min=entry.zero===true?0:1;
+ if(!Number.isSafeInteger(entry.qty)||entry.qty<min||entry.qty>maxFor(entry.unit))throw Error('数量は'+min+'〜'+maxFor(entry.unit).toLocaleString('ja-JP')+'で指定してください');
  return {...entry,name:entry.name.trim()};
 }
 function buildBatchDetailed(existing,selected,time=Date.now()){
@@ -185,6 +188,8 @@ function buildBatchDetailed(existing,selected,time=Date.now()){
  let unique=Math.max(Number(time)||1,1);
  for(const raw of selected){
   const v=validateLine(raw),match=batchMatch(next,v);
+  // Registering 0 never changes a product that already exists (it only creates a new one).
+  if(match&&v.qty===0){byLine.push(match.id);continue}
   if(match){
    const qty=(Number(match.qty)||0)+v.qty;
    if(v.draftEdited){Object.assign(match,draftFields(v));if(!Object.prototype.hasOwnProperty.call(v,'minQty'))delete match.minQty}
@@ -470,7 +475,13 @@ function pendingSummary(lines=state.tray){return lines.length+'商品（数量�
 // What the final button will do to each line, using the same matching rules as commit().
 function stockMatch(v){return batchMatch(stockItems(),v)}
 function buyMatch(v){let list=[];try{list=Array.isArray(buys)?buys:[]}catch(e){}return list.find(y=>y.name===v.name&&y.unit===v.unit)}
+// 0 is offered only for a new product being added to stock (not shopping, not a routine).
+function zeroOk(v){
+ if(state.routineTarget||state.destination==='buy')return false;
+ try{return !stockMatch(v)}catch(_){return false}
+}
 function lineEffect(v){
+ if(v.qty===0&&!state.routineTarget&&state.destination!=='buy')return '在庫0の商品として登録（今はないことを記録します）';
  if(state.routineTarget)return 'いつものリストに追加（在庫数は変わりません）';
  if(state.destination==='buy'){const found=buyMatch(v);return found?'買い物リストに登録済み：'+found.qty+v.unit+' → '+(Number(found.qty||0)+v.qty)+v.unit:'買い物リストに新しく追加'}
  if(v.receiptSeparate===true){const dated=stockItems().some(x=>x.name===v.name&&x.cat===v.cat&&x.unit===v.unit&&x.exp&&x.expType!=='期限なし');return dated?'期限つきの在庫とは別の行として登録（期限は未設定。今ある行は変わりません）':'既存ストックと分けて新しい行として追加（数量は変えません）'}
@@ -498,7 +509,7 @@ function renderTray(){
  box.hidden=!count||!state.reviewing;
  n.textContent=pendingSummary(lines);
  const dest=$('qaTrayDest');if(dest)dest.textContent='保存先：'+destLabel(state.destination);
- list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><button type="button" class="qa-tray-thumb" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+iconFor(v.name,v.cat)+'</button><div class="qa-review-copy"><button type="button" class="qa-review-name qa-review-edit" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+safe(v.name)+' <span aria-hidden="true">✎</span></button><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=1?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=maxFor(v.unit)?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
+ list.innerHTML=lines.map((v,i)=>'<div class="qa-tray-item qa-review-item"><button type="button" class="qa-tray-thumb" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+iconFor(v.name,v.cat)+'</button><div class="qa-review-copy"><button type="button" class="qa-review-name qa-review-edit" data-qa-edit="'+i+'" aria-label="'+safe(v.name)+'の追加予定を編集">'+safe(v.name)+' <span aria-hidden="true">✎</span></button><small>'+safe(lineDetails(v))+'</small><small class="qa-review-effect">'+safe(lineEffect(v))+'</small></div><div class="qa-review-controls"><div class="qa-step"><button type="button" data-qa-adjust="'+i+'" data-step="-1" aria-label="'+safe(v.name)+'の数量を減らす"'+(v.qty<=(zeroOk(v)?0:1)?' disabled':'')+'>−</button><b>'+v.qty+'</b><button type="button" data-qa-adjust="'+i+'" data-step="1" aria-label="'+safe(v.name)+'の数量を増やす"'+(v.qty>=maxFor(v.unit)?' disabled':'')+'>＋</button></div><button type="button" class="qa-remove" data-qa-remove="'+i+'" aria-label="'+safe(v.name)+'を追加予定から削除">削除</button></div></div>').join('');
  button.disabled=!count||state.committing;
  $('pg-add')?.classList.toggle('qa-has-pending',count>0);
 }
@@ -696,7 +707,7 @@ function setup(){
   if(btn.dataset.qaZeroCat){state.cat=btn.dataset.qaZeroCat;state.group='すべて';state.showAll=false;renderAll();return}
   if(btn.hasAttribute('data-qa-maybe')){state.query=btn.dataset.qaMaybe;$('qaSearch').value=state.query;state.showAll=false;renderItems();return}
   if(btn.hasAttribute('data-qa-zero-add')){prefillFree(state.query);return}
-  if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(1,Math.min(maxFor(v.unit),v.qty+Number(btn.dataset.step)));renderTray();renderItems()}return}
+  if(btn.hasAttribute('data-qa-adjust')){const i=Number(btn.dataset.qaAdjust),v=state.tray[i];if(v){v.qty=Math.max(zeroOk(v)?0:1,Math.min(maxFor(v.unit),v.qty+Number(btn.dataset.step)));if(v.qty===0)v.zero=true;else delete v.zero;renderTray();renderItems()}return}
   if(btn.hasAttribute('data-qa-remove')){state.tray.splice(Number(btn.dataset.qaRemove),1);renderTray();renderItems();return}
   if(btn.hasAttribute('data-qa-clear')){root.AtokoreConfirm.open('追加予定をすべて取り消しますか？','保存済みのストック・買い物リストは変わりません。','全部取り消す',()=>{state.tray=[];state.afterSave=null;state.restoredDraft=false;closeReview();renderAll();notify('追加予定をすべて取り消しました');return true});return}
   if(btn.hasAttribute('data-qa-commit')){commit(e)}

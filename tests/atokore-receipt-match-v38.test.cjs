@@ -108,3 +108,44 @@ test('P1: capacity must be explicitly comparable, including for learned aliases'
  assert.equal(m.conflict(m.features('テスト飲料 2L'),m.features('テスト飲料 2000ml')),'');
  assert.equal(m.candidates('テスト飲料',candidates).some(x=>x.item.id===3),false);
 });
+
+test('v50: explicit flavour conflict cannot be overridden by learned receipt aliases',()=>{
+ const raw='テストラーメン 醤油味';
+ const rows=[
+  {id:1,name:'テストラーメン みそ味',receiptAliases:[m.lineKey(raw)]},
+  {id:2,name:'テストラーメン しょうゆ味'},
+  {id:3,name:'テストラーメン',receiptAliases:[m.lineKey(raw)]}
+ ];
+ assert.deepEqual(m.candidates(raw,rows).map(c=>c.item.id),[2]);
+ assert.equal(m.conflict(m.features('テストゼリー ｲﾁｺﾞ味'),m.features('テストゼリー 苺味')),'');
+ assert.equal(m.conflict(m.features('テストゼリー 桃味'),m.features('テストゼリー 林檎味')),'flavour');
+ assert.equal(m.conflict(m.features('テストヨーグルト'),m.features('テストヨーグルト バニラ風味')),'flavour');
+});
+test('v50: compare explicit package multipliers separately from each package capacity',()=>{
+ const raw='おしりふき ８０ﾏｲＸ３';
+ const items=[
+  {id:1,name:'おしりふき 80枚×6',receiptAliases:[m.lineKey(raw)]},
+  {id:2,name:'おしりふき 80枚',receiptAliases:[m.lineKey(raw)]},
+  {id:3,name:'おしりふき 80枚×3'}
+ ];
+ assert.deepEqual(m.candidates(raw,items).map(c=>c.item.id),[3]);
+ assert.equal(m.conflict(m.features('テスト飲料 0.5L×6'),m.features('テスト飲料 500ml x 6')),'');
+ assert.equal(m.conflict(m.features('テスト飲料 500ml×6'),m.features('テスト飲料 500ml×3')),'bundle');
+ assert.deepEqual(m.features('テスト商品 x3').bundles,[],'bare x3 may be purchase quantity');
+});
+
+test('receipt shorthand: explicit product-context flavour without 味 still blocks wrong learned merges',()=>{
+ const items=[
+  {id:1,name:'テストラーメン しょうゆ味',receiptAliases:[m.lineKey('ﾃｽﾄﾗｰﾒﾝ ﾐｿ')]},
+  {id:2,name:'テストラーメン みそ味'},
+  {id:3,name:'テストヨーグルト バニラ味 100g',receiptAliases:[m.lineKey('テストヨーグルトいちご100g')]},
+  {id:4,name:'テストヨーグルト いちご味 100g'}
+ ];
+ assert.equal(m.conflict(m.features('ﾃｽﾄﾗｰﾒﾝ ﾐｿ'),m.features(items[0].name)),'flavour');
+ assert.ok(!m.candidates('ﾃｽﾄﾗｰﾒﾝ ﾐｿ',items).some(c=>c.item.id===1));
+ assert.ok(m.candidates('ﾃｽﾄﾗｰﾒﾝ ﾐｿ',items).some(c=>c.item.id===2));
+ assert.ok(!m.candidates('テストヨーグルトいちご100g',items).some(c=>c.item.id===3));
+ assert.ok(m.candidates('テストヨーグルトいちご100g',items).some(c=>c.item.id===4));
+ assert.deepEqual(m.features('味噌').flavours,[]);
+ assert.deepEqual(m.features('牛乳 1L').flavours,[]);
+});

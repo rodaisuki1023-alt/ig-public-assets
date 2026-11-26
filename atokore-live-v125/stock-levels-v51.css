@@ -1,0 +1,189 @@
+/* v51 かんたん管理 / 詳しく管理 in the product sheet. Same palette as the v43 home. */
+.atk-level{margin:12px 0 4px;padding:12px;border:1px solid #E9DAD3;border-radius:14px;background:#FFFDFB}
+.atk-level-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.atk-level-head b{font-size:15px;color:#4A3029}
+.atk-level-now{font-size:12px;color:#7A5A4E}
+.atk-level-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.atk-level-buttons button,.atk-level-fix button{min-height:48px;border:1px solid #E2CFC4;border-radius:12px;background:#fff;color:#4A3029;font:inherit;font-weight:800;font-size:14px;padding:6px 4px}
+.atk-level-buttons button[aria-pressed="true"]{background:#8A5747;border-color:#8A5747;color:#fff}
+.atk-level-buttons button[data-atk-level-set="buy"][aria-pressed="true"]{background:#B4432F;border-color:#B4432F}
+.atk-level-link{min-height:44px;margin-top:6px;border:0;background:none;color:#8A5747;font:inherit;font-size:13px;text-decoration:underline;padding:0 2px}
+.atk-level-detail{margin-top:10px;border-top:1px solid #EEDFD8;padding-top:8px}
+.atk-level-detail summary{min-height:44px;display:flex;align-items:center;font-weight:800;color:#704839;cursor:pointer}
+.atk-level-note,.atk-level-estimate{font-size:13px;line-height:1.55;color:#5A3F36;margin:6px 0}
+.atk-level-field{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;color:#4A3029}
+.atk-level-field input{flex:1;min-width:0;min-height:44px;border:1px solid #D9C6BB;border-radius:10px;padding:8px 10px;font-size:16px}
+.atk-level-field span{font-size:13px;color:#7A5A4E;white-space:nowrap}
+.atk-level-fix{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0}
+.atk-level-start{width:100%;min-height:48px;margin-top:6px}
+.atk-level-error{margin:8px 0 0;color:#B42318;font-size:13px;font-weight:700}
+@media(max-width:350px){.atk-level-buttons button,.atk-level-fix button{font-size:13px}.atk-level-field{flex-wrap:wrap}.atk-level-field input{flex-basis:100%}}
+
+/* v51 出かける前の確認 (packing checklist summary): one folded line, never a row of buttons. */
+.atk-pack-short{margin:8px 0;border:1px solid #E9DAD3;border-radius:12px;background:#FFFDFB}
+.atk-pack-short summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:6px 12px;font-weight:800;color:#704839;cursor:pointer;list-style:none}
+.atk-pack-short summary::-webkit-details-marker{display:none}
+.atk-pack-short-count{font-size:12px;font-weight:750;color:#8A5747}
+.atk-pack-short ul{margin:0;padding:0 12px 4px 28px;font-size:13px;line-height:1.6;color:#4A3029}
+.atk-pack-short li b{font-weight:800}
+.atk-pack-short li.zero b{color:#B4432F}
+.atk-pack-short-add{display:block;width:calc(100% - 24px);min-height:44px;margin:6px 12px;border:0;border-radius:12px;background:#8A5747;color:#fff;font:inherit;font-weight:800}
+.atk-pack-short-note,.atk-pack-short-msg{margin:4px 12px 10px;font-size:12px;color:#6B5249}
+.atk-pack-short-msg{font-weight:700;color:#3D6B3A}
+
+/* v51 曜日・行事・子どもの持ち物 (prep-sets-v51.js): folded, same palette as 出かける前の確認. */
+.atk-prep{margin:8px 0;border:1px solid #E9DAD3;border-radius:12px;background:#FFFDFB}
+.atk-prep>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:6px 12px;font-weight:800;color:#704839;cursor:pointer;list-style:none}
+.atk-prep>summary::-webkit-details-marker{display:none}
+.atk-prep-count{font-size:12px;font-weight:750;color:#8A5747}
+.atk-prep-body{padding:0 12px 10px}
+.atk-prep-day{margin:4px 0;font-weight:800;font-size:14px;color:#4A3029}
+.atk-prep-today{list-style:none;margin:0;padding:0}
+.atk-prep-today li label{display:flex;align-items:center;gap:10px;min-height:44px;border-bottom:1px solid #F0E4DE;font-size:15px;color:#4A3029}
+.atk-prep-today input{width:22px;height:22px;flex:none}
+.atk-prep-today span{flex:1;overflow-wrap:anywhere}
+.atk-prep-today small{font-size:12px;color:#7A5A4E;white-space:nowrap}
+.atk-prep-kids{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.atk-prep-kid{display:inline-flex;align-items:center;gap:2px;min-height:44px;padding:0 4px 0 12px;border:1px solid #E2CFC4;border-radius:999px;background:#fff;font-size:14px;font-weight:700}
+.atk-prep-kid button,.atk-prep-del{min-width:44px;min-height:44px;border:0;background:none;color:#8A5747;font:inherit;font-size:16px}
+.atk-prep-addkid{display:flex;gap:6px;flex:1 1 100%}
+.atk-prep-addkid input,.atk-prep-form input,.atk-prep-form select{flex:1;min-width:0;min-height:44px;border:1px solid #D9C6BB;border-radius:10px;padding:6px 10px;font-size:16px;background:#fff}
+.atk-prep-addkid button,.atk-prep-add{min-height:44px;border:0;border-radius:12px;background:#8A5747;color:#fff;font:inherit;font-weight:800;padding:0 14px}
+.atk-prep-form label{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:14px;color:#4A3029}
+.atk-prep-form label[hidden]{display:none}
+.atk-prep-add{width:100%;margin-top:4px}
+.atk-prep-list{margin-top:8px}
+.atk-prep-list summary{min-height:44px;display:flex;align-items:center;font-weight:700;color:#704839;cursor:pointer}
+.atk-prep-child p{margin:6px 0 2px;font-weight:800;font-size:13px}
+.atk-prep-child ul{margin:0;padding-left:18px;font-size:13px;line-height:1.5}
+.atk-prep-child b{margin-right:6px}
+.atk-prep-note{font-size:12px;color:#6B5249;margin:6px 0}
+.atk-prep-error{font-size:13px;color:#B42318;font-weight:700;margin:6px 0}
+
+/* v51 家族の買い物担当 (assign-ui-v51.js): a compact block above the shopping rows. */
+.atk-assign{margin:8px 0 10px;padding:10px 12px;border:1px solid #E9DAD3;border-radius:12px;background:#FFFDFB}
+.atk-assign-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.atk-assign-head b{font-size:14px;color:#4A3029}
+.atk-assign-toggle{min-height:44px;border:1px solid #E2CFC4;border-radius:10px;background:#fff;color:#704839;font:inherit;font-weight:800;padding:0 12px}
+.atk-assign-list,.atk-assign-edit{list-style:none;margin:6px 0 0;padding:0}
+.atk-assign-list li,.atk-assign-edit li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px;border-top:1px solid #F0E4DE;padding:4px 0}
+.atk-assign-name{font-weight:800;color:#4A3029;overflow-wrap:anywhere}
+.atk-assign-state{font-size:13px;color:#6B5249}
+.atk-assign-reply{display:flex;gap:6px;flex:1 1 100%}
+.atk-assign-reply button{flex:1;min-height:44px;border:0;border-radius:10px;background:#8A5747;color:#fff;font:inherit;font-weight:800}
+.atk-assign-reply button.ghost{background:#F3E8E2;color:#4A3029}
+.atk-assign-edit select{margin-left:auto;min-height:44px;min-width:9em;border:1px solid #D9C6BB;border-radius:10px;padding:0 8px;font-size:16px;background:#fff}
+.atk-assign-note,.atk-assign-msg{margin:6px 0 0;font-size:13px;color:#6B5249}
+.atk-assign-msg{font-weight:700;color:#8A3B2A}
+/* v51 stock list: 3-level mark and direct change (text + colour; 44px touch targets). */
+.atk-lv{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:6px;width:100%}
+.atk-lv-mark{min-height:44px;min-width:44px;padding:4px 10px;border-radius:999px;border:1px solid #E5D3CB;background:#fff;color:#4A3B36;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:4px}
+.atk-lv-mark small,.atk-lv-src{font-size:11px;font-weight:600;color:#7A6A64}
+.atk-lv-src{padding:0 2px;white-space:nowrap}
+.atk-lv-choice{flex:1 1 0;min-height:44px;min-width:44px;padding:4px 6px;border-radius:12px;border:1px solid #E5D3CB;background:#fff;color:#4A3B36;font-size:13px;font-weight:700}
+.atk-lv-choice[aria-pressed="true"]{background:#4A3B36;color:#fff;border-color:#4A3B36}
+.atk-lv-mark.atk-lv-plenty{background:#EEF6EE;border-color:#BFDCC0}
+.atk-lv-mark.atk-lv-low{background:#FFF4E0;border-color:#F0D29A}
+.atk-lv-mark.atk-lv-buy{background:#FDECEA;border-color:#F3B8B1}
+.atk-lv-mark.atk-lv-unknown{background:#F2F0EF;border-style:dashed}
+.atk-lv-src.atk-lv-unknown{color:#B42318}
+.atk-pack-cands{margin:8px 0;padding:8px;border-radius:12px;background:#FBF7F5}
+.atk-pack-cands-head{margin:0 0 4px;font-size:13px;font-weight:700}
+.atk-pack-cands ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.atk-pack-cands li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.atk-pack-cand-name{flex:1 1 100%;font-weight:700;overflow-wrap:anywhere}
+.atk-pack-cand-qty{font-size:12px;color:#6B5B55}
+.atk-pack-cand-add{min-height:44px;padding:4px 12px;border-radius:12px;border:1px solid #4A3B36;background:#fff;font-weight:700}
+.atk-pack-cand-state{font-size:12px;color:#6B5B55}
+.atk-level-kids,.atk-level-edit{margin:8px 0}
+.atk-level-kids summary,.atk-level-edit summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}
+.atk-level-kid-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.atk-level-kid-grid[hidden],.atk-level-field[hidden]{display:none!important}
+/* Daily use: one explicit way of entering it (total or per child); the chosen way is always used. */
+.atk-level-rate{margin:8px 0;padding:8px;border:1px solid #E5D3CB;border-radius:12px;min-width:0}
+.atk-level-rate legend{padding:0 4px;font-weight:700;font-size:14px}
+.atk-level-mode{display:grid;gap:6px;margin-bottom:6px}
+.atk-level-mode-opt{display:flex;align-items:center;gap:8px;min-height:44px;padding:4px 10px;border:1px solid #D8C6BE;border-radius:12px;background:#fff;font-weight:700;cursor:pointer}
+.atk-level-mode-opt:has(input:checked){border-color:#4A3B36;background:#FBF1EC}
+.atk-level-mode-opt input{width:22px;height:22px;margin:0;flex:none}
+.atk-level-rate-sum{font-weight:700}
+.atk-build-info{margin:16px 0 0;font-size:12px;color:#7A6A64;overflow-wrap:anywhere}
+.atk-prep-addkid{flex-wrap:wrap}
+.atk-prep-addkid input{flex:1 1 40%}
+/* The mark always takes its own line under the product (never squeezes the name column). */
+/* (!important: the list/card layouts set nowrap with higher-specificity selectors.) */
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id]:has(> .atk-lv){flex-wrap:wrap!important}
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id] > .atk-lv{flex:1 1 100%!important;order:99;min-width:0;max-width:100%}
+/* Cards: a small text label on the picture, so the card height does not change. */
+#pg-stock:not(.atk-stock-list-mode) #stockList .atk-row-brand{position:relative}
+.atk-lv-tag{position:absolute;left:4px;bottom:4px;z-index:1;padding:1px 6px;border-radius:999px;font-size:11px;font-weight:800;line-height:1.5;background:#fff;border:1px solid #E5D3CB;color:#4A3B36;pointer-events:none}
+.atk-lv-tag.atk-lv-low{background:#FFF4E0;border-color:#F0D29A}
+.atk-lv-tag.atk-lv-buy{background:#FDECEA;border-color:#F3B8B1}
+.atk-lv-tag.atk-lv-unknown{border-style:dashed;color:#B42318}
+.atk-photo-preview-setting{margin:16px 0 0;padding:12px;border-radius:12px;background:#FBF7F5}
+.atk-photo-preview-setting select{width:100%;min-height:44px;font-size:16px;border-radius:10px;border:1px solid #D9C6BB;background:#fff;padding:0 10px}
+.atk-photo-count{margin:6px 0;font-size:13px;font-weight:700;color:#4A3B36}
+.atk-photo-count[data-tone="full"],.atk-photo-count[data-tone="over"]{color:#B42318}
+.atk-last-purchase{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:8px 0;padding:8px 12px;border-radius:12px;background:#FFF7EC;border:1px solid #F0D29A;font-size:13px}
+.atk-last-purchase span{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.atk-last-purchase button{min-height:44px;min-width:44px;padding:0 14px;border-radius:12px;border:1px solid #8A5747;background:#fff;color:#8A5747;font-weight:800}
+.atk-last-purchase p{flex:1 1 100%;margin:0;color:#B42318}
+/* v51 Muse N-2/N-4: the level row is visibly separate from the product area; 要確認 keeps its width. */
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id] > .atk-lv{border-top:1px dashed #EADBD3;padding-top:6px;margin-top:6px}
+.atk-lv-src{flex:0 0 auto;min-width:3.6em;white-space:nowrap;text-align:center}
+.atk-lv-undo{flex:1 1 100%;min-height:44px;border:1px dashed #8A5747;border-radius:12px;background:#FFF7EC;color:#8A5747;font-weight:800}
+/* Close buttons: at least 44px to tap (Muse N-4). */
+#sheet .close,#atkPhotoEditor .close{min-height:44px;min-width:44px;padding:0 14px}
+.atk-lv-compact{flex-wrap:nowrap}
+.atk-lv-compact .atk-lv-src{flex:1 1 auto;text-align:left}
+.atk-lv-more{min-height:44px;min-width:64px;padding:0 12px;border-radius:12px;border:1px solid #E5D3CB;background:#fff;color:#4A3B36;font-weight:700;font-size:13px}
+.atk-compact-toggle{display:flex;align-items:center;gap:10px;min-height:44px;margin:4px 0 8px;padding:6px 10px;border:1px solid #E5D3CB;border-radius:12px;background:#fff;font-size:14px;color:#4A3B36;cursor:pointer}
+.atk-compact-toggle[hidden]{display:none}
+.atk-compact-toggle input{width:22px;height:22px;flex:none;margin:0}
+.atk-compact-toggle span{display:grid;gap:2px;min-width:0}
+.atk-compact-toggle small{font-size:12px;color:#6B5B55}
+/* The compact 余裕あり mark sits on the product line; the name is cut to one line (full name in the detail). */
+/* (!important: polish-v44.css lets list-mode names wrap with !important.) */
+body #pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .name{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis}
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .grow{min-width:0}
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id] > .atk-lv.atk-lv-compact{flex:0 0 auto!important;border-top:0;margin-top:0;padding-top:0;width:auto;order:0}
+#pg-stock.atk-stock-list-mode #stockList [data-stock-id]:has(> .atk-lv-compact){flex-wrap:nowrap!important}
+.atk-lv-compact .atk-lv-src{display:none}
+.atk-lv-compact .atk-lv-more{min-width:44px;padding:0 8px;background:#EEF6EE;border-color:#BFDCC0;white-space:nowrap}
+/* Photo-slot trial switch inside the photo screen (synthetic; this device only). */
+.atk-photo-trial{margin:6px 0 10px;padding:8px 10px;border-radius:12px;background:#FBF7F5}
+.atk-photo-trial summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer}
+.atk-photo-trial select{width:100%;min-height:44px;font-size:16px;border-radius:10px;border:1px solid #D9C6BB;background:#fff;padding:0 10px}
+/* Narrow phones: the compact mark says 余裕 ▾ so more of the product name stays readable. */
+@media (max-width:359px){.atk-lv-compact .atk-lv-more-long{display:none}}
+/* 家族機能の試用（合成データ）: お試し page only. */
+.atk-ftrial{margin:16px 0 0;padding:10px 12px;border:1px solid #E5D3CB;border-radius:14px;background:#fff}
+.atk-ftrial>summary{min-height:44px;display:flex;align-items:center;font-weight:800;cursor:pointer}
+.atk-ft-banner{margin:6px 0;padding:8px 10px;border-radius:10px;background:#FFF4E0;font-size:13px;font-weight:700}
+.atk-ft-note{min-height:1em;margin:6px 0;font-size:13px;color:#2F6B3A;font-weight:700}
+.atk-ft-viewer{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+.atk-ft-viewer button,.atk-ft-actions button,.atk-ft-short button,.atk-ft-time button,.atk-ftrial [data-ft-deliver],.atk-ft-reset{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid #D8C6BE;background:#fff;font-weight:700;color:#4A3B36}
+.atk-ft-viewer button[aria-pressed="true"]{background:#4A3B36;color:#fff;border-color:#4A3B36}
+.atk-ftrial h4{margin:14px 0 6px;font-size:15px}
+.atk-ft-list,.atk-ft-short,.atk-ft-notes,.atk-ft-ticks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.atk-ft-row,.atk-ft-child{padding:8px;border:1px solid #EFE2DC;border-radius:12px}
+.atk-ft-row.is-done{opacity:.65}
+.atk-ft-name{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;overflow-wrap:anywhere}
+.atk-ft-name small{font-size:12px;color:#6B5B55}
+.atk-ft-state{margin:4px 0;font-size:13px}
+.atk-ft-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.atk-ft-primary{background:#4A3B36!important;color:#fff!important}
+.atk-ft-select{display:flex;align-items:center;gap:6px;font-size:13px}
+.atk-ft-select select{min-height:44px;font-size:16px;border-radius:10px;border:1px solid #D9C6BB;background:#fff;padding:0 8px}
+.atk-ft-ticks label,.atk-ft-check{display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer}
+.atk-ft-ticks input,.atk-ft-check input{width:22px;height:22px;flex:none;margin:0}
+.atk-ft-ticks em{margin-left:6px;font-style:normal;font-size:12px;color:#B42318;font-weight:700}
+.atk-ft-short li{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px}
+.atk-ft-time{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;font-size:13px}
+.atk-ft-kinds{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 8px;font-size:13px}
+.atk-ft-notes li{padding:8px;border-radius:10px;font-size:13px;background:#FBF7F5}
+.atk-ft-notes li small{display:block;color:#6B5B55}
+.atk-ft-send{background:#EEF6EE!important}
+.atk-ft-drop{color:#6B5B55}
+.atk-ft-help{font-size:12px;color:#6B5B55}
+.atk-ft-reset{margin-top:8px;width:100%}

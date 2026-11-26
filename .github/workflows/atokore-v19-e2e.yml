@@ -9,6 +9,9 @@ on:
       - 'scripts/atokore/**'
       - 'supabase/**'
       - 'tests/**'
+      - 'proposals/**'
+      - 'atokore-tools-v51/**'
+      - 'docs/atokore-v51-*.md'
       - '.github/workflows/atokore-v19-e2e.yml'
   workflow_dispatch:
 
@@ -16,6 +19,59 @@ permissions:
   contents: read
 
 jobs:
+  family-prep-proposal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/atokore-family-prep-v51.test.cjs
+  photo-focused-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+      options: --shm-size=1gb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
+      - name: Focused photo sharing regression in both browsers
+        run: npx playwright test -c tests/e2e-v19/playwright.config.cjs w2-backup-share.spec.cjs --grep 'photos are shared automatically' --repeat-each=2 --trace retain-on-failure
+      - name: Upload the trace of a failed focused photo run (synthetic data only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atokore-photo-focused-trace
+          path: |
+            test-results
+            tests/e2e-v19/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+  photo-edge-dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Verify frozen and audited Edge dependencies
+        run: |
+          lock="supabase/proposals/photo-general-v50.deno.lock"
+          test -s "$lock"
+          deno --version
+          deno cache --lock="$lock" --frozen supabase/proposals/photo-general-edge-v50.ts
+          deno check --lock="$lock" --frozen supabase/proposals/photo-general-edge-v50.ts
+          deno audit --lock="$lock" --frozen
+          git diff --exit-code -- "$lock"
   postgres-concurrency:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -41,6 +97,18 @@ jobs:
         env:
           ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
         run: node tests/household/revocation-postgres.cjs
+      - name: Real PostgreSQL household photo limit race (free 5)
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/photo-plan-limit-postgres.cjs
+      - name: Real PostgreSQL simultaneous family purchases (estimate 240, undo 180)
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/purchase-merge-postgres.cjs
+      - name: Real PostgreSQL legacy photo close under concurrent writes (draft)
+        env:
+          ATOKORE_SQL_TEST_DATABASE_URL: postgresql://postgres:atokore-ci-only@127.0.0.1:5432/atokore_ci
+        run: node tests/household/photo-legacy-close-postgres.cjs
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -59,7 +127,7 @@ jobs:
           python-version: '3.12'
       - name: Install test tools
         run: |
-          npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8
+          npm install --no-save --ignore-scripts jsdom@26.1.0 @playwright/test@1.56.1 @electric-sql/pglite@0.5.8 jpeg-js@0.4.4
       - name: Text size across app screens
         run: npx playwright test -c tests/e2e-v19/playwright.config.cjs polish-v44.spec.cjs --grep 'text size changes'
       - name: Baby food age order in both views
@@ -71,7 +139,22 @@ jobs:
           node tests/atokore-core.test.cjs
           node --test tests/atokore-product-identity.test.cjs
           node --test tests/atokore-product-photos-v30.test.cjs
+          node --test tests/atokore-photo-gateway-policy.test.cjs tests/atokore-photo-gateway-read-adapter.test.cjs
+          node --test tests/atokore-photo-gateway-operations.test.cjs tests/atokore-photo-gateway-browser.test.cjs
+          node --test tests/atokore-photo-gateway-sql.test.cjs
+          node --test tests/atokore-photo-gateway-trial-guard.test.cjs
+          node --test tests/atokore-photo-reservation-v50.test.cjs
+          node --test tests/atokore-photo-lifecycle-v50.test.cjs
+          node --test tests/atokore-photo-general-v50.test.cjs tests/atokore-photo-general-http-v50.test.cjs tests/atokore-photo-general-client-v50.test.cjs tests/atokore-photo-budget-v50.test.cjs tests/atokore-photo-general-trial-scope-v50.test.cjs tests/atokore-photo-migration-rehearsal-v50.test.cjs
+          node --check supabase/functions/_shared/photo-gateway-handler.mjs
           node --test tests/atokore-auth-qa-guard.test.cjs
+          node --test tests/atokore-photo-gateway-qa-guard.test.cjs
+          python3 -I scripts/atokore/photo-gateway-http-qa.py --self-test
+          python3 -I scripts/atokore/photo-general-http-qa-v50.py --self-test
+          mkdir -p "$RUNNER_TEMP/photo-qa-build/_local_review"
+          printf '%s\n' '<!doctype html><title>isolated QA fixture</title>' > "$RUNNER_TEMP/photo-qa-build/_local_review/index.html"
+          python3 -I scripts/atokore/attach-photo-gateway-qa.py "$RUNNER_TEMP/photo-qa-build/_local_review"
+          cmp tests/manual/atokore-v50-photo-gateway-qa.html "$RUNNER_TEMP/photo-qa-build/_local_review/qa/atokore-v50-photo-gateway-qa.html"
           node --test tests/atokore-baby-food-v35.test.cjs
           node --test tests/atokore-batch-review-v36.test.cjs
           node --test --test-concurrency=1 tests/atokore-household-core.test.cjs tests/atokore-household-sync.test.cjs tests/atokore-household-sql.test.cjs tests/atokore-entitlements-sql.test.cjs tests/atokore-history-w2-sql.test.cjs tests/atokore-receipt-imports-sql.test.cjs tests/atokore-household-guest-v42.test.cjs
@@ -92,6 +175,9 @@ jobs:
           node --test tests/atokore-food-month-display.test.cjs
           node --test tests/atokore-search-v48.test.cjs
           node --test tests/atokore-stock-rules-v48.test.cjs
+          node --test tests/atokore-stock-levels-v51.test.cjs tests/atokore-tools-v51.test.cjs tests/atokore-units-v51.test.cjs
+          node --test tests/atokore-prep-sets-v51.test.cjs tests/atokore-entitlements-v51.test.cjs tests/atokore-notify-policy-v51.test.cjs tests/atokore-usage-monitor-v51.test.cjs
+          node --test --test-concurrency=1 tests/atokore-buy-assignment-v51.test.cjs tests/atokore-prep-share-v51.test.cjs tests/atokore-photo-legacy-closure-v51.test.cjs
           node --test tests/atokore-buy-duplicates-v48.test.cjs
           node --test tests/atokore-baby-food-search-v48.test.cjs
           node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \

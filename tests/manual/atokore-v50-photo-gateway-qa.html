@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"/><meta name="referrer" content="no-referrer"/><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://vzyxurodowpjltwbgbyc.supabase.co; img-src data: blob:; base-uri 'none'; form-action 'none'"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>あとこれ v50 - 新写真ゲート実通信QA</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color-scheme:light}body{margin:0;background:#f4f6f5;color:#162626}main{max-width:720px;margin:auto;padding:20px}h1{font-size:1.35rem}p,small{line-height:1.6}.info{border-left:4px solid #287d65;padding:12px;background:white}.account{background:white;border:1px solid #ccd9d4;border-radius:12px;margin:12px 0;padding:12px}.account label{display:block;margin-bottom:6px}input{width:100%;max-width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #aabbb4;margin:5px 0 12px}button{padding:13px 18px;background:#155c4e;color:white;border:0;border-radius:10px;font-size:1rem;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:#fff;border:1px solid #ccd9d4;border-radius:8px;padding:12px}.pass{color:#126a39}.fail{color:#ac2e30}.warn{color:#865d00}
+</style></head>
+<body><main><h1>あとこれ v50｜新写真ゲート実通信QA</h1>
+<p class="info"><strong>RawGitHackなど第三者配信の画面ではパスワードを入力しないでください。このQAは認証保護済みのオーナー専用Vercel試用環境のみで実行できます。</strong> 試用Supabase <strong>atokore-family-trial</strong> 専用。既存ユーザーのメールやパスワードを絶対に入力しないでください。<strong>example.invalid</strong> の今回作成した架空アカウント3件以外は実行できません。端末の実データ・写真を読み取りません。このページではアカウントを作成／削除しません。</p>
+<div id="accounts"></div>
+<button id="start" type="button">合成3アカウントで検証する</button>
+<p id="status">未実行</p><pre id="result" aria-live="polite"></pre>
+<p><small>実際のAuth・PostgREST RPC・新写真ゲート・新バケットのみをブラウザから検証します。テストの一環として今回アップロードした架空JPEGのみ削除します。旧バケット・既存写真には触れません。入力したパスワード・アクセストークンは保存／表示／送信ログに出力せず、処理終了後は破棄します。合成世帯データの削除は管理者による識別子限定の後片付けが別途必要です。</small></p>
+</main>
+<script>
+(function(){
+'use strict';
+var REF='vzyxurodowpjltwbgbyc', COHORT='f8a63d1e92', BASE='https://'+REF+'.supabase.co';
+var KEY="sb_publishable_26Owk0KT0uV4J0T64QZQyw_wIri_8Ui";
+var roles=['a','b','c'];
+var ids={a:'atokore-qa-a-'+COHORT+'@example.invalid',b:'atokore-qa-b-'+COHORT+'@example.invalid',c:'atokore-qa-c-'+COHORT+'@example.invalid'};
+var container=document.getElementById('accounts');
+roles.forEach(function(r){
+var div=document.createElement('div'); div.className='account';
+var heading=document.createElement('strong');heading.textContent='合成アカウント '+r.toUpperCase();
+var label1=document.createElement('label');label1.textContent='メール';label1.htmlFor='email-'+r;
+var email=document.createElement('input');email.type='email';email.id='email-'+r;email.autocomplete='off';email.value=ids[r];email.readOnly=true;
+var label2=document.createElement('label');label2.textContent='一時パスワード';label2.htmlFor='password-'+r;
+var password=document.createElement('input');password.type='password';password.id='password-'+r;password.autocomplete='off';password.spellcheck=false;
+password.setAttribute('aria-describedby','error-'+r);
+var error=document.createElement('p');error.id='error-'+r;error.className='fail';
+error.hidden=true;error.setAttribute('role','alert');error.setAttribute('aria-live','polite');
+password.addEventListener('input',function(){clearFieldError(r)});
+div.append(heading,label1,email,label2,password,error);container.append(div);
+});
+var button=document.getElementById('start'), status=document.getElementById('status'), output=document.getElementById('result');
+var runKey='atk_v50_qa_once_'+COHORT,alreadyStarted=false;
+var allowedOrigin=location.origin==='https://atokore-v50-owner-review-20261122.vercel.app' &&
+ location.pathname==='/qa/atokore-v50-photo-gateway-qa.html';
+if(!allowedOrigin){button.disabled=true;status.textContent='このURLでは認証試験を実行できません。承認済み配信が必要です。';}
+function persistNonSecrets(){try{localStorage.setItem(runKey,output.textContent||'QA開始済み')}catch(e){}}
+// A new cohort must never re-run after a saved result or marker.
+try {
+ var previous=localStorage.getItem(runKey);
+ if(previous){output.textContent=previous;button.disabled=true;status.textContent='この合成テストは実行済みです。再実行は禁止です。';}
+}catch(e){button.disabled=true;status.textContent='端末の保存領域が利用できないため、試験は停止しています。';}
+function emit(message){status.textContent=message}
+function clearFieldError(role){
+ var email=document.getElementById('email-'+role),password=document.getElementById('password-'+role),error=document.getElementById('error-'+role);
+ if(error){error.textContent='';error.hidden=true}
+ if(email)email.setAttribute('aria-invalid','false');
+ if(password)password.setAttribute('aria-invalid','false');
+}
+function validateInputs(){
+ var firstInvalid=null,credentials={};
+ for(var role of roles){
+  var email=document.getElementById('email-'+role);
+  var password=document.getElementById('password-'+role);
+  var error=document.getElementById('error-'+role);
+  var reason='';
+  if(!email||email.value!==ids[role])
+   reason='合成アカウント '+role.toUpperCase()+'：メールが今回の試験用アドレスと一致しません。';
+  else if(!password||password.value.length<12)
+   reason='合成アカウント '+role.toUpperCase()+'：12文字以上の一時パスワードを入力してください。';
+  if(reason){
+   if(error){error.textContent=reason;error.hidden=false}
+   if(email)email.setAttribute('aria-invalid',email.value!==ids[role]?'true':'false');
+   if(password)password.setAttribute('aria-invalid','true');
+   if(!firstInvalid)firstInvalid=email&&email.value!==ids[role]?email:password;
+  }else{
+   clearFieldError(role);
+   credentials[role]=password.value;
+  }
+ }
+ if(firstInvalid){
+  emit('入力に問題があります。A・B・Cの該当欄を修正して再度実行してください。通信はしていません。');
+  firstInvalid.focus();
+  Object.keys(credentials).forEach(function(role){credentials[role]=null});
+  return null;
+ }
+ return credentials;
+}
+function resultLine(name,pass,extra){var old=output.textContent;output.textContent=old+name+' : '+(pass===true?'PASS':pass===false?'FAIL':'UNTESTED')+(extra?' ('+extra+')':'')+'\n';persistNonSecrets()}
+function assert(v,name){if(!v)throw new Error(name)}
+function rpcDenied(r){return !!r&&r.status===403&&r.data?.code==='42501'}
+function storageVerdict(r,owner){
+ if(!r||r.network||!owner||owner.status!==200)return 'unexpected';
+ if(r.status===401||r.status===403)return 'access_denied';
+ var e=String(r.errorCode||'').toLowerCase();
+ if((r.status===400||r.status===404)&&/(nosuchkey|not.found|object not found|404)/.test(e))
+  return 'hidden_existing_path';
+ return 'unexpected';
+}
+function photoMeta(r){
+ return 'HTTP '+r.status+'; mode='+String(r.cacheMode||'-')+
+ '; Cache-Control='+String(r.cacheControl||'-').slice(0,70)+
+ '; Age='+String(r.age||'-').slice(0,20)+'; CDN='+String(r.cdn||'-').slice(0,30)+
+ '; bytes='+String(r.bytes===undefined?'-':r.bytes)+
+ '; SHA256='+String(r.bodyHash||'-').slice(0,64)+
+ '; source='+String(r.source||'unknown');
+}
+function safeCode(response,parsed){return String(response.status)+(parsed&&typeof parsed.code==='string'?' '+parsed.code:'')}
+async function req(url,method,data,session,contentType){
+var headers={'apikey':KEY,'cache-control':'no-cache'};
+if(session)headers.Authorization='Bearer '+session.access_token;
+if(contentType!=='image/jpeg')headers['Content-Type']='application/json';
+else headers['Content-Type']='image/jpeg';
+var response=await fetch(BASE+url,{method:method,headers:headers,
+body:data===undefined?undefined:(contentType==='image/jpeg'?data:JSON.stringify(data)),cache:'no-store',credentials:'omit'});
+var parsed=null;
+if(contentType==='image/jpeg'&&method==='GET')return {ok:response.ok,status:response.status,body:await response.blob()};
+try{parsed=await response.json()}catch(e){parsed={}}
+return {ok:response.ok,status:response.status,data:parsed,error:safeCode(response,parsed)};
+}
+async function signIn(email,password){
+var r=await req('/auth/v1/token?grant_type=password','POST',{email:email,password:password},null);
+assert(r.ok&&r.data&&r.data.access_token&&r.data.user&&r.data.user.id,'Auth sign-in declined '+r.error);
+return {access_token:r.data.access_token,id:r.data.user.id};
+}
+async function rpc(user,name,body){
+return await req('/rest/v1/rpc/'+name,'POST',body,user);
+}
+function urlPath(path){return path.split('/').map(encodeURIComponent).join('/')}
+function outputInfo(meta){output.textContent+='\nSynthetic-only IDs for controlled database cleanup:\n'+JSON.stringify(meta,null,2)+'\n';persistNonSecrets()}
+function mkId(){return 'qa_'+COHORT+'_item'}
+async function sha(s){
+var bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+return Array.from(new Uint8Array(bytes)).map(function(x){return x.toString(16).padStart(2,'0')}).join('');
+}
+function tinyJpeg(){
+var cvs=document.createElement('canvas');cvs.width=1;cvs.height=1;
+cvs.getContext('2d').fillRect(0,0,1,1);
+return new Promise(function(resolve,reject){cvs.toBlob(function(b){if(b&&b.type==='image/jpeg'&&b.size<81920)resolve(b);else reject(new Error('canvas jpeg unavailable'))},'image/jpeg',.75)});
+}
+async function hashBytes(bytes){
+ var digest=await crypto.subtle.digest('SHA-256',bytes);
+ return Array.from(new Uint8Array(digest)).map(function(b){return b.toString(16).padStart(2,'0')}).join('');
+}
+
+// Trial-only. No service key, legacy bucket, real photos or external hosts.
+var NEW_BUCKET='atokore-private-photos-v2';
+var GATE='/functions/v1/atokore-photo-gateway';
+var UUID='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+var canonical=new RegExp('^'+UUID+'/qa_'+COHORT+'_item/'+UUID+'[.]jpg$');
+function safePath(path,hh){return typeof path==='string'&&canonical.test(path)&&path.startsWith(hh+'/'+mkId()+'/')}
+// An expired/invalid JWT, CORS failure or generic origin error is NOT proof of revocation.
+function denied(r){return r.status===403&&!r.image&&r.data?.error==='denied'}
+function directDenied(r){
+ if(r.image)return false;
+ if(r.status===403)return true;
+ var evidence=[r.data?.code,r.data?.error,r.data?.statusCode,r.data?.message].filter(Boolean).join('|');
+ return [400,404].includes(r.status)&&/(nosuchkey|not.found|object not found|404)/i.test(evidence);
+}
+async function binaryMeta(r){
+ var type=String(r.headers.get('content-type')||'');
+ var image=type.startsWith('image/jpeg');
+ var b=image&&r.ok?await r.arrayBuffer():null;
+ var data={};
+ if(!image){try{data=await r.json()}catch(e){}}
+ return {status:r.status,image:!!b,hash:b?await hashBytes(b):null,bytes:b?b.byteLength:0,
+  data:data,cache:String(r.headers.get('cache-control')||'').slice(0,80)};
+}
+async function gateway(user,body,mode){
+ try{
+  var hdr={apikey:KEY,'Content-Type':'application/json'};
+  if(user)hdr.Authorization='Bearer '+user.access_token;
+  var r=await fetch(BASE+GATE,{method:'POST',headers:hdr,body:JSON.stringify(body),
+   cache:mode||'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
+  return await binaryMeta(r)
+ }catch(e){return {status:0,image:false,hash:null,bytes:0,data:{},cache:''}}
+}
+async function direct(path,user,nonce){
+ try{
+  var url=BASE+'/storage/v1/object/authenticated/'+NEW_BUCKET+'/'+urlPath(path)+'?qa='+nonce;
+  var r=await fetch(url,{headers:{apikey:KEY,Authorization:'Bearer '+user.access_token},
+   cache:'reload',credentials:'omit',referrerPolicy:'no-referrer'});
+  return await binaryMeta(r)
+ }catch(e){return {status:0,image:false,bytes:0,data:{}}}
+}
+function desc(r){return 'HTTP '+r.status+'; bytes='+r.bytes+'; cache='+String(r.cache||'-')+'; SHA256='+String(r.hash||'-')}
+function isMatch(r,expected,size){return r.status===200&&r.image&&r.hash===expected&&r.bytes===size&&r.cache.toLowerCase().includes('no-store')}
+async function setPhoto(user,path){
+ var r=await rpc(user,'hh_push',{p_device:'qa-'+COHORT,p_ops:[{
+  op_id:crypto.randomUUID(),type:'set',kind:'item',id:mkId(),field:'photoPath',value:path,ts:Date.now()
+ }]});
+ return r.ok&&r.data?.results?.[0]?.status==='applied'
+}
+async function start(){
+ if(!allowedOrigin||alreadyStarted){button.disabled=true;return}
+ try{if(localStorage.getItem(runKey)){button.disabled=true;return}}catch(e){button.disabled=true;return}
+ var credentials=validateInputs();if(!credentials)return;
+ // Fail closed if the one-shot marker cannot be written.
+ try{localStorage.setItem(runKey,'QA started; do not repeat')}catch(e){emit('試験記録を保存できません。通信せず中止しました。');return}
+ alreadyStarted=true;button.disabled=true;output.textContent='';emit('テスト中');
+ var users={}, bNew=null, hh=null, path=null, linked=false, reauthB=credentials.b;
+ var meta={cohort:COHORT,users:{},households:{},item:mkId(),photoPath:null,photoDeleted:false};
+ try{
+  for(var role of roles){
+   users[role]=await signIn(ids[role],credentials[role]);
+   credentials[role]=null;document.getElementById('password-'+role).value='';
+   meta.users[role]=users[role].id;resultLine('実Auth '+role.toUpperCase(),true);
+  }
+  for(var role of roles){
+   var current=await rpc(users[role],'hh_my',{});
+   assert(current.ok&&current.data&&!current.data.household,'pre-existing household or auth error');
+  }
+  var a=await rpc(users.a,'hh_create',{p_name:'ATK-QA-'+COHORT+'-A',p_display_name:'QA A'});
+  hh=a.data?.household?.id;assert(a.ok&&hh,'create A');meta.households.a=hh;
+  var inv=await rpc(users.a,'hh_invite_create',{});assert(inv.ok&&inv.data?.code,'invite');
+  var j=await rpc(users.b,'hh_join',{p_code:inv.data.code,p_display_name:'QA B'});
+  assert(j.ok&&j.data?.household?.id===hh,'join B');
+  var c=await rpc(users.c,'hh_create',{p_name:'ATK-QA-'+COHORT+'-C',p_display_name:'QA C'});
+  assert(c.ok&&c.data?.household?.id&&c.data.household.id!==hh,'create C');
+  meta.households.c=c.data.household.id;resultLine('同世帯A/B・別世帯C作成',true);
+  var p=await rpc(users.a,'hh_push',{p_device:'qa-'+COHORT,p_ops:[{
+   op_id:crypto.randomUUID(),type:'create',kind:'item',id:mkId(),qty:2,fields:{name:'架空QAおむつ',unit:'袋'},ts:Date.now()
+  }]});
+  assert(p.ok&&p.data?.results?.[0]?.status==='applied','create item');
+  var bstock=await rpc(users.b,'hh_pull',{p_since:0,p_limit:20});
+  var shared=bstock.ok&&bstock.data?.records?.some(r=>r.id===mkId()&&r.qty===2);
+  resultLine('B在庫共有',shared===true);assert(shared,'B stock positive control');
+  var cstock=await rpc(users.c,'hh_pull',{p_since:0,p_limit:20});
+  var isolated=cstock.ok&&Array.isArray(cstock.data?.records)&&!cstock.data.records.some(r=>r.id===mkId());
+  resultLine('CのJWT有効・別世帯在庫分離',isolated);assert(isolated,'C stock control');
+  var jpg=await tinyJpeg(),bytes=new Uint8Array(await jpg.arrayBuffer()),expected=await hashBytes(bytes);
+  var base64=btoa(String.fromCharCode(...bytes));
+  var w=await gateway(users.a,{operation:'write',householdId:hh,recordId:mkId(),base64:base64});
+  if(w.status===200&&safePath(w.data?.path,hh)){path=w.data.path;meta.photoPath=path;}
+  resultLine('A新ゲートJPEG登録',!!path,'HTTP '+w.status);
+  assert(path,'write failed or invalid path');
+  linked=await setPhoto(users.a,path);assert(linked,'link item photo');
+  var read={operation:'read',path:path};
+  var ra=await gateway(users.a,read),rb=await gateway(users.b,read,'default'),rc=await gateway(users.c,read);
+  resultLine('A画像SHA256一致・no-store',isMatch(ra,expected,bytes.length),desc(ra));
+  resultLine('B画像SHA256一致・no-store',isMatch(rb,expected,bytes.length),desc(rb));
+  resultLine('別世帯Cゲート拒否',denied(rc),desc(rc));
+  assert(isMatch(ra,expected,bytes.length)&&isMatch(rb,expected,bytes.length),'image positive control failed');
+  var nonce='fixed-'+crypto.randomUUID();meta.directNonce=nonce;
+  for(var role of roles){var d=await direct(path,users[role],nonce);resultLine('新バケット直GET拒否 '+role.toUpperCase(),directDenied(d),desc(d))}
+  var noauth=await gateway(null,read);resultLine('認証なしゲート拒否',noauth.status===0?null:([401,403].includes(noauth.status)&&!noauth.image),desc(noauth));
+  var rem=await rpc(users.a,'hh_remove_member',{p_user:users.b.id});assert(rem.ok&&rem.data?.removed===1,'remove B');
+  resultLine('AがBを除外',true);
+  var afterA=await gateway(users.a,read),afterB=await gateway(users.b,read,'reload');
+  resultLine('除外後A取得維持',isMatch(afterA,expected,bytes.length),desc(afterA));
+  resultLine('除外後Bの同一POST・旧JWT拒否',denied(afterB),desc(afterB));
+  var oldDirect=await direct(path,users.b,nonce);
+  resultLine('除外後Bの新バケット同一直URL拒否',directDenied(oldDirect),desc(oldDirect));
+  var bpull=await rpc(users.b,'hh_pull',{p_since:0,p_limit:20});
+  resultLine('除外後B在庫RPC拒否',rpcDenied(bpull),'HTTP '+bpull.status);
+  bNew=await signIn(ids.b,reauthB);
+  assert(bNew.id===users.b.id,'B UID changed');
+  var bNewPull=await rpc(bNew,'hh_pull',{p_since:0,p_limit:20});
+  resultLine('除外後Bの新JWTで在庫RPC拒否',rpcDenied(bNewPull),'HTTP '+bNewPull.status);
+  var newB=await gateway(bNew,read,'reload');
+  resultLine('除外後Bの同一POST・新JWT拒否',denied(newB),desc(newB));
+  var forbiddenDelete=await gateway(bNew,{operation:'delete',path:path});
+  resultLine('除外後B削除拒否',denied(forbiddenDelete),desc(forbiddenDelete));
+  var forbiddenWrite=await gateway(bNew,{operation:'write',householdId:hh,recordId:mkId(),base64:base64});
+  resultLine('除外後B書込拒否',denied(forbiddenWrite),desc(forbiddenWrite));
+  var lastA=await gateway(users.a,read);
+  resultLine('B拒否後もAの写真が維持',isMatch(lastA,expected,bytes.length),desc(lastA));
+  emit('検証終了。結果を管理者へ共有してください。');
+ }catch(e){resultLine('検証処理',false,String(e.message||'error').slice(0,90));emit('中断。管理者の限定後片付けが必要です。')}
+ finally{
+  // This owner-approved test action targets only the synthetic JPEG created above.
+  // No legacy object, auth user, household or unrelated record is deleted.
+  if(path&&hh&&safePath(path,hh)&&linked&&users.a){
+   try{
+    var del=await gateway(users.a,{operation:'delete',path:path});
+    meta.photoDeleted=del.status===200&&del.data?.deleted===true;
+    resultLine('合成JPEGのゲート削除応答',meta.photoDeleted,'HTTP '+del.status);
+    if(meta.photoDeleted){var clear=await setPhoto(users.a,null);resultLine('合成写真参照の解除',clear)}
+   }catch(e){resultLine('合成JPEG後片付け',false,'DBとStorageの管理者確認が必要')}
+  }else if(path){resultLine('合成JPEG後片付け',null,'写真参照未確定。管理者確認が必要')}
+  outputInfo(meta);
+  for(var k of Object.keys(users))users[k].access_token='';
+  if(bNew)bNew.access_token='';reauthB=null;
+  for(var role of roles){credentials[role]=null;document.getElementById('password-'+role).value=''}
+  button.disabled=true;
+ }
+}
+button.addEventListener('click',start);
+})();
+</script></body></html>

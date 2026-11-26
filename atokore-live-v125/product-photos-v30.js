@@ -1,7 +1,6 @@
-/* Product photos. JPEGs (256px, metadata stripped) are kept in IndexedDB. While the family shares
- * data, every product photo is shared through the household's private Storage bucket, like the
- * product itself: a photo set while sharing is sent right away (or when the connection is back),
- * and photos set before sharing started are sent once sharing is confirmed.
+/* Product photos. JPEGs (256px, metadata stripped) are kept in IndexedDB.
+ * Family photo transfer requires the explicitly enabled protected gateway.
+ * While disabled, changes are retained locally, never sent through legacy Storage.
  * Local records: {bytes, pending} — pending:true means "not yet sent to the family";
  * {removed:true, pending:true} means "removal not yet sent". Backups include the photos.
  */
@@ -69,17 +68,18 @@ function scopeKey(){const hh=root.AtokoreHousehold;return hh?.homeState?.().join
 function resetShared(){sharedEpoch++;for(const url of sharedCache.values())if(url)root.URL.revokeObjectURL(url);sharedCache.clear();sharedPending.clear()}
 async function loadFor(item){
  const hh=root.AtokoreHousehold,scope=hh?.photoScope?.(item.id);
- if(!scope||!item.photoPath)return load(key(item));
- const sk=scope.household+':'+scope.user+':'+item.photoPath;
+ if(!scope||!item.photoPath||hh?.photoSharingEnabled?.()===false)return load(key(item));
+ const path=item.photoPath;
+ const sk=scope.household+':'+scope.user+':'+path;
  if(sharedCache.has(sk))return sharedCache.get(sk);
  if(sharedPending.has(sk))return sharedPending.get(sk);
  const epoch=sharedEpoch;
  const stillActive=()=>{
   const current=readItem(item.id),now=hh.photoScope(item.id);
-  return epoch===sharedEpoch&&current?.photoPath===item.photoPath
+  return epoch===sharedEpoch&&current?.photoPath===path
    &&now?.household===scope.household&&now?.user===scope.user&&now?.sid===scope.sid;
  };
- const task=hh.fetchPhoto(item.id,item.photoPath).then(async blob=>{
+ const task=hh.fetchPhoto(item.id,path).then(async blob=>{
   if(!blob||!validBlob(blob)||!stillActive())return null;
   if(fileKind(new Uint8Array(await blob.slice(0,32).arrayBuffer()))!=='jpeg'||!stillActive())return null;
   const url=root.URL.createObjectURL(blob);
@@ -120,17 +120,30 @@ function picture(badge,url){
  if(badge.querySelector('.atk-user-photo')?.getAttribute('src')===url)return;
  const label=badge.querySelector('.bf-baby-brand,.atk-photo-brand')?.textContent||badge.textContent.trim();
  const img=element('img','atk-user-photo');img.alt='';img.src=url;img.width=256;img.height=256;
- img.addEventListener('error',()=>picture(badge,null),{once:true});
+ img.addEventListener('error',()=>{if(badge.querySelector('.atk-user-photo')===img)picture(badge,null)},{once:true});
  badge.replaceChildren(img);if(label)badge.append(element('span','atk-photo-brand',label));badge.classList.add('atk-has-photo');
+}
+// A row may be painted several times while sync and image requests are in
+// flight. An older null/error or an older photo must not clear or replace a
+// newer render. Capture the actual DOM target, item identity and reference.
+const renderTickets=new WeakMap();
+function beginPhotoRender(target,item){
+ const token={},identity=key(item),path=item.photoPath??null,epoch=sharedEpoch;
+ renderTickets.set(target,token);
+ return ()=>{
+  const current=readItem(item.id);
+  return renderTickets.get(target)===token&&target.isConnected&&epoch===sharedEpoch&&
+   !!current&&key(current)===identity&&(current.photoPath??null)===path;
+ };
 }
 function decorate(){
  for(const row of doc.querySelectorAll('#stockList [data-stock-id],#pg-home [data-atk-open],#buyList [data-buy-id]')){
   let item=readItem(row.dataset.stockId||row.dataset.atkOpen);
   if(row.dataset.buyId){try{const buy=buys.find(x=>String(x.id)===row.dataset.buyId);item=items.find(x=>root.__atokoreCoreV125H.sameProduct(x,buy))}catch(_){}}
   if(!item)continue;
-  const k=key(item),badge=row.querySelector('.atk-row-brand,.atk-brand');if(!badge)continue;
-  const epoch=sharedEpoch;
-  loadFor(item).then(url=>{if(epoch===sharedEpoch&&row.isConnected&&key(readItem(item.id)||{})===k)picture(badge,url)}).catch(()=>{if(epoch===sharedEpoch)picture(badge,null)});
+  const badge=row.querySelector('.atk-row-brand,.atk-brand');if(!badge)continue;
+  const current=beginPhotoRender(badge,item);
+  loadFor(item).then(url=>{if(current()&&row.contains(badge))picture(badge,url)}).catch(()=>{if(current()&&row.contains(badge))picture(badge,null)});
  }
 }
 let editor=null;
@@ -142,13 +155,13 @@ function detailPhoto(){
   const button=element('button','atk-photo-open','写真を設定');button.type='button';
   button.addEventListener('click',()=>openEditor(item.id));head.append(button);
  }
- const epoch=sharedEpoch;
+ const current=beginPhotoRender(head,item);
  loadFor(item).then(url=>{
-  if(epoch!==sharedEpoch||!head.isConnected)return;
+  if(!current())return;
   let image=head.querySelector('.atk-detail-photo');
   if(url){if(!image){image=element('img','atk-detail-photo');image.alt='商品の写真';head.prepend(image)}image.src=url}
   else image?.remove();
-  head.querySelector('.atk-photo-open').textContent=url?'写真を変更':'写真を設定';
+  const button=head.querySelector('.atk-photo-open');if(button)button.textContent=url?'写真を変更':'写真を設定';
  }).catch(()=>{});
 }
 function openEditor(id){
@@ -165,8 +178,49 @@ function openEditor(id){
  const save=element('button','atk-photo-save','この写真にする');save.type='button';save.disabled=true;
  const reset=element('button','atk-photo-reset','元のアイコンに戻す');reset.type='button';reset.hidden=true;
  const joined=!!root.AtokoreHousehold?.homeState?.().joined;
- const note=element('p','atk-photo-note',joined?'写真は家族と自動で共有され、バックアップにも含まれます。参加者を外すと新しい取得は拒否されますが、以前に見たり保存した写真・バックアップのコピーは回収できません。':'写真はこの端末とバックアップに保存されます。家族共有を始めると写真も自動共有され、相手が取得・保存したコピーは後から回収できません。');
- panel.append(close,title,name,preview,pick,file,status,save,reset,note);sheet.append(panel);
+ const note=element('p','atk-photo-note',root.AtokoreHousehold?.photoSharingEnabled?.()===false?'写真の家族共有は現在停止中です。端末内の写真は保存・バックアップできます。':joined?'写真は家族と自動で共有され、バックアップにも含まれます。参加者を外すと新しい取得は拒否されますが、以前に見たり保存した写真・バックアップのコピーは回収できません。':'写真はこの端末とバックアップに保存されます。家族共有を始めると写真も自動共有され、相手が取得・保存したコピーは後から回収できません。');
+ // v51: shared-photo counter before adding (the server enforces the household limit).
+ const count=element('p','atk-photo-count');count.id='atkPhotoCount';
+ const paintCount=()=>{try{
+  const hh=root.AtokoreHousehold,E=root.AtokoreEntitlements,list=(()=>{try{return Array.isArray(items)?items:[]}catch(_){return []}})();
+  const raw=hh?.entitlements?.();
+  const c=E?.photoCounter?.({joined:!!hh?.homeState?.().joined,sharing:hh?.photoSharingEnabled?.()===true,used:list.filter(x=>x&&x.photoPath).length,ent:raw?E.fromServer(raw):null,hasShared:!!item.photoPath});
+  if(c){count.textContent=c.text;count.dataset.tone=c.tone;count.hidden=false}else count.hidden=true;
+  const realShared=!!hh?.homeState?.().joined&&hh?.photoSharingEnabled?.()===true;
+  if(!realShared&&previewPlan())paintPreview();
+ }catch(e){count.hidden=true;console.error('あとこれ: 写真の枚数',e)}};
+ // Trial display (Muse P2-8): with the お試し setting on and no real sharing, the device's own
+ // photos are counted AS IF shared under the chosen plan, so 5/20, full, replace and "plan ended"
+ // can be checked from the normal photo screen. Clearly labelled; nothing is sent or enforced.
+ const paintPreview=async()=>{
+  const plan=previewPlan(),E=root.AtokoreEntitlements;if(!plan||!E)return;
+  const list=(()=>{try{return Array.isArray(items)?items:[]}catch(_){return []}})();
+  let used=null,has=false;
+  try{used=await countPhotos(list);const r=await readRecord(key(item));has=!!(r&&!r.removed&&recordBlob(r))}catch(_){used=null}
+  if(!count.isConnected||previewPlan()!==plan)return;
+  const ent=plan==='premium'?E.fromServer({plan:'premium'}):E.fromServer({plan:'free'});
+  const c=E.photoCounter({joined:true,sharing:true,used,ent,hasShared:has});
+  count.textContent='【試用表示・合成データ'+(plan==='ended'?'：有料プラン終了後':'')+'】'+c.text+' ※実際の家族共有・契約・サーバーの上限ではありません。';
+  count.dataset.tone=c.tone;count.dataset.preview=plan;count.hidden=false;
+ };
+ paintCount();
+ // The trial switch right here, under the counter, when nothing is really shared: the person can
+ // check free 5 / paid 20 / full / replace / after the paid plan from the normal photo screen.
+ let trial=null;
+ const realSharedNow=!!root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true;
+ if(!realSharedNow&&root.AtokorePhotoPreview){
+  trial=element('details','atk-photo-trial');if(previewPlan())trial.open=true;
+  const sum=element('summary','','写真枠の試用表示（合成データ）');
+  const help=element('p','atk-photo-note','この端末の写真を「家族と共有している」とみなして、枠の表示だけを確かめます。実際の家族共有・契約・サーバーの上限は変わりません。');
+  const sel=element('select','atk-photo-trial-plan');sel.setAttribute('aria-label','写真枠の試用表示');
+  for(const [v,t] of [['','オフ（この端末だけの表示）'],['free','無料プラン（5枚）として表示'],['premium','有料プラン（20枚）として表示'],['ended','有料プラン終了後（5枚）として表示']]){const o=element('option','',t);o.value=v;sel.append(o)}
+  sel.value=previewPlan()||'';
+  sel.addEventListener('change',()=>{if(!root.AtokorePhotoPreview.set(sel.value))sel.value=previewPlan()||'';delete count.dataset.preview;paintCount()});
+  trial.append(sum,help,sel);
+ }
+ if(root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true)
+  root.AtokoreHousehold.refreshEntitlements?.().then(()=>{if(count.isConnected)paintCount()}).catch(()=>{});
+ panel.append(close,title,name,count,...(trial?[trial]:[]),preview,pick,file,status,save,reset,note);sheet.append(panel);
  const shared=!!(item.photoPath&&root.AtokoreHousehold?.photoScope?.(id));
  const session={panel,serial:0,busy:false,preview:null,blob:null,key:key(item),clearSharedPreview(){
   if(!shared||session.blob)return; // A newly chosen local file is still the user's draft.
@@ -199,14 +253,22 @@ function openEditor(id){
    const sharing=!!root.AtokoreHousehold?.homeState?.().joined;
    // While sharing, the change is marked "not yet sent" until the family has it.
    const record=remove?(sharing&&current.photoPath?{removed:true,pending:true}:null):(sharing?{bytes,pending:true}:{bytes});
+   // Bind pending family changes to the exact household and actor before saving.
+   // Never silently send a pending change into a later, different household.
+   if(record&&sharing&&root.AtokoreHousehold?.photoProtocolManaged?.()===true){
+    const bound=root.AtokoreHousehold.receiptScope?.();
+    if(bound)record.boundScope=bound;
+   }
    await transaction('readwrite',store=>record?store.put(record,session.key):store.delete(session.key));
    cacheBlob(session.key,remove?null:session.blob);
    resetShared();
-   if(sharing&&record){
-    const sent=await sendOne(current,record).catch(()=>false);
-    if(!sent)root.notifyAtokoreV125H?.('写真は端末に保存しました。家族への共有は、つながったときに自動で送ります。');
-   }
+   // Local commit is complete. Do not hold the editor open for network sync.
+   // A single queue owns automatic sends (including writes made in the editor).
    dispose();root.renderHome?.();root.renderStock?.();root.atkShowDetail?.(id);
+   if(sharing&&record&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
+    root.notifyAtokoreV125H?.('写真は端末に保存しました。家族への共有は同期時に行います。');
+    limitHoldUntil=0;void shareWaiting(true).catch(()=>{});
+   }
   }catch(error){message('端末に保存できた写真は残っています。'+error.message);busy(false)}
  }
  save.addEventListener('click',()=>commit(false));reset.addEventListener('click',()=>commit(true));
@@ -222,42 +284,93 @@ async function allRecords(){
 }
 // Sends one local photo change to the family. True when the family has it.
 async function sendOne(item,record){
- const hh=root.AtokoreHousehold;if(!hh?.homeState?.().joined)return false;
+ const hh=root.AtokoreHousehold;if(!hh?.homeState?.().joined||hh.photoSharingEnabled?.()!==true)return false;
  const k=key(item);
  const blob=record.removed?null:recordBlob(record);if(!record.removed&&!blob)return false;
  // Throws when the upload or the record could not be made; once it returns, the photo's place is
  // recorded in the product and reaches the family with the next sync.
- await hh.sharePhoto(item.id,blob);
- const latest=await readRecord(k);
- // Only clear the marker if the photo was not changed again meanwhile.
- if(latest&&(latest.removed===record.removed)&&(record.removed||latest.bytes?.length===record.bytes?.length)){
-  await transaction('readwrite',store=>latest.removed?store.delete(k):store.put({bytes:latest.bytes,pending:false},k));
+ let transfer=null;
+ if(hh.photoGeneralEnabled?.()===true){
+  const bound=hh.receiptScope?.();
+  if(!bound||!canSendManagedPhoto(record,bound))return false;
+  transfer=await hh.photoTransferPlan(item.id,blob,record.transfer||null);
+  const persisted=await transaction('readwrite',(store,done)=>{const req=store.get(k);req.onsuccess=()=>{
+   const latest=req.result;
+   const same=latest&&latest.removed===record.removed&&(record.removed||
+     (latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i])));
+   if(!same||!canSendManagedPhoto(latest,bound)||(latest.transfer&&latest.transfer.operationId!==transfer.operationId)){done(false);return}
+   store.put({...latest,boundScope:bound,transfer},k);done(true);
+  }});
+  if(!persisted)return false;
  }
+ // Legacy single-step protocol: remember the uploaded path with these exact bytes so that a retry
+ // after an unconfirmed sync only confirms instead of uploading a second copy (new server path).
+ const resume=transfer?null:{sentPath:record.removed?null:record.sentPath??null,uploaded:path=>transaction('readwrite',(store,done)=>{
+  const req=store.get(k);req.onsuccess=()=>{
+   const latest=req.result;
+   if(latest&&!latest.removed&&latest.pending===true&&latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i]))store.put({...latest,sentPath:path},k);
+   done(true);
+  }})};
+ const sent=await hh.sharePhoto(item.id,blob,transfer,resume);
+ if(sent?.shared!==true)return false;
+ // Compare the exact bytes inside the write transaction, not just their length.
+ await transaction('readwrite',store=>{const req=store.get(k);req.onsuccess=()=>{
+  const latest=req.result;
+  if(latest&&(!transfer||latest.transfer?.operationId===transfer.operationId)&&latest.removed===record.removed&&(record.removed||
+    (latest.bytes?.length===record.bytes?.length&&latest.bytes?.every((v,i)=>v===record.bytes[i])))){
+   if(latest.removed)store.delete(k);else store.put({bytes:latest.bytes,pending:false},k);
+  }
+ }});
  resetShared();decorate();detailPhoto();
  return true;
 }
 // Which local photos still have to reach the family: changes made while sharing (pending), and
 // photos from before sharing started (no marker) for products that have no family photo yet.
+function canSendManagedPhoto(record,bound){
+ if(!record||!bound)return false;
+ if(record.boundScope!=null)return record.boundScope===bound;
+ // Unsent edits from the old protocol are held for explicit reselection.
+ // A device-only photo from before joining may follow the confirmed join.
+ return record.pending===undefined&&!record.removed&&!record.transfer;
+}
 function needsSending(item,record){
  if(!item||!record)return false;
  if(record.pending===true)return true;
  return record.pending===undefined&&!record.removed&&!item.photoPath;
 }
-let sharing=null;
-async function shareWaiting(){
- const hh=root.AtokoreHousehold,s=hh?.homeState?.();
- if(!s?.joined||s.state!=='synced'||sharing)return sharing;
- sharing=(async()=>{
-  let list=[];try{list=items.slice()}catch(_){}
-  const byKey=new Map(list.map(x=>[key(x),x]));
-  for(const [k,record] of await allRecords()){
-   const item=byKey.get(k);
-   if(!needsSending(item,record))continue;
-   if(!await sendOne(item,record).catch(()=>false))break; // try again on the next update
-  }
- })().finally(()=>{sharing=null});
- return sharing;
+// A local edit while an existing scan is running requests exactly one rescan.
+// Sync paint events never request a rescan: they occur inside sendOne and
+// would otherwise create a busy loop after an unavailable network response.
+function createPhotoQueue(scan,canRun){
+ let running=null,requested=false;
+ return function run(localEdit=false){
+  if(localEdit)requested=true;
+  if(running||!canRun())return running;
+  requested=false;
+  running=Promise.resolve().then(scan).finally(()=>{
+   running=null;
+   if(requested&&canRun())void run().catch(()=>{});
+  });
+  return running;
+ };
 }
+// After the server refuses a photo because the household's shared-photo limit is reached, do not
+// retry on every sync (each retry is a server call). A photo change by the person resumes at once.
+const LIMIT_HOLD_MS=10*60*1000;let limitHoldUntil=0;
+const shareWaiting=createPhotoQueue(async()=>{
+ const hh=root.AtokoreHousehold;
+ let list=[];try{list=items.slice()}catch(_){}
+ const byKey=new Map(list.map(x=>[key(x),x]));
+ for(const [k,record] of await allRecords()){
+  const item=byKey.get(k);
+  if(!needsSending(item,record))continue;
+  if(hh.photoGeneralEnabled?.()===true&&!canSendManagedPhoto(record,hh.receiptScope?.()))continue;
+  if(!await sendOne(item,record).catch(e=>{if(e?.code==='photo_limit'){if(Date.now()>=limitHoldUntil)root.notifyAtokoreV125H?.(e.message);limitHoldUntil=Date.now()+LIMIT_HOLD_MS}return false}))break;
+ }
+},()=>{
+ const hh=root.AtokoreHousehold,s=hh?.homeState?.();
+ return s?.joined&&s.state==='synced'&&hh.photoSharingEnabled?.()===true&&Date.now()>=limitHoldUntil;
+});
 // ---------------------------------------------------------------- backup
 function toBase64(bytes){let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return root.btoa(s)}
 function fromBase64(text){
@@ -271,7 +384,7 @@ async function exportPhotos(list){
  for(const item of list){
   let bytes=null;
   try{const r=await readRecord(key(item));if(r&&!r.removed&&recordBlob(r))bytes=r.bytes}catch(_){}
-  if(!bytes&&item.photoPath&&root.AtokoreHousehold?.homeState?.().joined){
+  if(!bytes&&item.photoPath&&root.AtokoreHousehold?.homeState?.().joined&&root.AtokoreHousehold?.photoSharingEnabled?.()===true){
    try{const blob=await root.AtokoreHousehold.fetchPhoto(item.id,item.photoPath);if(blob&&validBlob(blob))bytes=new Uint8Array(await blob.arrayBuffer())}catch(_){missing++;continue}
   }
   if(bytes)photos.push({id:String(item.id),name:String(item.name||''),unit:String(item.unit||'個'),jpeg:toBase64(bytes)});
@@ -290,6 +403,10 @@ function parsePhotos(list,restoredItems){
  }
  return out;
 }
+// お試し: photo-slot trial display (off by default; this device only; changes nothing else). The
+// switch itself lives in build-info-v51.js: photo code never writes to localStorage.
+const PREVIEW_KEY='atokorePhotoCounterPreviewV1';
+function previewPlan(){try{const v=root.localStorage.getItem(PREVIEW_KEY);return ['free','premium','ended'].includes(v)?v:null}catch(_){return null}}
 async function countPhotos(list){
  let n=0;
  for(const item of list){
@@ -347,6 +464,9 @@ async function moveIdentity(before,after){
   decorate();detailPhoto();
  }catch(_){root.notifyAtokoreV125H?.('商品は保存しました。写真だけ引き継げませんでした。写真を設定し直してください。')}
 }
+function photoReferences(){
+ try{return JSON.stringify(items.map(x=>[key(x),x.photoPath??null]))}catch(_){return ''}
+}
 function install(){
  // Never enable this UI in the normal app or another trial sharing this origin.
  if(!/\/preview-baby-v19\//.test(root.location?.pathname||''))return;
@@ -357,15 +477,19 @@ function install(){
  root.openM=function(...args){dispose();const result=priorOpen.apply(this,args);detailPhoto();return result};
  root.closeM=function(...args){if(editor?.busy)return;dispose();return priorClose.apply(this,args)};
  doc.addEventListener('atokore-stock-edited',event=>moveIdentity(event.detail.before,event.detail.after));
+ let priorReferences=photoReferences();
  doc.addEventListener('atokore-household-updated',()=>{
-  const next=scopeKey();if(next!==photoHousehold){photoHousehold=next;resetShared();editor?.clearSharedPreview();decorate();detailPhoto()}
+  const next=scopeKey(),refs=photoReferences(),changed=refs!==priorReferences;
+  priorReferences=refs;
+  if(next!==photoHousehold){photoHousehold=next;resetShared();editor?.clearSharedPreview();decorate();detailPhoto()}
+  else if(changed){decorate();detailPhoto()}
   shareWaiting();
  });
  decorate();detailPhoto();
  root.addEventListener('pagehide',()=>{dispose();resetShared();for(const url of cache.values())if(url)root.URL.revokeObjectURL(url);cache.clear()});
  root.addEventListener('pageshow',event=>{if(event.persisted){if(doc.getElementById('atkPhotoEditor'))root.closeM?.();root.renderHome?.();root.renderStock?.();detailPhoto()}});
 }
-const api=Object.freeze({key,fileKind,validBlob,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
+const api=Object.freeze({key,fileKind,validBlob,compress,canSendManagedPhoto,createPhotoQueue,needsSending,exportPhotos,parsePhotos,countPhotos,replaceAll,undoReplace,shareWaiting});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreProductPhotos=api;
 if(doc)install();
