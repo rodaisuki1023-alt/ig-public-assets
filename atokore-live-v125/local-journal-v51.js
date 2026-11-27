@@ -91,10 +91,15 @@ let writingCache=false;
 // The cache other code reads synchronously. Its digest is written FIRST (SUM), so a tab receiving the storage
 // event of the cache can tell a write of this version (digest matches) from an older version's write.
 function digest(raw){let h=0x811c9dc5;for(let i=0;i<raw.length;i++){h^=raw.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0}return raw.length+'.'+h.toString(36)}
-function writeCache(data){
- const store=ls();if(!store)return;
+// strict: a failure is reported (the save that produced it is then refused, as before the journal).
+function writeCache(data,{strict=false,onlyIfPresent=false}={}){
+ const store=ls();if(!store){if(strict)throw Error('storage unavailable');return}
  writingCache=true;
- try{const raw=JSON.stringify(strip(data));if(store.getItem(KEY)!==raw){store.setItem(SUM,digest(raw));store.setItem(KEY,raw)}}catch(e){root.console?.warn?.('あとこれ 表示用の保存',e)}
+ try{
+  if(onlyIfPresent&&store.getItem(KEY)===null)return;     // a first run stays a first run until something is saved
+  const raw=JSON.stringify(strip(data));
+  if(store.getItem(KEY)!==raw){store.setItem(SUM,digest(raw));store.setItem(KEY,raw);if(strict&&store.getItem(KEY)!==raw)throw Error('verify')}
+ }catch(e){if(strict)throw e;root.console?.warn?.('あとこれ 表示用の保存',e)}
  finally{writingCache=false}
 }
 function replayView(){
@@ -195,7 +200,7 @@ function flushOnce(){
    // This tab now shows the committed state (with what other tabs committed) plus its own uncommitted work.
    const v=replayView();
    if(!same(v,memory())){base=clone(v);assignMemory(v);setTimeout(()=>{try{root.render?.()}catch(_){}} ,0)}
-   writeCache(v);
+   writeCache(v,{onlyIfPresent:true});
   }catch(e){
    failed=true;
    root.console?.error?.('あとこれ: 保存の確定',e);
@@ -221,11 +226,15 @@ function capture(current,{cached=false}={}){
  if(!active)return null;                         // inactive: the caller saves as before
  if(failed&&!db)return false;                     // the store cannot be opened: refuse, never pretend
  const ops=diffOps(base,current);
- if(!ops.length){if(!cached)writeCache(current);return true}
+ if(!ops.length){if(!cached){try{writeCache(current,{strict:true})}catch(e){return false}}return true}
  const before=pending.slice();
  pending=pending.concat(ops);
  try{writeWal()}catch(e){pending=before;return false}
- base=clone(current);if(!cached)writeCache(current);else{try{ls().setItem(SUM,digest(JSON.stringify(strip(current))))}catch(_){}}
+ // The cache other code reads at once must hold the change too; if this device cannot write it, the save is
+ // refused and the operations are taken back out of the log (nothing half-saved).
+ try{if(!cached)writeCache(current,{strict:true});else ls().setItem(SUM,digest(JSON.stringify(strip(current))))}
+ catch(e){pending=before;try{writeWal()}catch(_){}return false}
+ base=clone(current);
  schedule();
  return true;
 }
@@ -247,8 +256,13 @@ function replace(data,ifRev,has){
 }
 async function init(){
  if(!idb){active=false;return false}
+ // The saved data could not be read nor set aside (storage-bootstrap): every save stays refused and nothing
+ // here writes anything (data-safety keeps the lock).
+ if(root.__atokoreStorageLock){active=false;return false}
  const store=ls();
- let legacy=null;try{legacy=JSON.parse(store?.getItem(KEY)||'null')}catch(_){}
+ const rawKey=store?.getItem(KEY)??null;
+ let legacy=null;try{legacy=JSON.parse(rawKey||'null')}catch(_){legacy=undefined}
+ if(rawKey!==null&&!valid(legacy)){active=false;return false}         // unreadable: never overwritten
  try{
   db=await open();
   // First start with the journal: the existing data becomes revision 1 (idempotent: only when none exists).
@@ -267,7 +281,7 @@ async function init(){
   // is kept aside, never adopted silently.
   // The data key was removed (reset, cleared site data) while the journal still has a state: start from what
   // the page has (a removal is the person's or the app's own decision; nothing else removes the key).
-  if(cur&&legacy===null&&!logs.length)committed=await commit([{id:uid(),t:'replace',data:memory()||{items:[],buys:[],routines:[]},ifRev:committed.rev}]);
+  if(cur&&legacy===null&&!logs.length&&!same(committed.data,memory()||{items:[],buys:[],routines:[]}))committed=await commit([{id:uid(),t:'replace',data:memory()||{items:[],buys:[],routines:[]},ifRev:committed.rev}]);
   // A cache written by an older version of the app (its digest does not match) that differs from the committed
   // data is kept aside, never adopted silently.
   else if(valid(legacy)&&cur&&!same(strip(legacy),committed.data)){
@@ -276,7 +290,7 @@ async function init(){
    else committed=await commit([{id:uid(),t:'replace',data:legacy,ifRev:committed.rev}]);   // our own cache, newer than IndexedDB (a commit that did not finish)
   }
   const s=replayView();base=clone(s);assignMemory(s);
-  if(pending.length)schedule();else writeCache(s);
+  if(pending.length)schedule();else writeCache(s,{onlyIfPresent:true});
   setTimeout(()=>{try{root.render?.()}catch(_){}} ,0);
   channel&&(channel.onmessage=e=>{if(e.data?.tab!==TAB)void refreshFromOther()});
   // A write of the data key by another tab: if it carries no revision mark it is an older version's write.
@@ -327,7 +341,7 @@ try{
 }catch(_){}
 // Active from the first moment (before IndexedDB has opened): saves are recorded against the data the page
 // loaded with and committed once the store is open.
-if(idb){active=true;base=clone(memory()||{items:[],buys:[],routines:[]})}
+if(idb&&!root.__atokoreStorageLock){active=true;base=clone(memory()||{items:[],buys:[],routines:[]})}
 const ready=init();
 root.AtokoreJournal=Object.freeze({
  ready,capture,replace,flush,view,
