@@ -5,6 +5,8 @@ const { open, go, stored, baseState, KEY } = require('./helpers.cjs');
 
 test('a hidden list is drawn when its page is shown, by go() or by any page switch', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
+  // This scenario mutates in-memory state on purpose, so it must follow the initial journal read.
+  await page.evaluate(() => AtokoreJournal.ready);
   await go(page, 'home');
   // Data changes while the shopping page is hidden (another module, the family sync...).
   await page.evaluate(() => { buys.push({ id: 77, name: 'トマト', qty: 2, unit: '個' }); refreshAtokoreUiV125H(); });
@@ -17,7 +19,7 @@ test('a hidden list is drawn when its page is shown, by go() or by any page swit
   expect(page.__errors).toEqual([]);
 });
 
-test('−／＋: the number changes at once, the full redraw follows once for quick taps, every tap is saved', async ({ page }) => {
+test('−／＋: every tap is saved and crossing the reorder line updates the mark', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
   await go(page, 'stock');
   const plus = page.locator('#stockList [data-stock-id="1"] button.icon', { hasText: '＋' });
@@ -42,6 +44,26 @@ test('−／＋: the number changes at once, the full redraw follows once for qu
   await page.locator('#buyList [data-buy-id="10"] .qty button:last-child').click();
   await expect(page.locator('#buyList [data-buy-id="10"] .qty b')).toHaveText('2パック');
   expect((await stored(page)).buys.find(x => x.id === 10).qty).toBe(2);
+  expect(page.__errors).toEqual([]);
+});
+
+test('quantity-only updates keep stock and shopping rows and their controls mounted', async ({ page }) => {
+  await open(page, { [KEY]: baseState() });
+  await page.evaluate(() => AtokoreJournal.ready);
+  for (const [pageId, selector, qty] of [
+    ['stock', '#stockList [data-stock-id="3"]', '7個'],
+    ['buy', '#buyList [data-buy-id="10"]', '2パック'],
+  ]) {
+    await go(page, pageId);
+    await page.evaluate(s => { window.quantityRowBefore = document.querySelector(s); }, selector);
+    await page.locator(selector).locator('.qty button:last-child').click();
+    await page.evaluate(async () => {
+      await AtokoreJournal.flush();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))));
+    });
+    await expect(page.locator(selector).locator('.qty b')).toHaveText(qty);
+    expect(await page.evaluate(s => window.quantityRowBefore === document.querySelector(s), selector)).toBe(true);
+  }
   expect(page.__errors).toEqual([]);
 });
 

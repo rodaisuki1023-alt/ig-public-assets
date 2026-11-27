@@ -39,11 +39,16 @@ const SIGNATURES = {
 
 async function createDb() {
   const db = new PGlite();
-  await db.exec(PRELUDE);
-  for (const file of fs.readdirSync(MIGRATIONS).filter(f => f.endsWith('.sql')).sort()) {
-    await db.exec(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'));
+  try {
+    await db.exec(PRELUDE);
+    for (const file of fs.readdirSync(MIGRATIONS).filter(f => f.endsWith('.sql')).sort()) {
+      await db.exec(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'));
+    }
+    return db;
+  } catch (error) {
+    await db.close();
+    throw error;
   }
-  return db;
 }
 
 class RpcError extends Error {
