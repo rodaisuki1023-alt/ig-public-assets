@@ -31,7 +31,7 @@
  */
 (function(root){
 'use strict';
-const KEY='atokoreTrialV4',DB='atokore-journal-v51:'+KEY,WAL_PREFIX=KEY+':wal:',OLD_TAB=KEY+'OldTabWrite',SUM=KEY+':jsum',MARK='_jrev';
+const KEY='atokoreTrialV4',DB=KEY+':journal-v51',WAL_PREFIX=KEY+':wal:',OLD_TAB=KEY+'OldTabWrite',SUM=KEY+':jsum',MARK='_jrev';
 const COLS=['items','buys','routines'],COUNTERS=['qty','usage'],LOG_KEEP=500;
 const idb=(()=>{try{return root.indexedDB||null}catch(_){return null}})();
 const ls=()=>{try{return root.localStorage||null}catch(_){return null}};

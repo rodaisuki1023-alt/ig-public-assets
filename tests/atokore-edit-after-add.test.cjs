@@ -109,7 +109,7 @@ test('explicit validation and preview-scoped service worker resources',()=>{
  assert.match(html,/edit-after-add\.js\?v=49\.1/);
  assert.match(html,/edit-after-add\.css\?v=39/);
  assert.match(worker,/'\.\/edit-after-add.js'/);
- assert.match(worker,/atokore-pwa-v51\.6/);
+ assert.match(worker,/atokore-pwa-v51\.7/);
 });
 
 test('baby food month is optional, validated, and retains unrelated fields',()=>{
