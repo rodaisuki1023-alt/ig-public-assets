@@ -31,7 +31,7 @@
  */
 (function(root){
 'use strict';
-const KEY='atokoreTrialV4',DB='atokore-journal-v51:'+KEY,WAL_PREFIX=KEY+':wal:',OLD_TAB=KEY+'OldTabWrite',MARK='_jrev';
+const KEY='atokoreTrialV4',DB='atokore-journal-v51:'+KEY,WAL_PREFIX=KEY+':wal:',OLD_TAB=KEY+'OldTabWrite',SUM=KEY+':jsum',MARK='_jrev';
 const COLS=['items','buys','routines'],COUNTERS=['qty','usage'],LOG_KEEP=500;
 const idb=(()=>{try{return root.indexedDB||null}catch(_){return null}})();
 const ls=()=>{try{return root.localStorage||null}catch(_){return null}};
@@ -88,10 +88,13 @@ function writeWal(){
  else store.removeItem(k);
 }
 let writingCache=false;
+// The cache other code reads synchronously. Its digest is written FIRST (SUM), so a tab receiving the storage
+// event of the cache can tell a write of this version (digest matches) from an older version's write.
+function digest(raw){let h=0x811c9dc5;for(let i=0;i<raw.length;i++){h^=raw.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0}return raw.length+'.'+h.toString(36)}
 function writeCache(data){
  const store=ls();if(!store)return;
  writingCache=true;
- try{store.setItem(KEY,JSON.stringify({...strip(data),[MARK]:committed?committed.rev:0}))}catch(e){root.console?.warn?.('あとこれ 表示用の保存',e)}
+ try{const raw=JSON.stringify(strip(data));if(store.getItem(KEY)!==raw){store.setItem(SUM,digest(raw));store.setItem(KEY,raw)}}catch(e){root.console?.warn?.('あとこれ 表示用の保存',e)}
  finally{writingCache=false}
 }
 function replayView(){
@@ -162,10 +165,18 @@ function readCommitted(){
  });
 }
 function walKeys(){const store=ls();if(!store)return [];return Object.keys(store).filter(k=>k.startsWith(WAL_PREFIX))}
-function schedule(){clearTimeout(timer);timer=setTimeout(()=>{void flush()},0)}
+function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(!flushing)void flushOnce();else void flush()},0)}
+// Resolves when everything this tab recorded so far is committed (or the commit failed).
 async function flush(){
- if(!active||!db)return committed;
- if(flushing)return flushing;
+ for(;;){
+  if(!active||!db)return committed;
+  if(flushing){await flushing;if(!pending.length||failed)return committed;continue}
+  if(!pending.length)return committed;
+  await flushOnce();
+  if(failed)return committed;
+ }
+}
+function flushOnce(){
  flushing=(async()=>{
   try{
    while(pending.length){
@@ -179,7 +190,10 @@ async function flush(){
     try{channel?.postMessage({rev:committed.rev,tab:TAB})}catch(_){}
     for(const f of listeners)try{f({own:true,rev:committed.rev})}catch(_){}
    }
-   writeCache(replayView());
+   // This tab now shows the committed state (with what other tabs committed) plus its own uncommitted work.
+   const v=replayView();
+   if(!same(v,memory())){base=clone(v);assignMemory(v);setTimeout(()=>{try{root.render?.()}catch(_){}} ,0)}
+   writeCache(v);
   }catch(e){
    failed=true;
    root.console?.error?.('あとこれ: 保存の確定',e);
@@ -201,15 +215,15 @@ async function refreshFromOther(){
 
 // ---- public: used by data-safety save() and the family sync ------------------------------------------
 /** A save of this tab: record the change as operations (durable now), commit soon. false = not saved. */
-function capture(current){
+function capture(current,{cached=false}={}){
  if(!active)return null;                         // inactive: the caller saves as before
  if(failed&&!db)return false;                     // the store cannot be opened: refuse, never pretend
  const ops=diffOps(base,current);
- if(!ops.length){writeCache(current);return true}
+ if(!ops.length){if(!cached)writeCache(current);return true}
  const before=pending.slice();
  pending=pending.concat(ops);
  try{writeWal()}catch(e){pending=before;return false}
- base=clone(current);writeCache(current);
+ base=clone(current);if(!cached)writeCache(current);else{try{ls().setItem(SUM,digest(JSON.stringify(strip(current))))}catch(_){}}
  schedule();
  return true;
 }
@@ -241,10 +255,20 @@ async function init(){
   if(logs.length){
    committed=await commit(logs.flatMap(l=>l.ops));
    for(const l of logs)try{store.removeItem(l.k)}catch(_){}
+   try{channel?.postMessage({rev:committed.rev,tab:TAB})}catch(_){}     // other open tabs show the recovered change
   }
   // A cache written by an older version of the app (no revision mark) that differs from the committed data
   // is kept aside, never adopted silently.
-  if(valid(legacy)&&!(MARK in legacy)&&cur&&!same(strip(legacy),committed.data)){try{store.setItem(OLD_TAB,JSON.stringify(legacy))}catch(_){}}
+  // The data key was removed (reset, cleared site data) while the journal still has a state: start from what
+  // the page has (a removal is the person's or the app's own decision; nothing else removes the key).
+  if(cur&&legacy===null&&!logs.length)committed=await commit([{id:uid(),t:'replace',data:memory()||{items:[],buys:[],routines:[]},ifRev:committed.rev}]);
+  // A cache written by an older version of the app (its digest does not match) that differs from the committed
+  // data is kept aside, never adopted silently.
+  else if(valid(legacy)&&cur&&!same(strip(legacy),committed.data)){
+   const raw=store.getItem(KEY);
+   if(store.getItem(SUM)!==digest(raw||''))try{store.setItem(OLD_TAB,raw)}catch(_){}
+   else committed=await commit([{id:uid(),t:'replace',data:legacy,ifRev:committed.rev}]);   // our own cache, newer than IndexedDB (a commit that did not finish)
+  }
   const s=replayView();base=clone(s);assignMemory(s);
   if(pending.length)schedule();else writeCache(s);
   setTimeout(()=>{try{root.render?.()}catch(_){}} ,0);
@@ -253,7 +277,7 @@ async function init(){
   root.addEventListener?.('storage',e=>{
    if(e.key!==KEY||e.newValue==null)return;
    let v=null;try{v=JSON.parse(e.newValue)}catch(_){return}
-   if(valid(v)&&!(MARK in v)){
+   if(valid(v)&&store.getItem(SUM)!==digest(e.newValue)){
     try{store.setItem(OLD_TAB,e.newValue)}catch(_){}
     banner('古い版の画面で保存された変更があります。この画面の内容は変えていません。古い画面を閉じてから、再読み込みしてください。');
     writeCache(replayView());
@@ -283,6 +307,18 @@ function electLeader(){
   return new Promise(()=>{});
  }).catch(()=>{leader=false;leaderResolve(false)});
 }
+// Any other code of THIS tab that writes the data key directly (not through save()) is recorded the same way.
+try{
+ const proto=root.Storage?.prototype,orig=proto?.setItem;
+ if(idb&&orig&&!orig.__atokoreJournal){
+  const observed=function(k,v){
+   const r=orig.apply(this,arguments);
+   if(k===KEY&&!writingCache&&active&&this===ls()){let d=null;try{d=JSON.parse(String(v))}catch(_){}if(valid(d))capture(d,{cached:true})}
+   return r;
+  };
+  observed.__atokoreJournal=true;proto.setItem=observed;
+ }
+}catch(_){}
 // Active from the first moment (before IndexedDB has opened): saves are recorded against the data the page
 // loaded with and committed once the store is open.
 if(idb){active=true;base=clone(memory()||{items:[],buys:[],routines:[]})}
@@ -292,6 +328,7 @@ root.AtokoreJournal=Object.freeze({
  active:()=>active,failed:()=>failed,
  committedRev:()=>committed?committed.rev:null,
  committedData:()=>committed?clone(committed.data):null,
+ readStored:async()=>{if(!db)return null;const c=await readCommitted();return c?clone(c.data):null},
  pendingCount:()=>pending.length,
  isLeader:()=>leader,leaderReady:()=>leaderReady,
  onChange:f=>{listeners.add(f);return()=>listeners.delete(f)},

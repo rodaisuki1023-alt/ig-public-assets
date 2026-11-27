@@ -456,3 +456,40 @@ test('forecast (Work 8th): buy, undo, buy the same row again -> stock, list and 
     expect(next.__errors).toEqual([]);
   } finally { await ctx.close(); }
 });
+
+// ---------------------------------------------------------------- Work 9th (⑤), both browsers
+// B succeeds while A's answer is delayed and every pull after B's undo fails (503 aimed at B's undo: from its
+// answer on): B's stock must be back within 5 s anyway. The confirmed undo answer now carries the server's own
+// rows of THAT undo, taken in by change number (idempotent), independent of the overall sync.
+for (const order of ['B then A', 'A then B']) test(`shopping page (Work 9th): undo answers ${order}, every pull after B's undo fails -> B's stock is back within 5 s from its own confirmed answer`, async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request, { ...CFG, purchaseUndoWindowV51: true });
+  try {
+    const milk0 = await qty(page, MILK), diaper0 = await qty(page, DIAPER);
+    await buy(page, MILK);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    await go(page, 'home'); await go(page, 'buy');
+    let release; const held = new Promise(r => { release = r; }); let firstA = true;
+    await page.route('**/rest/v1/rpc/hh_undo_purchases_v51', async route => {
+      if (firstA) { firstA = false; await held; }
+      return route.continue();
+    });
+    await last(page).getByRole('button', { name: '取り消す' }).click();               // A: held
+    await buy(page, DIAPER);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    await expect(last(page)).toContainText('パンパース');
+    if (order === 'A then B') release();
+    let failPulls = false;
+    await page.route('**/rest/v1/rpc/hh_pull', route => failPulls ? route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"unavailable"}' }) : route.continue());
+    page.on('response', r => { if (/\/rpc\/hh_undo_purchases_v51$/.test(r.url()) && r.status() === 200 && !firstA) failPulls = true; });
+    const t0 = Date.now();
+    await last(page).getByRole('button', { name: '取り消す' }).click();
+    await expect.poll(() => qty(page, DIAPER), { timeout: 5000 }).toBe(diaper0);
+    const ms = Date.now() - t0;
+    console.log('B_STOCK_BACK_MS>' + ms + ' order=' + order);
+    if (order === 'B then A') release();
+    await expect.poll(() => qty(page, MILK), { timeout: 10000 }).toBe(milk0);
+    await expect(last(page)).toHaveCount(0);
+    expect(page.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});

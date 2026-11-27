@@ -26,7 +26,7 @@ async function tabs(browser, info) {
   return { ctx, a, b };
 }
 const qty = (p, id) => p.evaluate(i => items.find(x => x.id === i)?.qty, id);
-const committed = p => p.evaluate(async () => { await AtokoreJournal.flush(); return AtokoreJournal.committedData(); });
+const committed = p => p.evaluate(async () => { await AtokoreJournal.flush(); return AtokoreJournal.readStored(); });
 const cq = async (p, id) => (await committed(p)).items.find(x => x.id === id)?.qty;
 test('① two tabs from the same base: different products 2/3, the same product 3; after a restart too', async ({ browser }, info) => {
   const { ctx, a, b } = await tabs(browser, info);
@@ -34,6 +34,7 @@ test('① two tabs from the same base: different products 2/3, the same product 
     await Promise.all([a.evaluate(() => adj(1, 1)), b.evaluate(() => adj(2, 1))]);          // 牛乳 1->2, おむつ 2->3
     expect([await cq(a, 1), await cq(a, 2)]).toEqual([2, 3]);
     await Promise.all([a.evaluate(() => adj(3, 1)), b.evaluate(() => adj(3, 1))]);          // 卵 6 -> 8 (both counted)
+    await Promise.all([a, b].map(p => p.evaluate(() => AtokoreJournal.flush())));
     expect(await cq(b, 3)).toBe(8);
     await b.evaluate(() => { window.__hold = false; });
     for (const p of [a, b]) { await p.reload(); await p.waitForFunction(() => !!document.getElementById('bfNavAdd')); await p.evaluate(() => AtokoreJournal.ready); }

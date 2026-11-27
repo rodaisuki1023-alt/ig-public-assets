@@ -4,7 +4,7 @@
 // does not receive the first tab's storage event (held), exactly the window in which the overwrite happened.
 // Now every save merges with what another tab stored (quantities add both changes, a removal wins).
 const { test, expect } = require('@playwright/test');
-const { open, go, stored, baseState, KEY } = require('./helpers.cjs');
+const { open, go, baseState, KEY } = require('./helpers.cjs');
 async function twoTabs(browser, info) {
   const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const a = await ctx.newPage(); await open(a, { [KEY]: baseState() });
@@ -20,8 +20,12 @@ async function twoTabs(browser, info) {
     };
   });
   await open(b, null);
+  pages = [a, b];
   return { ctx, a, b };
 }
+// Work 9th: the committed state is in IndexedDB (local-journal-v51.js); read it after both tabs committed.
+let pages = [];
+const stored = async () => { for (const p of pages) await p.evaluate(() => AtokoreJournal.flush()); return pages[0].evaluate(() => AtokoreJournal.readStored()); };
 const qtyIn = async (page, id) => page.evaluate(i => items.find(x => x.id === i)?.qty, id);
 test('two tabs: +1 on different products at once -> both kept (2 / 3) in storage and in both tabs', async ({ browser }, info) => {
   const { ctx, a, b } = await twoTabs(browser, info);
