@@ -22,7 +22,7 @@
     // kept exactly as typed apart from the quantity part; anything else ("単3電池", "水 2L") stays a name.
     parseTyped(text){
       const raw=String(text??'').replace(/[\s\u3000]+$/,'').replace(/^[\s\u3000]+/,'');
-      const m=/^(.*?\S)(?:[\s\u3000]*[×xX✕＊*][\s\u3000]*|[\s\u3000]+)([0-9０-９]{1,2})(個|本|袋|パック|箱|枚|玉|房|缶|丁|つ|点)?$/.exec(raw)
+      const m=/^(.*?\S)(?:[\s\u3000]*[×✕＊*][\s\u3000]*|[\s\u3000]+[xX][\s\u3000]*|[\s\u3000]+)([0-9０-９]{1,2})(個|本|袋|パック|箱|枚|玉|房|缶|丁|つ|点)?$/.exec(raw)
         ||/^(.*?[^0-9０-９\s\u3000])([0-9０-９]{1,2})(個|本|袋|パック|箱|玉|房|缶|丁|つ|点)$/.exec(raw);
       if(!m)return {name:raw,qty:1,unit:null};
       const qty=Number(m[2].normalize('NFKC'));

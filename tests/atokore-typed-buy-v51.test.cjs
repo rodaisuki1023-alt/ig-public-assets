@@ -9,6 +9,8 @@ test('a trailing quantity is read; everything else stays the name',()=>{
   assert.deepEqual(p('トマト　３'),{name:'トマト',qty:3,unit:null});
   assert.deepEqual(p('トマト×3'),{name:'トマト',qty:3,unit:null});
   assert.deepEqual(p('トマト x 2'),{name:'トマト',qty:2,unit:null});
+  assert.deepEqual(p('Kleenex 2'),{name:'Kleenex',qty:2,unit:null},'a name ending in x keeps its x');
+  assert.deepEqual(p('ボックスx2'),{name:'ボックスx2',qty:1,unit:null},'x without a space before it is part of the name');
   assert.deepEqual(p('卵 10個'),{name:'卵',qty:10,unit:'個'});
   assert.deepEqual(p('牛乳2本'),{name:'牛乳',qty:2,unit:'本'});
   assert.deepEqual(p('おむつ テープ M 2'),{name:'おむつ テープ M',qty:2,unit:null});
