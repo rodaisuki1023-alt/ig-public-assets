@@ -90,8 +90,10 @@ async function invalidInputConcurrent(){
  console.log('PASS ④: invalid dedicated inputs (NULL element, NULL mixed with a valid id, empty, duplicate) refuse the whole call on real PostgreSQL');
 }
 async function main(){
- await capacity();
- await undoAtTheBoundary();
- await invalidInputConcurrent();
+ let failed=0;
+ for(const f of [capacity,undoAtTheBoundary,invalidInputConcurrent]){
+  try{await f()}catch(e){failed++;console.log('FAIL '+f.name+': '+String(e.message||e).split('\n')[0])}
+ }
+ if(failed)throw Error(failed+' scenario(s) failed');
 }
-main().then(()=>pool.end(),e=>{console.error(e);pool.end();process.exit(1)});
+main().then(()=>pool.end(),e=>{console.error(String(e.message||e));pool.end();process.exit(1)});
