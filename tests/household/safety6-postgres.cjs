@@ -44,9 +44,17 @@ async function capacity(){
  await pool.query("UPDATE atokore_private.photo_storage_budget_v51 SET quota_bytes=$1",[base+1000]);
  await pool.query("INSERT INTO storage.buckets(id,name,public,file_size_limit) VALUES('qa-s6-src','qa-s6-src',false,120) ON CONFLICT(id) DO UPDATE SET file_size_limit=120");
  await pool.query("INSERT INTO storage.objects(bucket_id,name,metadata) VALUES('qa-s6-src','fill','{\"size\":670}'),('qa-s6-src','src','{\"size\":120}') ON CONFLICT DO NOTHING");
- const tries=await Promise.all([1,2].map(i=>svc('photo_storage_reserve_v51',['s6-'+i,'restore','qa-s6-src','src','qa-s6-src','dst-'+i])));
+ // Make the two decisions really overlap: each insert of a reservation waits 0.5 s (test-only trigger). With the
+ // budget row lock the second decision waits for the first and sees it; without it both would pass.
+ await pool.query("CREATE OR REPLACE FUNCTION atokore_private.qa_s6_slow() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN PERFORM pg_sleep(0.5);RETURN NEW;END$$");
+ await pool.query("DROP TRIGGER IF EXISTS qa_s6_slow ON atokore_private.photo_storage_reservations_v51");
+ await pool.query("CREATE TRIGGER qa_s6_slow BEFORE INSERT ON atokore_private.photo_storage_reservations_v51 FOR EACH ROW EXECUTE FUNCTION atokore_private.qa_s6_slow()");
+ let tries;
+ try{tries=await Promise.all([1,2].map(i=>svc('photo_storage_reserve_v51',['s6-'+i,'restore','qa-s6-src','src','qa-s6-src','dst-'+i])))}
+ finally{await pool.query("DROP TRIGGER IF EXISTS qa_s6_slow ON atokore_private.photo_storage_reservations_v51")}
  // 790 + 120 = 910 (restore band up to 100%): one passes; 910 + 120 = 1030 > 1000: the other must not.
-assert.deepEqual(tries.map(t=>t.ok).sort(),[false,true],'two concurrent reservations of 120 from 790/1000: never both');
+ if(process.env.DBG)console.log('TRIES',JSON.stringify(tries));
+ assert.deepEqual(tries.map(t=>t.ok).sort(),[false,true],'two concurrent reservations of 120 from 790/1000: never both');
  // Many at once: the total never exceeds the quota.
  const many=await Promise.all(Array.from({length:8},(_,i)=>svc('photo_storage_reserve_v51',['s6-m'+i,'restore','qa-s6-src','src','qa-s6-src','m-'+i])));
  assert.equal(many.filter(t=>t.ok).length,0,'no room left: none of 8 concurrent reservations passes');

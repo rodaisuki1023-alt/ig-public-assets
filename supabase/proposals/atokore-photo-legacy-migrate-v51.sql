@@ -760,9 +760,11 @@ REVOKE ALL ON atokore_private.photo_storage_reservations_v51 FROM PUBLIC, anon, 
 CREATE FUNCTION atokore_private.photo_object_size_v51(p_bucket text,p_path text) RETURNS bigint
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
 AS $$ SELECT CASE WHEN o.metadata->>'size' ~ '^[0-9]{1,15}$' THEN (o.metadata->>'size')::bigint END FROM storage.objects o WHERE o.bucket_id=p_bucket AND o.name=p_path $$;
--- Bytes in use now, reservations included. Call with the budget row locked for a decision.
+-- Bytes in use now, reservations included. Call with the budget row locked for a decision. VOLATILE on
+-- purpose: it must read with a snapshot taken AFTER the lock was granted (a STABLE function would read with the
+-- snapshot of the calling statement and could miss a reservation committed while waiting for the lock).
 CREATE FUNCTION atokore_private.photo_storage_used_v51(p_unknown bigint) RETURNS jsonb
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path=''
 AS $$ SELECT jsonb_build_object(
   'stored',coalesce((SELECT sum(CASE WHEN o.metadata->>'size' ~ '^[0-9]{1,15}$' THEN (o.metadata->>'size')::bigint ELSE p_unknown END)
      FROM storage.objects o WHERE NOT EXISTS (SELECT 1 FROM atokore_private.photo_storage_reservations_v51 r
@@ -812,7 +814,8 @@ BEGIN
    (SELECT k.file_size_limit FROM storage.buckets k WHERE k.id=p_src_bucket),
    (SELECT x.backup_bytes FROM atokore_private.photo_legacy_backup_v51 x WHERE p_src_bucket='atokore-photo-backup-v51' AND x.backup_path=p_src_path LIMIT 1)) END;
  IF v_max IS NULL OR v_max<=0 THEN RETURN jsonb_build_object('ok',false,'why','size_unknown'); END IF;
- u:=atokore_private.photo_storage_used_v51(b.unknown_object_bytes);
+ -- A new statement after the lock: a fresh snapshot that includes every reservation committed before it.
+ SELECT atokore_private.photo_storage_used_v51(b.unknown_object_bytes) INTO u;
  v_after:=(u->>'stored')::bigint+(u->>'pending')::bigint+v_max;
  v_limit:=CASE p_purpose WHEN 'restore' THEN 100 WHEN 'backup' THEN b.suppress_pct ELSE b.stop_pct END;
  IF (CASE WHEN p_purpose='restore' THEN 100.0*v_after/b.quota_bytes <= v_limit ELSE 100.0*v_after/b.quota_bytes < v_limit END) IS NOT TRUE THEN

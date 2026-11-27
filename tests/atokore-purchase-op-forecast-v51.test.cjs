@@ -84,6 +84,8 @@ test('② (Work 9th): buy A, undo A, buy the same row as B, then A\'s entry arri
   assert.equal((await rec(db,'item-opf-1')).fields[field(a)]?.o,a);
   assert.equal((await asUser(db,A,'hh_undo_purchases_v51',[a])).undone,1);
   assert.equal((await rec(db,'item-opf-1')).fields[field(a)],undefined,'A removed with its undo');
+  // A's entry arrives late BEFORE anything else happens: held; a later purchase must never re-adopt it.
+  await call(db,A,'hh_push',{p_ops:[setEntry(a)]});
   // B buys the same shopping row (it came back with the undo): a new op, its own entry (set first, then the op).
   const b=oid();
   const rb=await call(db,B,'hh_push_v51',{p_ops:[setEntry(b),buyOp(b)],p_receipt_ops:[b]});
@@ -94,13 +96,18 @@ test('② (Work 9th): buy A, undo A, buy the same row as B, then A\'s entry arri
   assert.equal(f[field(a)],undefined,'A stays invalid');
   assert.equal(f[field(b)]?.o,b,'B counts (re-adopted only because B itself was applied)');
   assert.equal(await quarantine(db,'undone')>=1,true,'A held, not lost');
+  // Ownership cannot be changed, also to another VALID purchase: C is a live purchase of the same product.
+  await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'buy',id:'buy-opf-2',qty:2,fields:{name:'合成 おむつ',unit:'袋'}}]});
+  const c=oid();await call(db,A,'hh_push_v51',{p_ops:[buyOp(c,'buy-opf-2')],p_receipt_ops:[c]});
+  await call(db,A,'hh_push',{p_ops:[setEntry(b,{...entry(c)})]});            // B's field, rewritten as C's entry
+  assert.equal((await rec(db,'item-opf-1')).fields[field(b)]?.o,b,'B\'s entry keeps its owner');
   // Ownership cannot be changed: B's field rewritten with A's op is refused, B stays.
   await call(db,A,'hh_push',{p_ops:[setEntry(b,{...entry(b),o:a})]});
   assert.equal((await rec(db,'item-opf-1')).fields[field(b)]?.o,b);
   assert.equal((await asUser(db,B,'hh_undo_purchases_v51',[b])).undone,1);
   f=(await rec(db,'item-opf-1')).fields;
   assert.equal(f[field(b)],undefined);assert.equal(f[field(a)],undefined,'undoing B changes only B');
-  assert.equal((await rec(db,'item-opf-1')).q,1,'1 + 2 - 2 + 2 - 2');
+  assert.equal((await rec(db,'item-opf-1')).q,3,'1 + 2 - 2 + 2 + 2(C) - 2');
  }finally{await db.close()}
 });
 test('② (Work 9th): entries of another op, product, household or an unknown owner never count; a second phone on the same row does not double count',async()=>{
