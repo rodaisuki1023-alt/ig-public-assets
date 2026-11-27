@@ -457,20 +457,21 @@ async function rpc(fn,args,signal){
 }
 
 // ---------------------------------------------------------------- engine wiring
-// Work 9th: with the atomic journal (local-journal-v51.js) the sync reads the COMMITTED state and writes the
-// server view as a replace operation that names the revision it was computed from (operations other tabs
-// committed after it are re-applied on top in the same IndexedDB transaction).
+// Work 9th: with the atomic journal (local-journal-v51.js) the sync reads this tab's view (committed state +
+// its own uncommitted operations) and writes the server view as a replace operation that names the revision
+// and the operations it was computed from; operations OTHER tabs committed after that revision are re-applied
+// on top in the same IndexedDB transaction, so a sync never drops another tab's change.
 const J=()=>root.AtokoreJournal?.active?.()?root.AtokoreJournal:null;
-let readRev=null;
+let readCtx=null;
 function readState(){
  const j=J();
- if(j){const d=j.committedData();if(d){readRev=j.committedRev();return d}}
+ if(j){const v=j.view();readCtx=v;return v.data}
  const s=readJSON(DATA_KEY);return s&&Array.isArray(s.items)&&Array.isArray(s.buys)&&Array.isArray(s.routines)?s:null}
 function writeState(state){
  const j=J();
  if(j){
   try{root.AtokoreDataSafety?.assertWritable?.()}catch(e){return false}
-  const ok=j.replace(state,readRev);
+  const ok=j.replace(state,readCtx?.rev,readCtx?.has);
   if(ok!==true)return false;
   lastRaw=store()?.getItem(DATA_KEY)??null;
   try{root.render?.()}catch(e){root.console?.error?.('あとこれ: 共有データの表示更新に失敗',e)}

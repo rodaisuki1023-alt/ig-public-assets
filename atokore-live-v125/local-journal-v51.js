@@ -146,8 +146,10 @@ function commit(ops,{init=null}={}){
      if(o.t!=='replace'){applyOp(data,o);step(k+1);return}
      data=strip(clone(o.data));
      if(!(Number.isSafeInteger(o.ifRev)&&o.ifRev<cur.rev)){step(k+1);return}
+     // ...except the operations the replaced state already contained (this tab's, named by the replace).
+     const skip=new Set(Array.isArray(o.has)?o.has:[]);
      const q=lg.getAll(IDBKeyRange.lowerBound(o.ifRev+1));
-     q.onsuccess=()=>{for(const e of q.result||[])for(const x of e.ops||[])applyOp(data,x);step(k+1)};
+     q.onsuccess=()=>{for(const e of q.result||[])for(const x of e.ops||[])if(!skip.has(x.id))applyOp(data,x);step(k+1)};
     };
     step(0);
    };
@@ -227,11 +229,15 @@ function capture(current,{cached=false}={}){
  schedule();
  return true;
 }
-/** A whole state computed from revision `ifRev` (the family sync's server view, a restore). */
-function replace(data,ifRev){
+/** What this tab shows: the committed state plus its own uncommitted operations, with the revision and the
+ * ids of those operations (a state computed from this view names them, see replace()). */
+function view(){return {data:replayView(),rev:committed?committed.rev:0,has:pending.filter(o=>o.t!=='replace').map(o=>o.id)}}
+/** A whole state computed from `ifRev` plus the operations `has` (the family sync's server view, a restore).
+ * Operations committed after `ifRev` that are not in `has` (other tabs') are applied on top when committed. */
+function replace(data,ifRev,has){
  if(!active)return null;
  if(failed&&!db)return false;
- const op={id:uid(),t:'replace',data:strip(clone(data)),ifRev:Number.isSafeInteger(ifRev)?ifRev:(committed?committed.rev:0)};
+ const op={id:uid(),t:'replace',data:strip(clone(data)),ifRev:Number.isSafeInteger(ifRev)?ifRev:(committed?committed.rev:0),has:Array.isArray(has)?has.slice(0,5000):pending.filter(o=>o.t!=='replace').map(o=>o.id)};
  const before=pending.slice();
  pending=pending.concat([op]);
  try{writeWal()}catch(e){pending=before;return false}
@@ -324,7 +330,7 @@ try{
 if(idb){active=true;base=clone(memory()||{items:[],buys:[],routines:[]})}
 const ready=init();
 root.AtokoreJournal=Object.freeze({
- ready,capture,replace,flush,
+ ready,capture,replace,flush,view,
  active:()=>active,failed:()=>failed,
  committedRev:()=>committed?committed.rev:null,
  committedData:()=>committed?clone(committed.data):null,

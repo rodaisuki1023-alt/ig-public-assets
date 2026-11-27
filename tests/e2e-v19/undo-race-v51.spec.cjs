@@ -13,6 +13,7 @@ async function sharedPhone(browser, info, request, cfg = CFG) {
   // tests must hold the undo request at the network level in both engines.
   const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const page = await ctx.newPage(); page.__errors = []; page.on('pageerror', e => page.__errors.push(e.message));
+  if (process.env.E2E_CONSOLE) page.on('console', m => { if (/error|warn/.test(m.type())) console.log('CONSOLE> ' + m.text().slice(0, 240)); });
   await page.addInitScript(c => window.ATOKORE_HOUSEHOLD_CONFIG = c, cfg);
   const s = baseState();
   s.buys = [{ id: 20, name: MILK, qty: 1, unit: '本', stockId: 1 }, { id: 21, name: DIAPER, qty: 1, unit: '袋', stockId: 2 }];
@@ -377,7 +378,9 @@ for (const order of ['B then A', 'A then B']) test(`shopping page (Work 8th): un
     // The first pull after B's undo answer fails (the overall state is not "synced" for a moment).
     let failNext = false, failed = 0;
     await page.route('**/rest/v1/rpc/hh_pull', async route => { if (failNext && !failed) { failed++; return route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"unavailable"}' }); } return route.continue(); });
-    page.on('response', r => { if (/\/rpc\/hh_undo_purchases$/.test(r.url()) && r.status() === 200) failNext = true; });
+    // Aimed at B: only the answer of the undo that carries B's purchase op id arms the failure (Work 9th).
+    const bOp = await page.evaluate(() => window.AtokoreHousehold.purchaseOpIdFor(21, { assign: false }));
+    page.on('response', r => { if (/\/rpc\/hh_undo_purchases$/.test(r.url()) && r.status() === 200 && JSON.stringify(r.request().postDataJSON() || {}).includes(bOp)) failNext = true; });
     await last(page).getByRole('button', { name: '取り消す' }).click();
     await expect.poll(() => qty(page, DIAPER)).toBe(diaper0);
     if (order === 'B then A') await release('success');
@@ -481,7 +484,9 @@ for (const order of ['B then A', 'A then B']) test(`shopping page (Work 9th): un
     if (order === 'A then B') release();
     let failPulls = false;
     await page.route('**/rest/v1/rpc/hh_pull', route => failPulls ? route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"unavailable"}' }) : route.continue());
-    page.on('response', r => { if (/\/rpc\/hh_undo_purchases_v51$/.test(r.url()) && r.status() === 200 && !firstA) failPulls = true; });
+    const bOp = await page.evaluate(() => window.AtokoreHousehold.purchaseOpIdFor(21, { assign: false }));
+    expect(bOp).toMatch(/^[0-9a-f-]{36}$/);
+    page.on('response', r => { if (/\/rpc\/hh_undo_purchases_v51$/.test(r.url()) && r.status() === 200 && JSON.stringify(r.request().postDataJSON() || {}).includes(bOp)) failPulls = true; });
     const t0 = Date.now();
     await last(page).getByRole('button', { name: '取り消す' }).click();
     await expect.poll(() => qty(page, DIAPER), { timeout: 5000 }).toBe(diaper0);
