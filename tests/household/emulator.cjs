@@ -38,7 +38,7 @@ function send(res, status, body) {
 }
 const readBody = req => new Promise(resolve => { let s = ''; req.on('data', c => { s += c; }); req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}); } catch (e) { resolve(null); } }); });
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204);
   const binary=url.pathname.startsWith('/storage/v1/object/');
@@ -137,4 +137,15 @@ http.createServer(async (req, res) => {
   } catch (e) {
     return send(res, 500, { message: String(e.message || e) });
   }
-}).listen(port, '127.0.0.1', async () => { await reset(); console.log(`household emulator on http://127.0.0.1:${port}`); });
+});
+// Test infrastructure (#118 CI: POST /__test/reset ended in "socket hang up" once, before any test step).
+// Node closes an idle keep-alive socket after 5 s; a client that reuses it at that moment gets exactly this
+// error. Keep idle sockets longer than any pause between tests, and write every connection-level failure to
+// stderr (Playwright prints a web server's stderr) so the next occurrence says what happened.
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
+server.on('clientError', (err, socket) => { console.error('[emulator] clientError', err && err.code, String(err && err.message || err)); try { socket.destroy(); } catch (_) {} });
+server.on('request', (req, res) => { const t = Date.now(); res.on('close', () => { if (!res.writableFinished) console.error('[emulator] closed before the answer', req.method, req.url, (Date.now() - t) + 'ms'); }); });
+process.on('uncaughtException', e => console.error('[emulator] uncaught', e && e.stack || e));
+process.on('unhandledRejection', e => console.error('[emulator] unhandled', e && e.stack || e));
+server.listen(port, '127.0.0.1', async () => { await reset(); console.log(`household emulator on http://127.0.0.1:${port}`); });
