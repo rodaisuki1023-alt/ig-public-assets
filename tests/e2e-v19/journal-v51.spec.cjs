@@ -68,3 +68,33 @@ test('① the log cannot be written (storage full): the save is refused and said
     expect(await cq(b, 1)).toBe(before);
   } finally { await ctx.close(); }
 });
+// Work 10th hypothesis 1, reproduced on CI WebKit (#117, run 45992973319): two tabs saved the same product at
+// once; the slower tab's cache write (from before the other tab's commit) landed after the newest commit, and
+// the next start adopted that cache as "newer than IndexedDB" -> 卵 8 became 7. Deterministic form: a cache of
+// THIS version (its digest matches) that is older than the committed state is written, then the app restarts.
+test('① a late cache write of this version that is older than the committed state never replaces it on restart', async ({ page }) => {
+  await open(page, { [KEY]: baseState() });
+  await page.evaluate(() => AtokoreJournal.ready);
+  await page.evaluate(() => { adj(3, 1); adj(3, 1); });                       // 卵 6 -> 8
+  await page.evaluate(() => AtokoreJournal.flush());
+  expect((await page.evaluate(() => AtokoreJournal.readStored())).items.find(x => x.id === 3).qty).toBe(8);
+  // The late write itself happens outside this tab's save path (another tab's writeCache): it is placed
+  // before the app's scripts on the next start, exactly as the other tab left it.
+  await page.evaluate(key => {
+    const digest = raw => { let h = 0x811c9dc5; for (let i = 0; i < raw.length; i++) { h ^= raw.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return raw.length + '.' + h.toString(36); };
+    const stale = JSON.parse(localStorage.getItem(key)); stale.items.find(x => x.id === 3).qty = 7;
+    const raw = JSON.stringify(stale);
+    sessionStorage.setItem('__qaStale', JSON.stringify([key, raw, digest(raw)]));
+  }, KEY);
+  await page.addInitScript(() => {
+    const s = sessionStorage.getItem('__qaStale'); if (!s) return; sessionStorage.removeItem('__qaStale');
+    const [key, raw, sum] = JSON.parse(s); localStorage.setItem(key + ':jsum', sum); localStorage.setItem(key, raw);
+  });
+  await page.reload();
+  await page.waitForFunction(() => !!document.getElementById('bfNavAdd'));
+  await page.evaluate(() => AtokoreJournal.ready);
+  expect(await page.evaluate(() => items.find(x => x.id === 3).qty)).toBe(8);
+  expect((await page.evaluate(() => AtokoreJournal.readStored())).items.find(x => x.id === 3).qty).toBe(8);
+  expect(await page.evaluate(k => JSON.parse(localStorage.getItem(k)).items.find(x => x.id === 3).qty, KEY)).toBe(8);   // the cache is rewritten
+  expect(page.__errors).toEqual([]);
+});
