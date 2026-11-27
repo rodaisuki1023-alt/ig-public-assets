@@ -7,7 +7,6 @@ const EMU = 'http://127.0.0.1:' + (process.env.E2E_HH_PORT || 4720);
 const CFG = { url: EMU, anonKey: 'emu-anon-key', google: true, guest: true, email: false, prepSharing: true };
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 test.use({ actionTimeout: 15000 });
-const own = () => { const d = today(); return { v: 1, children: [{ id: 'c-own', name: 'Bの子' }], week: {}, events: { 'c-own': { [d]: { label: null, rows: [{ id: 'e-own', name: '水筒' }] } } }, done: {} }; };
 
 test('leave: household prep data is removed, own data comes back, a new household gets nothing implicitly', async ({ browser, request }, info) => {
   test.setTimeout(180000);
@@ -18,7 +17,13 @@ test('leave: household prep data is removed, own data comes back, a new househol
   const personal = p => p.evaluate(() => JSON.parse(localStorage.getItem(AtokorePrepSets.KEY) || 'null'));
   try {
     // B's own prep list, made before any sharing.
-    await b.page.evaluate(s => { localStorage.setItem(AtokorePrepSets.PROV, 'own'); localStorage.setItem(AtokorePrepSets.KEY, JSON.stringify(s)); AtokorePrepSets.refresh(); }, own());   // entered on this phone
+    // Work 8th: entered on this phone from nothing (the only way a list is recorded as the person's own).
+    await go(b.page, 'buy'); await box(b.page).locator('summary').first().click();
+    await box(b.page).locator('[data-prep-kid-name]').fill('Bの子'); await box(b.page).locator('[data-prep-add-child]').click();
+    await box(b.page).locator('[data-prep-when]').selectOption('w' + new Date().getDay());
+    await box(b.page).locator('[data-prep-name]').fill('水筒'); await box(b.page).locator('[data-prep-add]').click();
+    await expect(box(b.page).locator('.atk-prep-today li')).toHaveText([/水筒/]);
+    expect(await b.page.evaluate(() => AtokorePrepSets.provenance())).toBe('own');
     await go(a.page, 'premium'); await a.page.click('#atkHouseholdCard');
     await a.page.getByRole('button', { name: 'Googleでログイン', exact: true }).click();
     await a.page.fill('#atkHhName', 'パパ'); await a.page.getByRole('button', { name: '世帯を作る', exact: true }).click(); await appConfirm(a.page, true);

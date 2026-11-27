@@ -82,16 +82,16 @@ async function undoEstimate(){
  const {A,hh}=await household('QA safety4 undo');
  const item='item-s4-'+randomUUID().slice(0,8),buy='buy-s4-'+randomUUID().slice(0,8);
  await push(A,[{op_id:randomUUID(),type:'create',kind:'item',id:item,qty:1,fields:{name:'合成 おむつ',unit:'袋'},ts:Date.now()},{op_id:randomUUID(),type:'create',kind:'buy',id:buy,qty:1,fields:{name:'合成 おむつ',unit:'袋'},ts:Date.now()}]);
- const t=await rpc(A,'SELECT public.hh_clock_ticket_v51() r');
  const op=randomUUID();
- await push(A,[{op_id:op,type:'complete_buy',buy,item,delta:1,ts:Date.now(),ck:t.ticket,est:[{field:'tps4a',k:'k-s4'}]},
-   {op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'k-s4',q:1}}]);
+ // Work 8th: the dedicated purchase command (receipt) and an estimate entry owned by this shopping row (sb).
+ await rpc(A,'SELECT public.hh_push_v51($1::jsonb,$2::jsonb) r',[JSON.stringify([{op_id:op,type:'complete_buy',buy,item,delta:1,ts:Date.now()},
+   {op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'k-s4',q:1,sb:[buy]}}]),JSON.stringify([op])]);
  const r=await Promise.allSettled([rpc(A,'SELECT public.hh_undo_purchases($1::jsonb) r',[JSON.stringify([op])]),rpc(A,'SELECT public.hh_undo_purchases_v51($1::jsonb) r',[JSON.stringify([op])])]);
  const undone=r.filter(x=>x.status==='fulfilled').map(x=>x.value.undone).sort();
  assert.deepEqual(undone,[0,1],'undone exactly once');
  const rec=(await pool.query('SELECT qty::int q,fields FROM atokore_private.records WHERE household_id=$1 AND id=$2',[hh,item])).rows[0];
  assert.equal(rec.q,1);assert.equal(rec.fields.tps4a,undefined,'estimate removed with the undo');
- await push(A,[{op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'k-s4',q:1}}]);   // a stale tab
+ await push(A,[{op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'k-s4',q:1,sb:[buy]}}]);   // a stale tab
  assert.equal((await pool.query('SELECT fields FROM atokore_private.records WHERE household_id=$1 AND id=$2',[hh,item])).rows[0].fields.tps4a,undefined,'not brought back');
  console.log('PASS E: concurrent undo through both RPCs undoes once and removes the estimate entry in the same transaction; a stale write cannot bring it back');
 }

@@ -30,6 +30,8 @@
 //  * A failure leaves the state where it was, so the next run resumes from it; running a step twice
 //    changes nothing more. Stuck uploads and stuck moves are only reported, never inferred from time.
 import { readVerified } from './photo-general-v50.mjs';
+import { destructiveAllowed, removeFenced } from './photo-delete-gate-v51.mjs';
+export { destructiveAllowed };
 export const MANAGED_BUCKET = 'atokore-private-photos-v2';
 export const LEGACY_BUCKET = 'atokore-product-photos';
 export const BACKUP_BUCKET = 'atokore-photo-backup-v51';
@@ -40,31 +42,6 @@ async function copy(storage, fromBucket, from, toBucket, to) {
   const c = await storage.copy(fromBucket, from, toBucket, to);
   return { bytes: c.bytes, sourceSha: c.sourceSha ?? c.legacySha, targetSha: c.targetSha ?? c.copySha };
 }
-export function destructiveAllowed(storage) {
-  return storage?.capabilities?.conditionalRemove === true && typeof storage.removeIfGeneration === 'function'
-    && storage?.capabilities?.authoritativeStat === true && typeof storage.stat === 'function';
-}
-// The outcome of one fenced delete: 'deleted' | 'absent' | 'kept' (confirmed) or 'unknown' (stays fenced).
-async function removeFenced(storage, sql, bucket, path, gen) {
-  if (![MANAGED_BUCKET, LEGACY_BUCKET].includes(bucket) || !scoped(path)) throw Error('refused: bucket or path out of scope');
-  let outcome = 'unknown';
-  try {
-    const r = await storage.removeIfGeneration(bucket, path, gen ?? null);
-    outcome = r?.status === 'deleted' ? 'deleted' : r?.status === 'absent' ? 'absent' : r?.status === 'mismatch' ? 'kept' : 'unknown';
-  } catch { outcome = 'unknown'; }
-  if (outcome === 'unknown') {
-    // The answer was lost or unclear: only an authoritative look decides; an error decides nothing.
-    try {
-      const st = await storage.stat(bucket, path);
-      if (st && st.exists === false) outcome = 'absent';
-      else if (st && st.exists === true && st.gen !== (gen ?? null)) outcome = 'kept';
-    } catch { outcome = 'unknown'; }
-  }
-  if (outcome === 'unknown') return 'unknown';
-  await sql('photo_delete_resolved_v51', [bucket, path, outcome]);
-  return outcome;
-}
-
 // Reads one attached photo exactly as the gateway would, and records the check (hash must match).
 export async function checkRead({ sql, storage }, file) {
   const failed = async why => { await sql('photo_read_failed_v51', [file]).catch(() => null); return { ok: false, why }; };
@@ -79,12 +56,19 @@ export async function checkRead({ sql, storage }, file) {
   return { ok: true, sha: r.sha };
 }
 
+// The budget is read from the database; an error or an unexpected answer counts as "not allowed".
+async function budgetAllows(sql, what) {
+  try { return (await sql('photo_budget_allows_v51', [what])) === true; } catch { return false; }
+}
+
 // One legacy reference -> managed ledger, resumed from wherever an earlier run stopped.
 export async function moveLegacyPhoto({ sql, storage, household, record }) {
   const m = await sql('photo_legacy_begin_v51', [household, record]);
   let state = m.state;
   if (!scoped(m.legacy_path) || !scoped(m.target_path)) throw Error('refused: path out of scope');
   if (state === 'copying') {
+    // Work 8th: the free Storage budget. No new copy at stop_new (or when the budget cannot be read).
+    if (!await budgetAllows(sql, 'new')) return { status: 'copying', held: 'storage_budget', file_id: m.file_id };
     let c;
     try { c = await copy(storage, LEGACY_BUCKET, m.legacy_path, MANAGED_BUCKET, m.target_path); } catch (e) { if (/refused/.test(e.message)) throw e; return { status: 'copying', held: 'copy_failed', file_id: m.file_id }; }
     let done;
@@ -102,6 +86,8 @@ export async function moveLegacyPhoto({ sql, storage, household, record }) {
     // A backup of the legacy bytes before they can go (restore works without the legacy object).
     const backupPath = m.target_path;   // same scoped form, in the backup bucket
     let backupFailed = false;
+    // Work 8th: at suppress the backup copy waits too (the move stays verified, nothing is deleted).
+    if (!await budgetAllows(sql, 'backup')) return { status: 'verified', held: 'storage_budget', file_id: m.file_id };
     try {
       const b = await copy(storage, LEGACY_BUCKET, m.legacy_path, BACKUP_BUCKET, backupPath);
       if (b.sourceSha !== b.targetSha) return { status: 'verified', held: 'backup_mismatch', file_id: m.file_id };

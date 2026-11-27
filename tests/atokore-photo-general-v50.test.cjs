@@ -59,13 +59,12 @@ test('wrong hash/invalid image, unauthenticated and malformed paths fail closed'
  assert.equal((await x.h({operation:'read',path:P+'\n'},'valid')).status,400);
  x.corrupt();assert.equal((await x.h({operation:'read',path:P},'valid')).status,502);
 });
-test('purge worker never marks complete on Storage error or invalid claim',async()=>{
- const m=await mod;let called=0;
- const worker=async(action)=>{if(action==='claim_purge')return {path:P};called++;return {ok:true}};
- await assert.rejects(m.purgeRetired({worker,storage:{remove:async()=>{throw Error('timeout')}}},F),/timeout/);
- assert.equal(called,0);
- assert.equal(await m.purgeRetired({worker,storage:{remove:async()=>{}}},F),true);
- assert.equal(called,1);
+test('purge (Work 8th): the v50 helper never deletes or completes anything; purge is the gated v51 worker only',async()=>{
+ const m=await mod;let called=0,removed=0;
+ const worker=async(action)=>{called++;return action==='claim_purge'?{path:P}:{ok:true}};
+ assert.equal(await m.purgeRetired({worker,storage:{remove:async()=>{removed++;throw Error('timeout')}}},F),false);
+ assert.equal(await m.purgeRetired({worker,storage:{remove:async()=>{removed++}}},F),false);
+ assert.deepEqual([called,removed],[0,0]);
 });
 test('revocation between read checks never releases bytes',async()=>{
  const m=await mod,n=m.makeJpegNormalizer(jpeg),bytes=n(sample),sha=await m.sha256(bytes);let count=0;
@@ -75,7 +74,7 @@ test('revocation between read checks never releases bytes',async()=>{
  assert.deepEqual(await h({operation:'read',path:P},'valid'),{status:403,error:'denied'});
 });
 
-test('expired unknown upload is held; positive hash-matched settlement can purge',async()=>{
+test('expired unknown upload is held; positive hash-matched settlement settles, deleting is left to the gated worker',async()=>{
  const m=await mod,bytes=m.makeJpegNormalizer(jpeg)(sample),sha=await m.sha256(bytes);
  let remove=0,settle=0,unknown=true;
  const worker=async(action,file,f)=>{
@@ -88,8 +87,9 @@ test('expired unknown upload is held; positive hash-matched settlement can purge
  const storage={download:async()=>{if(unknown)throw Error('timeout');return bytes},remove:async()=>{remove++}};
  assert.deepEqual(await m.reconcileExpired({worker,storage},F),{state:'held'});
  assert.equal(remove,0);assert.equal(settle,0);
- unknown=false;assert.deepEqual(await m.reconcileExpired({worker,storage},F),{state:'purged'});
- assert.equal(remove,1);assert.equal(settle,1);
+ // Settled on a positive hash match; the object is then retired and held for the gated worker (Work 8th).
+ unknown=false;assert.deepEqual(await m.reconcileExpired({worker,storage},F),{state:'held'});
+ assert.equal(remove,0);assert.equal(settle,1);
 });
 test('household photo limit is reported as its own reason, other pending limits stay conflicts',async()=>{
  const m=await mod;

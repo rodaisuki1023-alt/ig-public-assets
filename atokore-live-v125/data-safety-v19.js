@@ -44,11 +44,63 @@ const LOCK_MESSAGE='以前の保存データを読み込めず、退避もでき
 const locked=()=>!!root.__atokoreStorageLock;
 function assertWritable(){if(locked())throw Error(LOCK_MESSAGE)}
 
+// ---- Several tabs (Work 8th). Each tab keeps the data as it last read or wrote it (base). Every write of
+// the data from THIS tab, whichever module makes it (save, the family sync, a restore), updates base, because
+// the setItem of this page is observed below. If the stored data differs from base when saving, another tab
+// wrote in between: its change and this tab's change are merged (three-way), never overwritten:
+//   quantities (qty, usage) add both changes, other fields keep the side that changed them, a removal on
+//   either side wins, additions on both sides are kept. The same rule adopts another tab's write here.
+const COUNTERS=['qty','usage'];
+let base=null;
+const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const byId=list=>{const m=new Map();for(const x of Array.isArray(list)?list:[])if(x&&x.id!=null)m.set(String(x.id),x);return m};
+function mergeRow(b,m,t){
+ const out={...t};
+ for(const k of new Set([...Object.keys(b),...Object.keys(m),...Object.keys(t)])){
+  if(COUNTERS.includes(k)&&Number.isFinite(+b[k])&&Number.isFinite(+m[k])&&Number.isFinite(+t[k])){out[k]=Math.max(0,Math.round((+t[k]+(+m[k]-+b[k]))*1000)/1000);continue}
+  if(same(m[k],b[k]))continue;
+  if(m[k]===undefined)delete out[k];else out[k]=m[k];
+ }
+ return out;
+}
+function mergeList(bl,ml,tl){
+ const B=byId(bl),M=byId(ml),out=[];
+ for(const t of Array.isArray(tl)?tl:[]){
+  const id=String(t?.id),b=B.get(id),m=M.get(id);
+  if(!b){out.push(t);continue}               // added by the other tab (or both: theirs kept)
+  if(!m)continue;                            // removed here
+  out.push(mergeRow(b,m,t));
+ }
+ const T=byId(tl);
+ for(const m of Array.isArray(ml)?ml:[]){const id=String(m?.id);if(!T.has(id)&&!B.has(id))out.push(m)}   // added here
+ return out;
+}
+function merge3(b,m,t){
+ if(!valid(b)||!valid(m)||!valid(t))return null;
+ const out={...t};
+ for(const k of Object.keys(m))if(!['items','buys','routines'].includes(k)&&!same(m[k],b[k]))out[k]=m[k];
+ for(const k of ['items','buys','routines'])out[k]=mergeList(b[k],m[k],t[k]);
+ return out;
+}
+const parse=raw=>{try{return JSON.parse(raw)}catch(_){return null}};
+try{
+ base=storage()?.getItem(KEY)??null;
+ const proto=root.Storage?.prototype,orig=proto?.setItem;
+ if(orig&&!orig.__atokoreObserved){
+  const observed=function(k,v){const r=orig.apply(this,arguments);if(this===storage()&&k===KEY)base=String(v);return r};
+  observed.__atokoreObserved=true;proto.setItem=observed;
+ }
+}catch(e){}
 function save(){
  const store=storage();
  try{
   assertWritable();
   if(!store)throw Error('storage unavailable');
+  const stored=store.getItem(KEY);
+  if(base!==null&&stored!==null&&stored!==base){
+   const merged=merge3(parse(base),current(),parse(stored));
+   if(merged)assign(merged);
+  }
   store.setItem(KEY,JSON.stringify(current()));
   return true;
  }catch(e){
@@ -62,6 +114,17 @@ function save(){
  }
 }
 root.save=save;
+// Another tab wrote the data: adopt it, keeping anything this tab changed and has not saved yet.
+root.addEventListener?.('storage',e=>{
+ try{
+  if(e.storageArea!==storage()||e.key!==KEY||e.newValue==null||e.newValue===base)return;
+  const mine=current(),theirs=parse(e.newValue),before=parse(base);
+  const next=before&&!same(mine,before)?merge3(before,mine,theirs):theirs;
+  if(!valid(next))return;
+  base=e.newValue;assign(next);
+  setTimeout(()=>{try{root.render?.()}catch(_){}} ,0);
+ }catch(err){root.console?.warn?.('あとこれ 別のタブの変更',err)}
+});
 
 function cleanList(list,keep){
  let dropped=0;const out=[];
@@ -255,7 +318,7 @@ function bootNotices(){
  }
 }
 
-const api=Object.freeze({parseBackup,valid,save,assertWritable});
+const api=Object.freeze({parseBackup,valid,save,assertWritable,merge3});
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.AtokoreDataSafety=api;
 root.atkOpenBackup=openBackup;

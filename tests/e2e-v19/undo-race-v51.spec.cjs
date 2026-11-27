@@ -44,7 +44,7 @@ const qty = async (page, name) => (await stored(page)).items.find(x => x.name ==
 // only after the server confirmed the undo (Work 7th). The emulator puts every household in the trial.
 async function outsideTrial(page, request) {
   await request.post(EMU + '/__test/sql', { data: { sql: 'DELETE FROM atokore_private.trial_households_v51' } });
-  await page.evaluate(() => window.AtokoreHousehold.refreshClockTicket());
+  await page.evaluate(() => window.AtokoreHousehold.refreshReceiptSupport());
   expect(await page.evaluate(() => window.AtokoreHousehold.serverUndoEstimate())).toBe(false);
 }
 const ROW = { [MILK]: 20, [DIAPER]: 21 };
@@ -183,8 +183,8 @@ test('server window on: a fresh undo works through hh_undo_purchases_v51; one th
     // B is bought; on the server it is 11 minutes old (e.g. it arrived late from an offline phone).
     await buy(page, DIAPER);
     await page.evaluate(() => window.AtokoreHousehold.syncNow());
-    // Work 7th: the server measures from its clock ticket held before buying: make it 11 minutes old.
-    await request.post(EMU + '/__test/sql', { data: { sql: "UPDATE atokore_private.purchase_clock_tickets_v51 SET issued_at=now()-interval '11 minutes'" } });
+    // Work 8th: the server measures from its own receipt of the purchase: make it 11 minutes old.
+    await request.post(EMU + '/__test/sql', { data: { sql: "UPDATE atokore_private.purchase_receipts_v51 SET received_at=now()-interval '11 minutes'" } });
     await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
     await expect(bar(page)).toContainText('10分を過ぎたため、取り消せません');
     await page.evaluate(() => window.AtokoreHousehold.syncNow());
@@ -355,5 +355,104 @@ test('forecast (Work 7th): the undo answer arrives late while another tab runs 1
       expect((await stored(p)).buys.filter(b => b.name === DIAPER)).toHaveLength(1);
     }
     expect(page.__errors).toEqual([]); expect(other.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+
+// Work 8th (WebKit 43/45): B's undo succeeded on the server, A's answer came later, and B's panel stayed.
+// Cause: after the server confirmed B, a sync that was not "synced" at that moment (A's work in flight, a
+// failed pull) made B's own undo count as failed. The undo's result is the server's answer for THIS
+// purchase; the overall sync state only decides when the screen refreshes, never B's outcome.
+for (const order of ['B then A', 'A then B']) test(`shopping page (Work 8th): undo answers ${order}, and the sync right after B's undo fails once -> B's panel ends, nothing stays`, async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request);
+  try {
+    const milk0 = await qty(page, MILK), diaper0 = await qty(page, DIAPER);
+    await buy(page, MILK);
+    await go(page, 'home'); await go(page, 'buy');
+    const release = await holdFirstUndo(page);
+    await last(page).getByRole('button', { name: '取り消す' }).click();               // A: held
+    await buy(page, DIAPER);
+    await expect(last(page)).toContainText('パンパース');
+    if (order === 'A then B') await release('success');
+    // The first pull after B's undo answer fails (the overall state is not "synced" for a moment).
+    let failNext = false, failed = 0;
+    await page.route('**/rest/v1/rpc/hh_pull', async route => { if (failNext && !failed) { failed++; return route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"unavailable"}' }); } return route.continue(); });
+    page.on('response', r => { if (/\/rpc\/hh_undo_purchases$/.test(r.url()) && r.status() === 200) failNext = true; });
+    await last(page).getByRole('button', { name: '取り消す' }).click();
+    await expect.poll(() => qty(page, DIAPER)).toBe(diaper0);
+    if (order === 'B then A') await release('success');
+    await expect.poll(() => qty(page, MILK)).toBe(milk0);
+    await page.waitForTimeout(500);
+    if (await last(page).count()) console.log('LEFTOVER> ' + JSON.stringify(await last(page).evaluate(e => ({ text: e.innerText, for: e.dataset.atkLastFor }))));
+    await expect(last(page)).toHaveCount(0);
+    await expect(last(page).locator('[role=alert]')).toHaveCount(0);
+    expect(page.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+
+// ---------------------------------------------------------------- Work 8th (E + forecast), both browsers
+// E: a purchase made offline and synced after reconnecting used to be undone (HTTP 200) because a cached
+// clock ticket travelled with it. Now only the server's receipt of the dedicated purchase command gives undo
+// rights; the offline purchase is refused and nothing changes.
+test('E (Work 8th): bought offline, synced after reconnecting -> the shared undo is refused; stock and list stay as bought', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request, { ...CFG, purchaseUndoWindowV51: true });
+  try {
+    expect(await page.evaluate(() => window.AtokoreHousehold.serverUndoEstimate())).toBe(true);
+    const diaper0 = await qty(page, DIAPER);
+    const cmd = []; page.on('request', r => { if (/\/rpc\/hh_push_v51/.test(r.url())) cmd.push(r.postDataJSON?.()?.p_receipt_ops?.length || 0); });
+    await ctx.setOffline(true);
+    await buy(page, DIAPER);
+    await ctx.setOffline(false);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    await page.waitForFunction(() => window.AtokoreHousehold.status().state === 'synced');
+    expect(cmd.every(n => n === 0), 'the offline purchase is never sent for a receipt').toBe(true);
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toContainText('サーバーが受け付けた記録がない');
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    expect(await qty(page, DIAPER)).toBe(diaper0 + 1);
+    expect((await stored(page)).buys.filter(b => b.id === 21)).toHaveLength(0);
+    // Bought online right away: receipt, undo works (positive control).
+    await go(page, 'buy');
+    await page.evaluate(() => { buys.push({ id: 22, name: '牛乳', qty: 1, unit: '本', stockId: 1 }); save(); render(); });
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    const milk0 = await qty(page, MILK);
+    await page.locator('#buyList [data-buy-id="22"]').getByRole('button', { name: /を買った$/ }).click();
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect.poll(() => qty(page, MILK)).toBe(milk0);
+    expect(page.__errors).toEqual([]);
+  } finally { await ctx.close(); }
+});
+// Forecast: buying the same shopping row again after its undo is a new purchase; its estimate entry used to be
+// dropped by the server (stock 3, shopping 0, forecast 120 instead of 180). Now the server sees that the new
+// purchase owns the entry (sb = that row) and keeps it.
+test('forecast (Work 8th): buy, undo, buy the same row again -> stock, list and estimate agree (one entry counted)', async ({ browser, request }, info) => {
+  test.setTimeout(120000);
+  const { ctx, page } = await sharedPhone(browser, info, request, { ...CFG, purchaseUndoWindowV51: true });
+  try {
+    await trackedDiaper(page);
+    const diaper0 = await qty(page, DIAPER);
+    const remaining = p => p.evaluate(() => { const d = new Date(), day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return window.AtokoreStockLevels.estimate(items.find(i => i.id === 2), day).remaining; });
+    const base = await remaining(page);
+    await buy(page, DIAPER);
+    await expect.poll(() => tpOf(page)).toHaveLength(1);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    const bought = await remaining(page);
+    expect(bought).toBeGreaterThan(base);
+    await bar(page).getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(bar(page)).toHaveCount(0);
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    await expect.poll(() => tpOf(page)).toHaveLength(0);
+    expect(await remaining(page)).toBe(base);
+    await expect(page.locator('#buyList [data-buy-id="21"]')).toHaveCount(1);          // the row came back
+    await buy(page, DIAPER);                                                            // the same row, bought again
+    await page.evaluate(() => window.AtokoreHousehold.syncNow());
+    const next = await reopen(ctx, page);
+    await expect.poll(() => tpOf(next)).toHaveLength(1);
+    expect(await qty(next, DIAPER)).toBe(diaper0 + 1);
+    expect((await stored(next)).buys.filter(b => b.id === 21)).toHaveLength(0);
+    expect(await remaining(next)).toBe(bought);
+    expect(next.__errors).toEqual([]);
   } finally { await ctx.close(); }
 });

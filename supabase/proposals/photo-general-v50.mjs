@@ -141,15 +141,13 @@ export function createGeneralPhotoHandler({verify,db,storage,normalize,admit=nul
   }catch(e){return mapError(e)}
  }
 }
-// Trusted cleanup worker ONLY. No user-accessible route. Safe even after a
-// retry: claim must identify an unreferenced retired path, then use Storage API.
-export async function purgeRetired({worker,storage},file){
+// Work 8th: this v50 helper used to remove retired photos with a plain Storage delete (no generation
+// condition, no fence), and did so with an adapter that guarantees neither. It now never deletes and
+// claims nothing: retired photos are purged only by the gated worker (photo-orphan-worker-v51.mjs
+// runOrphanPass -> photo-delete-gate-v51.mjs). Kept as a no-op so older callers stay safe.
+export async function purgeRetired(_deps,file){
  if(!id(file))throw Error('invalid file');
- const p=await worker('claim_purge',file);
- const path=parsePath(p?.path);if(!path||path.file!==file)throw Error('invalid purge path');
- await storage.remove(p.path); // throws on ambiguous response
- const done=await worker('finish_purge',file,{p_confirmed:true});
- return done?.ok===true; // DB additionally checks metadata absence
+ return false;
 }
 
 // Run only from a trusted worker, not a request originating from the browser.

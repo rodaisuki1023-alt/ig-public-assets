@@ -26,7 +26,7 @@ async function fixture(){
 // provider that documents an idempotency key; `answers` scripts each call's outcome.
 function synthetic({idempotent=true,answers=[]}={}){
  const delivered=new Map(),calls=[];
- return {synthetic:true,idempotent,calls,delivered,
+ return {synthetic:true,idempotent,lateAcceptance:'impossible',calls,delivered,
   async send(m){calls.push(m);const a=answers.shift()||'delivered';
    if(a==='delivered'||a==='lost_after_delivery'){if(!idempotent||!delivered.has(m.key))delivered.set(m.key,(delivered.get(m.key)||0)+1);}
    if(a==='lost_after_delivery'||a==='timeout')throw Error('timeout');
@@ -224,4 +224,71 @@ test('C rollback (Work 7th): a send that may have started is recorded as unclear
   await db.query("UPDATE atokore_private.notify_outbox SET next_attempt_at=NULL");
   assert.deepEqual(await sql('notify_claim_v51',[10,60]),[],'held for review, never claimed again');
  }finally{await db.close()}
+});
+
+// ---------------------------------------------------------------- Work 8th (C): a stalled provider is bounded
+const stalled=({idempotent=false,late=null}={})=>{const calls=[];let release;
+ return {synthetic:true,idempotent,lateAcceptance:'impossible',calls,
+  send(m){calls.push(m);return new Promise(r=>{release=r;if(late)setTimeout(()=>r(late),late.after)})},   // ignores m.signal
+  release:v=>release?.(v)}};
+test('C (Work 8th): a provider that never answers and ignores the abort -> the sender stops at its deadline, records ambiguous, never resends',{timeout:8000},async()=>{
+ const f=await fixture();
+ try{
+  const {runNotifySender}=await sender;
+  const p=stalled({idempotent:false});
+  const t0=Date.now();
+  const r=await runNotifySender({sql:f.sql,tx:f.tx,provider:p,sendDeadlineMs:300});
+  assert.ok(Date.now()-t0<3000,'bounded by the deadline, not by the provider');
+  assert.deepEqual(r.held.map(x=>x.why),['ambiguous']);
+  assert.ok((await f.row()).ambiguous_at,'persisted as ambiguous');
+  p.release({status:'delivered'});                                   // a late answer is ignored
+  await f.db.query("UPDATE atokore_private.notify_outbox SET lease_until=NULL,next_attempt_at=NULL");
+  await runNotifySender({sql:f.sql,tx:f.tx,provider:p,sendDeadlineMs:300});
+  assert.equal(p.calls.length,1,'never a second call');
+ }finally{await f.db.close()}
+});
+test('C (Work 8th): idempotent provider stalls past the deadline, answers late -> retried later with the SAME key, delivered once',{timeout:8000},async()=>{
+ const f=await fixture();
+ try{
+  const {runNotifySender}=await sender;
+  const delivered=new Map();
+  const p={synthetic:true,idempotent:true,lateAcceptance:'impossible',calls:[],
+   send(m){this.calls.push(m);return new Promise(r=>setTimeout(()=>{delivered.set(m.key,1);r({status:'delivered'})},this.calls.length===1?700:0))}};
+  let r=await runNotifySender({sql:f.sql,tx:f.tx,provider:p,sendDeadlineMs:200});
+  assert.deepEqual(r.retry.map(x=>x.why),['ambiguous_idempotent']);
+  await new Promise(res=>setTimeout(res,800));
+  await f.db.query("UPDATE atokore_private.notify_outbox SET next_attempt_at=now()-interval '1 second'");
+  r=await runNotifySender({sql:f.sql,tx:f.tx,provider:p,sendDeadlineMs:200});
+  assert.equal(r.sent.length,1);
+  assert.equal(p.calls[0].key,p.calls[1].key);
+  assert.deepEqual([...delivered.values()],[1],'the provider de-duplicated the key: one delivery');
+ }finally{await f.db.close()}
+});
+test('C (Work 8th): the outcome cannot be committed (connection lost) -> in doubt; a non-idempotent provider is never called again',{timeout:8000},async()=>{
+ const f=await fixture();
+ try{
+  const {runNotifySender}=await sender;
+  const p=synthetic({idempotent:false,answers:['delivered']});
+  const lostTx=fn=>f.tx(async t=>{await fn(t);throw Error('connection terminated (idle_in_transaction_session_timeout)')});
+  const r=await runNotifySender({sql:f.sql,tx:lostTx,provider:p,sendDeadlineMs:300});
+  assert.deepEqual(r.held.map(x=>x.why),['transaction_lost']);
+  const row=await f.row();
+  assert.ok(row.send_started_at&&!row.sent_at,'the committed authorization remains: in doubt');
+  await f.db.query("UPDATE atokore_private.notify_outbox SET lease_until=now()-interval '1 second'");
+  const again=await runNotifySender({sql:f.sql,tx:f.tx,provider:p,sendDeadlineMs:300});
+  assert.deepEqual([again.held.map(x=>x.why),p.calls.length],[['in_doubt'],1],'no duplicate after the lease is taken again');
+ }finally{await f.db.close()}
+});
+test('C (Work 8th): a provider that may accept after the deadline is refused (delivery OFF); a lease that would run out is not used',async()=>{
+ const f=await fixture();
+ try{
+  const {runNotifySender}=await sender;
+  for(const lateAcceptance of [undefined,'possible',true]){
+   assert.deepEqual(await runNotifySender({sql:f.sql,tx:f.tx,provider:{synthetic:true,idempotent:true,lateAcceptance,send:async()=>({status:'delivered'})}}),{status:'refused',why:'provider_not_verified'});
+  }
+  assert.deepEqual(await runNotifySender({sql:f.sql,tx:f.tx,provider:synthetic(),sendDeadlineMs:60000}),{status:'refused',why:'deadline_invalid'});
+  const [c]=await f.sql('notify_claim_v51',[10,60]);await f.sql('notify_authorize_v51',[c.id,c.token]);
+  await f.db.query("UPDATE atokore_private.notify_outbox SET lease_until=now()+interval '5 seconds'");
+  assert.deepEqual(await f.tx(t=>t('notify_fence_v51',[c.id,c.token])),{ok:false,why:'lease_short'});
+ }finally{await f.db.close()}
 });

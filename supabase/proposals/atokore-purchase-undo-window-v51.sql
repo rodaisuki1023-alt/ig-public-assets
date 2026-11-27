@@ -42,62 +42,93 @@ CREATE OR REPLACE FUNCTION atokore_private.trial_allowed_v51(p_hh uuid) RETURNS 
 LANGUAGE sql STABLE SET search_path = '' AS $$ SELECT EXISTS (SELECT 1 FROM atokore_private.trial_households_v51 t WHERE t.household_id = p_hh) $$;
 REVOKE ALL ON FUNCTION atokore_private.trial_allowed_v51(uuid) FROM PUBLIC, anon, authenticated;
 
--- Work 7th (P0): the time a purchase really happened on a phone cannot be proven from anything the phone
--- says (its clock, a token fetched afterwards). The server can prove only times it issued itself. So:
---   * the phone holds a CLOCK TICKET the server issued before the purchase (hh_clock_ticket_v51; refreshed
---     while the app is open), and sends its id with the purchase ("ck" in the complete_buy op);
---   * the window starts at the ticket's issue time — at or before the real purchase, so the window is
---     never longer than 10 minutes after the purchase, only (by the ticket's age) shorter;
---   * a purchase without a valid ticket of this household and this person, issued before the server
---     received the purchase (offline, older app, unknown origin), CANNOT be undone in a trial household
---     (purchase_undo_unprovable). Buying, stock and sync are unchanged; the stock can be corrected directly.
--- Previous versions (device "ts", earlier of two times) are removed.
+-- Work 8th (E, candidate spec change; shared undo stays OFF in the app until the owner approves):
+-- the time a purchase really happened on a phone cannot be proven, and a cached or after-the-fact clock
+-- ticket proved nothing either (Work: an offline purchase was undone after reconnecting; one ticket served
+-- two purchases). The server now proves only ONE thing: when IT accepted the purchase.
+--   * Undo rights exist only for a purchase accepted through the dedicated purchase command
+--     hh_push_v51(p_ops, p_receipt_ops): a complete_buy listed in p_receipt_ops and FIRST applied in that
+--     call gets a receipt fixing, in the same transaction, the op id, the actor, the household, the
+--     product, the shopping row, the quantity and the server's receive time.
+--   * The ordinary sync (hh_push), the old RPC, a resend (duplicate), the offline outbox (the app never
+--     lists an op created offline) and anything else get no receipt: undo -> purchase_undo_unprovable.
+--   * The window is 10 minutes from the server's receive time. A modified client could still send an old
+--     purchase through the command: then the window counts from when the server received it — the
+--     guarantee is "10 minutes after the server confirmed it", not "10 minutes after the real purchase".
+-- Buying, stock, sync, the local single undo, manual quantity correction and history are unchanged.
 DROP TRIGGER IF EXISTS purchase_undo_guard_v51 ON atokore_private.ops;
 DROP FUNCTION IF EXISTS atokore_private.purchase_undo_guard_v51(),
   atokore_private.purchase_undo_refusal_v51(uuid,timestamptz,jsonb),
-  atokore_private.purchase_undo_start_v51(timestamptz,jsonb);
-CREATE TABLE IF NOT EXISTS atokore_private.purchase_clock_tickets_v51 (
-  ticket uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  atokore_private.purchase_undo_refusal_v51(uuid,timestamptz,jsonb,uuid),
+  atokore_private.purchase_undo_start_v51(timestamptz,jsonb),
+  public.hh_clock_ticket_v51();
+DROP TABLE IF EXISTS atokore_private.purchase_clock_tickets_v51;
+CREATE TABLE IF NOT EXISTS atokore_private.purchase_receipts_v51 (
+  op_id uuid PRIMARY KEY,
   household_id uuid NOT NULL REFERENCES atokore_private.households(id),
-  user_id uuid NOT NULL,
-  issued_at timestamptz NOT NULL DEFAULT clock_timestamp()
+  actor uuid NOT NULL,
+  item_id text NOT NULL,
+  buy_id text NOT NULL,
+  qty numeric NOT NULL CHECK (qty >= 0),
+  received_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
-CREATE INDEX IF NOT EXISTS purchase_clock_tickets_v51_issued ON atokore_private.purchase_clock_tickets_v51(issued_at);
-ALTER TABLE atokore_private.purchase_clock_tickets_v51 ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON atokore_private.purchase_clock_tickets_v51 FROM PUBLIC, anon, authenticated;
-CREATE OR REPLACE FUNCTION public.hh_clock_ticket_v51() RETURNS jsonb
+ALTER TABLE atokore_private.purchase_receipts_v51 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON atokore_private.purchase_receipts_v51 FROM PUBLIC, anon, authenticated;
+-- The dedicated purchase command. Applies the batch exactly like hh_push (same rules, same idempotency)
+-- and, in the same transaction, gives a receipt to each listed complete_buy that this call applied.
+-- Outside the trial it answers exactly {status:'not_enabled'} and applies NOTHING (the app then uses hh_push).
+CREATE OR REPLACE FUNCTION public.hh_push_v51(p_ops jsonb, p_receipt_ops jsonb, p_device text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $fn$
-DECLARE u uuid:=atokore_private.require_user(); h uuid:=atokore_private.lock_member(u); t atokore_private.purchase_clock_tickets_v51%ROWTYPE;
+DECLARE u uuid:=atokore_private.require_user(); h uuid:=atokore_private.lock_member(u);
+  r jsonb; x jsonb; v_want uuid[]:='{}'; v_id uuid; o atokore_private.ops%ROWTYPE; v_given jsonb:='[]'::jsonb;
 BEGIN
   IF h IS NULL THEN RAISE EXCEPTION 'not_member' USING ERRCODE='42501'; END IF;
   IF NOT atokore_private.trial_allowed_v51(h) THEN RETURN jsonb_build_object('status','not_enabled'); END IF;
-  -- Tickets older than a day can no longer open any window: removed as they are replaced.
-  DELETE FROM atokore_private.purchase_clock_tickets_v51 WHERE issued_at < clock_timestamp()-interval '1 day';
-  INSERT INTO atokore_private.purchase_clock_tickets_v51(household_id,user_id) VALUES(h,u) RETURNING * INTO t;
-  RETURN jsonb_build_object('status','ready','ticket',t.ticket,'issued_at',(extract(epoch FROM t.issued_at)*1000)::bigint);
+  IF jsonb_typeof(p_receipt_ops) IS DISTINCT FROM 'array' OR jsonb_array_length(p_receipt_ops) > 100 THEN RAISE EXCEPTION 'bad_batch' USING ERRCODE='22023'; END IF;
+  FOR x IN SELECT * FROM jsonb_array_elements(p_receipt_ops) LOOP
+    BEGIN v_id:=(x #>> '{}')::uuid; EXCEPTION WHEN others THEN RAISE EXCEPTION 'bad_batch' USING ERRCODE='22023'; END;
+    v_want:=v_want||v_id;
+  END LOOP;
+  r:=public.hh_push(p_ops,p_device);
+  FOR x IN SELECT * FROM jsonb_array_elements(r->'results') LOOP
+    CONTINUE WHEN x->>'status' IS DISTINCT FROM 'applied';
+    BEGIN v_id:=(x->>'op_id')::uuid; EXCEPTION WHEN others THEN CONTINUE; END;
+    CONTINUE WHEN NOT (v_id = ANY(v_want));
+    SELECT * INTO o FROM atokore_private.ops WHERE household_id=h AND op_id=v_id;
+    CONTINUE WHEN NOT FOUND OR o.type<>'complete_buy' OR o.result<>'applied' OR o.actor<>u;
+    INSERT INTO atokore_private.purchase_receipts_v51(op_id,household_id,actor,item_id,buy_id,qty)
+     VALUES(v_id,h,u,o.body->>'item',o.body->>'buy',GREATEST(coalesce((o.body->>'_itemAfter')::numeric-(o.body->>'_itemBefore')::numeric,0),0))
+     ON CONFLICT (op_id) DO NOTHING;
+    v_given:=v_given||to_jsonb(v_id::text);
+  END LOOP;
+  RETURN r||jsonb_build_object('status','ready','receipts',v_given);
 END $fn$;
-REVOKE ALL ON FUNCTION public.hh_clock_ticket_v51() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.hh_clock_ticket_v51() TO authenticated;
+REVOKE ALL ON FUNCTION public.hh_push_v51(jsonb,jsonb,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.hh_push_v51(jsonb,jsonb,text) TO authenticated;
 
 -- NULL while this purchase may still be undone; otherwise why not. Only trial households have a window.
-CREATE OR REPLACE FUNCTION atokore_private.purchase_undo_refusal_v51(p_hh uuid,p_at timestamptz,p_body jsonb,p_actor uuid) RETURNS text
+-- The receipt must belong to this op, household and actor and name the same product and shopping row.
+CREATE OR REPLACE FUNCTION atokore_private.purchase_undo_refusal_v51(p_hh uuid,p_op uuid,p_body jsonb,p_actor uuid) RETURNS text
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $fn$
-DECLARE v_issued timestamptz; v_ck uuid;
+DECLARE v_at timestamptz;
 BEGIN
   IF NOT atokore_private.trial_allowed_v51(p_hh) THEN RETURN NULL; END IF;
-  BEGIN v_ck:=(p_body->>'ck')::uuid; EXCEPTION WHEN others THEN v_ck:=NULL; END;
-  IF v_ck IS NOT NULL THEN
-    SELECT t.issued_at INTO v_issued FROM atokore_private.purchase_clock_tickets_v51 t
-     WHERE t.ticket=v_ck AND t.household_id=p_hh AND t.user_id=p_actor AND t.issued_at<=p_at;
-  END IF;
-  IF v_issued IS NULL THEN RETURN 'purchase_undo_unprovable'; END IF;
-  IF clock_timestamp()-v_issued>=interval '10 minutes' THEN RETURN 'purchase_undo_expired'; END IF;
+  SELECT rc.received_at INTO v_at FROM atokore_private.purchase_receipts_v51 rc
+   WHERE rc.op_id=p_op AND rc.household_id=p_hh AND rc.actor=p_actor
+     AND rc.item_id IS NOT DISTINCT FROM p_body->>'item' AND rc.buy_id IS NOT DISTINCT FROM p_body->>'buy';
+  IF v_at IS NULL THEN RETURN 'purchase_undo_unprovable'; END IF;
+  IF clock_timestamp()-v_at>=interval '10 minutes' THEN RETURN 'purchase_undo_expired'; END IF;
   RETURN NULL;
 END $fn$;
-REVOKE ALL ON FUNCTION atokore_private.purchase_undo_refusal_v51(uuid,timestamptz,jsonb,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION atokore_private.purchase_undo_refusal_v51(uuid,uuid,jsonb,uuid) FROM PUBLIC, anon, authenticated;
 
--- Estimate entries removed by an undo (Work 7th): a stale phone or tab that still has one cannot write it
--- back — the server drops it from any later write of that product (the write itself still applies).
+-- ---- The forecast, owned by the purchase (Work 8th) --------------------------------------------------
+-- An estimate entry (item field tp…) of a purchase made while sharing carries the shared shopping rows it
+-- came from ("sb": [buy ids]). Ownership is decided by the SERVER from that and the purchase's own row:
+-- the entry belongs to the complete_buy of this product whose buy is in sb. The app's "est" list is no
+-- longer trusted (an arbitrary or wrongly linked est cannot remove or revive another purchase's entry).
+-- Undone entries (tombstones), the write-backs refused and the quarantine survive a rollback of the undo
+-- window (rollback/atokore-purchase-undo-window-v51.rollback.sql keeps them and the write-back guard).
 CREATE TABLE IF NOT EXISTS atokore_private.purchase_undone_entries_v51 (
   household_id uuid NOT NULL REFERENCES atokore_private.households(id),
   item_id text NOT NULL,
@@ -109,13 +140,46 @@ CREATE TABLE IF NOT EXISTS atokore_private.purchase_undone_entries_v51 (
 );
 ALTER TABLE atokore_private.purchase_undone_entries_v51 ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON atokore_private.purchase_undone_entries_v51 FROM PUBLIC, anon, authenticated;
+-- A write of an undone entry whose owner cannot be shown is kept here (never deleted by guess, never
+-- counted). It is re-adopted if a purchase that owns it is applied later (a set that arrived first).
+CREATE TABLE IF NOT EXISTS atokore_private.purchase_forecast_quarantine_v51 (
+  id bigserial PRIMARY KEY,
+  household_id uuid NOT NULL REFERENCES atokore_private.households(id),
+  item_id text NOT NULL,
+  field text NOT NULL,
+  value jsonb NOT NULL,
+  reason text NOT NULL,
+  received_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+ALTER TABLE atokore_private.purchase_forecast_quarantine_v51 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON atokore_private.purchase_forecast_quarantine_v51 FROM PUBLIC, anon, authenticated;
+-- Is there a live (applied, not undone) purchase of this product, from a row in the entry's sb, applied
+-- after p_since? That purchase owns the entry (a re-purchase of the same row is a new purchase).
+CREATE OR REPLACE FUNCTION atokore_private.purchase_entry_owner_v51(p_hh uuid,p_item text,p_value jsonb,p_since timestamptz) RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+  SELECT o.op_id FROM atokore_private.ops o
+   WHERE jsonb_typeof(p_value->'sb')='array' AND o.household_id=p_hh AND o.type='complete_buy' AND o.result='applied'
+     AND o.body->>'item'=p_item AND (p_value->'sb') ? (o.body->>'buy') AND coalesce(o.body->>'_undo_done','')<>'true'
+     AND o.at>p_since
+   ORDER BY o.at DESC LIMIT 1 $$;
+REVOKE ALL ON FUNCTION atokore_private.purchase_entry_owner_v51(uuid,text,jsonb,timestamptz) FROM PUBLIC, anon, authenticated;
 CREATE OR REPLACE FUNCTION atokore_private.purchase_undone_strip_v51() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $fn$
-DECLARE u record;
+DECLARE u record; v jsonb;
 BEGIN
   IF NEW.kind<>'item' OR NOT atokore_private.trial_allowed_v51(NEW.household_id) THEN RETURN NEW; END IF;
-  FOR u IN SELECT e.field,e.k FROM atokore_private.purchase_undone_entries_v51 e WHERE e.household_id=NEW.household_id AND e.item_id=NEW.id LOOP
-    IF NEW.fields->u.field->>'k' = u.k THEN NEW.fields:=NEW.fields-u.field; END IF;
+  FOR u IN SELECT e.field,e.k,e.undone_at FROM atokore_private.purchase_undone_entries_v51 e WHERE e.household_id=NEW.household_id AND e.item_id=NEW.id LOOP
+    v:=NEW.fields->u.field;
+    CONTINUE WHEN v IS NULL OR v->>'k' IS DISTINCT FROM u.k;
+    IF atokore_private.purchase_entry_owner_v51(NEW.household_id,NEW.id,v,u.undone_at) IS NOT NULL THEN
+      -- A purchase made after the undo owns this entry now (the same row bought again).
+      DELETE FROM atokore_private.purchase_undone_entries_v51 WHERE household_id=NEW.household_id AND item_id=NEW.id AND field=u.field AND k=u.k;
+    ELSE
+      NEW.fields:=NEW.fields-u.field;
+      IF TG_OP='UPDATE' AND OLD.fields->u.field IS NOT DISTINCT FROM v THEN CONTINUE; END IF;
+      INSERT INTO atokore_private.purchase_forecast_quarantine_v51(household_id,item_id,field,value,reason)
+       VALUES(NEW.household_id,NEW.id,u.field,v,CASE WHEN jsonb_typeof(v->'sb')='array' THEN 'undone_write_back' ELSE 'owner_unknown' END);
+    END IF;
   END LOOP;
   RETURN NEW;
 END $fn$;
@@ -123,42 +187,67 @@ REVOKE ALL ON FUNCTION atokore_private.purchase_undone_strip_v51() FROM PUBLIC, 
 DROP TRIGGER IF EXISTS purchase_undone_strip_v51 ON atokore_private.records;
 CREATE TRIGGER purchase_undone_strip_v51 BEFORE INSERT OR UPDATE OF fields ON atokore_private.records
 FOR EACH ROW EXECUTE FUNCTION atokore_private.purchase_undone_strip_v51();
+-- A purchase applied after its estimate entry was held (the set reached the server first): the held entry
+-- of that row and product is put back, without replacing anything already there.
+CREATE OR REPLACE FUNCTION atokore_private.purchase_readopt_v51() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $fn$
+DECLARE q record;
+BEGIN
+  IF NOT atokore_private.trial_allowed_v51(NEW.household_id) THEN RETURN NULL; END IF;
+  FOR q IN SELECT * FROM atokore_private.purchase_forecast_quarantine_v51 z
+            WHERE z.household_id=NEW.household_id AND z.item_id=NEW.body->>'item'
+              AND jsonb_typeof(z.value->'sb')='array' AND (z.value->'sb') ? (NEW.body->>'buy') ORDER BY z.id LOOP
+    DELETE FROM atokore_private.purchase_undone_entries_v51 WHERE household_id=q.household_id AND item_id=q.item_id AND field=q.field AND k=q.value->>'k';
+    UPDATE atokore_private.records SET fields=fields||jsonb_build_object(q.field,q.value),seq=nextval('atokore_private.change_seq'),updated_at=clock_timestamp()
+     WHERE household_id=q.household_id AND kind='item' AND id=q.item_id AND NOT deleted AND NOT (fields ? q.field);
+    DELETE FROM atokore_private.purchase_forecast_quarantine_v51 WHERE id=q.id;
+  END LOOP;
+  RETURN NULL;
+END $fn$;
+REVOKE ALL ON FUNCTION atokore_private.purchase_readopt_v51() FROM PUBLIC, anon, authenticated;
+DROP TRIGGER IF EXISTS purchase_readopt_v51 ON atokore_private.ops;
+CREATE TRIGGER purchase_readopt_v51 AFTER UPDATE OF result ON atokore_private.ops
+FOR EACH ROW WHEN (NEW.type='complete_buy' AND NEW.result='applied' AND OLD.result IS DISTINCT FROM 'applied')
+EXECUTE FUNCTION atokore_private.purchase_readopt_v51();
 
 -- The guard on the receipt, in the same transaction as the undo itself (whichever RPC):
 --   * an expired or unprovable undo is refused and the whole transaction is rolled back;
---   * (Work 7th, estimate) the estimate entries this purchase added ("est": [{field,k}], sent by the app
---     with the purchase) are removed from the product in the SAME transaction as the stock and the shopping
---     row — only while the field still holds that purchase (k), so a later purchase is never touched, and a
---     retry changes nothing. If the estimate had already counted it, the product is marked to be checked.
+--   * the entries THIS purchase owns (sb holds its row) are removed in the same transaction and
+--     remembered (a stale write cannot bring them back); an entry of several rows bought together cannot
+--     be split, so the product is marked to be checked instead; an old entry without sb that the app
+--     listed (est) cannot be verified: it is kept and the product is marked to be checked. Entries of other
+--     purchases are never touched, whatever est says. If the estimate already counted it -> checked.
 CREATE OR REPLACE FUNCTION atokore_private.purchase_undo_guard_v51() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $fn$
-DECLARE why text; e jsonb; v_fields jsonb; v_changed boolean:=false;
+DECLARE why text; f text; v jsonb; v_fields jsonb; v_changed boolean:=false; v_buy text:=OLD.body->>'buy';
+  v_check boolean:=false;
 BEGIN
   IF NOT atokore_private.trial_allowed_v51(NEW.household_id) THEN RETURN NEW; END IF;
-  why:=atokore_private.purchase_undo_refusal_v51(NEW.household_id,OLD.at,OLD.body,OLD.actor);
+  why:=atokore_private.purchase_undo_refusal_v51(NEW.household_id,OLD.op_id,OLD.body,OLD.actor);
   IF why IS NOT NULL THEN RAISE EXCEPTION '%',why USING ERRCODE='22023'; END IF;
-  IF jsonb_typeof(OLD.body->'est')='array' THEN
-    SELECT r.fields INTO v_fields FROM atokore_private.records r
-     WHERE r.household_id=NEW.household_id AND r.kind='item' AND r.id=OLD.body->>'item' FOR UPDATE;
-    IF v_fields IS NOT NULL THEN
-      FOR e IN SELECT * FROM jsonb_array_elements(OLD.body->'est') LOOP
-        IF e->>'field' ~ '^tp[0-9a-z]{1,13}$' AND char_length(coalesce(e->>'k',''))BETWEEN 1 AND 80 THEN
-          INSERT INTO atokore_private.purchase_undone_entries_v51(household_id,item_id,field,k,op_id)
-           VALUES(NEW.household_id,OLD.body->>'item',e->>'field',e->>'k',OLD.op_id) ON CONFLICT DO NOTHING;
-        END IF;
-        IF e->>'field' ~ '^tp[0-9a-z]{1,13}$' AND char_length(coalesce(e->>'k',''))BETWEEN 1 AND 80
-           AND v_fields->(e->>'field')->>'k' = e->>'k' THEN
-          v_fields:=v_fields-(e->>'field'); v_changed:=true;
-          IF jsonb_typeof(v_fields->'track'->'seen')='array' AND (v_fields->'track'->'seen') ? (e->>'k') THEN
-            v_fields:=jsonb_set(v_fields,'{track,check}','"purchase_undo"'::jsonb,true);
-          END IF;
-        END IF;
-      END LOOP;
-      IF v_changed THEN
-        UPDATE atokore_private.records SET fields=v_fields,seq=nextval('atokore_private.change_seq'),updated_at=clock_timestamp()
-         WHERE household_id=NEW.household_id AND kind='item' AND id=OLD.body->>'item';
+  SELECT r.fields INTO v_fields FROM atokore_private.records r
+   WHERE r.household_id=NEW.household_id AND r.kind='item' AND r.id=OLD.body->>'item' FOR UPDATE;
+  IF v_fields IS NULL THEN RETURN NEW; END IF;
+  FOR f,v IN SELECT * FROM jsonb_each(v_fields) LOOP
+    CONTINUE WHEN f !~ '^tp[0-9a-z]{1,13}$' OR jsonb_typeof(v)<>'object' OR char_length(coalesce(v->>'k','')) NOT BETWEEN 1 AND 80;
+    IF jsonb_typeof(v->'sb')='array' AND (v->'sb') ? v_buy THEN
+      IF jsonb_array_length(v->'sb')=1 THEN
+        v_fields:=v_fields-f; v_changed:=true;
+        INSERT INTO atokore_private.purchase_undone_entries_v51(household_id,item_id,field,k,op_id)
+         VALUES(NEW.household_id,OLD.body->>'item',f,v->>'k',OLD.op_id)
+         ON CONFLICT (household_id,item_id,field,k) DO UPDATE SET op_id=EXCLUDED.op_id,undone_at=clock_timestamp();
+        IF jsonb_typeof(v_fields->'track'->'seen')='array' AND (v_fields->'track'->'seen') ? (v->>'k') THEN v_check:=true; END IF;
+      ELSE v_check:=true;
       END IF;
+    ELSIF v->'sb' IS NULL AND jsonb_typeof(OLD.body->'est')='array'
+          AND EXISTS(SELECT 1 FROM jsonb_array_elements(OLD.body->'est') e WHERE e->>'field'=f AND e->>'k'=v->>'k') THEN
+      v_check:=true;
     END IF;
+  END LOOP;
+  IF v_check AND jsonb_typeof(v_fields->'track')='object' THEN v_fields:=jsonb_set(v_fields,'{track,check}','"purchase_undo"'::jsonb,true); v_changed:=true; END IF;
+  IF v_changed THEN
+    UPDATE atokore_private.records SET fields=v_fields,seq=nextval('atokore_private.change_seq'),updated_at=clock_timestamp()
+     WHERE household_id=NEW.household_id AND kind='item' AND id=OLD.body->>'item';
   END IF;
   RETURN NEW;
 END $fn$;
@@ -181,7 +270,7 @@ BEGIN
     SELECT * INTO o FROM atokore_private.ops WHERE household_id=h AND op_id=(p #>> '{}')::uuid FOR UPDATE;
     IF NOT FOUND THEN CONTINUE; END IF;                     -- the existing RPC refuses unknown receipts
     IF o.body->>'_undo_done'='true' THEN CONTINUE; END IF;  -- an earlier undo answers its retry
-    why:=atokore_private.purchase_undo_refusal_v51(h,o.at,o.body,o.actor);
+    why:=atokore_private.purchase_undo_refusal_v51(h,o.op_id,o.body,o.actor);
     IF why IS NOT NULL THEN RAISE EXCEPTION '%',why USING ERRCODE='22023'; END IF;
   END LOOP;
   RETURN public.hh_undo_purchases(p_ops) || jsonb_build_object('status','ready');
