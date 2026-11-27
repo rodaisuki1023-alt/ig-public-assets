@@ -197,7 +197,7 @@ jobs:
           # v51 SQL drafts and their Work 6th regressions (photo move/close, notices, undo window, per-unit rollback)
           node --test --test-concurrency=1 tests/atokore-photo-legacy-migrate-v51.test.cjs tests/atokore-photo-regressions-v51.test.cjs \
             tests/atokore-notify-claim-v51.test.cjs tests/atokore-purchase-undo-window-v51.test.cjs tests/atokore-undo-window-guard-v51.test.cjs \
-            tests/atokore-sql-units-rollback-v51.test.cjs tests/atokore-safe-trial-build.test.cjs tests/atokore-photo-delete-paths-v51.test.cjs tests/atokore-purchase-op-forecast-v51.test.cjs
+            tests/atokore-sql-units-rollback-v51.test.cjs tests/atokore-safe-trial-build.test.cjs tests/atokore-photo-delete-paths-v51.test.cjs tests/atokore-purchase-op-forecast-v51.test.cjs tests/atokore-typed-buy-v51.test.cjs
           node --test tests/atokore-buy-duplicates-v48.test.cjs
           node --test tests/atokore-baby-food-search-v48.test.cjs
           node --test tests/atokore-quick-add.test.cjs tests/atokore-peach-ui.test.cjs tests/atokore-baby-visuals.test.cjs \

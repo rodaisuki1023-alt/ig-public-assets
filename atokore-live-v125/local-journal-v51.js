@@ -272,10 +272,13 @@ async function init(){
   else committed=cur;
   // Operations of tabs that closed or crashed before committing (and this tab's from a previous load).
   const logs=[];
-  for(const k of walKeys()){try{const w=JSON.parse(store.getItem(k)||'null');if(Array.isArray(w?.ops))logs.push({k,ops:w.ops})}catch(_){}}
+  for(const k of walKeys()){try{const raw=store.getItem(k),w=JSON.parse(raw||'null');if(Array.isArray(w?.ops))logs.push({k,raw,ops:w.ops})}catch(_){}}
   if(logs.length){
    committed=await commit(logs.flatMap(l=>l.ops));
-   for(const l of logs)try{store.removeItem(l.k)}catch(_){}
+   // Only a log that did not change since it was read is removed: a tab still open may have added an
+   // operation meanwhile (it stays in its log and is committed by that tab, or here next time; ids make
+   // a second commit of the same operation a no-op).
+   for(const l of logs)try{if(store.getItem(l.k)===l.raw)store.removeItem(l.k)}catch(_){}
    try{channel?.postMessage({rev:committed.rev,tab:TAB})}catch(_){}     // other open tabs show the recovered change
   }
   // A cache written by an older version of the app (no revision mark) that differs from the committed data
@@ -285,10 +288,14 @@ async function init(){
   if(cur&&legacy===null&&!logs.length&&!same(committed.data,memory()||{items:[],buys:[],routines:[]}))committed=await commit([{id:uid(),t:'replace',data:memory()||{items:[],buys:[],routines:[]},ifRev:committed.rev}]);
   // A cache written by an older version of the app (its digest does not match) that differs from the committed
   // data is kept aside, never adopted silently.
+  // A cache of THIS version that differs is never adopted either: every change it holds was written to a
+  // log before the cache (capture/replace) and was committed above, so a difference can only be an older
+  // write that arrived late (two tabs saving at once: the slower tab's cache from before the other's
+  // commit). Adopting it replaced the newer committed state and lost an operation (Work 10th, CI WebKit);
+  // the cache is rewritten from the committed state below instead.
   else if(valid(legacy)&&cur&&!same(strip(legacy),committed.data)){
    const raw=store.getItem(KEY);
    if(store.getItem(SUM)!==digest(raw||''))try{store.setItem(OLD_TAB,raw)}catch(_){}
-   else committed=await commit([{id:uid(),t:'replace',data:legacy,ifRev:committed.rev}]);   // our own cache, newer than IndexedDB (a commit that did not finish)
   }
   const s=replayView();base=clone(s);assignMemory(s);
   if(pending.length)schedule();else writeCache(s,{onlyIfPresent:true});

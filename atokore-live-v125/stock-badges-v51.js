@@ -58,7 +58,24 @@ function decorate(){
   const art=listMode?null:row.querySelector('.atk-row-brand');
   row.classList.toggle('atk-row-compact',listMode&&!!w.querySelector('.atk-lv-compact'));
   if(art)art.append(w.firstElementChild);else row.append(w.firstElementChild);
+  days(row,x);
  }
+}
+// The estimate's days left on the card itself, so a tracked product does not have to be opened to see
+// it (the same range as the product sheet, and labelled 見積 like the mark: it is not a count).
+function daysText(e){
+ if(!e||e.status!=='estimate')return '';
+ if(!(e.remaining>0))return '見積 もうない可能性';
+ const [a,b]=e.range;return '見積 あと'+(a===b?a:a+'〜'+b)+'日';
+}
+function days(row,x){
+ row.querySelectorAll('.atk-lv-days').forEach(n=>n.remove());
+ let e=null;try{e=L.estimate(x,UI.today())}catch(_){}
+ const text=daysText(e);if(!text)return;
+ const n=doc.createElement('span');n.className='atk-lv-days';n.setAttribute('role','note');
+ n.setAttribute('aria-label',String(x.name||'商品')+'の'+text.replace(/^見積 /,'見積もり：'));n.textContent=text;
+ const host=row.querySelector('.bf-stock-count')||row.querySelector('.grow .meta')||row.querySelector('.grow');
+ if(host&&host.classList.contains('bf-stock-count'))host.after(n);else if(host)host.append(n);else row.append(n);
 }
 doc.addEventListener('click',e=>{
  const t=e.target.closest?.('[data-atk-lv-open],[data-atk-lv-set],[data-atk-lv-undo]');if(!t)return;
@@ -90,5 +107,5 @@ doc.addEventListener('change',e=>{
 const base=root.renderStock;
 if(typeof base==='function')root.renderStock=function(...args){const r=base.apply(this,args);try{decorate()}catch(err){console.error('あとこれ: 残りの目安',err)}return r};
 decorate();
-root.AtokoreStockBadges=Object.freeze({refresh:decorate});
+root.AtokoreStockBadges=Object.freeze({refresh:decorate,daysText});
 })(typeof globalThis!=='undefined'?globalThis:this);

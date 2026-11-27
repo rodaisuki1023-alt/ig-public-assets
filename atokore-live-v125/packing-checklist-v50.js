@@ -196,6 +196,13 @@
   function addItem() {
     const name = input.value.trim().slice(0, 60);
     if (!name || locked || state.lists[state.active].length >= 50) return;
+    // The same item twice ("おむつ" already in the set) only makes the count wrong: say so instead.
+    const same = n => String(n).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+    if (state.lists[state.active].some(x => same(x.name) === same(name))) {
+      notice('「' + name + '」はすでに' + NAMES[state.active] + 'にあります。');
+      return;
+    }
+    notice('');
     const id = 'custom-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
     if (edited(next => { next.lists[next.active].push({ id, name, done: false }); })) input.value = '';
   }

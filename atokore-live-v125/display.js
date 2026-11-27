@@ -133,12 +133,18 @@
       if(size)style.setProperty('font-size',size,style.getPropertyPriority('font-size'));
     }
   }
+  // Each stylesheet is scaled once. Rescanning every sheet whenever a style element is added cost a
+  // full walk of all rules per injected style (startup and every screen that adds one). A changed
+  // <style> gets a new CSSStyleSheet object, so it is scaled again; a sheet seen while still empty
+  // (a <link> not loaded yet) is retried on the next scan and on window load.
+  const scaledSheets=new WeakSet();
   function scaleSheets(){
     for(const sheet of Array.from(document.styleSheets)){
-      try{scaleRules(sheet.cssRules)}catch(e){/* Cross-origin sheets cannot be edited. */}
+      if(scaledSheets.has(sheet))continue;
+      try{const rules=sheet.cssRules;if(!rules||!rules.length)continue;scaleRules(rules);scaledSheets.add(sheet)}catch(e){/* Cross-origin sheets cannot be edited. */}
     }
   }
-  function scaleInline(el){
+  function scaleInline(el,fields){
     if(el.nodeType!==1)return;
     const isField=/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
     const value=el.style.getPropertyValue('font-size');
@@ -148,30 +154,41 @@
     // fields while walking stylesheets. Cover actual fields when they appear,
     // including those inserted later by the receipt review. Measure at scale 1
     // so changing the preference later still scales from the original size.
-    if(isField&&!value){
-      const ownScale=el.style.getPropertyValue('--atk-font-scale');
-      const priority=el.style.getPropertyPriority('--atk-font-scale');
-      el.style.setProperty('--atk-font-scale','1');
-      const baseSize=getComputedStyle(el).fontSize;
+    if(isField&&!value){if(fields)fields.push(el);else measureFields([el])}
+  }
+  // Measuring a field forces a style calculation. Doing it per field made every re-render with
+  // checkboxes or inputs recalculate styles once per field; all fields of one change are measured
+  // together instead (set scale 1 on all, read all, restore all), with the same result per field.
+  function measureFields(fields){
+    if(!fields.length)return;
+    const saved=fields.map(el=>[el.style.getPropertyValue('--atk-font-scale'),el.style.getPropertyPriority('--atk-font-scale')]);
+    fields.forEach(el=>el.style.setProperty('--atk-font-scale','1'));
+    const sizes=fields.map(el=>getComputedStyle(el).fontSize);
+    fields.forEach((el,i)=>{
+      const [ownScale,priority]=saved[i];
       if(ownScale)el.style.setProperty('--atk-font-scale',ownScale,priority);
       else el.style.removeProperty('--atk-font-scale');
-      const fieldSize=scaledSize(baseSize,true);
+      const fieldSize=scaledSize(sizes[i],true);
       if(fieldSize)el.style.setProperty('font-size',fieldSize,'important');
-    }
+    });
   }
-  function scaleInlineTree(el){
+  function scaleInlineTree(el,fields){
     if(el.nodeType!==1)return;
-    scaleInline(el);
-    el.querySelectorAll('[style],input,select,textarea').forEach(scaleInline);
+    const own=!fields;fields=fields||[];
+    scaleInline(el,fields);
+    el.querySelectorAll('[style],input,select,textarea').forEach(x=>scaleInline(x,fields));
+    if(own)measureFields(fields);
   }
   scaleSheets();
   scaleInlineTree(document.body);
   window.addEventListener('load',scaleSheets,{once:true});
   new MutationObserver(records=>{
+    const fields=[];
     for(const record of records){
-      if(record.type==='attributes')scaleInline(record.target);
-      else for(const node of record.addedNodes)scaleInlineTree(node);
+      if(record.type==='attributes')scaleInline(record.target,fields);
+      else for(const node of record.addedNodes)scaleInlineTree(node,fields);
     }
+    measureFields([...new Set(fields)].filter(el=>el.isConnected));
   }).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['style']});
   new MutationObserver(scaleSheets).observe(document.head,{subtree:true,childList:true,characterData:true});
 

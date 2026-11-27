@@ -259,7 +259,7 @@ function paint(){
   (offerOwn&&sharedOn()?'<p class="atk-prep-note">この家族ではまだ持ち物を共有していません。この端末だけに保存していた内容（'+(readOwn()?.children?.length||0)+'人分）を共有できます。</p><button type="button" class="atk-prep-add" data-prep-share-own>この端末の内容を家族と共有する</button>':'')+
   '<p class="atk-prep-day">'+esc(dayLabel)+'の追加</p>'+todayList+
   '<div class="atk-prep-kids" role="group" aria-label="子ども">'+kids.map(c=>'<span class="atk-prep-kid">'+esc(kidLabel(c))+'<button type="button" data-prep-del-child="'+esc(c.id)+'" aria-label="'+esc(c.name)+'を削除">×</button></span>').join('')+
-  (kids.length<MAX_CHILDREN?'<span class="atk-prep-addkid"><input type="text" maxlength="20" placeholder="子どもの名前（例：上の子）" aria-label="子どもの名前" data-prep-kid-name><input type="text" maxlength="20" placeholder="園の名前（任意）" aria-label="通っている園の名前（任意）" data-prep-kid-place><button type="button" data-prep-add-child>追加</button></span>':'')+'</div>'+
+  (kids.length<MAX_CHILDREN?'<span class="atk-prep-addkid"><input type="text" maxlength="20" placeholder="例：上の子" aria-label="子どもの名前" data-prep-kid-name><input type="text" maxlength="20" placeholder="園の名前（任意）" aria-label="通っている園の名前（任意）" data-prep-kid-place><button type="button" data-prep-add-child>追加</button></span>':'')+'</div>'+
   (kids.length?'<div class="atk-prep-form">'+
    (multi?'<label>子ども<select data-prep-child>'+childOpts+'</select></label>':'')+
    '<label>いつ<select data-prep-when><option value="w1">毎週月曜</option><option value="w2">毎週火曜</option><option value="w3">毎週水曜</option><option value="w4">毎週木曜</option><option value="w5">毎週金曜</option><option value="w6">毎週土曜</option><option value="w0">毎週日曜</option><option value="date">日付（行事）</option></select></label>'+
