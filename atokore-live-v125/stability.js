@@ -18,6 +18,29 @@
       else {const age=Number(item.babyFoodMonth);const ageField=Number.isInteger(age)&&age>=1&&age<=48?{babyFoodMonth:age}:{};list.push({id:Core.uniqueId(),name:item.name,qty:amount,unit,stockId:item.id,cat:item.cat||'',...ageField})}
       return true;
     },
+    // A typed shopping entry: "トマト 3", "トマト×3", "卵 10個" -> name + quantity (1-99). The name is
+    // kept exactly as typed apart from the quantity part; anything else ("単3電池", "水 2L") stays a name.
+    parseTyped(text){
+      const raw=String(text??'').replace(/[\s\u3000]+$/,'').replace(/^[\s\u3000]+/,'');
+      const m=/^(.*?\S)(?:[\s\u3000]*[×xX✕＊*][\s\u3000]*|[\s\u3000]+)([0-9０-９]{1,2})(個|本|袋|パック|箱|枚|玉|房|缶|丁|つ|点)?$/.exec(raw)
+        ||/^(.*?[^0-9０-９\s\u3000])([0-9０-９]{1,2})(個|本|袋|パック|箱|玉|房|缶|丁|つ|点)$/.exec(raw);
+      if(!m)return {name:raw,qty:1,unit:null};
+      const qty=Number(m[2].normalize('NFKC'));
+      if(!(qty>=1&&qty<=99))return {name:raw,qty:1,unit:null};
+      return {name:m[1].replace(/[\s\u3000]+$/,''),qty,unit:m[3]==='つ'||m[3]==='点'?'個':(m[3]||null)};
+    },
+    // Unit for a typed shopping entry: an explicit unit wins; then the unit of the same name already on
+    // the list, then the unit of the same name in stock (so "牛乳" joins the stock's 牛乳 本 instead of
+    // becoming a second 牛乳 パック that "買った" would add as a new stock row); then the usual guess.
+    // When the same name has several units the guess is used, as before. The category is copied only
+    // from the one stock row that matches, so "買った" adds to that row.
+    typedBuy(list,stock,typed,guess=()=> '個'){
+      const name=typed.name,same=x=>x&&x.name===name,units=a=>[...new Set(a.map(x=>x.unit||'個'))];
+      const onList=units((Array.isArray(list)?list:[]).filter(same)),inStock=(Array.isArray(stock)?stock:[]).filter(same);
+      const unit=typed.unit||(onList.length===1?onList[0]:null)||(units(inStock).length===1?units(inStock)[0]:null)||guess(name)||'個';
+      const match=inStock.filter(x=>(x.unit||'個')===unit);
+      return {name,qty:typed.qty,unit,cat:match.length===1&&match[0].cat?match[0].cat:''};
+    },
     removeByIds(list,ids){
       const selected=new Set([...ids].map(Number).filter(Number.isFinite));
       return (Array.isArray(list)?list:[]).filter(x=>!selected.has(Number(x.id)));
@@ -220,7 +243,7 @@
   window.renderBuy=function(){
     cleanSelections();const list=document.getElementById('buyList');if(!list)return;
     const panel=ensureBuyManage();if(panel)panel.classList.toggle('stableEmptyManage',!buys.length);
-    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="stableBuyHead"><div class="name">${esc(item.name)}</div><button class="icon stableBuyMore" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="buyMenu${id}" aria-label="${esc(item.name)}のその他の操作" onclick="toggleBuyMenuV48(${id},this)">…</button></div><div class="stableBuyMenu" id="buyMenu${id}" role="menu" hidden><button type="button" role="menuitem" class="danger" onclick="closeBuyMenusV48();bdel(${id})">買い物リストから削除</button></div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="meta">買う数量（ストックからは1点ずつ追加）</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)"${plusAttrs(item,(item.unit==='g'||item.unit==='ml')?100:1)}>＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
+    list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="stableBuyHead"><div class="name">${esc(item.name)}</div><button class="icon stableBuyMore" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="buyMenu${id}" aria-label="${esc(item.name)}のその他の操作" onclick="toggleBuyMenuV48(${id},this)">…</button></div><div class="stableBuyMenu" id="buyMenu${id}" role="menu" hidden><button type="button" role="menuitem" class="danger" onclick="closeBuyMenusV48();bdel(${id})">買い物リストから削除</button></div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="meta">買う数量（ストックからは1点ずつ追加）</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)" aria-label="${esc(item.name)}の買う数量を減らす">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)" aria-label="${esc(item.name)}の買う数量を増やす"${plusAttrs(item,(item.unit==='g'||item.unit==='ml')?100:1)}>＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
     updateBuyUI();
   };
   window.setBuyPickV125H=(id,on)=>{id=numberId(id);if(!validId(id))return;if(on)buySelected.add(id);else buySelected.delete(id);updateBuyUI()};
@@ -229,11 +252,13 @@
   window.selectAllBuy=()=>{buys.forEach(item=>buySelected.add(numberId(item.id)));window.renderBuy()};
   window.clearBuySelection=()=>{buySelected.clear();window.renderBuy()};
   window.addBuy=()=>{
-    const input=document.getElementById('buyName'),name=(input?.value||'').trim();if(!name)return;
-    const unit=unitOf(name),found=buys.find(x=>x.name===name&&x.unit===unit);
-    if(found)found.qty=(Number(found.qty)||0)+1;else buys.push({id:Core.uniqueId(),name,qty:1,unit});
+    const input=document.getElementById('buyName'),typed=Core.parseTyped(input?.value||'');if(!typed.name)return;
+    const {name,qty,unit,cat}=Core.typedBuy(buys,items,typed,n=>{try{return unitOf(n)}catch(e){return '個'}});
+    const found=buys.find(x=>x.name===name&&x.unit===unit);
+    if(found&&atLimit(found,qty)){toast(Rules().limitMessage(unit));return}
+    if(found)found.qty=(Number(found.qty)||0)+qty;else buys.push({id:Core.uniqueId(),name,qty,unit,...(cat?{cat}:{})});
     const added=buys.find(x=>x.name===name&&x.unit===unit);
-    if(input)input.value='';saveState();logHistory('買い物を追加',`${name}を追加`,'buy','🛒',added?{refs:[ref(added,'buy')],change:'買い物リストに追加'}:undefined);finish({page:'buy'});
+    if(input)input.value='';saveState();logHistory('買い物を追加',qty>1?`${name} ${qty}${unit}を追加`:`${name}を追加`,'buy','🛒',added?{refs:[ref(added,'buy')],change:'買い物リストに追加'}:undefined);finish({page:'buy',message:found?`${name}は買い物リストにあるので、数量を${found.qty}${unit}にしました`:undefined});
   };
   window.badj=(id,delta)=>{
     const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
