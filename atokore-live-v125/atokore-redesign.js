@@ -161,6 +161,16 @@ function initAdd(){
  };
  changeKind();pg.classList.toggle('atk-not-baby',cat.value!=='ベビー');
 }
+root.atkSetQtyV51=function(id,button){
+ const box=button?.closest?.('.atk-detail-setqty'),input=box?.querySelector('[data-atk-setqty-input]'),note=box?.querySelector('.atk-detail-setqty-note');
+ const x=stock().find(v=>Number(v.id)===Number(id));if(!x||!input)return;
+ const raw=String(input.value).normalize('NFKC').trim(),n=Number(raw);
+ if(raw===''||!Number.isInteger(n)||n<0||n>9999){if(note)note.textContent='0〜9999の整数で入力してください。';input.focus();return}
+ const delta=n-(Number(x.qty)||0);
+ if(delta===0){if(note)note.textContent='いまと同じ数です。';return}
+ root.adj?.(Number(x.id),delta);
+ root.atkShowDetail?.(Number(x.id));
+};
 function showDetail(id){
  const x=stock().find(v=>Number(v.id)===Number(id));if(!x)return;
  const d=describe(x),safeId=Number(x.id);
@@ -169,6 +179,9 @@ function showDetail(id){
  '<div class="atk-detail-qty"><b>'+(x.qtyBasis==='unopened'?'未開封の予備':'現在の在庫')+'</b><span>'+esc(x.qty)+' '+esc(x.unit||'個')+(x.qtyBasis==='unopened'&&x.inUse?'・使用中あり':'')+'</span></div>'+
  '<p class="atk-detail-expiry">'+esc(root.AtokoreDates.label(x.exp)||'期限なし')+'</p>'+
  '<div class="atk-detail-actions"><button onclick="adj('+safeId+',-1);atkShowDetail('+safeId+')">－ 減らす</button><button onclick="adj('+safeId+',1);atkShowDetail('+safeId+')">＋ 増やす</button></div>'+
+ // v51: a large change (a new pack of 60) without tapping ＋ sixty times. The same adj() records it, so the
+ // history, the undo bar and the upper limit work exactly as for ＋／－.
+ '<details class="atk-detail-setqty"><summary>数を直接入力する</summary><div class="atk-detail-setqty-row"><input type="number" inputmode="numeric" min="0" max="9999" step="1" value="'+esc(Number(x.qty)||0)+'" aria-label="'+esc(x.name)+'の在庫数" data-atk-setqty-input><span>'+esc(x.unit||'個')+'</span><button type="button" onclick="atkSetQtyV51('+safeId+',this)">この数にする</button></div><p class="atk-detail-setqty-note" role="status" aria-live="polite"></p></details>'+
  '<button type="button" class="atk-edit-open" onclick="atokoreEditStock('+safeId+')">✎ 商品情報を編集する</button>'+
  '<button class="btn atk-detail-cart" onclick="addStockOneToBuyV125H('+safeId+');closeM()">買い物リストへ追加</button>'+
  '<button class="atk-detail-delete" onclick="delItem('+safeId+')">この商品を削除</button>';
