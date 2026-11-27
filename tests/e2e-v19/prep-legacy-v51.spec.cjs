@@ -61,7 +61,9 @@ test('a #112 phone that shared before: the old key is kept and usable here, but 
     expect(a.page.__errors).toEqual([]); expect(b.page.__errors).toEqual([]);
   } finally { await a.ctx.close(); await b.ctx.close(); }
 });
-test('a phone that never shared: its old list is its own, kept, and can be shared with the button', async ({ browser, request }, info) => {
+// Work 8th (D): no family trace is not proof of origin. A phone that never shared keeps its old list and
+// can use it, but the old list is of unknown origin too: never offered or sent (a list started fresh can be).
+test('a phone with no family trace: its old list is kept and usable, but of unknown origin (never offered)', async ({ browser, request }, info) => {
   test.setTimeout(150000);
   await request.post(EMU + '/__test/reset');
   const own = householdList(); own.children[0].name = '自分の子'; own.events['c-old'][today()].rows[0].name = '自分の水筒';
@@ -80,8 +82,12 @@ test('a phone that never shared: its old list is its own, kept, and can be share
     await b.page.getByRole('button', { name: '閉じる', exact: true }).click({ timeout: 1500 }).catch(() => {});
     await go(b.page, 'buy'); await b.page.evaluate(() => { const d = document.getElementById('atkPrepSets'); if (d) d.open = true; });
     await b.page.evaluate(() => AtokorePrepSets.pullShared());
-    await box(b.page).getByRole('button', { name: 'この端末の内容を家族と共有する' }).click();
-    await expect.poll(async () => (await b.page.evaluate(d => AtokoreHousehold.prepGet(d), today()))?.doc?.children?.map(c => c.name)).toEqual(['自分の子']);
+    const share = box(b.page).getByRole('button', { name: 'この端末の内容を家族と共有する' });
+    await share.waitFor({ timeout: 3000 }).catch(() => {});
+    if (await share.count()) { const put = b.page.waitForResponse(r => r.url().includes('/rpc/hh_prep_put')); await share.click(); await put; }
+    expect(JSON.stringify((await b.page.evaluate(d => AtokoreHousehold.prepGet(d), today()))?.doc ?? null)).not.toContain('自分の子');
+    await expect(share).toHaveCount(0);
+    expect(JSON.parse(await b.page.evaluate(() => localStorage.getItem('atokorePreviewPrepSetsV19:' + location.pathname))).children[0].name).toBe('自分の子');
     expect(b.page.__errors).toEqual([]);
   } finally { await a.ctx.close(); await b.ctx.close(); }
 });

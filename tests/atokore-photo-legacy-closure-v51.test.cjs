@@ -64,7 +64,11 @@ async function ledgerFixture(){
 // begin -> copy (stand-in) -> commit -> read check (the worker's gateway-style read) -> legacy delete -> finish
 const confirmDelete=(f,m)=>f.db.query("insert into atokore_private.photo_delete_intents_v51(bucket,path,gen,purpose,file_id,state,resolved_at) values($1,$2,null,'legacy',$3,'deleted',now())",[LEGACY,m.legacy_path,m.file_id]);
 // What the separately approved real-environment proof would record (never created by the drafts).
-const recordGuarantee=db=>db.query("insert into atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by) values(true,true,true,'synthetic test: stands in for the real-project proof','QA')");
+// Work 8th: bound to this synthetic environment, the current write configuration and photo snapshot.
+const recordGuarantee=async db=>{
+ await db.query("insert into atokore_private.photo_environment_v51(project_ref,environment) values('synthetic-qa','synthetic') on conflict (singleton) do nothing");
+ await db.query("insert into atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by,project_ref,environment,buckets,write_config_version,snapshot_hash,issued_at,expires_at) values(true,true,true,'synthetic test: stands in for the real-project proof','QA','synthetic-qa','synthetic',array['atokore-product-photos','atokore-private-photos-v2','atokore-photo-backup-v51'],atokore_private.photo_write_config_version_v51(),atokore_private.photo_snapshot_v51(),now()-interval '1 minute',now()+interval '1 hour')");
+};
 async function moveAll(f,{finish=true,read=true}={}){
  const m=await f.svc('photo_legacy_begin_v51',[f.household.id,'item-legacy-a1']);
  await f.db.query("insert into storage.objects(bucket_id,name) values('atokore-private-photos-v2',$1)",[m.target_path]);
@@ -131,7 +135,7 @@ test('full order: copy, verify, switch, delete the legacy object, finish; then s
  assert.equal(m.legacy_path,name);
  const next=m.target_path;
  // Work 7th: everything else is in order, but the real Storage guarantees are not proven -> refused.
- await assert.rejects(close(db),/storage_guarantee_unproven/);
+ await assert.rejects(close(db),/storage_guarantee_unproven|environment_unknown/);
  assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read'],'nothing closed');
  await recordGuarantee(db);
  await db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql'));
@@ -182,4 +186,62 @@ test('every draft applies together in the documented order, and the v51 RPCs sti
  // Ordinary sync still round-trips while every draft is present.
  const pulled=await call(db,B,'hh_pull',{p_since:0});
  assert.ok(pulled.records.some(x=>x.id==='buy-all-drafts'));
+});
+
+// ---------------------------------------------------------------- Work 8th (B)
+// A proof that the real Storage behaves (generations, fenced writes, gateway HTTP) is only valid bound to:
+// the project and environment, the bucket/write-policy configuration it was proven on, the exact photo
+// snapshot, an issue and expiry time (at most 24 h), and not revoked. Outside a synthetic environment the
+// close stays OFF unconditionally — a database row cannot switch on a real close.
+async function readyToClose(){
+ const f=await ledgerFixture();const {db}=f;
+ await db.exec(SQL('atokore-photo-legacy-close-writes-v51.sql'));
+ await moveAll(f);
+ return f;
+}
+const oldStyle=db=>db.query("insert into atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by) values(true,true,true,'an old record of another environment (unbound)','QA')");
+test('B (Work 8th): an unbound record (old/other environment, three booleans) never closes the bucket',async()=>{
+ const {db}=await readyToClose();
+ await oldStyle(db);
+ await assert.rejects(close(db),/storage_guarantee_unproven|operational_close_off|environment_unknown/);
+ assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read'],'nothing closed');
+});
+const env=(db,environment,project='synthetic-qa')=>db.query("insert into atokore_private.photo_environment_v51(project_ref,environment) values($1,$2) on conflict (singleton) do update set project_ref=excluded.project_ref,environment=excluded.environment",[project,environment]);
+const prove=(db,o={})=>db.query(`insert into atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by,project_ref,environment,buckets,write_config_version,snapshot_hash,issued_at,expires_at,revoked_at)
+  values(true,true,true,'synthetic proof for the isolated test','QA',$1,$2,$3,coalesce($4,atokore_private.photo_write_config_version_v51()),coalesce($5,atokore_private.photo_snapshot_v51()),now()+$6::interval,now()+$7::interval,$8)
+  on conflict (singleton) do update set project_ref=excluded.project_ref,environment=excluded.environment,buckets=excluded.buckets,write_config_version=excluded.write_config_version,snapshot_hash=excluded.snapshot_hash,issued_at=excluded.issued_at,expires_at=excluded.expires_at,revoked_at=excluded.revoked_at`,
+  [o.project??'synthetic-qa',o.environment??'synthetic',o.buckets??['atokore-product-photos','atokore-private-photos-v2','atokore-photo-backup-v51'],o.config??null,o.snapshot??null,o.issued??'-1 minute',o.expires??'+1 hour',o.revoked??null]);
+test('B (Work 8th): the proof is bound to project, environment, write configuration, snapshot, expiry and revocation',async()=>{
+ const f=await readyToClose();const {db}=f;
+ await env(db,'synthetic');
+ const cases=[
+  [{project:'synthetic-other'},'another project'],[{environment:'trial'},'another environment'],
+  [{expires:'-1 second'},'expired'],[{revoked:new Date().toISOString()},'revoked'],[{issued:'-2 days',expires:'+1 hour'},'valid longer than 24 h'],
+  [{config:'0'.repeat(32)},'proven on other write paths'],[{snapshot:'0'.repeat(32)},'proven on another snapshot'],
+  [{buckets:['atokore-private-photos-v2']},'not all buckets']];
+ for(const [o,why] of cases){await prove(db,o);await assert.rejects(close(db),/storage_guarantee_unproven/,why);assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read'],why)}
+ // Proven, then the write configuration changes (a new policy) -> stale proof.
+ await prove(db);
+ await db.query("create policy qa_extra_read on storage.objects for select to authenticated using (false)");
+ await assert.rejects(close(db),/storage_guarantee_unproven/,'write configuration changed after the proof');
+ await db.query("drop policy qa_extra_read on storage.objects");
+ // Proven, then an object is rewritten -> the snapshot no longer matches.
+ await prove(db);
+ const p=(await db.query("select atokore_private.photo_object_path_v50(l) p from atokore_private.photo_ledger_v50 l where state='attached' limit 1")).rows[0].p;
+ await db.query("update storage.objects set updated_at=updated_at+interval '1 second' where bucket_id='atokore-private-photos-v2' and name=$1",[p]);
+ await assert.rejects(close(db),/storage_guarantee_unproven|photo_unread_remain/,'rewritten after the proof');
+});
+test('B (Work 8th): outside a synthetic environment the close is OFF even with a perfect proof',async()=>{
+ const {db}=await readyToClose();
+ for(const e of ['trial','production']){
+  await env(db,e,'proj-'+e);await prove(db,{project:'proj-'+e,environment:e});
+  await assert.rejects(close(db),/operational_close_off/,e);
+ }
+ await db.query('delete from atokore_private.photo_environment_v51');
+ await assert.rejects(close(db),/environment_unknown|operational_close_off/,'no environment record');
+ assert.deepEqual(await policyNames(db),['atokore_photo_delete','atokore_photo_read']);
+ // Synthetic and fully bound: closes (isolated test only).
+ await env(db,'synthetic');await prove(db);
+ await db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql'));
+ assert.deepEqual(await policyNames(db),[]);
 });

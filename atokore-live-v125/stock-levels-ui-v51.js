@@ -239,6 +239,7 @@ for(const name of ['buyOneToStockV125H','bought']){
  const original=root[name];if(typeof original!=='function')continue;
  root[name]=function(...args){
   const qty=new Map(list().map(x=>[String(x.id),Number(x.qty)])),rows=buyIds();
+  const rowInfo=new Map((Array.isArray(buys)?buys:[]).map(b=>[String(b.id),{name:b.name,unit:b.unit}]));
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined&&typeof hh.sharedIdFor==='function'?id=>hh.sharedIdFor('buy',id):null;
   const ids=shared?new Map(rows.map(id=>[id,shared(id)])):null;
   const result=original.apply(this,args);
@@ -255,7 +256,13 @@ for(const name of ['buyOneToStockV125H','bought']){
    if(!x.track||!qty.has(String(x.id)))continue;
    const delta=Number(x.qty)-qty.get(String(x.id));if(!(delta>0))continue;
    // Each purchase is its own field: two phones buying at once both count; a resend adds nothing.
-   const p=L.purchaseEntry(x,delta,{today:day,key:key.startsWith('sb:')?key:key+':'+x.id});
+   // Work 8th: the shared shopping rows this product was bought from (same name and unit, as the purchase
+   // itself matches them), so the server can tell which purchase owns the entry (undo, re-purchase).
+   let sb=null;
+   if(ids){const mine=gone.filter(id=>{const r=rowInfo.get(id);return r&&r.name===x.name&&r.unit===x.unit}).map(id=>ids.get(id));
+    const own=mine.length?mine:gone.length===1?[ids.get(gone[0])]:[];
+    if(own.length&&own.length<=8&&own.every(v=>typeof v==='string'&&v.length<=64))sb=own.slice().sort()}
+   const p=L.purchaseEntry(x,delta,{today:day,key:key.startsWith('sb:')?key:key+':'+x.id,sb});
    if(!p||L.readEntry(x[p.field])?.k===p.entry.k)continue;
    undo.push([x,p.field,x[p.field]]);x[p.field]=p.entry;
   }

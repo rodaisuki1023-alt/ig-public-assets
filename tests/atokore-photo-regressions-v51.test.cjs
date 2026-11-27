@@ -201,8 +201,68 @@ test('B-2 (Work 7th): the bytes change while the metadata generation stays the s
   assert.equal((await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:f.id})).status,'done');
   const p=(await f.db.query("select fields->>'photoPath' p from atokore_private.records where id=$1",[f.id])).rows[0].p;
   f.bytes.set(V2+':'+p,photo(9));                                           // bytes changed, metadata not (yet)
-  await assert.rejects(f.db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')),/storage_guarantee_unproven|photo_unread_remain/);
+  await assert.rejects(f.db.exec(SQL('atokore-photo-legacy-close-reads-v51.sql')),/storage_guarantee_unproven|photo_unread_remain|environment_unknown/);
   await f.db.exec('rollback').catch(()=>{});
   assert.ok((await f.db.query("select count(*)::int c from pg_policies where schemaname='storage' and policyname='atokore_photo_read'")).rows[0].c===1,'nothing closed');
+ }finally{await f.db.close()}
+});
+
+// ---------------------------------------------------------------- Work 8th: free Storage budget (non-destructive)
+const budget=async(f,o)=>f.db.query('update atokore_private.photo_storage_budget_v51 set quota_bytes=$1,unknown_object_bytes=$2',[o.quota,o.unknown]);
+const level=async f=>(await f.sql('photo_storage_budget_v51',[])).level;
+test('budget (Work 8th): 70 % audit, 80 % stops new copies and new photos, 90 % also stops backups; unknown sizes count high',async()=>{
+ const f=await fixture();
+ try{
+  await budget(f,{quota:1000,unknown:100});                     // the legacy object has no size -> counted as 100
+  await f.db.query("insert into storage.objects(bucket_id,name,metadata) values($1,'qa/size-probe','{\"size\":599}')",[V2]);
+  assert.equal(await level(f),'ok');                              // 69.9 %
+  const set=n=>f.db.query("update storage.objects set metadata=jsonb_build_object('size',$1::int) where name='qa/size-probe'",[n]);
+  await set(600);assert.equal(await level(f),'audit');             // 70 %
+  await set(699);assert.equal(await level(f),'audit');
+  await set(700);assert.equal(await level(f),'stop_new');          // 80 %
+  await set(800);assert.equal(await level(f),'suppress');          // 90 %
+  await f.db.query("update storage.objects set metadata='{\"size\":\"x\"}' where name='qa/size-probe'");
+  assert.equal(await level(f),'ok','a malformed size counts as an unknown object (100), not as 0 and not as a crash');
+  await f.db.query('delete from atokore_private.photo_storage_budget_v51');
+  assert.equal(await level(f),'stop_new','no budget row -> new copies stop');
+ }finally{await f.db.close()}
+});
+test('budget (Work 8th): at stop_new no new move and no new trial photo; other households, existing photos and objects are untouched',async()=>{
+ const f=await fixture();
+ try{
+  const {moveLegacyPhoto}=await worker;
+  await budget(f,{quota:1000,unknown:100});
+  await f.db.query("insert into storage.objects(bucket_id,name,metadata) values($1,'qa/size-probe','{\"size\":700}')",[V2]);
+  const before=(await f.db.query('select count(*)::int c from storage.objects')).rows[0].c;
+  await assert.rejects(moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:f.id}),/photo_storage_budget/);
+  const reserve=hh=>f.db.query("insert into atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_path,expected_seq,state,expires_at) values($1,'item_budget',$2,gen_random_uuid(),null,1,'reserved',now()+interval '1 hour')",[hh,A]);
+  await assert.rejects(reserve(f.h),/photo_storage_budget/);
+  const B='00000000-0000-4000-8000-0000000005b2';
+  const other=(await call(f.db,B,'hh_create',{p_name:'QA other',p_display_name:'B'})).household.id;
+  await f.db.query("insert into atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_path,expected_seq,state,expires_at) values($1,'item_budget',$2,gen_random_uuid(),null,1,'reserved',now()+interval '1 hour')",[other,B]);
+  assert.equal((await f.db.query('select count(*)::int c from storage.objects')).rows[0].c,before,'nothing deleted, nothing copied');
+  assert.deepEqual(f.storage.removed,[]);
+  assert.equal((await f.db.query("select fields->>'photoPath' p from atokore_private.records where id=$1",[f.id])).rows[0].p,f.legacy,'the product keeps its photo');
+ }finally{await f.db.close()}
+});
+test('budget (Work 8th): at suppress a running move holds before its backup copy; restore still works; nothing is deleted',async()=>{
+ const f=await fixture();
+ try{
+  const {moveLegacyPhoto,restoreLegacyPhoto}=await worker;
+  await budget(f,{quota:100000000,unknown:100});
+  // First run: copied and switched, but the read of the copy fails -> held at switched.
+  const first=await moveLegacyPhoto({sql:f.sql,storage:{...f.storage,download:async(b,p)=>{if(b===V2)throw Object.assign(Error('502'),{status:502});return f.storage.download(b,p)}},household:f.h,record:f.id});
+  assert.equal(first.status,'switched');
+  await budget(f,{quota:1000,unknown:100});
+  await f.db.query("insert into storage.objects(bucket_id,name,metadata) values($1,'qa/size-probe','{\"size\":900}')",[V2]);
+  assert.equal(await level(f),'suppress');
+  const second=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:f.id});
+  assert.deepEqual([second.status,second.held],['verified','storage_budget']);
+  assert.deepEqual(await f.objects(BACKUP),[],'no backup copy at suppress');
+  assert.deepEqual(await f.objects(LEGACY),[f.legacy],'the legacy photo stays');
+  assert.deepEqual(f.storage.removed,[]);
+  const r=await restoreLegacyPhoto({sql:f.sql,storage:f.storage,file:first.file_id});
+  assert.notEqual(r.held,'storage_budget','restoring is never stopped by the budget');
+  assert.equal((await f.db.query("select fields->>'photoPath' p from atokore_private.records where id=$1",[f.id])).rows[0].p,f.legacy);
  }finally{await f.db.close()}
 });

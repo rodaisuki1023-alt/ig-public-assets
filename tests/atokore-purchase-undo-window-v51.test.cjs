@@ -6,17 +6,18 @@ const SQL=fs.readFileSync(path.join(__dirname,'../supabase/proposals/atokore-pur
 const A='00000000-0000-4000-8000-0000000001a1',R='00000000-0000-4000-8000-0000000001e1';
 let n=0;const oid=()=>'20000000-0000-4000-8000-'+String(++n).padStart(12,'0');
 const MIN=60000;
-// A purchase receipt that reached the server `ageS` seconds ago. Work 7th: the window is measured from the
-// server clock ticket the phone held before buying; `ticketS` = how long before the receipt it was issued
-// (an offline purchase synced later holds an old ticket). ticket:false = no ticket (unprovable).
-async function bought(db,uid,{ageS,ticketS=1,ticket=true,after=false}){
+// A purchase that reached the server `ageS` seconds ago. Work 8th: the window is measured from the server's
+// receipt of the dedicated purchase command (hh_push_v51 listing the op); via:'sync' = ordinary sync (the
+// offline outbox, an older app): no receipt, unprovable. Real households answer not_enabled to the command,
+// so they always buy through the ordinary sync.
+async function bought(db,uid,{ageS,via='command'}){
  const item='item-qa-'+n,buy='buy-qa-'+n;
  await call(db,uid,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'item',id:item,qty:1,fields:{name:'合成 ミルク',unit:'缶'},ts:Date.now()},{op_id:oid(),type:'create',kind:'buy',id:buy,qty:2,fields:{name:'合成 ミルク',unit:'缶'},ts:Date.now()}]});
  const at=Date.now()-ageS*1000,done={op_id:oid(),type:'complete_buy',buy,item,delta:2,ts:at};
- if(ticket){const t=await call(db,uid,'hh_clock_ticket_v51',{});if(t.ticket){done.ck=t.ticket;
-  await db.query("UPDATE atokore_private.purchase_clock_tickets_v51 SET issued_at=to_timestamp($1/1000.0) WHERE ticket=$2",[after?at+5000:at-ticketS*1000,t.ticket])}}
- await call(db,uid,'hh_push',{p_ops:[done]});
+ const r=via==='command'?await call(db,uid,'hh_push_v51',{p_ops:[done],p_receipt_ops:[done.op_id]}):null;
+ if(!r||r.status==='not_enabled')await call(db,uid,'hh_push',{p_ops:[done]});
  await db.query("UPDATE atokore_private.ops SET at=to_timestamp($1/1000.0) WHERE op_id=$2",[at,done.op_id]);
+ await db.query("UPDATE atokore_private.purchase_receipts_v51 SET received_at=to_timestamp($1/1000.0) WHERE op_id=$2",[at,done.op_id]);
  return {op:done.op_id,item,buy};
 }
 const state=async(db,uid,id)=>(await call(db,uid,'hh_pull',{p_since:0})).records.find(r=>r.id===id);
@@ -33,34 +34,28 @@ async function fixture(){
 test('trial household: 9:59 undoes; 10:00 and 10:01 are refused and change nothing',async()=>{
  const db=await fixture();
  try{
-  // Measured from the server ticket (issued 1 s before the server received the purchase).
-  const ok=await bought(db,A,{ageS:598,ticketS:1});
+  // Measured from the server's receipt of the purchase.
+  const ok=await bought(db,A,{ageS:599});
   assert.deepEqual(await undo(db,A,[ok.op]),{undone:1,status:'ready'});
   assert.equal(Number((await state(db,A,ok.item)).qty),1);assert.equal((await state(db,A,ok.buy)).deleted,false);
-  for(const age of [599,600]){
-   const p=await bought(db,A,{ageS:age,ticketS:1});
+  for(const age of [600,601]){
+   const p=await bought(db,A,{ageS:age});
    await assert.rejects(undo(db,A,[p.op]),/purchase_undo_expired/);
    assert.equal(Number((await state(db,A,p.item)).qty),3,'stock stays as bought');
    assert.equal((await state(db,A,p.buy)).deleted,true,'the shopping row stays bought');
   }
  }finally{await db.close()}
 });
-test('offline and delayed: the window starts at the server ticket held before buying, never later; the phone cannot extend it',async()=>{
+test('offline and delayed (Work 8th): only the server receipt opens a window; the offline outbox and the phone cannot',async()=>{
  const db=await fixture();
  try{
-  // Bought offline with a ticket from 40 minutes before it reached the server a second ago: expired.
-  const late=await bought(db,A,{ageS:1,ticketS:40*60});
-  await assert.rejects(undo(db,A,[late.op]),/purchase_undo_expired/);
-  // Ticket from 9 minutes before it arrived, arrived 30 s ago: 9:30 elapsed -> still allowed.
-  const near=await bought(db,A,{ageS:30,ticketS:9*60});
+  // Bought offline and sent by the ordinary sync after reconnecting a second ago: no receipt -> unprovable.
+  const late=await bought(db,A,{ageS:1,via:'sync'});
+  await assert.rejects(undo(db,A,[late.op]),/purchase_undo_unprovable/);
+  assert.equal(Number((await state(db,A,late.item)).qty),3);
+  // Received through the command 9:30 ago -> still allowed.
+  const near=await bought(db,A,{ageS:570});
   assert.equal((await undo(db,A,[near.op])).undone,1);
-  // A ticket issued after the server received the purchase proves nothing (Work 7th) -> unprovable.
-  const ahead=await bought(db,A,{ageS:30,after:true});
-  await assert.rejects(undo(db,A,[ahead.op]),/purchase_undo_unprovable/);
-  // No ticket at all (offline / older app): unprovable, the stock stays as bought.
-  const plain=await bought(db,A,{ageS:120,ticket:false});
-  await assert.rejects(undo(db,A,[plain.op]),/purchase_undo_unprovable/);
-  assert.equal(Number((await state(db,A,plain.item)).qty),3);
  }finally{await db.close()}
 });
 test('a batch with one expired purchase changes nothing; a finished undo still answers its retry after the window',async()=>{
@@ -70,7 +65,7 @@ test('a batch with one expired purchase changes nothing; a finished undo still a
   await assert.rejects(undo(db,A,[fresh.op,old.op]),/purchase_undo_expired/);
   assert.equal(Number((await state(db,A,fresh.item)).qty),3,'the fresh one is not undone half-way');
   assert.equal((await undo(db,A,[fresh.op])).undone,1);
-  await db.query("UPDATE atokore_private.purchase_clock_tickets_v51 SET issued_at=now()-interval '1 hour'");
+  await db.query("UPDATE atokore_private.purchase_receipts_v51 SET received_at=now()-interval '1 hour'");
   assert.deepEqual(await undo(db,A,[fresh.op]),{undone:0,status:'ready'});
   // The receipts and the history are kept (nothing is deleted by the window).
   const kinds=(await db.query("SELECT type FROM atokore_private.ops WHERE type IN ('complete_buy','undo_purchase') ORDER BY at")).rows.map(r=>r.type);

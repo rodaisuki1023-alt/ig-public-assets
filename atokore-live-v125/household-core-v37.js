@@ -81,11 +81,10 @@ function diff(prev,next,map,opts={}){
   const target=add||made;if(!target||!del._qty)continue;
   const done={type:'complete_buy',buy:del.id,item:target.id,delta:del._qty,ts:now};
   if(made)done.item_fields=made.fields;
-  // v51 (Work 7th): the server clock ticket held before this purchase (proves when the undo window
-  // starts), and the estimate entries this purchase added to the product, so a server-side undo removes
-  // exactly them in the same transaction as the stock and the shopping row.
-  const ck=typeof opts.purchaseTicket==='function'?opts.purchaseTicket():null;
-  if(typeof ck==='string'&&/^[0-9a-f-]{36}$/.test(ck))done.ck=ck;
+  // v51 (Work 8th): a purchase made while the server's purchase command is reachable is marked "rc" (receipt
+  // wanted). Only such an op, sent soon after, goes through hh_push_v51 and can get undo rights; an op made
+  // offline never does. "est" is kept for older servers; the reviewed SQL decides ownership itself (sb).
+  if(typeof opts.receipts==='function'&&opts.receipts()===true)done.rc=true;
   const est=ops.filter(x=>x.type==='set'&&x.id===target.id&&/^tp[0-9a-z]{1,13}$/.test(x.field)&&x.value&&typeof x.value.k==='string'&&x.value.k.length<=80)
    .map(x=>({field:x.field,k:x.value.k}));
   if(made)for(const [f,v] of Object.entries(made.fields||{}))if(/^tp[0-9a-z]{1,13}$/.test(f)&&v&&typeof v.k==='string'&&v.k.length<=80)est.push({field:f,k:v.k});
@@ -170,6 +169,8 @@ function matchLocal(localState,view){
  * only when the server has answered for it. */
 const EMPTY={items:[],buys:[],routines:[]};
 function freshMeta(){return {shadow:null,map:{},outbox:[],base:{},cursor:0,rejected:[],pendingApply:null,lastSync:0}}
+// A purchase sent later than this after it was made is treated like the offline outbox (no receipt).
+const RECEIPT_MAX_AGE_MS=60000;
 function createEngine(io){
  const now=io.now||(()=>Date.now()),rand=io.rand||Math.random;
  let meta={...freshMeta(),...(io.readMeta()||{})};
@@ -202,7 +203,7 @@ function createEngine(io){
   recoverApply();
   if(!meta.shadow)return 0;
   const cur=io.readState();if(!cur)return 0;
-  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand,managedPhotos:io.managedPhotos===true,purchaseTicket:io.purchaseTicket});
+  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand,managedPhotos:io.managedPhotos===true,receipts:io.receipts});
   if(!ops.length)return 0;
   // v51 (Work 7th): the estimate entry of a purchase is often saved right after the purchase itself (a
   // later diff). It is attached to that product's latest complete_buy while it is still unsent, so the
@@ -228,7 +229,18 @@ function createEngine(io){
    const batch=meta.outbox.slice(0,100);
    for(const o of batch)sending.add(o.op_id);
    let res;
-   try{res=await io.rpc('hh_push',{p_ops:batch,p_device:io.device||null})}
+   try{
+    // Work 8th: purchases marked for a receipt and sent within a minute of being made go through the
+    // dedicated purchase command (same batch, same rules). Only its exact {status:'not_enabled'} falls
+    // back to the ordinary push; any other unexpected answer is not acknowledged (nothing is cleared).
+    const rc=typeof io.receipts==='function'&&io.receipts()===true?batch.filter(o=>o.type==='complete_buy'&&o.rc===true&&Number.isFinite(o.ts)&&now()-o.ts<=RECEIPT_MAX_AGE_MS).map(o=>o.op_id):[];
+    if(rc.length){
+     res=await io.rpc('hh_push_v51',{p_ops:batch,p_receipt_ops:rc,p_device:io.device||null});
+     const keys=res&&typeof res==='object'&&!Array.isArray(res)?Object.keys(res):[];
+     if(keys.length===1&&res.status==='not_enabled')res=await io.rpc('hh_push',{p_ops:batch,p_device:io.device||null});
+     else if(res?.status!=='ready')res=null;
+    }else res=await io.rpc('hh_push',{p_ops:batch,p_device:io.device||null});
+   }
    finally{for(const o of batch)sending.delete(o.op_id)}
    const answered=new Map((res?.results||[]).map(r=>[String(r.op_id),r.status]));
    const rejected=[...meta.rejected];

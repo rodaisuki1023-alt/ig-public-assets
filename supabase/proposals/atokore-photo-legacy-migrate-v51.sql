@@ -229,6 +229,8 @@ BEGIN
  THEN RAISE EXCEPTION 'photo_legacy_object_missing' USING ERRCODE='55000'; END IF;
  IF EXISTS(SELECT 1 FROM atokore_private.photo_ledger_v50 WHERE household_id=p_h AND record_id=p_r AND state IN ('reserved','uploading','uploaded'))
  THEN RAISE EXCEPTION 'photo_pending_item' USING ERRCODE='55000'; END IF;
+ -- Work 8th: a new move makes two copies (managed + backup); none starts once the budget stops new copies.
+ IF NOT atokore_private.photo_budget_allows_v51('new') THEN RAISE EXCEPTION 'photo_storage_budget' USING ERRCODE='55000'; END IF;
  INSERT INTO atokore_private.photo_ledger_v50(household_id,record_id,actor,operation_id,expected_path,expected_seq,state,expires_at)
   VALUES(p_h,p_r,atokore_private.photo_system_actor_v51(),gen_random_uuid(),v_old,v_rec.seq,'uploading',clock_timestamp()+interval '1 day')
   RETURNING * INTO v_row;
@@ -702,6 +704,68 @@ AS $fn$
           OR c.gen IS DISTINCT FROM atokore_private.photo_object_gen_v51('atokore-private-photos-v2',atokore_private.photo_object_path_v50(l)))
    ORDER BY l.reserved_at LIMIT least(greatest(coalesce(p_limit,50),1),200)) l
 $fn$;
+
+-- Work 8th: the free Storage capacity. Real usage is unknown (never read from a real project here); the
+-- quota and the thresholds are settings, not constants in code. Nothing here deletes anything: the budget
+-- only stops NEW copies and NEW photo intake. Objects whose size the metadata does not give are counted at
+-- unknown_object_bytes (an upper bound), so an unknown size makes the estimate larger, never smaller.
+CREATE TABLE IF NOT EXISTS atokore_private.photo_storage_budget_v51 (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  quota_bytes bigint NOT NULL CHECK (quota_bytes > 0),
+  audit_pct numeric NOT NULL CHECK (audit_pct > 0 AND audit_pct < 100),
+  stop_pct numeric NOT NULL CHECK (stop_pct > 0 AND stop_pct < 100),
+  suppress_pct numeric NOT NULL CHECK (suppress_pct > 0 AND suppress_pct < 100),
+  unknown_object_bytes bigint NOT NULL CHECK (unknown_object_bytes > 0),
+  note text,
+  CHECK (audit_pct < stop_pct AND stop_pct < suppress_pct)
+);
+ALTER TABLE atokore_private.photo_storage_budget_v51 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON atokore_private.photo_storage_budget_v51 FROM PUBLIC, anon, authenticated;
+-- Defaults to review: the Free plan's 1 GB Storage (Supabase pricing page; check again before relying on it),
+-- 70 / 80 / 90 %, and the general gateway's 80 KiB photo limit as the per-object bound for unknown sizes.
+INSERT INTO atokore_private.photo_storage_budget_v51(quota_bytes,audit_pct,stop_pct,suppress_pct,unknown_object_bytes,note)
+VALUES (1073741824,70,80,90,81920,'draft default: Free plan 1 GB; review against the real project before use')
+ON CONFLICT (singleton) DO NOTHING;
+-- ok (< audit) / audit (>= audit: report) / stop_new (>= stop: no new move, no new photo, no new copy)
+-- / suppress (>= suppress: also no backup copies; only restores run). No budget row -> stop_new.
+CREATE FUNCTION atokore_private.photo_storage_budget_v51() RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE b atokore_private.photo_storage_budget_v51%ROWTYPE; v_known bigint; v_unknown bigint; v_used bigint; v_pct numeric; v_level text;
+BEGIN
+ SELECT * INTO b FROM atokore_private.photo_storage_budget_v51;
+ SELECT coalesce(sum((o.metadata->>'size')::bigint) FILTER (WHERE o.metadata->>'size' ~ '^[0-9]{1,15}$'),0),
+        count(*) FILTER (WHERE o.metadata->>'size' IS NULL OR o.metadata->>'size' !~ '^[0-9]{1,15}$')
+   INTO v_known,v_unknown FROM storage.objects o;
+ IF NOT FOUND OR b.quota_bytes IS NULL THEN
+  RETURN jsonb_build_object('level','stop_new','why','no_budget','known_bytes',v_known,'unknown_objects',v_unknown);
+ END IF;
+ v_used:=v_known+v_unknown*b.unknown_object_bytes;
+ v_pct:=round(100.0*v_used/b.quota_bytes,3);
+ v_level:=CASE WHEN v_pct>=b.suppress_pct THEN 'suppress' WHEN v_pct>=b.stop_pct THEN 'stop_new' WHEN v_pct>=b.audit_pct THEN 'audit' ELSE 'ok' END;
+ RETURN jsonb_build_object('level',v_level,'used_bytes',v_used,'known_bytes',v_known,'unknown_objects',v_unknown,'quota_bytes',b.quota_bytes,'pct',v_pct);
+END $fn$;
+CREATE FUNCTION atokore_private.photo_budget_allows_v51(p_what text) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $$ SELECT CASE p_what
+  WHEN 'new' THEN atokore_private.photo_storage_budget_v51()->>'level' IN ('ok','audit')
+  WHEN 'backup' THEN atokore_private.photo_storage_budget_v51()->>'level' IN ('ok','audit','stop_new')
+  ELSE false END $$;
+-- New photo intake of a trial household (a reservation through the general gateway) stops at stop_new.
+-- Existing photos, reads, detaching and restores are never refused by the budget.
+CREATE FUNCTION atokore_private.photo_budget_intake_v51() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+BEGIN
+ IF NEW.state='reserved' AND atokore_private.trial_allowed_v51(NEW.household_id) AND NOT atokore_private.photo_budget_allows_v51('new') THEN
+  RAISE EXCEPTION 'photo_storage_budget' USING ERRCODE='55000', HINT='Free Storage is near its limit: new photos are paused. Nothing was deleted.';
+ END IF;
+ RETURN NEW;
+END $fn$;
+CREATE TRIGGER photo_budget_intake_v51 BEFORE INSERT ON atokore_private.photo_ledger_v50
+ FOR EACH ROW EXECUTE FUNCTION atokore_private.photo_budget_intake_v51();
+REVOKE ALL ON FUNCTION atokore_private.photo_storage_budget_v51(),atokore_private.photo_budget_allows_v51(text),atokore_private.photo_budget_intake_v51() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION atokore_private.photo_storage_budget_v51(),atokore_private.photo_budget_allows_v51(text) TO service_role;
 
 REVOKE ALL ON FUNCTION atokore_private.photo_system_actor_v51(),atokore_private.photo_is_legacy_ref_v51(uuid,text,text),
  atokore_private.photo_object_gen_v51(text,text),atokore_private.photo_legacy_writes_closed_v51(),

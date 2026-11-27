@@ -125,9 +125,12 @@ async function undoPurchases(ticket){
    else if(!(r?.status==='ready'&&Number.isInteger(r.undone)&&r.undone>=0))throw Object.assign(Error('undo_answer_unknown'),{code:'unknown_answer'});
   }else await rpc('hh_undo_purchases',ops);
  }
- catch(e){const m=e.message||'';throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(m)?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':/purchase_undo_unprovable|purchase_undo_time_invalid/.test(m)?'この「買った」は記録の時刻をサーバーで確かめられないため（通信できない間の記録など）、家族共有では取り消せません。ストックの数量を直接直してください。':e.code==='unknown_answer'?'取り消しの結果を確認できませんでした。現在のストックをご確認ください（再度押しても二重には取り消しません）。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
- await freshSync();
- if(status.state!=='synced')throw Error('取り消しの反映を確認できませんでした。再度押しても二重には取り消しません。');
+ catch(e){const m=e.message||'';throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(m)?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':/purchase_undo_unprovable|purchase_undo_time_invalid/.test(m)?'この「買った」はサーバーが受け付けた記録がないため（通信できない間の記録など）、家族共有では取り消せません。ストックの数量を直接直してください。':e.code==='unknown_answer'?'取り消しの結果を確認できませんでした。現在のストックをご確認ください（再度押しても二重には取り消しません）。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
+ // Work 8th (WebKit): the server confirmed THIS purchase's undo above (or answered that it was already
+ // undone); that is the result. The overall sync state at this moment (another purchase's undo in flight,
+ // one failed pull) only decides when the screen shows it, never whether this undo succeeded.
+ try{await freshSync()}catch(e){root.console?.warn?.('あとこれ 取り消し後の同期',e)}
+ if(status.state!=='synced'){pollAfter('active');setTimeout(()=>{void syncNow()},1500)}
 }
 function photoScope(id){
  if(!engine||!household||!session)return null;
@@ -289,28 +292,28 @@ async function sharePhoto(id,blob,transfer=null,resume=null){
 // Enabled only when the server has the reviewed SQL (cfg.buyAssignments===true). The server checks
 // membership and the expected revision; a stale view is refused and the latest state is fetched.
 let assignments=new Map(),assignmentsAt=0,sharedEpoch=0;
-// ---------------------------------------------------------------- v51 undo window proof (Work 7th)
-// The server proves when an undo window starts only from a clock ticket it issued BEFORE the purchase
-// (hh_clock_ticket_v51, trial households with the reviewed SQL). The phone keeps the latest ticket while
-// the app is open and sends it with each purchase; a purchase without one cannot be undone in sharing.
-let clockTicket=null,clockSupported=null;
-const TICKET_REFRESH_MS=120000;          // a fresher ticket only shortens the window less
-function purchaseTicket(){
- const t=clockTicket;if(!t||!household||!session)return null;
- return t.household===household.id&&t.user===session.user.id?t.ticket:null;
-}
-async function refreshClockTicket(force){
- if(!household||!session||clockSupported===false)return;
- if(!force&&clockTicket&&clockTicket.household===household.id&&Date.now()-clockTicket.at<TICKET_REFRESH_MS)return;
- const ep=sharedEpoch,hid=household.id,uid=session.user.id;
+// ---------------------------------------------------------------- v51 undo rights (Work 8th)
+// A shared purchase can be undone only if the server accepted it through the dedicated purchase command
+// (hh_push_v51, trial households with the reviewed SQL; probed like the earlier ticket). The server then
+// writes a receipt and the window is 10 minutes from that moment. A purchase made offline, sent later by
+// the ordinary sync, or by an older app gets no receipt (cannot be undone in sharing; stock can be
+// corrected directly). The earlier clock tickets proved nothing and are gone.
+let receiptSupported=null;
+function receiptsOn(){return !!household&&!!session&&receiptSupported!==false}
+// Probe once per household: the command with nothing in it applies nothing and answers ready / not_enabled.
+async function refreshReceiptSupport(force){
+ if(!household||!session)return;
+ if(!force&&receiptSupported!==null)return;
+ const ep=sharedEpoch,hid=household.id;
  try{
-  const r=await rpc('hh_clock_ticket_v51',{});
-  if(ep!==sharedEpoch||household?.id!==hid||session?.user?.id!==uid)return;   // another household by now
-  if(r?.status==='ready'&&typeof r.ticket==='string'){clockTicket={ticket:r.ticket,household:hid,user:uid,at:Date.now()};clockSupported=true}
-  else if(r?.status==='not_enabled')clockSupported=false;
- }catch(e){if(e.status===404||/hh_clock_ticket_v51|PGRST202|function/i.test(e.message||''))clockSupported=false}
+  const r=await rpc('hh_push_v51',{p_ops:[],p_receipt_ops:[]});
+  if(ep!==sharedEpoch||household?.id!==hid)return;
+  const keys=r&&typeof r==='object'&&!Array.isArray(r)?Object.keys(r):[];
+  receiptSupported=keys.length===1&&r.status==='not_enabled'?false:r?.status==='ready'?true:receiptSupported;
+ }catch(e){if(e.status===404||/hh_push_v51|PGRST202|function/i.test(e.message||''))receiptSupported=false}
 }
-function serverUndoEstimate(){return clockSupported===true}
+// Where the server holds receipts it also removes the purchase's estimate entries in the undo transaction.
+function serverUndoEstimate(){return receiptsOn()&&receiptSupported===true}
 function assignmentsEnabled(){return cfg.buyAssignments===true&&!!household&&!!session}
 async function refreshAssignments(){
  if(!assignmentsEnabled())return;
@@ -431,7 +434,7 @@ function writeState(state){
  return true;
 }
 function makeEngine(){
- engine=core.createEngine({readState,writeState,purchaseTicket,readMeta:()=>{const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return meta.engine||null},writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
+ engine=core.createEngine({readState,writeState,receipts:()=>receiptsOn()&&receiptSupported===true&&root.navigator?.onLine!==false,readMeta:()=>{const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return meta.engine||null},writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
  return engine;
 }
 function setStatus(state,detail){status={state,detail,pending:engine?engine.status().pending:0};paint()}
@@ -458,7 +461,7 @@ async function syncNow(opts){
    if(!poll||changed||historyState!=='ready')await refreshChanges();
    if(!s.pending){await refreshMembers(changed||!poll);paint()}
    if(assignmentsEnabled()&&(changed||!poll||!assignmentsAt))await refreshAssignments();
-   if(!poll||root.document?.visibilityState!=='hidden')await refreshClockTicket(false);
+   if(!poll||root.document?.visibilityState!=='hidden')await refreshReceiptSupport(false);
    pollAfter(changed?'active':'quiet');
   }catch(e){
    if(e.code==='rejected'||e.code==='recovery')setStatus('blocked');
@@ -508,15 +511,14 @@ doc.addEventListener('visibilitychange',()=>{if(doc.visibilityState==='visible')
 root.addEventListener?.('storage',e=>{
  try{
   if(e.key===META_KEY){const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return}
+  // Work 8th: the data itself is adopted (and merged with anything unsaved here) by data-safety; this only
+  // notes that the change was another tab's, so this tab does not send it again.
   if(e.key!==DATA_KEY||e.newValue==null||e.newValue===lastRaw)return;
-  const s=JSON.parse(e.newValue);
-  if(!s||!Array.isArray(s.items)||!Array.isArray(s.buys)||!Array.isArray(s.routines))return;
-  lastRaw=e.newValue;items=s.items;buys=s.buys;routines=s.routines;
-  root.render?.();
+  lastRaw=e.newValue;
  }catch(err){root.console?.warn?.('あとこれ 別のタブの変更',err)}
 });
 // A fresh clock ticket before the next purchase (Work 7th), e.g. when the shopping page opens.
-doc.addEventListener('atokore-page-changed',()=>{void refreshClockTicket(false)});
+doc.addEventListener('atokore-page-changed',()=>{void refreshReceiptSupport(false)});
 
 // ---------------------------------------------------------------- UI helpers (DOM + textContent only)
 function el(tag,props,children){
@@ -808,7 +810,7 @@ async function leave(){
 // Leaving, being removed or signing out: nothing of the family's shared state stays usable here.
 // sharedEpoch invalidates answers still in flight; the event tells the prep list to drop its household copy.
 function forgetShared(){
- sharedEpoch++;assignments=new Map();assignmentsAt=0;entCache=null;entAt=0;clockTicket=null;clockSupported=null;
+ sharedEpoch++;assignments=new Map();assignmentsAt=0;entCache=null;entAt=0;receiptSupported=null;
  try{doc.dispatchEvent(new CustomEvent('atokore-household-left'));doc.dispatchEvent(new CustomEvent('atokore-assignments-updated'))}catch(e){root.console?.warn?.('あとこれ 共有の後片付け',e)}
 }
 function stop(){forgetShared();clearInterval(timer);clearTimeout(puller);timer=puller=null;engine=null;changesRequest?.controller.abort();changesRequest=null;changes=[];changesFor=null;historyState='loading'}
@@ -860,5 +862,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,householdId:()=>household&&session?household.id:null,serverUndoEstimate,refreshClockTicket:()=>refreshClockTicket(true),sharedEpoch:()=>sharedEpoch,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{}),timeouts:requestTimeouts})});
+root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,householdId:()=>household&&session?household.id:null,serverUndoEstimate,refreshReceiptSupport:()=>refreshReceiptSupport(true),sharedEpoch:()=>sharedEpoch,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{}),timeouts:requestTimeouts})});
 })(typeof globalThis!=='undefined'?globalThis:this);

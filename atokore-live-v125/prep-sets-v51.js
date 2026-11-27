@@ -71,31 +71,42 @@ function pendingToday(state,date){
 
 let state=empty(),snapshot=null,locked=false,lastError='',loadedKey=KEY;
 const HKEY=id=>KEY+':hh:'+id;
-// Any trace that this phone used family sharing (the household-sync record or a #113 household copy).
-function familyHistory(){
- try{
-  // The household record exists on every phone with the feature; it shows a past household only through
-  // the fields written when one was joined (sharedFor / sharedSince, kept after leaving) or a current one.
-  const raw=root.localStorage.getItem('atokoreHouseholdSyncV1');
-  if(raw!==null){let m;try{m=JSON.parse(raw)}catch(_){return true}
-   if(!m||typeof m!=='object'||m.household||m.sharedFor||m.sharedSince||Array.isArray(m.members)&&m.members.length||m.pendingJoin)return true}
-  return Object.keys(root.localStorage).some(k=>k.startsWith(LEGACY_KEY+':hh:'));
- }catch(_){return true}                 // unknown counts as "maybe": the safe side
+// Work 8th (D): the origin of old data cannot be proven. The absence of a family-sharing trace is not proof
+// (a partial restore or a lost household record removes the trace), so EVERY list that existed before
+// this version - the old key, and an own list whose origin was recorded by the earlier heuristic (the
+// plain strings 'own' / 'unknown') - is of unknown origin: kept and usable on this phone, never offered or
+// sent to a household. Nothing ever turns unknown into own (no edit, emptying, restart, partial restore or
+// account switch). Only a list started here from nothing gets a positive record:
+//   PROV = {"origin":"own","owner":<the signed-in user id, or "local" when signed out>,"at":<ms>,"h":<digest>}
+// and it can be shared only by that owner ("local" is bound to the first account that shares it).
+// h is the digest of the list as this code last saved it: a list written by anything else (a restore, an
+// older version, another app) no longer matches and is of unknown origin, whatever the record says.
+const UNKNOWN=JSON.stringify({origin:'unknown'});
+function digest(raw){let h=0x811c9dc5;for(let i=0;i<raw.length;i++){h^=raw.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0}return raw.length.toString(36)+'.'+h.toString(36)}
+function provRecord(){
+ try{const raw=root.localStorage.getItem(PROV);if(raw===null)return null;const p=JSON.parse(raw);
+  const list=root.localStorage.getItem(KEY);
+  return p&&typeof p==='object'&&p.origin==='own'&&typeof p.owner==='string'&&p.owner.length>0&&p.owner.length<=80
+   &&list!==null&&p.h===digest(list)?p:{origin:'unknown'}}
+ catch(_){return {origin:'unknown'}}     // the earlier plain strings ('own' / 'unknown') or anything unreadable
 }
-// One copy of the old key to the own key, with its origin. The origin is written first, so an interrupted
-// copy can only ever be "unknown"; it is retried on the next start (idempotent: never copied twice).
+const myId=()=>{try{const id=root.AtokoreHousehold?.myId?.();return typeof id==='string'&&id?id:null}catch(_){return null}};
+// One copy of the old key to the own key, always of unknown origin. The origin is written first, so an
+// interrupted copy is unknown too; it is retried on the next start (idempotent: never copied twice).
 function migrateLegacy(){
  try{
   if(root.localStorage.getItem(KEY)!==null)return;
   const raw=root.localStorage.getItem(LEGACY_KEY);if(raw===null)return;
   let parsed;try{parsed=JSON.parse(raw)}catch(_){return}
   if(!valid(parsed))return;
-  root.localStorage.setItem(PROV,familyHistory()?'unknown':'own');
+  root.localStorage.setItem(PROV,UNKNOWN);
   root.localStorage.setItem(KEY,raw);
   if(root.localStorage.getItem(KEY)!==raw)throw Error('verify');
  }catch(e){root.console?.warn?.('あとこれ 持ち物の移行（次回やり直します）',e)}
 }
-function provenance(){try{return root.localStorage.getItem(PROV)==='own'?'own':'unknown'}catch(_){return 'unknown'}}
+function provenance(){return provRecord()?.origin==='own'?'own':'unknown'}
+// May the person signed in now share the own list? Only an own list, and only its owner.
+function shareableBy(user){const p=provRecord();return p?.origin==='own'&&!!user&&(p.owner===user||p.owner==='local')}
 function legacyUnreadable(){try{const raw=root.localStorage.getItem(LEGACY_KEY);if(raw===null)return false;return !valid(JSON.parse(raw))}catch(_){return true}}
 function load(){
  const key=activeKey();loadedKey=key;
@@ -108,7 +119,7 @@ function load(){
 }
 // Only data whose origin is this person on this phone can be shared; an old list of unknown origin is
 // kept and usable here, but never offered or sent to a household.
-function readOwn(){if(provenance()!=='own')return null;try{const raw=root.localStorage.getItem(KEY);if(raw===null)return null;const p=JSON.parse(raw);return valid(p)?p:null}catch(_){return null}}
+function readOwn(){if(!shareableBy(myId()))return null;try{const raw=root.localStorage.getItem(KEY);if(raw===null)return null;const p=JSON.parse(raw);return valid(p)?p:null}catch(_){return null}}
 function dropHouseholdCopies(except){
  try{for(const k of Object.keys(root.localStorage))if((k.startsWith(KEY+':hh:')||k.startsWith(LEGACY_KEY+':hh:'))&&k!==except)root.localStorage.removeItem(k)}
  catch(e){root.console?.warn?.('あとこれ 持ち物の家族データ削除',e)}
@@ -158,7 +169,11 @@ async function shareOwn(){
  try{
   const put=await root.AtokoreHousehold.prepPut(strip(own),0);
   if(scopeNow()!==scope)return;
-  if(put?.status==='ready'){serverRev=put.rev;offerOwn=false;lastError='';writeLocal({...strip(own),done:{}},household);return}
+  if(put?.status==='ready'){
+   // A list started while signed out ("local") now belongs to the account that shared it: no other
+   // account on this phone can share it later.
+   try{const p=provRecord();if(p?.origin==='own'&&p.owner==='local'&&myId())root.localStorage.setItem(PROV,JSON.stringify({...p,owner:myId()}))}catch(_){}   // h unchanged: the own list is not rewritten
+   serverRev=put.rev;offerOwn=false;lastError='';writeLocal({...strip(own),done:{}},household);return}
   if(put?.status==='stale'){offerOwn=false;lastError='家族が先に持ち物を登録しました。家族の内容を表示しています。';await pullShared(true);return}
   lastError='入力内容を確認してください。';
  }catch(_){if(scopeNow()===scope)lastError='通信できないため共有できませんでした。つながってからお試しください。'}
@@ -202,8 +217,12 @@ function edit(fn){
  if(!valid(next)){lastError='入力内容を確認してください。';paint();return false}
  const raw=JSON.stringify(next);
  try{
-  // Origin: a list started on this phone (nothing before it) or emptied of every child is the person's own.
-  if(current===null||!next.children.length)root.localStorage.setItem(PROV,'own');
+  // Origin (Work 8th): only a list started here from nothing is the person's own. Editing or emptying a
+  // list of unknown origin never changes its origin; a record that is already there is never replaced.
+  // The record follows the list: written before the list (an interrupted save leaves a digest that does not
+  // match -> unknown, the safe side) and only when the list was own already or is started now.
+  const p=provRecord(),fresh=current===null&&p===null;
+  if(fresh||p?.origin==='own')root.localStorage.setItem(PROV,JSON.stringify(fresh?{origin:'own',owner:myId()||'local',at:Date.now(),h:digest(raw)}:{...p,h:digest(raw)}));
   root.localStorage.setItem(KEY,raw);if(root.localStorage.getItem(KEY)!==raw)throw Error('verify');
  }
  catch(_){lastError='この端末に保存できませんでした。空き容量を確認してください。';paint();return false}
@@ -308,6 +327,6 @@ if(section){
  doc.addEventListener('atokore-household-left',()=>{dropHouseholdCopies(null);serverRev=0;offerOwn=false;lastError='';lastFetch=0;loadedKey=null;load();paint();root.AtokorePackingShortage?.refresh?.()});
  paint();
 }
-root.AtokorePrepSets=Object.freeze({KEY,LEGACY_KEY,PROV,provenance,valid,rowsFor,pendingToday,pullShared:()=>pullShared(true),pending:()=>locked?[]:pendingToday(state,today()),refresh:()=>{load();paint()}});
+root.AtokorePrepSets=Object.freeze({KEY,LEGACY_KEY,PROV,provenance,shareable:()=>shareableBy(myId()),valid,rowsFor,pendingToday,pullShared:()=>pullShared(true),pending:()=>locked?[]:pendingToday(state,today()),refresh:()=>{load();paint()}});
 if(typeof module!=='undefined'&&module.exports)module.exports={valid,rowsFor,pendingToday};
 })(typeof globalThis!=='undefined'?globalThis:this);

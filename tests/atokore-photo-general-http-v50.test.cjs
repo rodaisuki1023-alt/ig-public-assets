@@ -73,20 +73,20 @@ test('general photo HTTP: same-object revocation, retry, replacement, detach and
   const next=await makeWrite(uploaded.path),rp=await request('A',next);assert.equal(rp.status,200);
   const second=await rp.json();assert.notEqual(second.path,uploaded.path);
   assert.equal((await request('A',read)).status,403);
-  assert.equal(await m.purgeRetired({worker,storage},m.parsePath(uploaded.path).file),true);
+  assert.equal(await m.purgeRetired({worker,storage},m.parsePath(uploaded.path).file),false);   // Work 8th: never deletes
   // Stale detach fails without changing the currently attached object.
   assert.equal((await request('A',{operation:'delete',path:second.path,expectedSeq:first.expectedSeq})).status,409);
   const actual=Number((await getRow()).seq);
   assert.equal((await request('A',{operation:'delete',path:second.path,expectedSeq:actual})).status,200);
   assert.equal((await getRow()).photo,null);
-  assert.equal(await m.purgeRetired({worker,storage},m.parsePath(second.path).file),true);
+  assert.equal(await m.purgeRetired({worker,storage},m.parsePath(second.path).file),false);
   // Ordinary inventory delete retires the managed photo atomically.
   const third=await (await request('A',await makeWrite())).json();assert.ok(third.path);
   assert.equal((await push(A,{type:'delete'})).results[0].status,'applied');
   assert.equal((await getRow()).deleted,true);assert.equal((await getRow()).photo,null);
   assert.equal((await request('A',{operation:'read',path:third.path})).status,403);
-  assert.equal(await m.purgeRetired({worker,storage},m.parsePath(third.path).file),true);
-  assert.equal(objects.size,0);
+  assert.equal(await m.purgeRetired({worker,storage},m.parsePath(third.path).file),false);
+  assert.equal(objects.size,3,'retired photos stay until the gated worker purges them');
  }finally{
   if(server){server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve))}
   await db.close();

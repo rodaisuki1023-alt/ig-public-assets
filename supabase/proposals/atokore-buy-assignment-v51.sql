@@ -267,6 +267,13 @@ CREATE FUNCTION atokore_private.notify_fence_v51(p_id text, p_token uuid) RETURN
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE o atokore_private.notify_outbox%ROWTYPE; why text;
 BEGIN
+  -- Work 8th (C): bounded. These hold until this transaction ends: waiting for a lock (a leave in progress)
+  -- gives up after 2 s, any statement after 8 s, and a sender that stops talking to the database while
+  -- this transaction is open (a stalled provider call, a hung process) loses its connection after 8 s, which
+  -- rolls back and releases the membership lock. A leave therefore never waits more than about 10 s.
+  PERFORM set_config('lock_timeout', '2000', true);
+  PERFORM set_config('statement_timeout', '8000', true);
+  PERFORM set_config('idle_in_transaction_session_timeout', '8000', true);
   SELECT * INTO o FROM atokore_private.notify_outbox WHERE id = p_id FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'why', 'unknown'); END IF;
   -- Held until this transaction ends: hh_leave / hh_remove_member (UPDATE of members) wait for it.
@@ -276,6 +283,9 @@ BEGIN
   IF o.ambiguous_at IS NOT NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'ambiguous'); END IF;
   IF p_token IS NULL OR o.claim_token IS DISTINCT FROM p_token THEN RETURN jsonb_build_object('ok', false, 'why', 'not_owner'); END IF;
   IF o.lease_until IS NULL OR o.lease_until <= now() THEN RETURN jsonb_build_object('ok', false, 'why', 'lease_expired'); END IF;
+  -- The send (at most 5 s) and the outcome must finish inside the lease: no other holder can take the
+  -- notice over while this one may still be talking to the provider.
+  IF o.lease_until <= clock_timestamp() + interval '15 seconds' THEN RETURN jsonb_build_object('ok', false, 'why', 'lease_short'); END IF;
   IF o.send_started_at IS NULL THEN RETURN jsonb_build_object('ok', false, 'why', 'not_authorized'); END IF;
   IF NOT atokore_private.trial_allowed_v51(o.household_id) THEN RETURN jsonb_build_object('ok', false, 'why', 'not_enabled'); END IF;
   why := atokore_private.notify_stale_why_v51(o);

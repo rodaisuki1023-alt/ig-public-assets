@@ -107,10 +107,34 @@ async function main(){
  // Work 7th: with everything else in order, closing still needs the real-Storage proof (never created by
  // the drafts). This disposable CI database records a stand-in so the lock behaviour below can be tested.
  if(!await hasRow("SELECT EXISTS(SELECT 1 FROM atokore_private.photo_storage_guarantees_v51) ok")){
-  assert.match(await runClose(),/storage_guarantee_unproven/);
+  assert.match(await runClose(),/storage_guarantee_unproven|environment_unknown/);
   assert.deepEqual(await policies(),['atokore_photo_delete','atokore_photo_read'],'nothing closed without the proof');
   console.log('PASS: closing is refused until the real Storage guarantees are proven and recorded');
-  await pool.query("INSERT INTO atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by) VALUES(true,true,true,'CI stand-in for the separately approved real-project proof','CI')");
+  // Work 8th (B): an unbound record (three booleans, as an old/other environment wrote it) never closes.
+  await pool.query("INSERT INTO atokore_private.photo_environment_v51(project_ref,environment) VALUES('ci-synthetic','synthetic')");
+  await pool.query("INSERT INTO atokore_private.photo_storage_guarantees_v51(generation_proven,writes_fenced,gateway_http_proven,evidence,approved_by) VALUES(true,true,true,'an unbound record of another environment','CI')");
+  assert.match(await runClose(),/storage_guarantee_unproven/);
+  // A real environment refuses even with a bound proof (operational close OFF).
+  await pool.query("UPDATE atokore_private.photo_environment_v51 SET project_ref='ci-trial',environment='trial'");
+  const bind=(project,env)=>pool.query(`UPDATE atokore_private.photo_storage_guarantees_v51 SET project_ref=$1,environment=$2,
+    buckets=array['atokore-product-photos','atokore-private-photos-v2','atokore-photo-backup-v51'],write_config_version=atokore_private.photo_write_config_version_v51(),
+    snapshot_hash=atokore_private.photo_snapshot_v51(),issued_at=now()-interval '1 minute',expires_at=now()+interval '1 hour',revoked_at=NULL,cluster_id=atokore_private.photo_cluster_id_v51()`,[project,env]);
+  await bind('ci-trial','trial');
+  assert.match(await runClose(),/operational_close_off/);
+  // Proven on another cluster (a copied row) -> refused.
+  await pool.query("UPDATE atokore_private.photo_environment_v51 SET project_ref='ci-synthetic',environment='synthetic'");
+  await bind('ci-synthetic','synthetic');
+  await pool.query("UPDATE atokore_private.photo_storage_guarantees_v51 SET cluster_id='0'");
+  assert.match(await runClose(),/storage_guarantee_unproven/);
+  // A write configuration change made from another connection after the proof -> refused.
+  await bind('ci-synthetic','synthetic');
+  await pool.query("CREATE POLICY ci_extra_writer ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'atokore-private-photos-v2')");
+  assert.match(await runClose(),/storage_guarantee_unproven/);
+  await pool.query("DROP POLICY ci_extra_writer ON storage.objects");
+  assert.deepEqual(await policies(),['atokore_photo_delete','atokore_photo_read'],'nothing closed');
+  console.log('PASS: Work 8th: unbound, real-environment, other-cluster and stale-configuration proofs never close');
+  // The disposable CI database (synthetic) gets a correctly bound stand-in so the lock behaviour below can be tested.
+  await bind('ci-synthetic','synthetic');
  }
 
  // 1) A legacy reference committed while the close is starting: the close waits and refuses.
