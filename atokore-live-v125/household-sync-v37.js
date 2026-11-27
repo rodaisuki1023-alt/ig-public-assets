@@ -465,7 +465,7 @@ const J=()=>root.AtokoreJournal?.active?.()?root.AtokoreJournal:null;
 let readCtx=null;
 function readState(){
  const j=J();
- if(j){const v=j.view();readCtx=v;return v.data}
+ if(j){const v=j.view();readCtx=v.rev==null?null:v;return v.data}
  const s=readJSON(DATA_KEY);return s&&Array.isArray(s.items)&&Array.isArray(s.buys)&&Array.isArray(s.routines)?s:null}
 function writeState(state){
  const j=J();
@@ -510,6 +510,8 @@ async function syncNow(opts){
    // Work 9th: one tab syncs (Web Locks); this tab's saves are committed first, so the sync reads them.
    const j=J();
    if(j){
+    // The journal must be open first: the sync's view names the committed revision it was computed from.
+    await j.ready;
     if(!(await j.leaderReady())&&j.isLeader()!==true){setStatus(status.state==='local'?'pending':status.state,'別のタブで同期しています');return}
     await j.flush();
     if(j.failed())throw Object.assign(Error('local_save_failed'),{code:'storage'});

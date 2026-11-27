@@ -240,13 +240,14 @@ function capture(current,{cached=false}={}){
 }
 /** What this tab shows: the committed state plus its own uncommitted operations, with the revision and the
  * ids of those operations (a state computed from this view names them, see replace()). */
-function view(){return {data:replayView(),rev:committed?committed.rev:0,has:pending.filter(o=>o.t!=='replace').map(o=>o.id)}}
+function view(){return {data:replayView(),rev:committed?committed.rev:null,has:pending.filter(o=>o.t!=='replace').map(o=>o.id)}}
 /** A whole state computed from `ifRev` plus the operations `has` (the family sync's server view, a restore).
  * Operations committed after `ifRev` that are not in `has` (other tabs') are applied on top when committed. */
 function replace(data,ifRev,has){
  if(!active)return null;
  if(failed&&!db)return false;
- const op={id:uid(),t:'replace',data:strip(clone(data)),ifRev:Number.isSafeInteger(ifRev)?ifRev:(committed?committed.rev:0),has:Array.isArray(has)?has.slice(0,5000):pending.filter(o=>o.t!=='replace').map(o=>o.id)};
+ // Without a known revision (the store not open yet) nothing is re-applied: never "everything since revision 0".
+ const op={id:uid(),t:'replace',data:strip(clone(data)),ifRev:Number.isSafeInteger(ifRev)?ifRev:(committed?committed.rev:null),has:Array.isArray(has)?has.slice(0,5000):pending.filter(o=>o.t!=='replace').map(o=>o.id)};
  const before=pending.slice();
  pending=pending.concat([op]);
  try{writeWal()}catch(e){pending=before;return false}
