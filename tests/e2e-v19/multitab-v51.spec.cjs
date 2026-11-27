@@ -8,9 +8,18 @@ const { open, go, stored, baseState, KEY } = require('./helpers.cjs');
 async function twoTabs(browser, info) {
   const ctx = await browser.newContext({ ...info.project.use, baseURL: info.project.use.baseURL, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
   const a = await ctx.newPage(); await open(a, { [KEY]: baseState() });
-  const b = await ctx.newPage(); await open(b, null);
-  // Fault injection in B: storage events are swallowed while __hold is on (the other tab's write is not seen).
-  await b.evaluate(() => { window.__hold = true; window.addEventListener('storage', e => { if (window.__hold) e.stopImmediatePropagation(); }, true); });
+  const b = await ctx.newPage();
+  // Fault injection in B, installed before any app script: every storage listener of the page (all modules)
+  // ignores events while __hold is on, i.e. the other tab's write has not reached B yet.
+  await b.addInitScript(() => {
+    window.__hold = true;
+    const add = window.addEventListener;
+    window.addEventListener = function (type, fn, opts) {
+      if (type !== 'storage' || typeof fn !== 'function') return add.call(this, type, fn, opts);
+      return add.call(this, type, function (e) { if (!window.__hold) return fn.call(this, e); }, opts);
+    };
+  });
+  await open(b, null);
   return { ctx, a, b };
 }
 const qtyIn = async (page, id) => page.evaluate(i => items.find(x => x.id === i)?.qty, id);
