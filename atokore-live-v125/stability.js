@@ -106,10 +106,12 @@
   function stateSignature(){
     try{return JSON.stringify({items,buys,routines})}catch(e){return ''}
   }
-  function showPage(page){
+  function showPage(page,{draw=true}={}){
     const previous=document.querySelector('.page.on')?.id;
     document.querySelectorAll('.page').forEach(node=>node.classList.remove('on'));
     document.getElementById('pg-'+page)?.classList.add('on');
+    // go() draws the page itself right after; any other caller gets the hidden lists drawn here.
+    if(draw)drawStale(page);
     document.querySelectorAll('.tab').forEach(node=>node.classList.toggle('on',node.dataset.p===page));
     if(previous!=='pg-'+page)document.dispatchEvent(new CustomEvent('atokore-page-changed'));
   }
@@ -118,15 +120,85 @@
     for(const id of [...stockSelected])if(!stockIds.has(numberId(id)))stockSelected.delete(id);
     for(const id of [...buySelected])if(!buyIds.has(numberId(id)))buySelected.delete(id);
   }
-  function renderAllViews(){
-    cleanSelections();
-    try{window.renderStock()}catch(e){console.error('あとこれ: 在庫表示',e)}
-    try{window.renderBuy()}catch(e){console.error('あとこれ: 買い物表示',e)}
-    try{if(typeof window.renderRoutines==='function')window.renderRoutines()}catch(e){console.error('あとこれ: いつものリスト表示',e)}
-    try{if(typeof window.renderHome==='function')window.renderHome()}catch(e){console.error('あとこれ: ホーム表示',e)}
+  // v51 speed: an operation redraws the screen that is shown at once; the other screens' lists are drawn
+  // when they are shown (showPage, or any switch of the .page "on" class). The home screen is cheap and also
+  // keeps the shopping-tab count, so it is always drawn. Nothing about the data changes: only when a hidden
+  // list's HTML is rebuilt.
+  const VIEW_PAGE={stock:'stock',buy:'buy',routines:'buy',home:null,packing:'buy'};
+  const VIEW_ORDER=['stock','buy','routines','home','packing'];
+  const staleViews=new Set();
+  function drawView(view){
+    if(view==='stock'){try{window.renderStock()}catch(e){console.error('あとこれ: 在庫表示',e)}}
+    else if(view==='buy'){try{window.renderBuy()}catch(e){console.error('あとこれ: 買い物表示',e)}}
+    else if(view==='routines'){try{if(typeof window.renderRoutines==='function')window.renderRoutines()}catch(e){console.error('あとこれ: いつものリスト表示',e)}}
+    else if(view==='home'){try{if(typeof window.renderHome==='function')window.renderHome()}catch(e){console.error('あとこれ: ホーム表示',e)}}
     // The local kit only reads stock/shopping for suggestions; refresh its
     // labels after a confirmed purchase or inventory change without writing data.
-    try{window.AtokorePackingChecklist?.refresh?.()}catch(e){console.warn('あとこれ: 持ち物候補の更新',e)}
+    else if(view==='packing'){try{window.AtokorePackingChecklist?.refresh?.()}catch(e){console.warn('あとこれ: 持ち物候補の更新',e)}}
+  }
+  function shownPage(){const id=document.querySelector('.page.on')?.id||'';return id.startsWith('pg-')?id.slice(3):null}
+  function renderAllViews(){
+    redrawToken++;
+    cleanSelections();
+    const focus=rowFocus();
+    const page=shownPage();
+    for(const view of VIEW_ORDER){
+      if(!page||!VIEW_PAGE[view]||VIEW_PAGE[view]===page){staleViews.delete(view);drawView(view)}
+      else staleViews.add(view);
+    }
+    restoreRowFocus(focus);
+  }
+  // A redraw rebuilds the rows: the row (or its n-th button) that had the keyboard / VoiceOver focus gets it
+  // back in the new row, so Enter or the next swipe acts on the same product (also after the redraw that
+  // follows −／＋ one frame later).
+  function rowFocus(){
+    const el=document.activeElement,row=el?.closest?.('#stockList [data-stock-id],#buyList [data-buy-id]');if(!row)return null;
+    const attr=row.hasAttribute('data-stock-id')?'data-stock-id':'data-buy-id',list=row.closest('#stockList,#buyList');
+    const index=el===row?-1:[...row.querySelectorAll('button,input,select,textarea,[tabindex]')].indexOf(el);
+    return {list:list?.id,attr,id:row.getAttribute(attr),index};
+  }
+  function restoreRowFocus(f){
+    if(!f||document.activeElement&&document.activeElement!==document.body)return;
+    const row=document.querySelector('#'+f.list+' ['+f.attr+'="'+(window.CSS&&CSS.escape?CSS.escape(f.id):String(f.id).replace(/[^0-9A-Za-z_-]/g,''))+'"]');if(!row)return;
+    const target=f.index<0?row:[...row.querySelectorAll('button,input,select,textarea,[tabindex]')][f.index];
+    try{(target||row).focus({preventScroll:true})}catch(_){}
+  }
+  function staleOthers(page){for(const view of VIEW_ORDER)if(VIEW_PAGE[view]&&VIEW_PAGE[view]!==page)staleViews.add(view)}
+  // A list on a hidden page is not built (many modules redraw it while starting and after each change); it
+  // is emptied so the decorations that run after it have nothing stale to decorate, and drawn when shown.
+  function deferHidden(view,listId){
+    const page=shownPage();
+    if(!page||page===VIEW_PAGE[view])return false;
+    staleViews.add(view);
+    const list=document.getElementById(listId);if(list&&list.firstChild)list.textContent='';
+    return true;
+  }
+  function drawStale(page){
+    if(!staleViews.size)return;
+    for(const view of VIEW_ORDER)if(staleViews.has(view)&&VIEW_PAGE[view]===page){staleViews.delete(view);drawView(view)}
+  }
+  // Pages switched by other code than showPage (or by a test) are drawn before the next paint.
+  if(typeof MutationObserver==='function'&&document.body)new MutationObserver(records=>{
+    for(const r of records)if(r.target.classList?.contains('on')&&r.target.id?.startsWith('pg-'))drawStale(r.target.id.slice(3));   // nothing left to draw after go()
+  }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
+  window.AtokoreViews=Object.freeze({stale:()=>[...staleViews],drawAll:()=>{for(const v of [...staleViews]){staleViews.delete(v);drawView(v)}}});
+  // v51 speed (−／＋ only): the tapped row shows its new number in the next frame; the full redraw (every
+  // decoration, badges, estimate days) runs right after that frame, once for several quick taps. Any other
+  // redraw in between (another operation, a page switch) makes the pending one unnecessary.
+  let redrawToken=0,redrawPending=false;
+  function redrawAfterPaint(){
+    if(redrawPending)return;
+    redrawPending=true;const token=redrawToken;
+    const later=()=>setTimeout(()=>{redrawPending=false;if(token===redrawToken)renderAllViews()},0);
+    if(typeof requestAnimationFrame==='function')requestAnimationFrame(later);else later();
+  }
+  function patchQty(listId,attr,id,item){
+    const b=document.querySelector('#'+listId+' ['+attr+'="'+numberId(id)+'"] .qty b');
+    if(!b)return false;
+    b.textContent=String(item.qty)+String(item.unit||'');
+    const count=listId==='stockList'?b.closest('[data-stock-id]')?.querySelector('.bf-stock-count'):null;
+    if(count)count.textContent=Number(item.qty)>0?'残り '+item.qty+(item.unit||'個'):'在庫なし';
+    return true;
   }
   function finish({page,message}={}){renderAllViews();if(page)showPage(page);if(message&&lastSaveOk)toast(message);lastSaveOk=true}
 
@@ -168,6 +240,7 @@
     window.renderStock();
   };
   window.renderStock=function(){
+    if(deferHidden('stock','stockList'))return;
     cleanSelections();
     const cats=['すべて',...new Set(items.map(x=>x.cat||'その他'))],chips=document.getElementById('catChips');
     window.__atokoreStableCats=cats;if(chips)chips.innerHTML=cats.map(cat=>{const c=color(cat);return `<button class="chip ${cat===filter?'on':''}" style="${cat==='すべて'?'':`border-color:${c[2]};background:${cat===filter?c[0]:c[1]};color:${cat===filter?'#fff':c[0]}`}" data-filter-index="${cats.indexOf(cat)}" onclick="setFilter(window.__atokoreStableCats[this.dataset.filterIndex])">${esc(cat)}</button>`}).join('');
@@ -226,7 +299,9 @@
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
     if(Number(delta)>0&&atLimit(item,Number(delta))){toast(Rules().limitMessage(item.unit));return}
     const before=Number(item.qty)||0;item.qty=Math.max(0,before+Number(delta||0));if(Number(delta)<0)item.usage=(item.usage||0)+1;
-    saveState();logHistory('在庫数を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'stock','📦',{refs:[ref(item)],change:`${before}${item.unit} → ${item.qty}${item.unit}`});finish();
+    saveState();logHistory('在庫数を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'stock','📦',{refs:[ref(item)],change:`${before}${item.unit} → ${item.qty}${item.unit}`});
+    if(lastSaveOk&&shownPage()==='stock'&&patchQty('stockList','data-stock-id',id,item)){staleOthers('stock');redrawAfterPaint();return}
+    finish();
   };
   window.delItem=id=>{if(items.some(x=>numberId(x.id)===numberId(id)))deleteStock([numberId(id)])};
 
@@ -241,6 +316,7 @@
     return panel;
   }
   window.renderBuy=function(){
+    if(deferHidden('buy','buyList'))return;
     cleanSelections();const list=document.getElementById('buyList');if(!list)return;
     const panel=ensureBuyManage();if(panel)panel.classList.toggle('stableEmptyManage',!buys.length);
     list.innerHTML=buys.length?buys.map(item=>{const id=numberId(item.id);return `<div class="row stableBuyRow" data-buy-id="${id}"><label class="atk-bulk-pick"><input aria-label="${esc(item.name)}を一括操作用に選択" class="buyCheck stableCheck" type="checkbox" value="${id}" ${buySelected.has(id)?'checked':''} onchange="setBuyPickV125H(${id},this.checked)"><span>一括選択</span></label><div class="grow"><div class="stableBuyHead"><div class="name">${esc(item.name)}</div><button class="icon stableBuyMore" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="buyMenu${id}" aria-label="${esc(item.name)}のその他の操作" onclick="toggleBuyMenuV48(${id},this)">…</button></div><div class="stableBuyMenu" id="buyMenu${id}" role="menu" hidden><button type="button" role="menuitem" class="danger" onclick="closeBuyMenusV48();bdel(${id})">買い物リストから削除</button></div><div class="meta">${item.stockId!=null?'在庫から追加':''}</div><div class="meta">買う数量（ストックからは1点ずつ追加）</div><div class="stableBuyActions"><div class="qty"><button class="icon" onclick="badj(${id},-1)" aria-label="${esc(item.name)}の買う数量を減らす">−</button><b>${esc(item.qty)}${esc(item.unit)}</b><button class="icon" onclick="badj(${id},1)" aria-label="${esc(item.name)}の買う数量を増やす"${plusAttrs(item,(item.unit==='g'||item.unit==='ml')?100:1)}>＋</button></div><button class="icon stableBuyStock" onclick="buyOneToStockV125H(${id})" aria-label="${esc(item.name)}を買った" title="買った">✓ 買った</button></div></div></div>`}).join(''):'<div class="empty">買うものはありません</div>';
@@ -265,7 +341,9 @@
     const step=(item.unit==='g'||item.unit==='ml')?100:1;
     if(Number(delta)>0&&atLimit(item,step*Number(delta))){toast(Rules().limitMessage(item.unit));return}
     const before=Number(item.qty)||1;item.qty=Math.max(step,before+Number(delta||0)*step);
-    saveState();logHistory('買い物数量を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'buy','🛒',{refs:[ref(item,'buy')],change:`買う数量 ${before}${item.unit} → ${item.qty}${item.unit}`});finish({page:'buy'});
+    saveState();logHistory('買い物数量を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'buy','🛒',{refs:[ref(item,'buy')],change:`買う数量 ${before}${item.unit} → ${item.qty}${item.unit}`});
+    if(lastSaveOk&&shownPage()==='buy'&&patchQty('buyList','data-buy-id',id,item)){staleOthers('buy');redrawAfterPaint();return}
+    finish({page:'buy'});
   };
   window.buyOneToStockV125H=id=>{
     const item=buys.find(x=>numberId(x.id)===numberId(id));if(!item)return;
@@ -361,7 +439,7 @@
 
   window.goCatV11=category=>{filter=category;showPage('stock');window.renderStock()};
   window.render=renderAllViews;
-  window.go=page=>{showPage(page);renderAllViews();if(page==='add'&&typeof window.renderCatalog==='function')window.renderCatalog()};
+  window.go=page=>{showPage(page,{draw:false});renderAllViews();if(page==='add'&&typeof window.renderCatalog==='function')window.renderCatalog()};
   window.refreshAtokoreUiV125H=page=>{renderAllViews();if(page)showPage(page)};
   window.notifyAtokoreV125H=toast;
   // The category a shopping item gets in stock when it is bought (used to label shopping rows saved without one).

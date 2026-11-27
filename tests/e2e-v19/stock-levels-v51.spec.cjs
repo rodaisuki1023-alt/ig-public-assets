@@ -283,6 +283,11 @@ test('an older saved artefact (5.599999904632568) is shown as 5.6 and is not rew
   expect(page.__errors).toEqual([]);
 });
 
+const diagnose = page => page.evaluate(() => ({ saveFailures: window.__atokoreSaveFailures || 0, lock: !!window.__atokoreStorageLock,
+  journal: { active: AtokoreJournal.active(), failed: AtokoreJournal.failed?.(), pending: AtokoreJournal.pendingCount?.(), rev: AtokoreJournal.committedRev?.() },
+  buys: buys.map(b => b.id), milk: items.find(x => x.id === 1)?.qty, banner: document.querySelector('.atk-safety-text')?.textContent || '',
+  toast: document.getElementById('stableToastV125h')?.textContent || '', page: document.querySelector('.page.on')?.id, now: Date.now(), perf: performance.now(),
+  sw: !!navigator.serviceWorker?.controller, nav: performance.getEntriesByType('navigation').length }));
 // Muse N-3: the undo bar disappears after ~20 s or when the screen changes; the last purchase can
 // still be undone from the shopping page for 10 minutes, once, restoring count and estimate.
 test('last purchase: undo still possible after leaving the screen, once, count and estimate restored; not after 10 minutes', async ({ page }) => {
@@ -305,7 +310,10 @@ test('last purchase: undo still possible after leaving the screen, once, count a
   // A later purchase is offered for 10 minutes only.
   await page.locator('#buyList [data-buy-id="21"]').getByRole('button', { name: /を買った$/ }).click();
   await go(page, 'home'); await go(page, 'buy');
-  await expect(last).toBeVisible();
+  // Failed on CI Chromium only (2 of 4 runs of #117), never locally (60+ runs, also at 8x CPU throttling).
+  // On failure, say what the app was doing so the cause can be found instead of guessed.
+  try { await expect(last).toBeVisible(); }
+  catch (err) { console.log('DIAG last-purchase ' + JSON.stringify(await diagnose(page))); throw err; }
   await page.clock.fastForward('10:30');
   await go(page, 'home'); await go(page, 'buy');
   await expect(last).toHaveCount(0);
@@ -331,9 +339,14 @@ async function buyDiaper(page) {
   await page.clock.install();
   await open(page, { [KEY]: purchaseState(tracked()) });
   await go(page, 'buy');
+  // Stop the page clock BEFORE the purchase: from then on only fastForward/setSystemTime move it, so the
+  // purchase time is exact. With the clock left running, a loaded machine spent over a second between
+  // fastForward('09:59') and the tap, and the deadline passed in real time (reproduced under parallel load).
+  const t0 = (await page.evaluate(() => Date.now())) + 1000;
+  await page.clock.pauseAt(t0);
   await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
   expect((await est(page, 2)).remaining).toBe(180);
-  return page.evaluate(() => Date.now());
+  return t0;
 }
 async function unchangedAfterRefusal(page) {
   const s = await stored(page);

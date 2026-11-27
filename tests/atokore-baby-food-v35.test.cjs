@@ -38,6 +38,8 @@ test('independent stock category includes legacy records without rewriting any i
  const {dom,w,$,click}=browser();
  const all=[{id:1,name:'和光堂 離乳食 おかゆ 7か月',cat:'食料品',qty:2,unit:'パック'},{id:2,name:'手作り 離乳食 野菜',cat:'ベビー',qty:1,unit:'個'},{id:3,...catalog.line('morinaga-9528',2)},{id:4,name:'玉ねぎ',cat:'食料品',qty:2,unit:'個'}];
  w.eval('items='+JSON.stringify(all)+';buys=[];save();render()');const raw=w.localStorage.getItem(KEY);
+ // The category filter is used on the stock page; lists on hidden pages are drawn when shown (v51 speed).
+ w.go('stock');
  const ids=()=>Array.from($('stockList').querySelectorAll('[data-stock-id]'),x=>Number(x.dataset.stockId));
  w.setFilter('食料品');assert.deepEqual(ids(),[4]);w.setFilter('離乳食');assert.deepEqual(ids(),[1,2,3]);
  click('[data-bf-stock-kind="wakodo"]');assert.deepEqual(ids(),[1]);w.toggleStockSelect();w.selectAllVisible();assert.match($('stockBulkMove').textContent,/1件/);
