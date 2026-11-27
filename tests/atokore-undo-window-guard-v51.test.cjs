@@ -65,7 +65,7 @@ test('E: both RPCs share the boundary 9:59 ok / 10:00 and 10:01 refused, measure
 test('E (Work 8th): an offline purchase synced after reconnecting, a resend, an unlisted op or a clock ticket grant no undo right',async()=>{
  const db=await fixture();
  try{
-  for(const fn of RPCS)for(const via of ['sync','resend','unlisted','ticket']){
+  for(const fn of RPCS)for(const via of ['sync','resend','ticket']){   // Work 9th: an empty list is refused outright (atokore-purchase-op-forecast-v51)
    const p=await bought(db,A,{ageS:5,via});
    await assert.rejects(asUser(db,A,fn,[p.op]),/purchase_undo_unprovable/,fn+' '+via);
    assert.equal(await qty(db,p.item),3,'nothing changed');
@@ -83,7 +83,8 @@ test('E: a mixed batch through the command gives a receipt only to the listed pu
   await call(db,A,'hh_push',{p_ops:[{op_id:oid(),type:'create',kind:'item',id:'item-mix',qty:1,fields:{name:'合成 ミルク',unit:'缶'}},
    {op_id:oid(),type:'create',kind:'buy',id:'buy-mix-1',qty:2,fields:{name:'合成 ミルク',unit:'缶'}},{op_id:oid(),type:'create',kind:'buy',id:'buy-mix-2',qty:2,fields:{name:'合成 ミルク',unit:'缶'}}]});
   const p1={op_id:oid(),type:'complete_buy',buy:'buy-mix-1',item:'item-mix',delta:2,ts:Date.now()},p2={op_id:oid(),type:'complete_buy',buy:'buy-mix-2',item:'item-mix',delta:2,ts:Date.now()};
-  const r=await call(db,A,'hh_push_v51',{p_ops:[p1,p2],p_receipt_ops:[p1.op_id,'50000000-0000-4000-8000-000000000009']});
+  await assert.rejects(call(db,A,'hh_push_v51',{p_ops:[p1,p2],p_receipt_ops:[p1.op_id,'50000000-0000-4000-8000-000000000009']}),/purchase_receipt_input_invalid/,'Work 9th: an id outside the call refuses it');
+  const r=await call(db,A,'hh_push_v51',{p_ops:[p1,p2],p_receipt_ops:[p1.op_id]});
   assert.deepEqual([r.status,r.receipts],['ready',[p1.op_id]]);
   const rc=(await db.query('SELECT actor::text,item_id,buy_id,qty::int FROM atokore_private.purchase_receipts_v51 WHERE op_id=$1',[p1.op_id])).rows[0];
   assert.deepEqual(rc,{actor:A,item_id:'item-mix',buy_id:'buy-mix-1',qty:2},'op, actor, product, row and quantity fixed together');
@@ -114,80 +115,5 @@ test('E: strict not_enabled — outside the trial the command applies nothing; o
   await assert.rejects(asUser(db,B,'hh_undo_purchases_v51',[q.op]),/purchase_not_reversible|purchase_undo_unprovable/);
  }finally{await db.close()}
 });
-test('forecast (Work 8th): the undo removes the entries the purchase OWNS (sb), also a late set without est; never another purchase\'s, whatever est says',async()=>{
- const db=await fixture();
- try{
-  for(const fn of RPCS){
-   const first=await bought(db,A,{ageS:30,est:[{field:'tpb2',k:'k-second'}]});        // est wrongly lists the second purchase
-   const item=first.item;
-   await set(db,A,item,'tpa1',entry('k-first',[first.buy]));                            // a late set (not in est)
-   await set(db,A,item,'track',{v:1,seen:['k-first'],base:60});
-   const second=await bought(db,A,{ageS:20,item});
-   await set(db,A,item,'tpb2',entry('k-second',[second.buy]));
-   assert.equal((await asUser(db,A,fn,[first.op])).undone,1);
-   const f=await fields(db,item);
-   assert.equal(f.tpa1,undefined,fn+': the late entry of this purchase is gone with the undo');
-   assert.equal(f.tpb2?.k,'k-second','the other purchase is untouched although est named it');
-   assert.equal(f.track.check,'purchase_undo','already counted: asks to check');
-   assert.equal((await asUser(db,A,fn,[first.op])).undone,0,'only once');
-   assert.equal(await qty(db,item),3,'stock: 1 + 2 + 2 - 2, undone once');
-   // A stale write-back (no new purchase owns it): applies as a write, the entry is held, never deleted.
-   assert.equal((await set(db,A,item,'tpa1',entry('k-first',[first.buy]))).results[0].status,'applied');
-   assert.equal((await fields(db,item)).tpa1,undefined,'never back in the estimate');
-   assert.equal((await db.query("SELECT count(*)::int c FROM atokore_private.purchase_forecast_quarantine_v51 WHERE item_id=$1 AND field='tpa1'",[item])).rows[0].c>=1,true,'held, not lost');
-   await set(db,A,item,'tpb2',null);
-  }
- }finally{await db.close()}
-});
-test('forecast (Work 8th): the same row bought again after an undo is a new purchase: its entry counts (120 -> 180 -> 120 -> 180)',async()=>{
- const db=await fixture();
- try{
-  const p1=await bought(db,A,{ageS:30});
-  await set(db,A,p1.item,'tpz9',entry('sb:row',[p1.buy]));
-  assert.equal((await asUser(db,A,'hh_undo_purchases_v51',[p1.op])).undone,1);
-  assert.equal((await fields(db,p1.item)).tpz9,undefined);
-  // Again the same shopping row (it came back with the undo): the set reaches the server BEFORE the purchase.
-  const again={op_id:oid(),type:'complete_buy',buy:p1.buy,item:p1.item,delta:2,ts:Date.now()};
-  const r=await call(db,A,'hh_push_v51',{p_ops:[{op_id:oid(),type:'set',kind:'item',id:p1.item,field:'tpz9',value:entry('sb:row',[p1.buy])},again],p_receipt_ops:[again.op_id]});
-  assert.deepEqual(r.results.map(x=>x.status),['applied','applied']);
-  assert.equal((await fields(db,p1.item)).tpz9?.k,'sb:row','the new purchase owns the entry: counted');
-  assert.equal(await qty(db,p1.item),3,'1 + 2 - 2 + 2');
-  assert.equal(Number((await db.query("SELECT count(*) c FROM atokore_private.records WHERE id=$1 AND kind='buy' AND deleted",[p1.buy])).rows[0].c),1,'shopping row done again');
-  // And it can be undone itself (its own receipt), once.
-  assert.equal((await asUser(db,A,'hh_undo_purchases_v51',[again.op_id])).undone,1);
-  assert.equal((await fields(db,p1.item)).tpz9,undefined);
- }finally{await db.close()}
-});
-test('forecast (Work 8th): entries that cannot be verified are kept and flagged, never deleted by guess',async()=>{
- const db=await fixture();
- try{
-  const p=await bought(db,A,{ageS:30,est:[{field:'tpold',k:'k-old'}]});
-  await set(db,A,p.item,'track',{v:1,seen:[],base:60});
-  await set(db,A,p.item,'tpold',entry('k-old',null));                 // an old client: no sb
-  await set(db,A,p.item,'tpmix',entry('k-mix',[p.buy,'buy-other']));  // two rows bought together
-  assert.equal((await asUser(db,A,'hh_undo_purchases_v51',[p.op])).undone,1);
-  const f=await fields(db,p.item);
-  assert.equal(f.tpold?.k,'k-old');assert.equal(f.tpmix?.k,'k-mix');assert.equal(f.track.check,'purchase_undo');
- }finally{await db.close()}
-});
-test('E rollback alone (Work 8th): the window goes; undone entries and the write-back guard stay; re-apply works',async()=>{
- const db=await fixture();
- try{
-  const p=await bought(db,A,{ageS:30});
-  await set(db,A,p.item,'tpa1',entry('k-a',[p.buy]));
-  assert.equal((await asUser(db,A,'hh_undo_purchases_v51',[p.op])).undone,1);
-  const ops=(await db.query('SELECT count(*)::int c FROM atokore_private.ops')).rows[0].c;
-  await db.exec(P('rollback/atokore-purchase-undo-window-v51.rollback.sql'));
-  assert.equal((await db.query('SELECT count(*)::int c FROM atokore_private.ops')).rows[0].c,ops);
-  assert.equal((await db.query("SELECT to_regprocedure('atokore_private.trial_allowed_v51(uuid)') IS NOT NULL k")).rows[0].k,true,'shared allowlist kept');
-  assert.equal((await db.query("SELECT count(*)::int c FROM atokore_private.purchase_undone_entries_v51")).rows[0].c,1,'undone history kept');
-  // The old phone writes the undone entry back after the rollback: still refused.
-  await set(db,A,p.item,'tpa1',entry('k-a',[p.buy]));
-  assert.equal((await fields(db,p.item)).tpa1,undefined,'write-back refused after the rollback');
-  const old=await bought(db,A,{ageS:900,via:'sync'});
-  assert.equal((await asUser(db,A,'hh_undo_purchases',[old.op])).undone,1,'undo as before the unit');
-  await db.exec(P('atokore-purchase-undo-window-v51.sql'));                 // apply again: idempotent re-apply
-  const q=await bought(db,A,{ageS:900});
-  await assert.rejects(asUser(db,A,'hh_undo_purchases',[q.op]),/purchase_undo_expired/);
- }finally{await db.close()}
-});
+// Work 9th: the forecast tests (op-id ownership) and the E rollback with re-purchase moved to
+// tests/atokore-purchase-op-forecast-v51.test.cjs.

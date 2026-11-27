@@ -247,15 +247,15 @@ function pending(item,t){
  * stock. Returns {field, entry} to store on the item, or null when the item has no estimate.
  * Bags/boxes need the pieces per bag; without it (or after a unit change) the amount is stored as
  * unknown (u:null) and the estimate asks to be checked instead of guessing. */
-function purchaseEntry(item,delta,{today,now=Date.now(),key,sb=null}={}){
+function purchaseEntry(item,delta,{today,now=Date.now(),key,op=null}={}){
  const t=readTrack(item?.track);if(!t)return null;
  if(typeof key!=='string'||!key||key.length>80||!isDay(today))return null;
  const d=num(delta,MAX_UNITS,{min:0.01}),u=units(item);
  const sameUnit=!t.pieceUnit||t.pieceUnit===u.piece;
  const add=d===null||!sameUnit?null:u.container?(t.perPack?d*t.perPack:null):d;
  const entry={v:1,k:key,q:d,unit:u.unit,u:add==null||add>MAX_UNITS?null:round1(add),d:today,t:now,pu:u.piece,sz:item.size?String(item.size).slice(0,40):null};
- // sb (Work 8th): the shared shopping rows of this purchase; the server decides ownership from it.
- if(Array.isArray(sb)&&sb.length&&sb.length<=8&&sb.every(v=>typeof v==='string'&&v&&v.length<=64))entry.sb=sb.slice();
+ // o (Work 9th): the immutable op id of the purchase that owns this entry (key 'op:'+o).
+ if(typeof op==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(op)&&key==='op:'+op)entry.o=op;
  return {field:entryField(key),entry};
 }
 // Undo of one purchase lives in ONE place: polish-v44 undoEntries (clears exactly that field; asks

@@ -266,3 +266,69 @@ test('budget (Work 8th): at suppress a running move holds before its backup copy
   assert.equal((await f.db.query("select fields->>'photoPath' p from atokore_private.records where id=$1",[f.id])).rows[0].p,f.legacy);
  }finally{await f.db.close()}
 });
+
+// ---------------------------------------------------------------- Work 9th: atomic reservation ledger (③)
+const reserve=(f,key,purpose,sb,sp,b,p)=>f.sql('photo_storage_reserve_v51',[key,purpose,sb,sp,b,p]);
+test('③ (Work 9th): stored + pending + this bound decide; a reservation counts until committed or a confirmed absence',async()=>{
+ const f=await fixture();
+ try{
+  await budget(f,{quota:1000,unknown:100});
+  await f.db.query("UPDATE storage.buckets SET file_size_limit=120 WHERE id=$1",[LEGACY]);
+  await f.db.query("UPDATE storage.objects SET metadata='{\"size\":120}' WHERE bucket_id=$1",[LEGACY]);   // the source: 120
+  await f.db.query("insert into storage.objects(bucket_id,name,metadata) values($1,'qa/filler','{\"size\":550}')",[V2]);   // 670 stored
+  const a=await reserve(f,'k-a','backup',LEGACY,f.legacy,BACKUP,'qa/a');
+  assert.equal(a.ok,true);                                                          // 670+120 = 790 < 900
+  const b=await reserve(f,'k-b','backup',LEGACY,f.legacy,BACKUP,'qa/b');
+  assert.deepEqual([b.ok,b.why],[false,'storage_budget'],'790 + 120 = 910: the pending reservation is counted');
+  assert.equal((await reserve(f,'k-a','backup',LEGACY,f.legacy,BACKUP,'qa/a')).reused,true,'a resend reuses it');
+  // The answer was lost: unknown, still counted; release without a confirmed absence keeps it.
+  await f.sql('photo_storage_unknown_v51',[a.id]);
+  assert.equal(await f.sql('photo_storage_release_v51',[a.id,false]),'unknown');
+  assert.equal((await reserve(f,'k-c','backup',LEGACY,f.legacy,BACKUP,'qa/c')).ok,false,'still counted');
+  // A confirmed absence releases it.
+  assert.equal(await f.sql('photo_storage_release_v51',[a.id,true]),'released');
+  const c=await reserve(f,'k-c','backup',LEGACY,f.legacy,BACKUP,'qa/c');assert.equal(c.ok,true);
+  // Commit: the real size above the bound is refused (and stays counted).
+  assert.deepEqual(await f.sql('photo_storage_commit_v51',[c.id,121]),{ok:false,why:'oversize'});
+  assert.equal((await f.db.query('SELECT state FROM atokore_private.photo_storage_reservations_v51 WHERE id=$1',[c.id])).rows[0].state,'rejected');
+  // Restores keep the band up to 100%; new copies stop at 80%.
+  await f.db.query("DELETE FROM atokore_private.photo_storage_reservations_v51");
+  await f.db.query("UPDATE storage.objects SET metadata='{\"size\":680}' WHERE name='qa/filler'");     // 120 + 680 = 800
+  assert.equal((await reserve(f,'k-copy','copy',LEGACY,f.legacy,V2,'qa/x')).ok,false,'800+120 >= 800');
+  assert.equal((await reserve(f,'k-restore','restore',LEGACY,f.legacy,V2,'qa/y')).ok,true,'800+120 <= 1000');
+  assert.equal((await reserve(f,'k-restore2','restore',LEGACY,f.legacy,V2,'qa/z')).ok,false,'1040 > 1000');
+  // No known bound -> refused; no budget row -> refused.
+  await f.db.query("UPDATE storage.buckets SET file_size_limit=NULL WHERE id=$1",[LEGACY]);
+  await f.db.query("UPDATE storage.objects SET metadata=NULL WHERE bucket_id=$1",[LEGACY]);
+  assert.deepEqual([(await reserve(f,'k-u','copy',LEGACY,f.legacy,V2,'qa/u')).why],['size_unknown']);
+  await f.db.query('DELETE FROM atokore_private.photo_storage_budget_v51');
+  assert.deepEqual([(await reserve(f,'k-n','restore',LEGACY,f.legacy,V2,'qa/n')).why],['no_budget']);
+  assert.deepEqual(f.storage.removed,[],'nothing is ever deleted');
+ }finally{await f.db.close()}
+});
+test('③ (Work 9th): the worker reserves before every copy: two moves from 79% cannot exceed the limit; a failed copy stays counted',async()=>{
+ const f=await fixture();
+ try{
+  const {moveLegacyPhoto}=await worker;
+  await budget(f,{quota:1000,unknown:100});
+  await f.db.query("UPDATE storage.buckets SET file_size_limit=81920 WHERE id=$1",[LEGACY]);
+  // The move's copy needs its bound (the legacy bucket limit, 81920): far above what is left -> held, no copy.
+  const r=await moveLegacyPhoto({sql:f.sql,storage:f.storage,household:f.h,record:f.id});
+  assert.deepEqual([r.status,r.held],['copying','storage_budget']);
+  assert.deepEqual(await f.objects(V2),[],'no copy was made');
+  // With room: the copy is reserved, made and committed with its real size.
+  await budget(f,{quota:10000000,unknown:100});
+  const ok=await moveLegacyPhoto({sql:f.sql,storage:{...f.storage,capabilities:{}},household:f.h,record:f.id});
+  assert.equal(ok.status,'verified');
+  const rows=(await f.db.query("SELECT purpose,state,actual_bytes FROM atokore_private.photo_storage_reservations_v51 ORDER BY purpose")).rows;
+  assert.deepEqual(rows.map(x=>[x.purpose,x.state]),[['backup','committed'],['copy','committed']]);
+  // A copy that throws: its reservation is unknown (counted), not released.
+  const g=await fixture();
+  try{
+   await g.db.query("UPDATE storage.buckets SET file_size_limit=81920 WHERE id=$1",[LEGACY]);
+   await budget(g,{quota:10000000,unknown:100});
+   await moveLegacyPhoto({sql:g.sql,storage:{...g.storage,copy:async()=>{throw Error('timeout')}},household:g.h,record:g.id});
+   assert.equal((await g.db.query("SELECT state FROM atokore_private.photo_storage_reservations_v51")).rows[0].state,'unknown');
+  }finally{await g.db.close()}
+ }finally{await f.db.close()}
+});

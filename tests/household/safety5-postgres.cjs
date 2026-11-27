@@ -69,26 +69,26 @@ async function forecastOwnership(){
  const item='item-s5-'+randomUUID().slice(0,8),buy='buy-s5-'+randomUUID().slice(0,8);
  await push(A,[{op_id:randomUUID(),type:'create',kind:'item',id:item,qty:1,fields:{name:'合成 おむつ',unit:'袋'},ts:Date.now()},{op_id:randomUUID(),type:'create',kind:'buy',id:buy,qty:1,fields:{name:'合成 おむつ',unit:'袋'},ts:Date.now()}]);
  const cmd=(ops,rc)=>rpc(A,'SELECT public.hh_push_v51($1::jsonb,$2::jsonb) r',[JSON.stringify(ops),JSON.stringify(rc)]);
- const entry={v:1,k:'sb:s5',q:1,u:60,d:'2026-11-27',t:Date.now(),sb:[buy]};
+ // Work 9th: the entry belongs to the purchase's op id (key 'op:'+id), not to the shopping row.
+ const entry=o=>({v:1,k:'op:'+o,o,q:1,u:60,d:'2026-11-27',t:Date.now()}),fld=o=>'tp'+o.replace(/-/g,'').slice(-12);
  const p1=randomUUID();
- await cmd([{op_id:p1,type:'complete_buy',buy,item,delta:1,ts:Date.now()},{op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps5',value:entry}],[p1]);
+ await cmd([{op_id:p1,type:'complete_buy',buy,item,delta:1,ts:Date.now()},{op_id:randomUUID(),type:'set',kind:'item',id:item,field:fld(p1),value:entry(p1)}],[p1]);
  const rec=async()=>(await pool.query('SELECT qty::int q,fields FROM atokore_private.records WHERE household_id=$1 AND id=$2',[hh,item])).rows[0];
  const [u]=await Promise.all([
   rpc(A,'SELECT public.hh_undo_purchases_v51($1::jsonb) r',[JSON.stringify([p1])]),
-  push(A,[{op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps5',value:{...entry,t:entry.t+1}}]),
+  push(A,[{op_id:randomUUID(),type:'set',kind:'item',id:item,field:fld(p1),value:{...entry(p1),t:Date.now()+1}}]),
  ]);
  assert.equal(u.undone,1);
- // Whichever committed first, the undone purchase's entry is not counted (a write-back after the undo is held).
  let r=await rec();
  assert.equal(r.q,1);
- if(r.fields.tps5){
-  assert.fail('the undone entry must not be counted');
- }
+ assert.equal(r.fields[fld(p1)],undefined,'the undone entry is not counted, whichever committed first');
  const p2=randomUUID();
- await cmd([{op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps5',value:{...entry,t:entry.t+2}},{op_id:p2,type:'complete_buy',buy,item,delta:1,ts:Date.now()}],[p2]);
+ await cmd([{op_id:randomUUID(),type:'set',kind:'item',id:item,field:fld(p2),value:entry(p2)},{op_id:p2,type:'complete_buy',buy,item,delta:1,ts:Date.now()}],[p2]);
+ await push(A,[{op_id:randomUUID(),type:'set',kind:'item',id:item,field:fld(p1),value:entry(p1)}]);   // p1 arrives late again
  r=await rec();
- assert.equal(r.q,2);assert.equal(r.fields.tps5?.k,'sb:s5','the same row bought again: a new purchase, counted');
- console.log('PASS forecast: an undo and a stale write-back at once leave nothing counted; buying the row again counts once');
+ assert.equal(r.q,2);assert.equal(r.fields[fld(p2)]?.o,p2,'the same row bought again: a new op, counted');
+ assert.equal(r.fields[fld(p1)],undefined,'the old op never comes back');
+ console.log('PASS forecast: an undo and a stale write-back at once leave nothing counted; buying the row again counts once (its own op)');
 }
 async function main(){
  await stalledSender();

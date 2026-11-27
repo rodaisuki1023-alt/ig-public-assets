@@ -56,9 +56,20 @@ export async function checkRead({ sql, storage }, file) {
   return { ok: true, sha: r.sha };
 }
 
-// The budget is read from the database; an error or an unexpected answer counts as "not allowed".
-async function budgetAllows(sql, what) {
-  try { return (await sql('photo_budget_allows_v51', [what])) === true; } catch { return false; }
+// Work 9th: every copy first reserves its bytes in the shared reservation ledger (serialized under the budget
+// row lock, see atokore-photo-legacy-migrate-v51.sql). Refused / unreadable -> no copy. After the copy: the size
+// is committed; a copy that failed or whose answer was lost is marked unknown and stays counted (never released
+// on a timeout). The key is stable per step, so a resend reuses the same reservation.
+async function reserved(sql, storage, key, purpose, fromBucket, from, toBucket, to) {
+  let r;
+  try { r = await sql('photo_storage_reserve_v51', [key, purpose, fromBucket, from, toBucket, to]); } catch { return { held: 'storage_budget' }; }
+  if (r?.ok !== true || typeof r.id !== 'string') return { held: r?.why === 'size_unknown' ? 'size_unknown' : 'storage_budget' };
+  let c;
+  try { c = await copy(storage, fromBucket, from, toBucket, to); }
+  catch (e) { try { await sql('photo_storage_unknown_v51', [r.id]); } catch {} throw e; }
+  const done = await sql('photo_storage_commit_v51', [r.id, c.bytes]);
+  if (done?.ok !== true) throw Error('refused: copy larger than its reservation');
+  return { c };
 }
 
 // One legacy reference -> managed ledger, resumed from wherever an earlier run stopped.
@@ -67,10 +78,9 @@ export async function moveLegacyPhoto({ sql, storage, household, record }) {
   let state = m.state;
   if (!scoped(m.legacy_path) || !scoped(m.target_path)) throw Error('refused: path out of scope');
   if (state === 'copying') {
-    // Work 8th: the free Storage budget. No new copy at stop_new (or when the budget cannot be read).
-    if (!await budgetAllows(sql, 'new')) return { status: 'copying', held: 'storage_budget', file_id: m.file_id };
     let c;
-    try { c = await copy(storage, LEGACY_BUCKET, m.legacy_path, MANAGED_BUCKET, m.target_path); } catch (e) { if (/refused/.test(e.message)) throw e; return { status: 'copying', held: 'copy_failed', file_id: m.file_id }; }
+    try { const x = await reserved(sql, storage, 'copy:' + m.file_id, 'copy', LEGACY_BUCKET, m.legacy_path, MANAGED_BUCKET, m.target_path); if (x.held) return { status: 'copying', held: x.held, file_id: m.file_id }; c = x.c; }
+    catch (e) { if (/refused/.test(e.message)) throw e; return { status: 'copying', held: 'copy_failed', file_id: m.file_id }; }
     let done;
     try { done = await sql('photo_legacy_commit_v51', [m.file_id, c.bytes, c.sourceSha, c.targetSha]); }
     catch (e) { return { status: 'copying', held: /photo_copy_unverified/.test(e.message) ? 'copy_mismatch' : 'commit_failed', file_id: m.file_id }; }
@@ -86,10 +96,10 @@ export async function moveLegacyPhoto({ sql, storage, household, record }) {
     // A backup of the legacy bytes before they can go (restore works without the legacy object).
     const backupPath = m.target_path;   // same scoped form, in the backup bucket
     let backupFailed = false;
-    // Work 8th: at suppress the backup copy waits too (the move stays verified, nothing is deleted).
-    if (!await budgetAllows(sql, 'backup')) return { status: 'verified', held: 'storage_budget', file_id: m.file_id };
     try {
-      const b = await copy(storage, LEGACY_BUCKET, m.legacy_path, BACKUP_BUCKET, backupPath);
+      const x = await reserved(sql, storage, 'backup:' + m.file_id, 'backup', LEGACY_BUCKET, m.legacy_path, BACKUP_BUCKET, backupPath);
+      if (x.held) return { status: 'verified', held: x.held, file_id: m.file_id };
+      const b = x.c;
       if (b.sourceSha !== b.targetSha) return { status: 'verified', held: 'backup_mismatch', file_id: m.file_id };
       await sql('photo_legacy_backup_recorded_v51', [m.file_id, b.targetSha, b.bytes]);
     } catch (e) {
@@ -126,7 +136,9 @@ export async function restoreLegacyPhoto({ sql, storage, file }) {
   }
   if (r.status === 'copy_backup') {
     if (!scoped(r.backup_path) || !scoped(r.target_path)) throw Error('refused: path out of scope');
-    const c = await copy(storage, BACKUP_BUCKET, r.backup_path, MANAGED_BUCKET, r.target_path);
+    const x = await reserved(sql, storage, 'restore:' + r.file_id, 'restore', BACKUP_BUCKET, r.backup_path, MANAGED_BUCKET, r.target_path);
+    if (x.held) return { status: 'copy_backup', held: x.held, file_id: r.file_id };
+    const c = x.c;
     if (c.sourceSha !== c.targetSha) return { status: 'copy_backup', held: 'copy_mismatch', file_id: r.file_id };
     const done = await sql('photo_legacy_restore_commit_v51', [file, r.file_id, c.bytes, c.targetSha]);
     r = { status: 'verify', file_id: done.file_id ?? r.file_id };
