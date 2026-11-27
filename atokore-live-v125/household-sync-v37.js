@@ -126,6 +126,12 @@ function undoConfirmed(ticket){
 }
 function capturePurchases(ids){
  if(!engine||!household||!session)return [];
+ // Work 9th: the purchase's op id was fixed before it ran (purchaseOpIdFor): the ticket needs no flush.
+ if(J()){
+  const out=[];
+  for(const id of ids){const o=purchaseOpIdFor(id,{assign:false});const sid=sharedIdFor('buy',id);if(o&&sid)out.push({op:o,household:household.id,user:session.user.id,buy:sid})}
+  if(out.length===ids.length)return out;
+ }
  engine.flush();
  const m=engine.meta(),wanted=new Set(ids.map(id=>m.map['buy:'+id]));
  return m.outbox.filter(o=>o.type==='complete_buy'&&wanted.has(o.buy)).map(o=>({op:o.op_id,household:household.id,user:session.user.id,buy:o.buy}));
@@ -451,8 +457,25 @@ async function rpc(fn,args,signal){
 }
 
 // ---------------------------------------------------------------- engine wiring
-function readState(){const s=readJSON(DATA_KEY);return s&&Array.isArray(s.items)&&Array.isArray(s.buys)&&Array.isArray(s.routines)?s:null}
+// Work 9th: with the atomic journal (local-journal-v51.js) the sync reads the COMMITTED state and writes the
+// server view as a replace operation that names the revision it was computed from (operations other tabs
+// committed after it are re-applied on top in the same IndexedDB transaction).
+const J=()=>root.AtokoreJournal?.active?.()?root.AtokoreJournal:null;
+let readRev=null;
+function readState(){
+ const j=J();
+ if(j){const d=j.committedData();if(d){readRev=j.committedRev();return d}}
+ const s=readJSON(DATA_KEY);return s&&Array.isArray(s.items)&&Array.isArray(s.buys)&&Array.isArray(s.routines)?s:null}
 function writeState(state){
+ const j=J();
+ if(j){
+  try{root.AtokoreDataSafety?.assertWritable?.()}catch(e){return false}
+  const ok=j.replace(state,readRev);
+  if(ok!==true)return false;
+  lastRaw=store()?.getItem(DATA_KEY)??null;
+  try{root.render?.()}catch(e){root.console?.error?.('あとこれ: 共有データの表示更新に失敗',e)}
+  return true;
+ }
  try{
   root.AtokoreDataSafety?.assertWritable?.();
   const raw=JSON.stringify(state);store().setItem(DATA_KEY,raw);
@@ -463,8 +486,12 @@ function writeState(state){
  try{root.render?.()}catch(e){root.console?.error?.('あとこれ: 共有データの表示更新に失敗',e)}
  return true;
 }
+// Work 9th: the sync record (outbox, shadow, map) has ONE writer: the tab holding the sync lock. In other tabs
+// the engine never flushes (their saves are committed to the journal and the leader sends them).
+const syncWriter=()=>{const j=J();return !j||j.isLeader()===true};
 function makeEngine(){
- engine=core.createEngine({readState,writeState,opIdFor,receipts:()=>receiptsOn()&&receiptSupported===true&&root.navigator?.onLine!==false,readMeta:()=>{const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return meta.engine||null},writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
+ const e=core.createEngine({readState,writeState,opIdFor,receipts:()=>receiptsOn()&&receiptSupported===true&&root.navigator?.onLine!==false,readMeta:()=>{const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return meta.engine||null},writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
+ engine={...e,flush:()=>syncWriter()?e.flush():0};
  return engine;
 }
 function setStatus(state,detail){status={state,detail,pending:engine?engine.status().pending:0};paint()}
@@ -479,6 +506,13 @@ async function syncNow(opts){
  syncing=Promise.resolve().then(async()=>{
   try{
    if(root.navigator&&root.navigator.onLine===false)throw new NetError('offline','network',0);
+   // Work 9th: one tab syncs (Web Locks); this tab's saves are committed first, so the sync reads them.
+   const j=J();
+   if(j){
+    if(!(await j.leaderReady())&&j.isLeader()!==true){setStatus(status.state==='local'?'pending':status.state,'別のタブで同期しています');return}
+    await j.flush();
+    if(j.failed())throw Object.assign(Error('local_save_failed'),{code:'storage'});
+   }
    setStatus('syncing');
    const before=engine.status();
    await engine.sync();
