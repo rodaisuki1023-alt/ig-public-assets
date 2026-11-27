@@ -36,7 +36,7 @@ test('trial household: 9:59 undoes; 10:00 and 10:01 are refused and change nothi
  try{
   // Measured from the server's receipt of the purchase.
   const ok=await bought(db,A,{ageS:599});
-  assert.deepEqual(await undo(db,A,[ok.op]),{undone:1,status:'ready'});
+  {const r=await undo(db,A,[ok.op]);assert.deepEqual([r.undone,r.status],[1,'ready'])}
   assert.equal(Number((await state(db,A,ok.item)).qty),1);assert.equal((await state(db,A,ok.buy)).deleted,false);
   for(const age of [600,601]){
    const p=await bought(db,A,{ageS:age});
@@ -66,7 +66,7 @@ test('a batch with one expired purchase changes nothing; a finished undo still a
   assert.equal(Number((await state(db,A,fresh.item)).qty),3,'the fresh one is not undone half-way');
   assert.equal((await undo(db,A,[fresh.op])).undone,1);
   await db.query("UPDATE atokore_private.purchase_receipts_v51 SET received_at=now()-interval '1 hour'");
-  assert.deepEqual(await undo(db,A,[fresh.op]),{undone:0,status:'ready'});
+  {const r=await undo(db,A,[fresh.op]);assert.deepEqual([r.undone,r.status],[0,'ready'])}
   // The receipts and the history are kept (nothing is deleted by the window).
   const kinds=(await db.query("SELECT type FROM atokore_private.ops WHERE type IN ('complete_buy','undo_purchase') ORDER BY at")).rows.map(r=>r.type);
   assert.ok(kinds.filter(k=>k==='complete_buy').length>=2&&kinds.includes('undo_purchase'));

@@ -99,8 +99,39 @@ function homeState(){
  const current=household&&session?household.id+':'+session.user.id:null;
  return {summary:shareSummary(),sharedSince:current&&meta.sharedFor===household.id?meta.sharedSince||0:0,joined:!!current,state:status.state,lastSync:engine?.status().lastSync||0,historyState:current===changesFor?historyState:'loading',changes:current===changesFor?changes.map(r=>({...r})):[]};
 }
+// Work 9th: the op id of a shared purchase is fixed at the moment of buying, so the estimate entry written now
+// already names it (the engine uses this id for the complete_buy of that shopping row). Kept with the sync record.
+// An id is used once: when the engine turns the row's purchase into a complete_buy it is consumed (moved to
+// usedOps), so buying the same row again after an undo gets a NEW op id.
+function purchaseOpIdFor(localBuyId,{assign=true}={}){
+ const sid=sharedIdFor('buy',localBuyId);if(!sid)return null;
+ const pre=meta.preOps||{},used=meta.usedOps||{};
+ if(pre[sid])return pre[sid];
+ if(!assign)return used[sid]||null;
+ const id=root.crypto?.randomUUID?.();if(!id)return null;
+ saveMeta({preOps:Object.fromEntries(Object.entries({...pre,[sid]:id}).slice(-100))});
+ return id;
+}
+function opIdFor(buySid){
+ const pre={...(meta.preOps||{})},id=pre[buySid];if(!id)return null;
+ delete pre[buySid];
+ saveMeta({preOps:pre,usedOps:Object.fromEntries(Object.entries({...(meta.usedOps||{}),[buySid]:id}).slice(-100))});
+ return id;
+}
+// Only a purchase the server confirmed with a receipt can be undone in sharing (Work 9th).
+function undoConfirmed(ticket){
+ if(!serverUndoEstimate())return true;
+ const got=new Set(engine?.meta?.().receipts||[]);
+ return Array.isArray(ticket)&&ticket.length>0&&ticket.every(x=>got.has(x.op));
+}
 function capturePurchases(ids){
  if(!engine||!household||!session)return [];
+ // Work 9th: the purchase's op id was fixed before it ran (purchaseOpIdFor): the ticket needs no flush.
+ if(J()){
+  const out=[];
+  for(const id of ids){const o=purchaseOpIdFor(id,{assign:false});const sid=sharedIdFor('buy',id);if(o&&sid)out.push({op:o,household:household.id,user:session.user.id,buy:sid})}
+  if(out.length===ids.length)return out;
+ }
  engine.flush();
  const m=engine.meta(),wanted=new Set(ids.map(id=>m.map['buy:'+id]));
  return m.outbox.filter(o=>o.type==='complete_buy'&&wanted.has(o.buy)).map(o=>({op:o.op_id,household:household.id,user:session.user.id,buy:o.buy}));
@@ -117,12 +148,17 @@ async function undoPurchases(ticket){
  try{
   const ops={p_ops:ticket.map(x=>x.op)};
   if(cfg.purchaseUndoWindowV51===true){
+   // Work 9th: not confirmed by a receipt (offline, not yet sent, or refused): not offered, nothing is sent.
+   if(!undoConfirmed(ticket))throw Object.assign(Error('purchase_undo_unprovable'),{code:'unconfirmed'});
    // Work 6th: only the exact answer {status:'not_enabled'} (a household outside the trial) may use the
    // existing RPC. null, a missing status, any other answer or an error never falls back to it.
    const r=await rpc('hh_undo_purchases_v51',ops);
    const keys=r&&typeof r==='object'&&!Array.isArray(r)?Object.keys(r):[];
    if(keys.length===1&&r.status==='not_enabled')await rpc('hh_undo_purchases',ops);
    else if(!(r?.status==='ready'&&Number.isInteger(r.undone)&&r.undone>=0))throw Object.assign(Error('undo_answer_unknown'),{code:'unknown_answer'});
+   // Work 9th: the server's own rows of THIS undo are shown at once (by change number; a later pull agrees),
+   // whatever the overall sync is doing (another undo in flight, a failed pull).
+   else if(Array.isArray(r.records)&&engine){try{engine.adoptRecords(r.records)}catch(e){root.console?.warn?.('あとこれ 取り消し結果の反映',e)}}
   }else await rpc('hh_undo_purchases',ops);
  }
  catch(e){const m=e.message||'';throw Error(e.code==='network'?'通信を確認できませんでした。「元に戻す」を押し直してください。':/purchase_undo_expired/.test(m)?'「買った」から10分を過ぎたため、取り消せません。ストックの数量を直接直してください。':/purchase_undo_unprovable|purchase_undo_time_invalid/.test(m)?'この「買った」はサーバーが受け付けた記録がないため（通信できない間の記録など）、家族共有では取り消せません。ストックの数量を直接直してください。':e.code==='unknown_answer'?'取り消しの結果を確認できませんでした。現在のストックをご確認ください（再度押しても二重には取り消しません）。':'家族の変更と重なるため戻せません。現在のストックをご確認ください。')}
@@ -300,13 +336,13 @@ let assignments=new Map(),assignmentsAt=0,sharedEpoch=0;
 // corrected directly). The earlier clock tickets proved nothing and are gone.
 let receiptSupported=null;
 function receiptsOn(){return !!household&&!!session&&receiptSupported!==false}
-// Probe once per household: the command with nothing in it applies nothing and answers ready / not_enabled.
+// Probe once per household (a read-only status call; the command itself refuses an empty input).
 async function refreshReceiptSupport(force){
  if(!household||!session)return;
  if(!force&&receiptSupported!==null)return;
  const ep=sharedEpoch,hid=household.id;
  try{
-  const r=await rpc('hh_push_v51',{p_ops:[],p_receipt_ops:[]});
+  const r=await rpc('hh_purchase_receipts_status_v51',{});
   if(ep!==sharedEpoch||household?.id!==hid)return;
   const keys=r&&typeof r==='object'&&!Array.isArray(r)?Object.keys(r):[];
   receiptSupported=keys.length===1&&r.status==='not_enabled'?false:r?.status==='ready'?true:receiptSupported;
@@ -421,8 +457,26 @@ async function rpc(fn,args,signal){
 }
 
 // ---------------------------------------------------------------- engine wiring
-function readState(){const s=readJSON(DATA_KEY);return s&&Array.isArray(s.items)&&Array.isArray(s.buys)&&Array.isArray(s.routines)?s:null}
+// Work 9th: with the atomic journal (local-journal-v51.js) the sync reads this tab's view (committed state +
+// its own uncommitted operations) and writes the server view as a replace operation that names the revision
+// and the operations it was computed from; operations OTHER tabs committed after that revision are re-applied
+// on top in the same IndexedDB transaction, so a sync never drops another tab's change.
+const J=()=>root.AtokoreJournal?.active?.()?root.AtokoreJournal:null;
+let readCtx=null;
+function readState(){
+ const j=J();
+ if(j){const v=j.view();readCtx=v.rev==null?null:v;return v.data}
+ const s=readJSON(DATA_KEY);return s&&Array.isArray(s.items)&&Array.isArray(s.buys)&&Array.isArray(s.routines)?s:null}
 function writeState(state){
+ const j=J();
+ if(j){
+  try{root.AtokoreDataSafety?.assertWritable?.()}catch(e){return false}
+  const ok=j.replace(state,readCtx?.rev,readCtx?.has);
+  if(ok!==true)return false;
+  lastRaw=store()?.getItem(DATA_KEY)??null;
+  try{root.render?.()}catch(e){root.console?.error?.('あとこれ: 共有データの表示更新に失敗',e)}
+  return true;
+ }
  try{
   root.AtokoreDataSafety?.assertWritable?.();
   const raw=JSON.stringify(state);store().setItem(DATA_KEY,raw);
@@ -433,8 +487,12 @@ function writeState(state){
  try{root.render?.()}catch(e){root.console?.error?.('あとこれ: 共有データの表示更新に失敗',e)}
  return true;
 }
+// Work 9th: the sync record (outbox, shadow, map) has ONE writer: the tab holding the sync lock. In other tabs
+// the engine never flushes (their saves are committed to the journal and the leader sends them).
+const syncWriter=()=>{const j=J();return !j||j.isLeader()===true};
 function makeEngine(){
- engine=core.createEngine({readState,writeState,receipts:()=>receiptsOn()&&receiptSupported===true&&root.navigator?.onLine!==false,readMeta:()=>{const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return meta.engine||null},writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
+ const e=core.createEngine({readState,writeState,opIdFor,receipts:()=>receiptsOn()&&receiptSupported===true&&root.navigator?.onLine!==false,readMeta:()=>{const m=readJSON(META_KEY);if(m&&typeof m==='object')meta=m;return meta.engine||null},writeMeta:m=>saveMeta({engine:m}),rpc,device:meta.device,managedPhotos:cfg.photoGatewayProtocol===2});
+ engine={...e,flush:()=>syncWriter()?e.flush():0};
  return engine;
 }
 function setStatus(state,detail){status={state,detail,pending:engine?engine.status().pending:0};paint()}
@@ -449,6 +507,15 @@ async function syncNow(opts){
  syncing=Promise.resolve().then(async()=>{
   try{
    if(root.navigator&&root.navigator.onLine===false)throw new NetError('offline','network',0);
+   // Work 9th: one tab syncs (Web Locks); this tab's saves are committed first, so the sync reads them.
+   const j=J();
+   if(j){
+    // The journal must be open first: the sync's view names the committed revision it was computed from.
+    await j.ready;
+    if(!(await j.leaderReady())&&j.isLeader()!==true){setStatus(status.state==='local'?'pending':status.state,'別のタブで同期しています');return}
+    await j.flush();
+    if(j.failed())throw Object.assign(Error('local_save_failed'),{code:'storage'});
+   }
    setStatus('syncing');
    const before=engine.status();
    await engine.sync();
@@ -862,5 +929,5 @@ async function receiptCall(fn,args){
 }
 async function receiptClaim(fingerprint,force=false){return receiptCall('hh_receipt_claim',{p_fingerprint:fingerprint,p_force:!!force})}
 async function receiptFinish(fingerprint,done){return receiptCall('hh_receipt_finish',{p_fingerprint:fingerprint,p_done:!!done})}
-root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,householdId:()=>household&&session?household.id:null,serverUndoEstimate,refreshReceiptSupport:()=>refreshReceiptSupport(true),sharedEpoch:()=>sharedEpoch,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{}),timeouts:requestTimeouts})});
+root.AtokoreHousehold=Object.freeze({prepEnabled,prepGet,prepPut,prepTick,assignmentsEnabled,assignmentFor,familyMembers,assignBuy,respondBuy,refreshAssignments,myId:()=>session?.user?.id||null,householdId:()=>household&&session?household.id:null,serverUndoEstimate,undoConfirmed,purchaseOpIdFor,refreshReceiptSupport:()=>refreshReceiptSupport(true),sharedEpoch:()=>sharedEpoch,sharedIdFor,entitlements,refreshEntitlements,receiptClaim,receiptFinish,receiptScope,localIdFor,open,syncNow,homeState,refreshChanges,capturePurchases,undoPurchases,photoScope,photoSharingEnabled,photoProtocolManaged,photoGeneralEnabled,photoTransferPlan,fetchPhoto,sharePhoto,status:()=>({...status,...(engine?engine.status():{}),timeouts:requestTimeouts})});
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -239,9 +239,12 @@ for(const name of ['buyOneToStockV125H','bought']){
  const original=root[name];if(typeof original!=='function')continue;
  root[name]=function(...args){
   const qty=new Map(list().map(x=>[String(x.id),Number(x.qty)])),rows=buyIds();
-  const rowInfo=new Map((Array.isArray(buys)?buys:[]).map(b=>[String(b.id),{name:b.name,unit:b.unit}]));
+  const rowInfo=new Map((Array.isArray(buys)?buys:[]).map(b=>[String(b.id),{name:b.name,unit:b.unit,qty:b.qty}]));
   const hh=root.AtokoreHousehold,shared=hh?.homeState?.().joined&&typeof hh.sharedIdFor==='function'?id=>hh.sharedIdFor('buy',id):null;
   const ids=shared?new Map(rows.map(id=>[id,shared(id)])):null;
+  // Work 9th: fix the op id of every shared row BEFORE the purchase runs, so any flush that turns it into a
+  // complete_buy (now or later) uses exactly the id the estimate entry will name.
+  if(ids&&typeof hh.purchaseOpIdFor==='function')for(const id of rows)if(ids.get(id))hh.purchaseOpIdFor(id);
   const result=original.apply(this,args);
   const left=new Set(buyIds()),gone=rows.filter(id=>!left.has(id));
   if(!gone.length)return result;
@@ -256,13 +259,22 @@ for(const name of ['buyOneToStockV125H','bought']){
    if(!x.track||!qty.has(String(x.id)))continue;
    const delta=Number(x.qty)-qty.get(String(x.id));if(!(delta>0))continue;
    // Each purchase is its own field: two phones buying at once both count; a resend adds nothing.
-   // Work 8th: the shared shopping rows this product was bought from (same name and unit, as the purchase
-   // itself matches them), so the server can tell which purchase owns the entry (undo, re-purchase).
-   let sb=null;
-   if(ids){const mine=gone.filter(id=>{const r=rowInfo.get(id);return r&&r.name===x.name&&r.unit===x.unit}).map(id=>ids.get(id));
-    const own=mine.length?mine:gone.length===1?[ids.get(gone[0])]:[];
-    if(own.length&&own.length<=8&&own.every(v=>typeof v==='string'&&v.length<=64))sb=own.slice().sort()}
-   const p=L.purchaseEntry(x,delta,{today:day,key:key.startsWith('sb:')?key:key+':'+x.id,sb});
+   // Work 9th: while sharing, each shopping row bought for this product is its own purchase with an op id fixed
+   // now (the engine sends the complete_buy with this id), and its estimate entry names that op ("o", key
+   // 'op:'+id). The server counts an entry only for that op; buying the same row again later is a new op.
+   const mine=ids?gone.filter(id=>{const r=rowInfo.get(id);return r&&r.name===x.name&&r.unit===x.unit}):[];
+   const fixed=mine.length&&hh?.purchaseOpIdFor?mine.map(id=>({id,o:hh.purchaseOpIdFor(id,{assign:false}),q:Number(rowInfo.get(id)?.qty)})):[];
+   if(fixed.length&&fixed.every(f=>typeof f.o==='string'&&f.o)){
+    const total=fixed.reduce((a,f)=>a+(f.q>0?f.q:0),0);
+    for(const f of fixed){
+     const share=fixed.length===1||!(total>0)?delta:delta*(f.q/total);
+     const pe=L.purchaseEntry(x,share,{today:day,key:'op:'+f.o,op:f.o});
+     if(!pe||L.readEntry(x[pe.field])?.k===pe.entry.k)continue;
+     undo.push([x,pe.field,x[pe.field]]);x[pe.field]=pe.entry;
+    }
+    continue;
+   }
+   const p=L.purchaseEntry(x,delta,{today:day,key:key.startsWith('sb:')?key:key+':'+x.id});
    if(!p||L.readEntry(x[p.field])?.k===p.entry.k)continue;
    undo.push([x,p.field,x[p.field]]);x[p.field]=p.entry;
   }

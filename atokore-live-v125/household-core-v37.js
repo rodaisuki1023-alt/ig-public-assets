@@ -80,6 +80,9 @@ function diff(prev,next,map,opts={}){
   const made=!add&&created.find(x=>x.kind==='item'&&identity(x.fields)===want&&x.qty===del._qty);
   const target=add||made;if(!target||!del._qty)continue;
   const done={type:'complete_buy',buy:del.id,item:target.id,delta:del._qty,ts:now};
+  // Work 9th: the op id of a purchase is fixed when the person buys (the estimate entry already names it).
+  const fixed=typeof opts.opIdFor==='function'?opts.opIdFor(del.id):null;
+  if(typeof fixed==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(fixed))del.op_id=fixed;
   if(made)done.item_fields=made.fields;
   // v51 (Work 8th): a purchase made while the server's purchase command is reachable is marked "rc" (receipt
   // wanted). Only such an op, sent soon after, goes through hh_push_v51 and can get undo rights; an op made
@@ -203,7 +206,7 @@ function createEngine(io){
   recoverApply();
   if(!meta.shadow)return 0;
   const cur=io.readState();if(!cur)return 0;
-  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand,managedPhotos:io.managedPhotos===true,receipts:io.receipts});
+  const {ops,map}=diff(meta.shadow,cur,meta.map,{now:now(),rand,managedPhotos:io.managedPhotos===true,receipts:io.receipts,opIdFor:io.opIdFor});
   if(!ops.length)return 0;
   // v51 (Work 7th): the estimate entry of a purchase is often saved right after the purchase itself (a
   // later diff). It is attached to that product's latest complete_buy while it is still unsent, so the
@@ -243,6 +246,8 @@ function createEngine(io){
    }
    finally{for(const o of batch)sending.delete(o.op_id)}
    const answered=new Map((res?.results||[]).map(r=>[String(r.op_id),r.status]));
+   // Work 9th: purchases the server gave a receipt to (only those can be undone in sharing).
+   if(Array.isArray(res?.receipts)&&res.receipts.length){const got=new Set([...(meta.receipts||[]),...res.receipts.filter(x=>typeof x==='string')]);meta={...meta,receipts:[...got].slice(-200)}}
    const rejected=[...meta.rejected];
    for(const o of batch){const s=answered.get(o.op_id);if(s&&s.startsWith('rejected'))rejected.push({op:o,status:s,at:now()})}
    const outbox=meta.outbox.filter(o=>!answered.has(o.op_id));
@@ -262,6 +267,22 @@ function createEngine(io){
   }
   save({...meta,base,cursor});
   apply();
+ }
+ // Work 9th: records the server returned for a confirmed operation of this person (e.g. an undo) are taken into
+ // the base at once, only where their change number is newer (idempotent), then the device data is rebuilt.
+ function adopt_records(list){
+  recoverApply();
+  const base={...meta.base};let changed=false;
+  for(const r of Array.isArray(list)?list:[]){
+   if(!r||typeof r.kind!=='string'||typeof r.id!=='string'||!Number.isSafeInteger(Number(r.seq)))continue;
+   const key=r.kind+':'+r.id,old=base[key];
+   if(old&&Number.isSafeInteger(Number(old.seq))&&Number(old.seq)>=Number(r.seq))continue;
+   base[key]={kind:r.kind,id:r.id,fields:r.fields||{},qty:Number(r.qty)||0,deleted:!!r.deleted,seq:Number(r.seq)};changed=true;
+  }
+  if(!changed)return false;
+  save({...meta,base});
+  apply();
+  return true;
  }
  // Rebuild the device's data from the server's records plus operations still waiting to be sent.
  function apply(){
@@ -317,7 +338,7 @@ function createEngine(io){
   await push();
   return state.state;
  }
- return {flush,push,pull,apply,sync,status,resolveRejected,startAsCreator,startAsJoiner,adopt,meta:()=>clone(meta)};
+ return {flush,push,pull,apply,sync,status,resolveRejected,startAsCreator,startAsJoiner,adopt,adoptRecords:adopt_records,meta:()=>clone(meta)};
 }
 
 const api=Object.freeze({records,diff,rebase,materialize,matchLocal,identity,newSid,uuid,createEngine,freshMeta});

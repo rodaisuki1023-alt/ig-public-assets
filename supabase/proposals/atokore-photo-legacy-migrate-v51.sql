@@ -728,22 +728,63 @@ VALUES (1073741824,70,80,90,81920,'draft default: Free plan 1 GB; review against
 ON CONFLICT (singleton) DO NOTHING;
 -- ok (< audit) / audit (>= audit: report) / stop_new (>= stop: no new move, no new photo, no new copy)
 -- / suppress (>= suppress: also no backup copies; only restores run). No budget row -> stop_new.
+-- Work 9th (capacity, P0): a decision from the stored objects alone let two concurrent copies both pass (79% ->
+-- 103.88%). Every operation that adds bytes now first RESERVES its upper bound in one ledger, under the lock of
+-- the single budget row (SELECT ... FOR UPDATE), so reservations are serialized across all connections:
+--   used = stored objects that no open reservation covers (known size, or unknown_object_bytes when the size is
+--          unknown) + every open reservation (reserved / unknown / rejected) at the larger of its bound and its
+--          object's size.  A reservation is granted only if (used + its bound) keeps the level allowed for it:
+--     upload / copy  : after < stop_pct (80%)      backup : after < suppress_pct (90%)
+--     restore        : after <= 100% (the band from 90% to 100% is kept for restores; nothing is ever deleted)
+--   The bound is the source object's recorded size, else the source bucket's file size limit, else the size
+--   recorded for that backup; for an upload, the gateway's per-photo maximum. No known bound -> refused.
+--   A reservation is released only on a CONFIRMED absence of the object; a lost answer or a timeout marks it
+--   'unknown' and it keeps counting. Committing records the real size; a real size above the bound is
+--   refused ('rejected', still counted until reviewed). The same key returns the same reservation (resends).
+--   No budget row, or an unreadable budget -> no new operation.
+-- External writers (dashboard, other functions) are outside this ledger: enforcing the budget against them on
+-- a real project is not possible from here (real operation HOLD).
+CREATE TABLE IF NOT EXISTS atokore_private.photo_storage_reservations_v51 (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  op_key text NOT NULL UNIQUE CHECK (char_length(op_key) BETWEEN 1 AND 200),
+  purpose text NOT NULL CHECK (purpose IN ('upload','copy','backup','restore')),
+  bucket text NOT NULL, path text NOT NULL,
+  max_bytes bigint NOT NULL CHECK (max_bytes > 0),
+  state text NOT NULL DEFAULT 'reserved' CHECK (state IN ('reserved','unknown','committed','released','rejected')),
+  actual_bytes bigint,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  resolved_at timestamptz
+);
+ALTER TABLE atokore_private.photo_storage_reservations_v51 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON atokore_private.photo_storage_reservations_v51 FROM PUBLIC, anon, authenticated;
+CREATE FUNCTION atokore_private.photo_object_size_v51(p_bucket text,p_path text) RETURNS bigint
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
+AS $$ SELECT CASE WHEN o.metadata->>'size' ~ '^[0-9]{1,15}$' THEN (o.metadata->>'size')::bigint END FROM storage.objects o WHERE o.bucket_id=p_bucket AND o.name=p_path $$;
+-- Bytes in use now, reservations included. Call with the budget row locked for a decision. VOLATILE on
+-- purpose: it must read with a snapshot taken AFTER the lock was granted (a STABLE function would read with the
+-- snapshot of the calling statement and could miss a reservation committed while waiting for the lock).
+CREATE FUNCTION atokore_private.photo_storage_used_v51(p_unknown bigint) RETURNS jsonb
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path=''
+AS $$ SELECT jsonb_build_object(
+  'stored',coalesce((SELECT sum(CASE WHEN o.metadata->>'size' ~ '^[0-9]{1,15}$' THEN (o.metadata->>'size')::bigint ELSE p_unknown END)
+     FROM storage.objects o WHERE NOT EXISTS (SELECT 1 FROM atokore_private.photo_storage_reservations_v51 r
+       WHERE r.state IN ('reserved','unknown','rejected') AND r.bucket=o.bucket_id AND r.path=o.name)),0),
+  'pending',coalesce((SELECT sum(GREATEST(r.max_bytes,coalesce(r.actual_bytes,0),coalesce(atokore_private.photo_object_size_v51(r.bucket,r.path),0)))
+     FROM atokore_private.photo_storage_reservations_v51 r WHERE r.state IN ('reserved','unknown','rejected')),0),
+  'unknown_objects',(SELECT count(*) FROM storage.objects o WHERE o.metadata->>'size' IS NULL OR o.metadata->>'size' !~ '^[0-9]{1,15}$')) $$;
+-- ok (< audit) / audit (>= audit: report) / stop_new (>= stop) / suppress (>= suppress), now, reservations included.
 CREATE FUNCTION atokore_private.photo_storage_budget_v51() RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
 AS $fn$
-DECLARE b atokore_private.photo_storage_budget_v51%ROWTYPE; v_known bigint; v_unknown bigint; v_used bigint; v_pct numeric; v_level text;
+DECLARE b atokore_private.photo_storage_budget_v51%ROWTYPE; u jsonb; v_used bigint; v_pct numeric;
 BEGIN
  SELECT * INTO b FROM atokore_private.photo_storage_budget_v51;
- SELECT coalesce(sum((o.metadata->>'size')::bigint) FILTER (WHERE o.metadata->>'size' ~ '^[0-9]{1,15}$'),0),
-        count(*) FILTER (WHERE o.metadata->>'size' IS NULL OR o.metadata->>'size' !~ '^[0-9]{1,15}$')
-   INTO v_known,v_unknown FROM storage.objects o;
- IF NOT FOUND OR b.quota_bytes IS NULL THEN
-  RETURN jsonb_build_object('level','stop_new','why','no_budget','known_bytes',v_known,'unknown_objects',v_unknown);
- END IF;
- v_used:=v_known+v_unknown*b.unknown_object_bytes;
+ IF NOT FOUND THEN RETURN jsonb_build_object('level','stop_new','why','no_budget'); END IF;
+ u:=atokore_private.photo_storage_used_v51(b.unknown_object_bytes);
+ v_used:=(u->>'stored')::bigint+(u->>'pending')::bigint;
  v_pct:=round(100.0*v_used/b.quota_bytes,3);
- v_level:=CASE WHEN v_pct>=b.suppress_pct THEN 'suppress' WHEN v_pct>=b.stop_pct THEN 'stop_new' WHEN v_pct>=b.audit_pct THEN 'audit' ELSE 'ok' END;
- RETURN jsonb_build_object('level',v_level,'used_bytes',v_used,'known_bytes',v_known,'unknown_objects',v_unknown,'quota_bytes',b.quota_bytes,'pct',v_pct);
+ RETURN u||jsonb_build_object('level',CASE WHEN v_pct>=b.suppress_pct THEN 'suppress' WHEN v_pct>=b.stop_pct THEN 'stop_new' WHEN v_pct>=b.audit_pct THEN 'audit' ELSE 'ok' END,
+   'used_bytes',v_used,'quota_bytes',b.quota_bytes,'pct',v_pct);
 END $fn$;
 CREATE FUNCTION atokore_private.photo_budget_allows_v51(p_what text) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
@@ -751,21 +792,114 @@ AS $$ SELECT CASE p_what
   WHEN 'new' THEN atokore_private.photo_storage_budget_v51()->>'level' IN ('ok','audit')
   WHEN 'backup' THEN atokore_private.photo_storage_budget_v51()->>'level' IN ('ok','audit','stop_new')
   ELSE false END $$;
--- New photo intake of a trial household (a reservation through the general gateway) stops at stop_new.
--- Existing photos, reads, detaching and restores are never refused by the budget.
+CREATE FUNCTION atokore_private.photo_storage_reserve_v51(p_key text,p_purpose text,p_src_bucket text,p_src_path text,p_bucket text,p_path text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE b atokore_private.photo_storage_budget_v51%ROWTYPE; r atokore_private.photo_storage_reservations_v51%ROWTYPE;
+  v_max bigint; u jsonb; v_after bigint; v_limit numeric;
+BEGIN
+ IF p_key IS NULL OR p_purpose IS NULL OR p_bucket IS NULL OR p_path IS NULL OR p_purpose NOT IN ('upload','copy','backup','restore') THEN
+  RAISE EXCEPTION 'photo_reservation_invalid' USING ERRCODE='22023';
+ END IF;
+ -- The single budget row is the lock: every reservation decision is serialized behind it.
+ SELECT * INTO b FROM atokore_private.photo_storage_budget_v51 FOR UPDATE;
+ IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'why','no_budget'); END IF;
+ SELECT * INTO r FROM atokore_private.photo_storage_reservations_v51 WHERE op_key=p_key;
+ IF FOUND THEN
+  IF r.purpose<>p_purpose OR r.bucket<>p_bucket OR r.path<>p_path THEN RAISE EXCEPTION 'photo_reservation_conflict' USING ERRCODE='23505'; END IF;
+  RETURN jsonb_build_object('ok',r.state IN ('reserved','unknown','committed'),'id',r.id,'state',r.state,'reused',true,'max_bytes',r.max_bytes);
+ END IF;
+ v_max:=CASE WHEN p_purpose='upload' THEN b.unknown_object_bytes ELSE coalesce(
+   atokore_private.photo_object_size_v51(p_src_bucket,p_src_path),
+   (SELECT k.file_size_limit FROM storage.buckets k WHERE k.id=p_src_bucket),
+   (SELECT x.backup_bytes FROM atokore_private.photo_legacy_backup_v51 x WHERE p_src_bucket='atokore-photo-backup-v51' AND x.backup_path=p_src_path LIMIT 1)) END;
+ IF v_max IS NULL OR v_max<=0 THEN RETURN jsonb_build_object('ok',false,'why','size_unknown'); END IF;
+ -- A new statement after the lock: a fresh snapshot that includes every reservation committed before it.
+ SELECT atokore_private.photo_storage_used_v51(b.unknown_object_bytes) INTO u;
+ v_after:=(u->>'stored')::bigint+(u->>'pending')::bigint+v_max;
+ v_limit:=CASE p_purpose WHEN 'restore' THEN 100 WHEN 'backup' THEN b.suppress_pct ELSE b.stop_pct END;
+ IF (CASE WHEN p_purpose='restore' THEN 100.0*v_after/b.quota_bytes <= v_limit ELSE 100.0*v_after/b.quota_bytes < v_limit END) IS NOT TRUE THEN
+  RETURN jsonb_build_object('ok',false,'why','storage_budget','after_pct',round(100.0*v_after/b.quota_bytes,3));
+ END IF;
+ INSERT INTO atokore_private.photo_storage_reservations_v51(op_key,purpose,bucket,path,max_bytes)
+  VALUES(p_key,p_purpose,p_bucket,p_path,v_max) RETURNING * INTO r;
+ RETURN jsonb_build_object('ok',true,'id',r.id,'state',r.state,'max_bytes',v_max,'after_pct',round(100.0*v_after/b.quota_bytes,3));
+END $fn$;
+-- The bytes are there (positively confirmed by the caller): record the real size. Above the bound -> refused.
+CREATE FUNCTION atokore_private.photo_storage_commit_v51(p_id uuid,p_bytes bigint) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE r atokore_private.photo_storage_reservations_v51%ROWTYPE;
+BEGIN
+ PERFORM 1 FROM atokore_private.photo_storage_budget_v51 FOR UPDATE;
+ SELECT * INTO r FROM atokore_private.photo_storage_reservations_v51 WHERE id=p_id FOR UPDATE;
+ IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'why','unknown_reservation'); END IF;
+ IF r.state='committed' THEN RETURN jsonb_build_object('ok',r.actual_bytes IS NOT DISTINCT FROM p_bytes,'state','committed','reused',true); END IF;
+ IF r.state NOT IN ('reserved','unknown') THEN RETURN jsonb_build_object('ok',false,'why',r.state); END IF;
+ IF p_bytes IS NULL OR p_bytes<=0 OR p_bytes>r.max_bytes THEN
+  UPDATE atokore_private.photo_storage_reservations_v51 SET state='rejected',actual_bytes=p_bytes,resolved_at=clock_timestamp() WHERE id=p_id;
+  RETURN jsonb_build_object('ok',false,'why','oversize');
+ END IF;
+ UPDATE atokore_private.photo_storage_reservations_v51 SET state='committed',actual_bytes=p_bytes,resolved_at=clock_timestamp() WHERE id=p_id;
+ RETURN jsonb_build_object('ok',true,'state','committed');
+END $fn$;
+-- The outcome is not known (answer lost, timeout): kept and counted. Released only on a confirmed absence.
+CREATE FUNCTION atokore_private.photo_storage_unknown_v51(p_id uuid) RETURNS text
+LANGUAGE sql SECURITY DEFINER SET search_path=''
+AS $$ UPDATE atokore_private.photo_storage_reservations_v51 SET state='unknown' WHERE id=p_id AND state='reserved' RETURNING state $$;
+CREATE FUNCTION atokore_private.photo_storage_release_v51(p_id uuid,p_absent_confirmed boolean) RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE r atokore_private.photo_storage_reservations_v51%ROWTYPE;
+BEGIN
+ PERFORM 1 FROM atokore_private.photo_storage_budget_v51 FOR UPDATE;
+ SELECT * INTO r FROM atokore_private.photo_storage_reservations_v51 WHERE id=p_id FOR UPDATE;
+ IF NOT FOUND OR r.state NOT IN ('reserved','unknown') THEN RETURN coalesce(r.state,'unknown_reservation'); END IF;
+ IF p_absent_confirmed IS NOT TRUE OR EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id=r.bucket AND o.name=r.path) THEN
+  UPDATE atokore_private.photo_storage_reservations_v51 SET state='unknown' WHERE id=p_id;
+  RETURN 'unknown';
+ END IF;
+ UPDATE atokore_private.photo_storage_reservations_v51 SET state='released',resolved_at=clock_timestamp() WHERE id=p_id;
+ RETURN 'released';
+END $fn$;
+-- New photo intake (a gateway reservation of a trial household) takes its reservation in the same transaction.
 CREATE FUNCTION atokore_private.photo_budget_intake_v51() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
 AS $fn$
+DECLARE r jsonb;
 BEGIN
- IF NEW.state='reserved' AND atokore_private.trial_allowed_v51(NEW.household_id) AND NOT atokore_private.photo_budget_allows_v51('new') THEN
-  RAISE EXCEPTION 'photo_storage_budget' USING ERRCODE='55000', HINT='Free Storage is near its limit: new photos are paused. Nothing was deleted.';
+ IF NEW.state='reserved' AND atokore_private.trial_allowed_v51(NEW.household_id) THEN
+  r:=atokore_private.photo_storage_reserve_v51('upload:'||NEW.file_id,'upload',NULL,NULL,'atokore-private-photos-v2',atokore_private.photo_object_path_v50(NEW));
+  IF (r->>'ok')::boolean IS NOT TRUE THEN
+   RAISE EXCEPTION 'photo_storage_budget' USING ERRCODE='55000', HINT='Free Storage is near its limit: new photos are paused. Nothing was deleted.';
+  END IF;
  END IF;
  RETURN NEW;
 END $fn$;
 CREATE TRIGGER photo_budget_intake_v51 BEFORE INSERT ON atokore_private.photo_ledger_v50
  FOR EACH ROW EXECUTE FUNCTION atokore_private.photo_budget_intake_v51();
-REVOKE ALL ON FUNCTION atokore_private.photo_storage_budget_v51(),atokore_private.photo_budget_allows_v51(text),atokore_private.photo_budget_intake_v51() FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION atokore_private.photo_storage_budget_v51(),atokore_private.photo_budget_allows_v51(text) TO service_role;
+-- The upload's outcome: uploaded/attached with its size -> committed; retired before any upload -> released.
+CREATE FUNCTION atokore_private.photo_budget_settle_v51() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $fn$
+DECLARE v_id uuid;
+BEGIN
+ SELECT id INTO v_id FROM atokore_private.photo_storage_reservations_v51 WHERE op_key='upload:'||NEW.file_id;
+ IF v_id IS NULL THEN RETURN NULL; END IF;
+ IF NEW.state IN ('uploaded','attached') AND NEW.actual_bytes IS NOT NULL THEN PERFORM atokore_private.photo_storage_commit_v51(v_id,NEW.actual_bytes);
+ ELSIF OLD.state='reserved' AND NEW.state='retired' THEN PERFORM atokore_private.photo_storage_release_v51(v_id,true);
+ END IF;
+ RETURN NULL;
+END $fn$;
+CREATE TRIGGER photo_budget_settle_v51 AFTER UPDATE OF state ON atokore_private.photo_ledger_v50
+ FOR EACH ROW WHEN (NEW.state IS DISTINCT FROM OLD.state) EXECUTE FUNCTION atokore_private.photo_budget_settle_v51();
+REVOKE ALL ON FUNCTION atokore_private.photo_storage_budget_v51(),atokore_private.photo_budget_allows_v51(text),atokore_private.photo_budget_intake_v51(),
+ atokore_private.photo_object_size_v51(text,text),atokore_private.photo_storage_used_v51(bigint),
+ atokore_private.photo_storage_reserve_v51(text,text,text,text,text,text),atokore_private.photo_storage_commit_v51(uuid,bigint),
+ atokore_private.photo_storage_unknown_v51(uuid),atokore_private.photo_storage_release_v51(uuid,boolean),atokore_private.photo_budget_settle_v51() FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION atokore_private.photo_storage_budget_v51(),atokore_private.photo_budget_allows_v51(text),
+ atokore_private.photo_storage_reserve_v51(text,text,text,text,text,text),atokore_private.photo_storage_commit_v51(uuid,bigint),
+ atokore_private.photo_storage_unknown_v51(uuid),atokore_private.photo_storage_release_v51(uuid,boolean) TO service_role;
 
 REVOKE ALL ON FUNCTION atokore_private.photo_system_actor_v51(),atokore_private.photo_is_legacy_ref_v51(uuid,text,text),
  atokore_private.photo_object_gen_v51(text,text),atokore_private.photo_legacy_writes_closed_v51(),

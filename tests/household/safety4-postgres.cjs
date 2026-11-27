@@ -85,13 +85,13 @@ async function undoEstimate(){
  const op=randomUUID();
  // Work 8th: the dedicated purchase command (receipt) and an estimate entry owned by this shopping row (sb).
  await rpc(A,'SELECT public.hh_push_v51($1::jsonb,$2::jsonb) r',[JSON.stringify([{op_id:op,type:'complete_buy',buy,item,delta:1,ts:Date.now()},
-   {op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'k-s4',q:1,sb:[buy]}}]),JSON.stringify([op])]);
+   {op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'op:'+op,o:op,q:1}}]),JSON.stringify([op])]);
  const r=await Promise.allSettled([rpc(A,'SELECT public.hh_undo_purchases($1::jsonb) r',[JSON.stringify([op])]),rpc(A,'SELECT public.hh_undo_purchases_v51($1::jsonb) r',[JSON.stringify([op])])]);
  const undone=r.filter(x=>x.status==='fulfilled').map(x=>x.value.undone).sort();
  assert.deepEqual(undone,[0,1],'undone exactly once');
  const rec=(await pool.query('SELECT qty::int q,fields FROM atokore_private.records WHERE household_id=$1 AND id=$2',[hh,item])).rows[0];
  assert.equal(rec.q,1);assert.equal(rec.fields.tps4a,undefined,'estimate removed with the undo');
- await push(A,[{op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'k-s4',q:1,sb:[buy]}}]);   // a stale tab
+ await push(A,[{op_id:randomUUID(),type:'set',kind:'item',id:item,field:'tps4a',value:{v:1,k:'op:'+op,o:op,q:1}}]);   // a stale tab
  assert.equal((await pool.query('SELECT fields FROM atokore_private.records WHERE household_id=$1 AND id=$2',[hh,item])).rows[0].fields.tps4a,undefined,'not brought back');
  console.log('PASS E: concurrent undo through both RPCs undoes once and removes the estimate entry in the same transaction; a stale write cannot bring it back');
 }
