@@ -60,7 +60,16 @@ test('family: two phones buy offline at the same time -> 120 + 60 + 60 = 240 on 
     expect((await est(a.page)).remaining).toBe(240);
     expect((await est(b.page)).remaining).toBe(240);
 
-    // A undoes only its own purchase (the undo bar is offered for 20 seconds after buying).
+    // Work 8th (E): in a trial household these purchases were made OFFLINE, so the server has no receipt of
+    // them: the shared undo is refused and nothing changes (still 240 on both).
+    await a.page.getByRole('button', { name: '元に戻す', exact: true }).click();
+    await expect(a.page.locator('#atkUndoBar')).toContainText('サーバーが受け付けた記録がない');
+    for (const p of [a.page, b.page]) await sync(p);
+    expect((await diaper(b.page)).qty).toBe(4);
+    expect((await est(a.page)).remaining).toBe(240);
+    // Outside the trial (no undo window there) the existing undo is unchanged: A undoes only its own purchase.
+    await request.post(EMU + '/__test/sql', { data: { sql: 'DELETE FROM atokore_private.trial_households_v51' } });
+    await a.page.evaluate(() => window.AtokoreHousehold.refreshReceiptSupport());
     await a.page.getByRole('button', { name: '元に戻す', exact: true }).click();
     await expect(a.page.locator('#atkUndoBar')).toHaveCount(0);
     // Repeated syncs in both directions (resends) change nothing further.
