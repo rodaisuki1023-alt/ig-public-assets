@@ -72,6 +72,10 @@ test('① the log cannot be written (storage full): the save is refused and said
 // once; the slower tab's cache write (from before the other tab's commit) landed after the newest commit, and
 // the next start adopted that cache as "newer than IndexedDB" -> 卵 8 became 7. Deterministic form: a cache of
 // THIS version (its digest matches) that is older than the committed state is written, then the app restarts.
+// Like the other tests here, without the service worker (WebKit reports its registration cut by a reload
+// as a page error; the PWA has its own tests).
+test.describe('① restart', () => {
+test.use({ serviceWorkers: 'block' });
 test('① a late cache write of this version that is older than the committed state never replaces it on restart', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
   await page.evaluate(() => AtokoreJournal.ready);
@@ -97,4 +101,5 @@ test('① a late cache write of this version that is older than the committed st
   expect((await page.evaluate(() => AtokoreJournal.readStored())).items.find(x => x.id === 3).qty).toBe(8);
   expect(await page.evaluate(k => JSON.parse(localStorage.getItem(k)).items.find(x => x.id === 3).qty, KEY)).toBe(8);   // the cache is rewritten
   expect(page.__errors).toEqual([]);
+});
 });
