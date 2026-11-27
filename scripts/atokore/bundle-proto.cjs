@@ -139,6 +139,24 @@ if (mode === 'inline') {
   }
   out += html.slice(at);
 }
+// --css=1: every stylesheet link in <head> becomes one file at the first link's place. The files are joined
+// in document order, so the cascade is the same; all are in this directory, so url() paths do not change.
+// (In <head> nothing renders before the last stylesheet anyway.)
+if (opt.css === '1') {
+  const head = out.slice(0, out.indexOf('<body'));
+  const links = [...head.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="\.\/([^"?]+)[^"]*"[^>]*>/g)];
+  if (links.length > 1) {
+    let css = '';
+    for (const l of links) { const t = fs.readFileSync(path.join(outDir, l[1]), 'utf8'); if (/@import|@charset/i.test(t)) { console.error('css: @import/@charset in ' + l[1] + ' - not joined'); process.exit(5); } css += `/* ---- ${l[1]} ---- */\n${t}\n`; }
+    const name = `atk-styles.${sha(css).slice(0, 10)}.css`;
+    fs.writeFileSync(path.join(outDir, name), css);
+    let h2 = head, first = true;
+    for (const l of links) { h2 = h2.replace(l[0], first ? `<link rel="stylesheet" href="./${name}">` : ''); first = false; }
+    out = h2 + out.slice(head.length);
+    map.css = { name, files: links.map(l => l[1]), bytes: Buffer.byteLength(css) };
+    map.chunks.push({ name, bytes: Buffer.byteLength(css), files: [] });
+  }
+}
 fs.writeFileSync(htmlPath, out);
 
 // ---- service worker: precache the chunks, new cache version ---------------------------------------------

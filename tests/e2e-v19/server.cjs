@@ -24,7 +24,7 @@ execFileSync('python3', ['-I', path.join(repo, 'scripts/atokore/build-preview.py
 // (scripts/atokore/bundle-proto.cjs) so the same tests run against it. Unset (the default, and CI): unchanged.
 if (process.env.E2E_BUNDLE) {
   const preview = path.join(site, 'preview-baby-v19'), tmp = preview + '.bundle';
-  execFileSync(process.execPath, [path.join(repo, 'scripts/atokore/bundle-proto.cjs'), preview, tmp, '--mode=' + process.env.E2E_BUNDLE, ...(process.env.E2E_ACORN ? ['--acorn=' + process.env.E2E_ACORN] : [])], { stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(repo, 'scripts/atokore/bundle-proto.cjs'), preview, tmp, '--mode=' + process.env.E2E_BUNDLE, ...(process.env.E2E_BUNDLE_CSS === '1' ? ['--css=1'] : []), ...(process.env.E2E_ACORN ? ['--acorn=' + process.env.E2E_ACORN] : [])], { stdio: 'inherit' });
   fs.rmSync(preview, { recursive: true, force: true }); fs.renameSync(tmp, preview);
 }
 
