@@ -140,11 +140,28 @@
   function renderAllViews(){
     redrawToken++;
     cleanSelections();
+    const focus=rowFocus();
     const page=shownPage();
     for(const view of VIEW_ORDER){
       if(!page||!VIEW_PAGE[view]||VIEW_PAGE[view]===page){staleViews.delete(view);drawView(view)}
       else staleViews.add(view);
     }
+    restoreRowFocus(focus);
+  }
+  // A redraw rebuilds the rows: the row (or its n-th button) that had the keyboard / VoiceOver focus gets it
+  // back in the new row, so Enter or the next swipe acts on the same product (also after the redraw that
+  // follows −／＋ one frame later).
+  function rowFocus(){
+    const el=document.activeElement,row=el?.closest?.('#stockList [data-stock-id],#buyList [data-buy-id]');if(!row)return null;
+    const attr=row.hasAttribute('data-stock-id')?'data-stock-id':'data-buy-id',list=row.closest('#stockList,#buyList');
+    const index=el===row?-1:[...row.querySelectorAll('button,input,select,textarea,[tabindex]')].indexOf(el);
+    return {list:list?.id,attr,id:row.getAttribute(attr),index};
+  }
+  function restoreRowFocus(f){
+    if(!f||document.activeElement&&document.activeElement!==document.body)return;
+    const row=document.querySelector('#'+f.list+' ['+f.attr+'="'+(window.CSS&&CSS.escape?CSS.escape(f.id):String(f.id).replace(/[^0-9A-Za-z_-]/g,''))+'"]');if(!row)return;
+    const target=f.index<0?row:[...row.querySelectorAll('button,input,select,textarea,[tabindex]')][f.index];
+    try{(target||row).focus({preventScroll:true})}catch(_){}
   }
   function staleOthers(page){for(const view of VIEW_ORDER)if(VIEW_PAGE[view]&&VIEW_PAGE[view]!==page)staleViews.add(view)}
   // A list on a hidden page is not built (many modules redraw it while starting and after each change); it

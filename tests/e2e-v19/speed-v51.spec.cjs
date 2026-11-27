@@ -116,3 +116,23 @@ test('purchase, undo and reload agree: stock, shopping list and history, and no 
   await expect(page.locator('#stockList [data-stock-id="1"] .qty b')).toHaveText('3本');
   expect(page.__errors).toEqual([]);
 });
+
+test('keyboard / VoiceOver focus stays on the same row across the redraw after −／＋ and Enter opens it', async ({ page }) => {
+  await open(page, { [KEY]: baseState() });
+  await go(page, 'stock');
+  const row = page.locator('#stockList [data-stock-id="3"]');
+  await row.locator('.qty button').last().click();
+  await row.focus();
+  await page.waitForTimeout(150);                       // the redraw after the next frame has run
+  expect(await page.evaluate(() => document.activeElement?.closest?.('[data-stock-id]')?.dataset.stockId)).toBe('3');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#modal')).toHaveClass(/on/);
+  await page.click('#sheet .close');
+  // The button itself keeps focus too (the n-th control of the same row).
+  await row.locator('.qty button').last().focus();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => { const a = document.activeElement; return [a?.closest?.('[data-stock-id]')?.dataset.stockId, a?.textContent]; })).toEqual(['3', '＋']);
+  expect((await stored(page)).items.find(x => x.id === 3).qty).toBe(8);
+  expect(page.__errors).toEqual([]);
+});
