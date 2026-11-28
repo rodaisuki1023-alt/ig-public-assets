@@ -191,15 +191,8 @@ body #pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .n
 .atk-ft-each li{padding:0}
 /* Estimate days on the stock card (v51 usability): small, never wider than the card. */
 #stockList .atk-lv-days{display:block;margin-top:2px;font-size:11px;font-weight:700;line-height:1.3;color:#7a4b3a;white-space:normal;overflow-wrap:anywhere}
-/* v51 speed (第12回): cards scrolled out of view skip style, layout and paint (the full list is still in the
-   document; text search, VoiceOver and Find in page see every card). `auto` remembers each card's real size
-   once drawn, so the scroll length stays right. Paint containment keeps drawing inside each card: the
-   controls' focus rings are drawn inside too, so they are never cut. The shopping list is not contained (its
-   "…" menu opens outside its row). Browsers without content-visibility ignore it (no change).
-   The stand-in height of a card not drawn yet is its CONTENT height: padding and border are added on top
-   (第13回: 246px became a 260px card in WebKit, which leaves off-screen cards undrawn, so the compact card
-   check failed at every width). 222 + 14 = 236px, a plain card in the 3-column grid; 104 + 22 = 126px in
-   the list. Height only: a stand-in width would set the grid item's minimum width. */
-#stockList > [data-stock-id]{content-visibility:auto;contain-intrinsic-height:auto 222px}
-.atk-stock-list-mode #stockList > [data-stock-id]{contain-intrinsic-height:auto 104px}
-#stockList > [data-stock-id] :focus-visible{outline-offset:-3px}
+/* v51 (通常CI再開の回): the 第12回 content-visibility on stock cards is withdrawn. WebKit CI (#119 393e178,
+   stock-cards-v28 at 320/375/390px) showed product pictures of cards below the screen not loaded at all
+   (naturalWidth 0) while those cards were skipped; the 第13回 height fix had only moved the failure one
+   line down. The gain was a full redraw of ~10% (not one of the speed targets), so the cards are drawn
+   normally again, as in #118 whose WebKit CI was green. */

@@ -159,30 +159,24 @@ test('keyboard / VoiceOver focus stays on the same row across the redraw after �
   expect(page.__errors).toEqual([]);
 });
 
-// 第13回 (WebKit CI, stock-cards-v28 at 320-430px): WebKit leaves cards below the screen undrawn, and an
-// undrawn card took its stand-in size plus padding (260px), over the compact card height. The stand-in is
-// checked here directly, in any browser: a card that was never drawn is measured in its skipped state.
+// 通常CI再開の回 (WebKit CI, #119 393e178): stock cards that a browser may skip (content-visibility) left
+// the pictures of cards below the screen unloaded in WebKit. The cards are drawn normally again; this keeps
+// it that way in any browser, and checks that a card below the screen has its picture without scrolling.
 for (const width of [320, 430]) {
-  test(`a stock card not drawn yet keeps the compact card height (${width}px), in the grid and in the list`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 700 });
-    await open(page, { [KEY]: baseState() });
+  test(`stock cards are never skipped, and a card below the screen has its picture loaded (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 568 });
+    const items = Array.from({ length: 12 }, (_, i) => ({ id: 101 + i, name: ['パンパース さらさらケア おむつ テープ M', 'グーン モレ0へ おむつ パンツ L', '明治 ほほえみ 粉ミルク 缶'][i % 3], unit: '袋', qty: 2, cat: 'ベビー', place: '収納', expType: '期限なし', exp: '', usage: 1 }));
+    await open(page, { [KEY]: baseState({ items }) });
     await go(page, 'stock');
-    const standIn = () => page.evaluate(() => {
-      const card = document.querySelector('#stockList > [data-stock-id]'), copy = card.cloneNode(true);
-      copy.dataset.stockId = 'stand-in'; copy.style.contentVisibility = 'hidden';   // skipped, never drawn
-      card.parentElement.append(copy);
-      const h = copy.getBoundingClientRect().height, real = card.getBoundingClientRect().height; copy.remove();
-      return { h, real, rule: getComputedStyle(card).containIntrinsicHeight };
-    });
-    const grid = await standIn();
-    expect(grid.rule).toContain('222px');
-    expect(grid.h).toBeLessThanOrEqual(246);   // the compact card height of stock-cards-v28
-    expect(grid.h).toBeGreaterThan(200);       // still a card-sized stand-in, so the scroll length stays close
+    const facts = () => page.evaluate(() => [...document.querySelectorAll('#stockList > [data-stock-id]')].map(c => ({
+      cv: getComputedStyle(c).contentVisibility || 'visible', below: c.getBoundingClientRect().top > innerHeight,
+      img: (c.querySelector('.atk-row-brand img') || {}).naturalWidth ?? null })));
+    await expect.poll(async () => (await facts()).filter(f => f.below && f.img === 0).length).toBe(0);
+    const f = await facts();
+    expect(f.length).toBe(12); expect(f.some(x => x.below)).toBe(true);
+    expect(f.every(x => x.cv === 'visible')).toBe(true);
     await page.getByRole('button', { name: /写真なし・詳細一覧/ }).click();
-    const list = await standIn();
-    expect(list.rule).toContain('104px');
-    expect(Math.abs(list.h - 126)).toBeLessThanOrEqual(1);   // a plain list card (104 + padding and border)
-    expect(list.h).toBeLessThanOrEqual(list.real + 1);
+    expect((await facts()).every(x => x.cv === 'visible')).toBe(true);
     expect(page.__errors).toEqual([]);
   });
 }
