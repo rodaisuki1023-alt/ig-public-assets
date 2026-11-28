@@ -195,7 +195,11 @@ body #pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .n
    document; text search, VoiceOver and Find in page see every card). `auto` remembers each card's real size
    once drawn, so the scroll length stays right. Paint containment keeps drawing inside each card: the
    controls' focus rings are drawn inside too, so they are never cut. The shopping list is not contained (its
-   "…" menu opens outside its row). Browsers without content-visibility ignore it (no change). */
-#stockList > [data-stock-id]{content-visibility:auto;contain-intrinsic-size:auto 246px}
-.atk-stock-list-mode #stockList > [data-stock-id]{contain-intrinsic-size:auto 104px}
+   "…" menu opens outside its row). Browsers without content-visibility ignore it (no change).
+   The stand-in height of a card not drawn yet is its CONTENT height: padding and border are added on top
+   (第13回: 246px became a 260px card in WebKit, which leaves off-screen cards undrawn, so the compact card
+   check failed at every width). 222 + 14 = 236px, a plain card in the 3-column grid; 104 + 22 = 126px in
+   the list. Height only: a stand-in width would set the grid item's minimum width. */
+#stockList > [data-stock-id]{content-visibility:auto;contain-intrinsic-height:auto 222px}
+.atk-stock-list-mode #stockList > [data-stock-id]{contain-intrinsic-height:auto 104px}
 #stockList > [data-stock-id] :focus-visible{outline-offset:-3px}
