@@ -191,3 +191,8 @@ body #pg-stock.atk-stock-list-mode #stockList [data-stock-id].atk-row-compact .n
 .atk-ft-each li{padding:0}
 /* Estimate days on the stock card (v51 usability): small, never wider than the card. */
 #stockList .atk-lv-days{display:block;margin-top:2px;font-size:11px;font-weight:700;line-height:1.3;color:#7a4b3a;white-space:normal;overflow-wrap:anywhere}
+/* v51 (通常CI再開の回): the 第12回 content-visibility on stock cards is withdrawn. WebKit CI (#119 393e178,
+   stock-cards-v28 at 320/375/390px) showed product pictures of cards below the screen not loaded at all
+   (naturalWidth 0) while those cards were skipped; the 第13回 height fix had only moved the failure one
+   line down. The gain was a full redraw of ~10% (not one of the speed targets), so the cards are drawn
+   normally again, as in #118 whose WebKit CI was green. */

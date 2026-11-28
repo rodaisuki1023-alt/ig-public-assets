@@ -287,13 +287,19 @@ const diagnose = page => page.evaluate(() => ({ saveFailures: window.__atokoreSa
   journal: { active: AtokoreJournal.active(), failed: AtokoreJournal.failed?.(), pending: AtokoreJournal.pendingCount?.(), rev: AtokoreJournal.committedRev?.() },
   buys: buys.map(b => b.id), milk: items.find(x => x.id === 1)?.qty, banner: document.querySelector('.atk-safety-text')?.textContent || '',
   toast: document.getElementById('stableToastV125h')?.textContent || '', page: document.querySelector('.page.on')?.id, now: Date.now(), perf: performance.now(),
-  sw: !!navigator.serviceWorker?.controller, nav: performance.getEntriesByType('navigation').length }));
+  sw: !!navigator.serviceWorker?.controller, nav: performance.getEntriesByType('navigation').length,
+  undoBar: document.getElementById('atkUndoBar')?.textContent || '', buyListParent: document.getElementById('buyList')?.parentElement?.id || '', panels: document.querySelectorAll('.atk-last-purchase').length }));
 // Muse N-3: the undo bar disappears after ~20 s or when the screen changes; the last purchase can
 // still be undone from the shopping page for 10 minutes, once, restoring count and estimate.
 test('last purchase: undo still possible after leaving the screen, once, count and estimate restored; not after 10 minutes', async ({ page }) => {
   await page.clock.install();
   await open(page, { [KEY]: purchaseState(tracked()) });
   await go(page, 'buy');
+  // Stop the page clock before the purchases (round 12 cause): the running fake clock sometimes stepped
+  // BACK by 1-9 ms (Date.now and performance.now together; traced in 8 of 40 local runs). A purchase
+  // stamped just before such a step had a negative elapsed time, which withinUndo() rightly treats as
+  // not valid, so the panel was gone. A real browser's performance.now never goes back.
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
   await page.locator('#buyList [data-buy-id="20"]').getByRole('button', { name: /を買った$/ }).click();
   expect((await est(page, 2)).remaining).toBe(180);
   await go(page, 'stock'); await go(page, 'home');
@@ -310,7 +316,7 @@ test('last purchase: undo still possible after leaving the screen, once, count a
   // A later purchase is offered for 10 minutes only.
   await page.locator('#buyList [data-buy-id="21"]').getByRole('button', { name: /を買った$/ }).click();
   await go(page, 'home'); await go(page, 'buy');
-  // Failed on CI Chromium only (2 of 4 runs of #117), never locally (60+ runs, also at 8x CPU throttling).
+  // Failed on CI Chromium (2 of 4 runs of #117) and locally 1 in 10 before the pause above.
   // On failure, say what the app was doing so the cause can be found instead of guessed.
   try { await expect(last).toBeVisible(); }
   catch (err) { console.log('DIAG last-purchase ' + JSON.stringify(await diagnose(page))); throw err; }

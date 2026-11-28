@@ -127,6 +127,7 @@
   const VIEW_PAGE={stock:'stock',buy:'buy',routines:'buy',home:null,packing:'buy'};
   const VIEW_ORDER=['stock','buy','routines','home','packing'];
   const staleViews=new Set();
+  let stockDay='';
   function drawView(view){
     if(view==='stock'){try{window.renderStock()}catch(e){console.error('あとこれ: 在庫表示',e)}}
     else if(view==='buy'){try{window.renderBuy()}catch(e){console.error('あとこれ: 買い物表示',e)}}
@@ -182,20 +183,35 @@
     for(const r of records)if(r.target.classList?.contains('on')&&r.target.id?.startsWith('pg-'))drawStale(r.target.id.slice(3));   // nothing left to draw after go()
   }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
   window.AtokoreViews=Object.freeze({stale:()=>[...staleViews],drawAll:()=>{for(const v of [...staleViews]){staleViews.delete(v);drawView(v)}}});
-  // v51 speed (−／＋ only): the tapped row shows its new number in the next frame; the full redraw (every
-  // decoration, badges, estimate days) runs right after that frame, once for several quick taps. Any other
-  // redraw in between (another operation, a page switch) makes the pending one unnecessary.
-  let redrawToken=0,redrawPending=false;
-  function redrawAfterPaint(){
+  // Keep the rows (and their focus) when only a quantity has changed. Rebuild the current view when
+  // the change can affect estimate badges, sorting or low-stock status. Several taps share one refresh.
+  let redrawToken=0,quantityRedrawToken=0,redrawPending=false,fullQuantityRedraw=false;
+  function redrawAfterPaint(full){
+    if(quantityRedrawToken!==redrawToken)fullQuantityRedraw=false;
+    quantityRedrawToken=redrawToken;
+    fullQuantityRedraw=fullQuantityRedraw||full;
     if(redrawPending)return;
-    redrawPending=true;const token=redrawToken;
-    const later=()=>setTimeout(()=>{redrawPending=false;if(token===redrawToken)renderAllViews()},0);
+    redrawPending=true;
+    const later=()=>setTimeout(()=>{
+      const rebuild=fullQuantityRedraw;redrawPending=false;fullQuantityRedraw=false;
+      if(quantityRedrawToken!==redrawToken)return;
+      if(rebuild){renderAllViews();return}
+      drawView('home');
+      if(shownPage()==='buy')drawView('packing');
+    },0);
     if(typeof requestAnimationFrame==='function')requestAnimationFrame(later);else later();
   }
-  function patchQty(listId,attr,id,item){
+  function patchQty(listId,attr,id,item,step=1){
     const b=document.querySelector('#'+listId+' ['+attr+'="'+numberId(id)+'"] .qty b');
     if(!b)return false;
     b.textContent=String(item.qty)+String(item.unit||'');
+    const plus=b.nextElementSibling;
+    if(plus?.matches('button')){
+      const disabled=atLimit(item,step);
+      plus.disabled=disabled;
+      if(disabled){plus.setAttribute('aria-disabled','true');plus.title=Rules().limitMessage(item.unit)}
+      else{plus.removeAttribute('aria-disabled');plus.removeAttribute('title')}
+    }
     const count=listId==='stockList'?b.closest('[data-stock-id]')?.querySelector('.bf-stock-count'):null;
     if(count)count.textContent=Number(item.qty)>0?'残り '+item.qty+(item.unit||'個'):'在庫なし';
     return true;
@@ -241,6 +257,7 @@
   };
   window.renderStock=function(){
     if(deferHidden('stock','stockList'))return;
+    stockDay=new Date().toDateString();
     cleanSelections();
     const cats=['すべて',...new Set(items.map(x=>x.cat||'その他'))],chips=document.getElementById('catChips');
     window.__atokoreStableCats=cats;if(chips)chips.innerHTML=cats.map(cat=>{const c=color(cat);return `<button class="chip ${cat===filter?'on':''}" style="${cat==='すべて'?'':`border-color:${c[2]};background:${cat===filter?c[0]:c[1]};color:${cat===filter?'#fff':c[0]}`}" data-filter-index="${cats.indexOf(cat)}" onclick="setFilter(window.__atokoreStableCats[this.dataset.filterIndex])">${esc(cat)}</button>`}).join('');
@@ -298,9 +315,15 @@
   window.adj=(id,delta)=>{
     const item=items.find(x=>numberId(x.id)===numberId(id));if(!item)return;
     if(Number(delta)>0&&atLimit(item,Number(delta))){toast(Rules().limitMessage(item.unit));return}
-    const before=Number(item.qty)||0;item.qty=Math.max(0,before+Number(delta||0));if(Number(delta)<0)item.usage=(item.usage||0)+1;
+    const before=Number(item.qty)||0,wasLow=window.atokoreIsLow?.(item);
+    item.qty=Math.max(0,before+Number(delta||0));if(Number(delta)<0)item.usage=(item.usage||0)+1;
     saveState();logHistory('在庫数を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'stock','📦',{refs:[ref(item)],change:`${before}${item.unit} → ${item.qty}${item.unit}`});
-    if(lastSaveOk&&shownPage()==='stock'&&patchQty('stockList','data-stock-id',id,item)){staleOthers('stock');redrawAfterPaint();return}
+    if(lastSaveOk&&shownPage()==='stock'&&patchQty('stockList','data-stock-id',id,item)){
+      const unusualLimit=item.minQty!=null&&!Number.isSafeInteger(Number(item.minQty));
+      const full=!!(item.track||item.level)||unusualLimit||stockDay!==new Date().toDateString()
+        ||(before===0)!==(item.qty===0)||wasLow!==window.atokoreIsLow?.(item)||window.AtokoreStockSort?.mode()==='refill';
+      staleOthers('stock');redrawAfterPaint(full);return
+    }
     finish();
   };
   window.delItem=id=>{if(items.some(x=>numberId(x.id)===numberId(id)))deleteStock([numberId(id)])};
@@ -342,7 +365,7 @@
     if(Number(delta)>0&&atLimit(item,step*Number(delta))){toast(Rules().limitMessage(item.unit));return}
     const before=Number(item.qty)||1;item.qty=Math.max(step,before+Number(delta||0)*step);
     saveState();logHistory('買い物数量を変更',`${item.name} ${before}${item.unit} → ${item.qty}${item.unit}`,'buy','🛒',{refs:[ref(item,'buy')],change:`買う数量 ${before}${item.unit} → ${item.qty}${item.unit}`});
-    if(lastSaveOk&&shownPage()==='buy'&&patchQty('buyList','data-buy-id',id,item)){staleOthers('buy');redrawAfterPaint();return}
+    if(lastSaveOk&&shownPage()==='buy'&&patchQty('buyList','data-buy-id',id,item,step)){staleOthers('buy');redrawAfterPaint(false);return}
     finish({page:'buy'});
   };
   window.buyOneToStockV125H=id=>{

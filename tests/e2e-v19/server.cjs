@@ -20,6 +20,13 @@ fs.writeFileSync(path.join(site, 'family.js'), '/* e2e production stand-in: fami
 // The actual production build does not load the trial's new sharing backend.
 fs.writeFileSync(path.join(site, 'household-config-v37.js'), 'window.ATOKORE_HOUSEHOLD_CONFIG = null;\n');
 execFileSync('python3', ['-I', path.join(repo, 'scripts/atokore/build-preview.py'), path.join(repo, 'atokore-live-v125'), path.join(site, 'preview-baby-v19'), '19'], { stdio: 'inherit' });
+// v51 第12回 (local trial only): E2E_BUNDLE=chunks|single|inline serves the preview as the bundle prototype
+// (scripts/atokore/bundle-proto.cjs) so the same tests run against it. Unset (the default, and CI): unchanged.
+if (process.env.E2E_BUNDLE) {
+  const preview = path.join(site, 'preview-baby-v19'), tmp = preview + '.bundle';
+  execFileSync(process.execPath, [path.join(repo, 'scripts/atokore/bundle-proto.cjs'), preview, tmp, '--mode=' + process.env.E2E_BUNDLE, ...(process.env.E2E_BUNDLE_CSS === '1' ? ['--css=1'] : []), ...(process.env.E2E_ACORN ? ['--acorn=' + process.env.E2E_ACORN] : [])], { stdio: 'inherit' });
+  fs.rmSync(preview, { recursive: true, force: true }); fs.renameSync(tmp, preview);
+}
 
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml' };
 http.createServer((req, res) => {

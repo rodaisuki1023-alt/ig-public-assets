@@ -121,7 +121,10 @@
   function scaleRules(rules){
     for(const rule of Array.from(rules||[])){
       if(rule.cssRules)scaleRules(rule.cssRules);
-      const style=rule.style;if(!style)return;
+      // A rule without a style (@media, @keyframes, @font-face...) is skipped; the rest of the sheet is still
+      // scaled. (It used to end the walk of the whole sheet, so the rules after the first @media were never
+      // scaled for the 極小/大 text sizes.)
+      const style=rule.style;if(!style)continue;
       // The old list-only overrides would hide the globally scaled sizes.
       if(/\.atk-fs-(?:tiny|small|large)/.test(rule.selectorText||'')){
         style.removeProperty('font-size');continue;

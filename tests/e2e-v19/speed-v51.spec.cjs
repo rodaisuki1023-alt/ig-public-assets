@@ -5,6 +5,8 @@ const { open, go, stored, baseState, KEY } = require('./helpers.cjs');
 
 test('a hidden list is drawn when its page is shown, by go() or by any page switch', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
+  // This scenario mutates in-memory state on purpose, so it must follow the initial journal read.
+  await page.evaluate(() => AtokoreJournal.ready);
   await go(page, 'home');
   // Data changes while the shopping page is hidden (another module, the family sync...).
   await page.evaluate(() => { buys.push({ id: 77, name: 'トマト', qty: 2, unit: '個' }); refreshAtokoreUiV125H(); });
@@ -17,7 +19,7 @@ test('a hidden list is drawn when its page is shown, by go() or by any page swit
   expect(page.__errors).toEqual([]);
 });
 
-test('−／＋: the number changes at once, the full redraw follows once for quick taps, every tap is saved', async ({ page }) => {
+test('−／＋: every tap is saved and crossing the reorder line updates the mark', async ({ page }) => {
   await open(page, { [KEY]: baseState() });
   await go(page, 'stock');
   const plus = page.locator('#stockList [data-stock-id="1"] button.icon', { hasText: '＋' });
@@ -42,6 +44,26 @@ test('−／＋: the number changes at once, the full redraw follows once for qu
   await page.locator('#buyList [data-buy-id="10"] .qty button:last-child').click();
   await expect(page.locator('#buyList [data-buy-id="10"] .qty b')).toHaveText('2パック');
   expect((await stored(page)).buys.find(x => x.id === 10).qty).toBe(2);
+  expect(page.__errors).toEqual([]);
+});
+
+test('quantity-only updates keep stock and shopping rows and their controls mounted', async ({ page }) => {
+  await open(page, { [KEY]: baseState() });
+  await page.evaluate(() => AtokoreJournal.ready);
+  for (const [pageId, selector, qty] of [
+    ['stock', '#stockList [data-stock-id="3"]', '7個'],
+    ['buy', '#buyList [data-buy-id="10"]', '2パック'],
+  ]) {
+    await go(page, pageId);
+    await page.evaluate(s => { window.quantityRowBefore = document.querySelector(s); }, selector);
+    await page.locator(selector).locator('.qty button:last-child').click();
+    await page.evaluate(async () => {
+      await AtokoreJournal.flush();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))));
+    });
+    await expect(page.locator(selector).locator('.qty b')).toHaveText(qty);
+    expect(await page.evaluate(s => window.quantityRowBefore === document.querySelector(s), selector)).toBe(true);
+  }
   expect(page.__errors).toEqual([]);
 });
 
@@ -136,3 +158,25 @@ test('keyboard / VoiceOver focus stays on the same row across the redraw after �
   expect((await stored(page)).items.find(x => x.id === 3).qty).toBe(8);
   expect(page.__errors).toEqual([]);
 });
+
+// 通常CI再開の回 (WebKit CI, #119 393e178): stock cards that a browser may skip (content-visibility) left
+// the pictures of cards below the screen unloaded in WebKit. The cards are drawn normally again; this keeps
+// it that way in any browser, and checks that a card below the screen has its picture without scrolling.
+for (const width of [320, 430]) {
+  test(`stock cards are never skipped, and a card below the screen has its picture loaded (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 568 });
+    const items = Array.from({ length: 12 }, (_, i) => ({ id: 101 + i, name: ['パンパース さらさらケア おむつ テープ M', 'グーン モレ0へ おむつ パンツ L', '明治 ほほえみ 粉ミルク 缶'][i % 3], unit: '袋', qty: 2, cat: 'ベビー', place: '収納', expType: '期限なし', exp: '', usage: 1 }));
+    await open(page, { [KEY]: baseState({ items }) });
+    await go(page, 'stock');
+    const facts = () => page.evaluate(() => [...document.querySelectorAll('#stockList > [data-stock-id]')].map(c => ({
+      cv: getComputedStyle(c).contentVisibility || 'visible', below: c.getBoundingClientRect().top > innerHeight,
+      img: (c.querySelector('.atk-row-brand img') || {}).naturalWidth ?? null })));
+    await expect.poll(async () => (await facts()).filter(f => f.below && f.img === 0).length).toBe(0);
+    const f = await facts();
+    expect(f.length).toBe(12); expect(f.some(x => x.below)).toBe(true);
+    expect(f.every(x => x.cv === 'visible')).toBe(true);
+    await page.getByRole('button', { name: /写真なし・詳細一覧/ }).click();
+    expect((await facts()).every(x => x.cv === 'visible')).toBe(true);
+    expect(page.__errors).toEqual([]);
+  });
+}

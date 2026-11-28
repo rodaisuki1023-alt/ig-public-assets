@@ -19,13 +19,29 @@ const { createDb, call, asRole } = require('./pg.cjs');
 const port = Number(process.env.E2E_HH_PORT || 4720);
 let db, codes, tokens, refresh, oauth, dropPush, guests, failHistory, photos;
 let photoEvents=[];
-async function reset() { db = await createDb(); await db.exec(photoProposal); await db.exec(assignmentProposal); await db.exec(prepShareProposal); await db.exec(undoWindowProposal);
+let resetInProgress;
+async function resetDatabase() {
+  const next = await createDb();
+  try {
+    for (const proposal of [photoProposal, assignmentProposal, prepShareProposal, undoWindowProposal]) await next.exec(proposal);
   // Every household in this local emulator is a synthetic test household: put it on the drafts'
   // server-side trial allowlist (a real project adds only named QA households, by hand).
-  await db.exec(`CREATE FUNCTION atokore_private.emulator_trial_v51() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $f$
+    await next.exec(`CREATE FUNCTION atokore_private.emulator_trial_v51() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $f$
     BEGIN INSERT INTO atokore_private.trial_households_v51(household_id,label) VALUES(NEW.id,'QA emulator') ON CONFLICT DO NOTHING; RETURN NEW; END $f$;
     CREATE TRIGGER emulator_trial_v51 AFTER INSERT ON atokore_private.households FOR EACH ROW EXECUTE FUNCTION atokore_private.emulator_trial_v51();`);
-  codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map();photoEvents=[]; }
+  } catch (error) {
+    await next.close();
+    throw error;
+  }
+  const previous = db;
+  db = next;
+  codes = new Map(); tokens = new Map(); refresh = new Map(); oauth = new Map(); dropPush = new Map(); guests = new Set(); failHistory=false;photos=new Map();photoEvents=[];
+  if (previous) await previous.close();
+}
+function reset() {
+  if (!resetInProgress) resetInProgress = resetDatabase().finally(() => { resetInProgress = null; });
+  return resetInProgress;
+}
 const uidFor = email => { const h = crypto.createHash('sha256').update(String(email).toLowerCase()).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`; };
 function session(uid, email) {
   const access = 'emu.' + crypto.randomBytes(16).toString('hex'), r = 'emr.' + crypto.randomBytes(16).toString('hex');
@@ -38,7 +54,7 @@ function send(res, status, body) {
 }
 const readBody = req => new Promise(resolve => { let s = ''; req.on('data', c => { s += c; }); req.on('end', () => { try { resolve(s ? JSON.parse(s) : {}); } catch (e) { resolve(null); } }); });
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (req.method === 'OPTIONS') return send(res, 204);
   const binary=url.pathname.startsWith('/storage/v1/object/');
@@ -46,8 +62,13 @@ http.createServer(async (req, res) => {
   if (body === null) return send(res, 400, { code: 'PGRST102', message: 'invalid JSON' });
   try {
     if (url.pathname === '/__test/photo-events') return send(res,200,photoEvents.slice(-100));
-    if (url.pathname === '/__test/health') return send(res, db ? 200 : 503, { ok: !!db });
-    if (url.pathname === '/__test/reset') { await reset(); return send(res, 200, { ok: true }); }
+    if (url.pathname === '/__test/health') return send(res, db && !resetInProgress ? 200 : 503, { ok: !!db && !resetInProgress });
+    if (url.pathname === '/__test/reset') {
+      res.setHeader('Connection', 'close');
+      await reset();
+      return send(res, 200, { ok: true });
+    }
+    if (resetInProgress) await resetInProgress;
     if (url.pathname === '/__test/history-failure') { failHistory=body.enabled===true;return send(res,200,{enabled:failHistory}); }
     if (url.pathname === '/__test/otp') return send(res, 200, { code: codes.get(String(url.searchParams.get('email')).toLowerCase()) || null });
     if (url.pathname === '/__test/sql') return send(res, 200, (await db.query(body.sql)).rows);
@@ -135,6 +156,18 @@ http.createServer(async (req, res) => {
     }
     return send(res, 404, { message: 'not found' });
   } catch (e) {
+    if (url.pathname === '/__test/reset') console.error('Household test database reset failed:', e);
     return send(res, 500, { message: String(e.message || e) });
   }
-}).listen(port, '127.0.0.1', async () => { await reset(); console.log(`household emulator on http://127.0.0.1:${port}`); });
+});
+// Test infrastructure (#118 CI: POST /__test/reset ended in "socket hang up" once, before any test step).
+// Node closes an idle keep-alive socket after 5 s; a client that reuses it at that moment gets exactly this
+// error. Keep idle sockets longer than any pause between tests, and write every connection-level failure to
+// stderr (Playwright prints a web server's stderr) so the next occurrence says what happened.
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
+server.on('clientError', (err, socket) => { console.error('[emulator] clientError', err && err.code, String(err && err.message || err)); try { socket.destroy(); } catch (_) {} });
+server.on('request', (req, res) => { const t = Date.now(); res.on('close', () => { if (!res.writableFinished) console.error('[emulator] closed before the answer', req.method, req.url, (Date.now() - t) + 'ms'); }); });
+process.on('uncaughtException', e => console.error('[emulator] uncaught', e && e.stack || e));
+process.on('unhandledRejection', e => console.error('[emulator] unhandled', e && e.stack || e));
+server.listen(port, '127.0.0.1', async () => { await reset(); console.log(`household emulator on http://127.0.0.1:${port}`); });
